@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spice — The OCaml coding agent</title>
+    <meta name="description"
+        content="Spice is a coding agent specialized for OCaml: Dune diagnostics in the loop, Merlin for navigation, syntax trees instead of strings — changes that compile, with less babysitting.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="site">
+        <header class="hd">
+            <a href="index.html"><pre class="brand">▄▀▀ █▀▄ █ ▄▀▀ ██▀
+▄██ █▀  █ ▀▄▄ █▄▄</pre></a>
+            <nav class="nav">
+                <a href="why.html">why spice</a>
+                <a href="https://github.com/invariant-hq/spice/tree/main/doc/manual">manual</a>
+                <a class="navbtn" href="https://github.com/invariant-hq/spice">github</a>
+            </nav>
+        </header>
+
+        <main>
+            <div class="hero">
+                <div class="hcell">
+                    <pre class="hwm">▄▀▀ █▀▄ █ ▄▀▀ ██▀
+▄██ █▀  █ ▀▄▄ █▄▄</pre>
+                    <h1 class="hh">The OCaml coding agent.</h1>
+                    <p class="htag">Dune diagnostics in the loop, Merlin for navigation, syntax trees
+                        instead of strings — changes that compile, with less babysitting.</p>
+                    <p class="hsub">free · any provider · macOS &amp; Linux</p>
+                    <div class="tabs">
+                        <button class="tab on" id="tab-curl">curl</button>
+                        <button class="tab" id="tab-brew">brew</button>
+                    </div>
+                    <div class="cmd">
+                        <span class="cmdtext"><span class="doll">$ </span><span id="cmd-text">curl -fsSL https://raw.githubusercontent.com/invariant-hq/spice/main/scripts/install.sh | sh</span></span>
+                        <button class="copy" id="copy-btn">copy</button>
+                    </div>
+                </div>
+                <div class="tcell">
+                    <div class="term">
+                        <div class="tbar">
+                            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                            <span class="ttitle">spice — ~/w/invariant/spice</span>
+                        </div>
+                        <div class="tbody">
+                            <div class="tl"><span class="ta">❯</span> <span class="tw">fix the frontmatter parser bug</span></div>
+                            <div class="tl tf">● read lib/spice_frontmatter.ml</div>
+                            <div class="tl tf">● ocaml_ast_edit · parse_block</div>
+                            <div class="tl">dune: <span class="ta">1 error</span> — unused value rest</div>
+                            <div class="tl tf">● ocaml_ast_edit · parse_block:41</div>
+                            <div class="tl">dune: <span class="tok">✓</span> 0 errors · 0 warnings</div>
+                            <div class="tl tw">● done — 2 files changed</div>
+                            <div class="tl"><span class="ta">❯</span> <span class="cursor">▌</span></div>
+                            <div class="tfoot"><span>~/w/invariant/spice · gpt-5.5</span><span>dune: <span class="tok">✓</span></span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="feats">
+                <div class="feat">
+                    <p class="slabel"><span class="sdim">▚</span> 01 DIAGNOSTICS</p>
+                    <h3 class="fh">The build loop is the agent loop</h3>
+                    <p class="fp">Compiler errors and warnings stream in over Dune RPC as they happen.
+                        The agent sees the fallout of its own edit before the next step — a clean
+                        build, not "the edit applied", is the baseline for done.</p>
+                </div>
+                <div class="feat">
+                    <p class="slabel"><span class="sdim">▚</span> 02 TOOLING</p>
+                    <h3 class="fh">Merlin, not grep</h3>
+                    <p class="fp">Where a generic agent greps and guesses, Spice asks Merlin where a
+                        value is defined, asks Dune what the project looks like, and reads API
+                        surfaces instead of whole files.</p>
+                </div>
+                <div class="feat feat-last">
+                    <p class="slabel"><span class="sdim">▚</span> 03 SAFETY</p>
+                    <h3 class="fh">Safe by default</h3>
+                    <p class="fp">Durable permission rules, sandboxed execution that fails closed,
+                        workspace trust, and per-turn session diff and session revert.</p>
+                </div>
+            </div>
+
+            <div class="sec sec-alt">
+                <p class="slabel"><span class="sdim">▚</span> REVIEW</p>
+                <h2 class="sh">Code review lives in the source</h2>
+                <p class="sp">Spice speaks the <span class="strong">CR</span> review-comment convention.
+                    Drop a comment in the code —</p>
+                <div class="crcode">
+                    <div class="crl"><span class="crk">let</span> normalize path =</div>
+                    <div class="crl">  (* <span class="cra">CR spice:</span> this validation belongs in Spice_path, not here *)</div>
+                    <div class="crl">  <span class="crk">if</span> String.contains path ';' <span class="crk">then</span> invalid_arg "path";</div>
+                </div>
+                <p class="sp">— and the workspace watcher delivers it to the agent live, mid-session:
+                    feedback anchored to the exact code it is about. Addressed comments resolve as
+                    <span class="strong">XCR</span>; <span class="strong">CR-soon</span> defers work
+                    without losing it.</p>
+            </div>
+
+            <div class="sec">
+                <p class="slabel"><span class="sdim">▚</span> TOOLS</p>
+                <h2 class="sh">Tools that understand OCaml</h2>
+                <p class="sp">Alongside the usual file, search, and shell tools, the model gets
+                    OCaml-native tools.</p>
+                <div class="cells">
+                    <div class="cell">
+                        <p class="celln">ocaml_dune_describe</p>
+                        <p class="celld">The project as Dune sees it: libraries, executables,
+                            dependencies, tests.</p>
+                    </div>
+                    <div class="cell">
+                        <p class="celln">ocaml_docs</p>
+                        <p class="celld">API surfaces by name, across workspace libraries and locked
+                            dependencies.</p>
+                    </div>
+                    <div class="cell">
+                        <p class="celln">ocaml_find_definitions</p>
+                        <p class="celld">Identity-based navigation through Merlin, not textual grep.
+                            Paired with ocaml_find_references.</p>
+                    </div>
+                    <div class="cell">
+                        <p class="celln">ocaml_ast_edit</p>
+                        <p class="celld">Edits addressed by compiler AST location; fragments that
+                            don't parse are rejected.</p>
+                    </div>
+                    <div class="cell">
+                        <p class="celln">ocaml_eval</p>
+                        <p class="celld">Toplevel phrases evaluated in the project's own context.</p>
+                    </div>
+                    <div class="cell">
+                        <p class="celln">ocaml_dune_diagnostics</p>
+                        <p class="celld">The current compiler and Dune error set, on demand.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sec">
+                <p class="slabel"><span class="sdim">▚</span> WHY OCAML</p>
+                <h2 class="sh">A language built for machine-checkable correctness</h2>
+                <p class="sp">Specialization is only half of the story. OCaml is the strongest target
+                    for building the safest, most productive coding agent there is.</p>
+                <div class="cells">
+                    <div class="cell">
+                        <p class="celln">01 · feedback</p>
+                        <p class="celld">A sound type system and explicit module interfaces rule out
+                            whole categories of bugs before the agent reaches the test suite.</p>
+                    </div>
+                    <div class="cell">
+                        <p class="celln">02 · ecosystem</p>
+                        <p class="celld">Typed build rules, property-based testing,
+                            documentation-as-contract: rich verification loops the agent works
+                            inside.</p>
+                    </div>
+                    <div class="cell">
+                        <p class="celln">03 · verification</p>
+                        <p class="celld">Rocq's deep OCaml integration points beyond "compiles and
+                            passes tests", toward formally verified code where it matters.</p>
+                    </div>
+                </div>
+                <p class="whylink"><a href="why.html">read the full argument: why spice? →</a></p>
+            </div>
+
+            <div class="sec">
+                <p class="slabel"><span class="sdim">▚</span> ROADMAP</p>
+                <h2 class="sh">Where we're going</h2>
+                <div class="roadgrid">
+                    <div>
+                        <p class="rnum">01</p>
+                        <h3 class="rh">Local-first agents</h3>
+                        <p class="rp">A developer tool you run locally, not a luxury gated behind
+                            someone else's API. We are building
+                            <a href="https://github.com/raven-ml/raven">Raven</a> as the foundation
+                            for model runtimes; Spice will ship local models built in.</p>
+                    </div>
+                    <div>
+                        <p class="rnum">02</p>
+                        <h3 class="rh">Specialization, as far as it goes</h3>
+                        <p class="rp">Measure real productivity with SpiceBench; grow an
+                            agent-friendly toolbox —
+                            <a href="https://github.com/invariant-hq/windtrap">windtrap</a> for
+                            testing, thumper for benchmarking, a linter; a living OCaml knowledge
+                            base.</p>
+                    </div>
+                    <div>
+                        <p class="rnum">03</p>
+                        <h3 class="rh">Formal verification</h3>
+                        <p class="rp">The safest agent there is: when appropriate, defaulting to
+                            formally verified code, building on Rocq and its OCaml integration.</p>
+                    </div>
+                </div>
+                <p class="statusnote"><span class="statuskey">status: experimental.</span> The core
+                    loop works and we use Spice on Spice daily, but interfaces will change without
+                    notice. Expect rough edges — and please
+                    <a href="https://github.com/invariant-hq/spice/issues">report them</a>.</p>
+            </div>
+
+            <div class="cta sec-alt">
+                <h2 class="ctah">Point it at an OCaml codebase.</h2>
+                <p class="ctasub">Free, always. Bring Claude, GPT, Gemini, or local models — no
+                    lock-in, no monthly fee.</p>
+                <a class="btn btnp" href="https://github.com/invariant-hq/spice">get spice on github</a>
+                <a class="btn" href="why.html">why spice?</a>
+                <p class="ctacmd">$ curl -fsSL https://raw.githubusercontent.com/invariant-hq/spice/main/scripts/install.sh | sh</p>
+            </div>
+        </main>
+
+        <footer class="foot">
+            <span>Spice — part of <a href="https://invarianthq.dev/">Invariant</a>'s stack · ISC license</span>
+            <span class="footlinks">
+                <a href="https://github.com/invariant-hq/spice">github</a>
+                <a href="https://github.com/invariant-hq/spice/tree/main/doc/manual">manual</a>
+                <a href="https://github.com/invariant-hq/spice/issues">issues</a>
+            </span>
+        </footer>
+    </div>
+
+    <script>
+        (function () {
+            var cmds = {
+                curl: 'curl -fsSL https://raw.githubusercontent.com/invariant-hq/spice/main/scripts/install.sh | sh',
+                brew: 'brew install invariant-hq/tap/spice'
+            };
+            var current = 'curl';
+            var cmdText = document.getElementById('cmd-text');
+            var tabs = { curl: document.getElementById('tab-curl'), brew: document.getElementById('tab-brew') };
+
+            function pick(name) {
+                current = name;
+                cmdText.textContent = cmds[name];
+                tabs.curl.classList.toggle('on', name === 'curl');
+                tabs.brew.classList.toggle('on', name === 'brew');
+            }
+            tabs.curl.addEventListener('click', function () { pick('curl'); });
+            tabs.brew.addEventListener('click', function () { pick('brew'); });
+
+            document.getElementById('copy-btn').addEventListener('click', function () {
+                navigator.clipboard.writeText(cmds[current]);
+                this.textContent = 'copied';
+                var btn = this;
+                setTimeout(function () { btn.textContent = 'copy'; }, 1500);
+            });
+        })();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,3 @@
+(library
+ (name spice_cr)
+ (libraries spice_path spice_digest))

@@ -1,0 +1,6 @@
+(library
+ (name spice_modelfit)
+ (public_name spice.modelfit)
+ (foreign_stubs
+  (language c)
+  (names stubs)))

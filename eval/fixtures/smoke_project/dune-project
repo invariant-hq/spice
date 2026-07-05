@@ -1,0 +1,10 @@
+(lang dune 3.22)
+
+(name spice_eval_smoke)
+
+(package
+ (name spice_eval_smoke)
+ (allow_empty)
+ (depends
+  (ocaml
+   (>= 5.5.0))))

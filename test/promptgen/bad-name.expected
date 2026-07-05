@@ -1,0 +1,1 @@
+fixtures/skills/Bad_Name.md: "Bad_Name" is not a skill name (lowercase letters, digits, and hyphens; at most 64 bytes); rename the file

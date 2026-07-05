@@ -1,0 +1,53 @@
+(*---------------------------------------------------------------------------
+  Copyright (c) 2026 Invariant Systems. All rights reserved.
+  SPDX-License-Identifier: ISC
+ ---------------------------------------------------------------------------*)
+
+(** Ollama provider adapter.
+
+    This library interprets {!Spice_llm.Request.t} values against a running
+    Ollama daemon over its OpenAI-compatible chat-completions endpoint. The
+    daemon owns the model set: Spice declares no static Ollama models, ids are
+    whatever the daemon serves (e.g. ["qwen3-coder:30b"]), and pulling models is
+    the user's `ollama pull`, not Spice's concern. Spice's provider-neutral
+    transcript, tool, response, and stream types remain the public boundary.
+
+    The client is credentialless and connects to {!Config.make}'s [base_url]
+    ([http://127.0.0.1:11434] by default; override it for a daemon on another
+    machine via the provider base-URL config). A request for a model the daemon
+    does not have fails at request time with the daemon's own error. *)
+
+val provider : Spice_llm.Provider.t
+(** [provider] is the [ollama] provider namespace. *)
+
+val api : Spice_llm.Model.Api.t
+(** [api] is the OpenAI-compatible chat-completions protocol family. *)
+
+val model : string -> Spice_llm.Model.t
+(** [model id] is Ollama model [id] under {!provider}. *)
+
+module Config : sig
+  type t
+  (** Connection configuration.
+
+      [base_url] is the daemon's root URL and defaults to
+      [http://127.0.0.1:11434]; the OpenAI-compatible endpoint lives under its
+      [/v1] path and the native discovery API under [/api]. *)
+
+  val make : ?base_url:string -> unit -> t
+  (** [make ()] is a checked connection configuration.
+
+      Raises [Invalid_argument] if [base_url] is empty. *)
+
+  val default : t
+  (** [default] is [make ()]. *)
+end
+
+val client :
+  sw:Eio.Switch.t ->
+  env:Eio_unix.Stdenv.base ->
+  ?config:Config.t ->
+  unit ->
+  Spice_llm.Client.t
+(** [client ~sw ~env ()] is a credentialless Ollama client streaming over the
+    daemon's chat-completions endpoint. *)

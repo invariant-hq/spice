@@ -1,0 +1,243 @@
+name: Release
+
+# Cutting a release: add the version section to CHANGES.md, then push a tag
+# named X.Y.Z. The release is created as a draft and only published once
+# every asset (binaries, SHA256SUMS, lock snapshot) is uploaded, so
+# `releases/latest/download` never sees a partial release.
+#
+# A workflow_dispatch run is a dry run: it builds and gates all four
+# targets with the given version stamp but never touches GitHub Releases
+# or the Homebrew tap.
+#
+# See doc/design/distribution.md for the full design.
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to stamp into the dry-run binaries (e.g. 0.0.0-test)"
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  # The dune binary driving the build, bootstrapped from source inside the
+  # Alpine containers. Keep in sync with ci.yml.
+  DUNE_VERSION: 3.23.1
+  RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
+
+jobs:
+  # Resolve dependencies once; every target builds from this exact lock.
+  # The lock directory is not committed (see .gitignore), so it is also
+  # published as a release asset for reproducibility.
+  lock:
+    name: Lock dependencies
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ocaml-dune/setup-dune@v2
+        with:
+          version: ${{ env.DUNE_VERSION }}
+          steps: install-dune enable-pkg
+
+      - run: dune pkg lock
+
+      - run: tar -czf dune.lock.tar.gz dune.lock
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dune.lock
+          path: dune.lock.tar.gz
+          if-no-files-found: error
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: lock
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      matrix:
+        include:
+          - target: linux-x64
+            runs-on: ubuntu-24.04
+          - target: linux-arm64
+            runs-on: ubuntu-24.04-arm
+          - target: darwin-x64
+            runs-on: macos-15-intel
+          - target: darwin-arm64
+            runs-on: macos-15
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+
+      # No version is committed in dune-project; the tag is the source of
+      # truth. Build_info reports the stamped value, and check-portable.sh
+      # fails the build if the binary does not print exactly the tag.
+      - name: Stamp release version
+        run: printf '\n(version %s)\n' "$RELEASE_VERSION" >> dune-project
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dune.lock
+
+      - name: Unpack shared lock
+        run: tar -xzf dune.lock.tar.gz && rm dune.lock.tar.gz
+
+      # The container's dune cache (OCaml toolchain + built dependencies)
+      # lives outside the checkout so dune never scans it as source.
+      - name: Cache container dune cache (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: ~/dune-container-cache
+          key: release-dune-${{ matrix.target }}-${{ hashFiles('dune-project') }}
+          restore-keys: |
+            release-dune-${{ matrix.target }}-
+
+      - name: Build (static musl, Alpine container)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p "$HOME/dune-container-cache"
+          docker run --rm \
+            -v "$PWD:/src" \
+            -v "$HOME/dune-container-cache:/root/.cache/dune" \
+            -e DUNE_VERSION \
+            alpine:3.21 sh /src/scripts/release/alpine-build.sh
+          # The container runs as root; the cache action and later steps
+          # run as the runner user.
+          sudo chown -R "$(id -u):$(id -g)" "$HOME/dune-container-cache" dist
+
+      - name: Install libraries to link statically (macOS)
+        if: runner.os == 'macOS'
+        run: brew install gmp zstd pkgconf
+
+      - name: Generate release workspace (macOS)
+        if: runner.os == 'macOS'
+        run: scripts/release/link-workspace.sh > dune-workspace-release
+
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        uses: ocaml-dune/setup-dune@v2
+        with:
+          version: ${{ env.DUNE_VERSION }}
+          # No build-deps: the shared lock from the lock job must not be
+          # re-resolved here. No runtest: CI gates code; this gates packaging.
+          steps: install-dune enable-pkg lazy-update-depexts install-gpatch install-depexts build
+          workspace: dune-workspace-release
+
+      - name: Stage binary (macOS)
+        if: runner.os == 'macOS'
+        run: mkdir -p dist && cp _build/default/bin/main.exe dist/spice
+
+      - name: Check portability, architecture, and version
+        run: scripts/release/check-portable.sh dist/spice "$RELEASE_VERSION" "${{ matrix.target }}"
+
+      # Deterministic archive: fixed ordering, ownership, and timestamps
+      # (the tagged commit's date), so an independent rebuild of the same
+      # tag can byte-match the published checksums.
+      - name: Package
+        run: |
+          cp LICENSE dist/
+          epoch="$(git log -1 --format=%ct)"
+          TAR=tar
+          command -v gtar > /dev/null && TAR=gtar
+          "$TAR" --sort=name --owner=0 --group=0 --numeric-owner \
+            --mtime="@$epoch" -cf - -C dist spice LICENSE \
+            | gzip -n > "spice-${{ matrix.target }}.tar.gz"
+
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: spice-${{ matrix.target }}.tar.gz
+          show-summary: false
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spice-${{ matrix.target }}
+          path: spice-${{ matrix.target }}.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # The musl binary running on this glibc host is the portability proof
+      # for the Linux artifacts.
+      - name: Smoke-test Linux binary on glibc host
+        run: |
+          tar -xzf dist/spice-linux-x64.tar.gz -C "$RUNNER_TEMP"
+          scripts/release/check-portable.sh "$RUNNER_TEMP/spice" "$RELEASE_VERSION" linux-x64
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum spice-*.tar.gz dune.lock.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Extract release notes
+        run: scripts/release/changelog.sh "$RELEASE_VERSION" > "$RUNNER_TEMP/notes.md"
+
+      # Idempotent: a re-run after a transient failure updates the existing
+      # draft instead of failing on "release already exists".
+      - name: Create or update draft release
+        run: |
+          if ! gh release view "$RELEASE_VERSION" > /dev/null 2>&1; then
+            gh release create "$RELEASE_VERSION" \
+              --draft \
+              --title "spice $RELEASE_VERSION" \
+              --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+          gh release upload "$RELEASE_VERSION" --clobber \
+            dist/spice-*.tar.gz dist/dune.lock.tar.gz dist/SHA256SUMS
+
+      - name: Publish release
+        run: gh release edit "$RELEASE_VERSION" --draft=false
+
+  homebrew:
+    name: Update Homebrew tap
+    if: github.event_name == 'push'
+    needs: publish
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Push formula to invariant-hq/homebrew-tap
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "HOMEBREW_TAP_TOKEN is not configured; skipping tap update." >&2
+            exit 0
+          fi
+          gh release download "$RELEASE_VERSION" --pattern SHA256SUMS --output SHA256SUMS
+          scripts/release/brew-formula.sh "$RELEASE_VERSION" SHA256SUMS > spice.rb
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/invariant-hq/homebrew-tap.git" tap
+          mkdir -p tap/Formula
+          mv spice.rb tap/Formula/spice.rb
+          cd tap
+          git config user.name "spice-release"
+          git config user.email "releases@invarianthq.dev"
+          git add Formula/spice.rb
+          git diff --cached --quiet || git commit -m "spice ${RELEASE_VERSION}"
+          git push

@@ -1,0 +1,4 @@
+(library
+ (name spice_ocaml)
+ (modules spice_ocaml)
+ (libraries spice_workspace))

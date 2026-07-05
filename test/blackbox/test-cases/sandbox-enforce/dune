@@ -1,0 +1,15 @@
+; Real Seatbelt enforcement runs only where the backend exists. The
+; cross-platform sandbox contract (refusal, gating, status, escalation
+; surfaces) is covered in exec/sandbox.t via the private unavailable seam.
+
+(cram
+ (applies_to enforce)
+ (enabled_if
+  (= %{system} macosx)))
+
+(cram
+ (applies_to linux-bubblewrap)
+ (enabled_if
+  (and
+   (= %{system} linux)
+   %{bin-available:bwrap})))

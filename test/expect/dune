@@ -1,0 +1,325 @@
+(test
+ (name test_diff_expect)
+ (modules test_diff_expect)
+ (libraries windtrap spice_diff)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(test
+ (name test_tools_read_file_expect)
+ (modules test_tools_read_file_expect)
+ (libraries
+  windtrap
+  eio
+  eio_main
+  unix
+  jsont
+  spice_digest
+  spice_edit
+  spice_mutation
+  spice_tools
+  spice_path
+  spice_tool
+  spice_workspace)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(test
+ (name test_tools_write_file_expect)
+ (modules test_tools_write_file_expect)
+ (libraries
+  windtrap
+  eio
+  eio_main
+  unix
+  jsont
+  spice_digest
+  spice_edit
+  spice_mutation
+  spice_tools
+  spice_path
+  spice_tool
+  spice_workspace)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(test
+ (name test_tools_search_text_expect)
+ (modules test_tools_search_text_expect)
+ (libraries
+  windtrap
+  eio
+  eio_main
+  unix
+  jsont
+  spice_tools
+  spice_path
+  spice_tool
+  spice_workspace)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(test
+ (name test_tools_ocaml_search_expressions_expect)
+ (modules test_tools_ocaml_search_expressions_expect)
+ (libraries
+  windtrap
+  eio
+  eio_main
+  unix
+  jsont
+  spice_tools
+  spice_ocaml
+  spice_path
+  spice_tool
+  spice_workspace)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(test
+ (name test_tools_ocaml_docs_expect)
+ (modules test_tools_ocaml_docs_expect)
+ (libraries
+  windtrap
+  eio
+  eio_main
+  unix
+  jsont
+  spice_ocaml_dune
+  spice_tools
+  spice_ocaml
+  spice_path
+  spice_tool
+  spice_workspace)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(test
+ (name test_tools_glob_expect)
+ (modules test_tools_glob_expect)
+ (libraries
+  windtrap
+  eio
+  eio_main
+  unix
+  jsont
+  spice_tools
+  spice_path
+  spice_tool
+  spice_workspace)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(test
+ (name test_tools_ocaml_replace_expressions_expect)
+ (modules test_tools_ocaml_replace_expressions_expect)
+ (libraries
+  windtrap
+  eio
+  eio_main
+  unix
+  jsont
+  spice_digest
+  spice_edit
+  spice_mutation
+  spice_tools
+  spice_ocaml
+  spice_path
+  spice_tool
+  spice_workspace)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(test
+ (name test_tools_edit_apply_expect)
+ (modules test_tools_edit_apply_expect)
+ (libraries
+  windtrap
+  eio
+  eio_main
+  unix
+  jsont
+  spice_digest
+  spice_edit
+  spice_mutation
+  spice_tools
+  spice_path
+  spice_tool
+  spice_workspace)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(test
+ (name test_tools_catalog_expect)
+ (modules test_tools_catalog_expect)
+ (libraries
+  windtrap
+  eio
+  eio_main
+  unix
+  spice_ocaml_dune
+  spice_tools
+  spice_path
+  spice_tool
+  spice_workspace)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(test
+ (name test_tools_shell_expect)
+ (modules test_tools_shell_expect)
+ (libraries
+  windtrap
+  eio
+  eio_main
+  unix
+  jsont
+  spice_digest
+  spice_sandbox
+  spice_tools
+  spice_path
+  spice_tool
+  spice_workspace
+  spice_permission)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(test
+ (name test_tools_ocaml_dune_expect)
+ (modules test_tools_ocaml_dune_expect)
+ (libraries
+  windtrap
+  eio
+  eio_main
+  unix
+  jsont
+  spice_ocaml
+  spice_ocaml_dune
+  spice_tools
+  spice_path
+  spice_tool
+  spice_workspace)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(test
+ (name test_tools_ocaml_ast_edit_expect)
+ (modules test_tools_ocaml_ast_edit_expect)
+ (libraries
+  windtrap
+  eio
+  eio_main
+  unix
+  spice_edit
+  spice_mutation
+  spice_ocaml
+  spice_path
+  spice_tool
+  spice_tools
+  spice_workspace)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(test
+ (name test_tools_ocaml_find_definitions_expect)
+ (modules test_tools_ocaml_find_definitions_expect)
+ (libraries
+  windtrap
+  eio
+  eio_main
+  unix
+  jsont
+  spice_tools
+  spice_path
+  spice_tool
+  spice_workspace)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(test
+ (name test_tools_ocaml_type_at_expect)
+ (modules test_tools_ocaml_type_at_expect)
+ (libraries
+  windtrap
+  eio
+  eio_main
+  unix
+  jsont
+  spice_tools
+  spice_path
+  spice_tool
+  spice_ocaml
+  spice_workspace)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(test
+ (name test_tools_ocaml_find_references_expect)
+ (modules test_tools_ocaml_find_references_expect)
+ (libraries
+  windtrap
+  eio
+  eio_main
+  unix
+  jsont
+  spice_tools
+  spice_path
+  spice_tool
+  spice_ocaml
+  spice_workspace)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(test
+ (name test_tools_ocaml_rename_expect)
+ (modules test_tools_ocaml_rename_expect)
+ (libraries
+  windtrap
+  eio
+  eio_main
+  unix
+  jsont
+  spice_digest
+  spice_mutation
+  spice_tools
+  spice_path
+  spice_tool
+  spice_ocaml
+  spice_workspace)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(test
+ (name test_tools_ocaml_eval_expect)
+ (modules test_tools_ocaml_eval_expect)
+ (libraries
+  windtrap
+  eio
+  eio_main
+  unix
+  jsont
+  spice_tools
+  spice_path
+  spice_tool
+  spice_workspace
+  spice_permission)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(test
+ (name test_tools_web_expect)
+ (modules test_tools_web_expect)
+ (libraries
+  windtrap
+  cohttp
+  cohttp-eio
+  eio
+  eio_main
+  jsont
+  jsont.bytesrw
+  spice_permission
+  spice_tools
+  spice_tool
+  uri)
+ (preprocess
+  (pps ppx_windtrap)))

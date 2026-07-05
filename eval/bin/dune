@@ -1,0 +1,15 @@
+(executable
+ (public_name spice-eval)
+ (name main)
+ (modules main corpus)
+ (libraries
+  cmdliner
+  jsont
+  jsont.bytesrw
+  spice_eval
+  spice_llm
+  spice_provider
+  spice_provider_builtin
+  spice_session
+  str
+  unix))

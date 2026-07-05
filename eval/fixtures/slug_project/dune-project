@@ -1,0 +1,10 @@
+(lang dune 3.22)
+
+(name eval_slug)
+
+(package
+ (name eval_slug)
+ (allow_empty)
+ (depends
+  (ocaml
+   (>= 5.5.0))))

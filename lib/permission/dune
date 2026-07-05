@@ -1,0 +1,3 @@
+(library
+ (name spice_permission)
+ (libraries jsont spice_path spice_workspace))

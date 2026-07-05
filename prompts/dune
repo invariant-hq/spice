@@ -1,0 +1,12 @@
+(library
+ (name spice_prompts)
+ (modules spice_prompts))
+
+(rule
+ (targets spice_prompts.ml)
+ (deps
+  (:gen gen/gen.exe)
+  (:md
+   (glob_files_rec *.md)))
+ (action
+  (run %{gen} -o %{targets} %{md})))

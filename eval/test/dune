@@ -1,0 +1,4 @@
+(test
+ (name test_eval)
+ (modules test_eval)
+ (libraries windtrap jsont spice_eval))

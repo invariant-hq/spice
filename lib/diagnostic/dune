@@ -1,0 +1,3 @@
+(library
+ (name spice_diagnostic)
+ (public_name spice.diagnostic))

@@ -1,0 +1,25 @@
+(*---------------------------------------------------------------------------
+  Copyright (c) 2026 Invariant Systems. All rights reserved.
+  SPDX-License-Identifier: ISC
+ ---------------------------------------------------------------------------*)
+
+(** Safe-environment partition for confined commands.
+
+    Confined commands must not inherit credentials, loader-injection variables,
+    or shell-startup overrides. The partition is pure and is the single source
+    for both the spawn path and explain rendering, so what is reported stripped
+    is what was stripped.
+
+    Patterns are name shapes, not a secret scanner: matching is
+    ASCII-case-insensitive and [*] matches any (possibly empty) substring.
+    Values never appear in any output of this module; only names do. *)
+
+val stripped_patterns : string list
+(** [stripped_patterns] are the name patterns removed from confined command
+    environments: credential shapes ([*TOKEN*], [*SECRET*], ...), provider
+    prefixes ([ANTHROPIC_*], [OPENAI_*], ...), loader injection ([LD_*],
+    [DYLD_*]), and shell-startup overrides ([BASH_ENV], ...). *)
+
+val partition : (string * string) list -> (string * string) list * string list
+(** [partition bindings] is [(kept, stripped_names)] preserving binding order.
+    [stripped_names] contains names only, never values. *)

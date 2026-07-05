@@ -1,0 +1,4 @@
+(library
+ (name spice_ocaml_grep)
+ (modules spice_ocaml_grep)
+ (libraries compiler-libs.common spice_ocaml spice_workspace))

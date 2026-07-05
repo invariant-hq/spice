@@ -1,0 +1,376 @@
+(library
+ (name test_support)
+ (modules test_support)
+ (libraries windtrap jsont))
+
+(test
+ (name test_path)
+ (modules test_path)
+ (libraries windtrap test_support spice_path))
+
+(test
+ (name test_sandbox)
+ (modules test_sandbox)
+ (libraries
+  windtrap
+  test_support
+  jsont
+  spice_digest
+  spice_sandbox
+  spice_path))
+
+(test
+ (name test_diagnostic)
+ (modules test_diagnostic)
+ (libraries windtrap test_support spice_diagnostic))
+
+(test
+ (name test_ocaml)
+ (modules test_ocaml)
+ (libraries windtrap spice_ocaml spice_workspace spice_path))
+
+(test
+ (name test_ocaml_grep)
+ (modules test_ocaml_grep)
+ (libraries
+  windtrap
+  compiler-libs.common
+  spice_ocaml_grep
+  spice_ocaml
+  spice_workspace
+  spice_path))
+
+(test
+ (name test_ocaml_dune)
+ (modules test_ocaml_dune)
+ (libraries
+  windtrap
+  spice_ocaml_dune
+  spice_ocaml
+  spice_workspace
+  spice_path
+  eio
+  eio_main))
+
+(test
+ (name test_diff)
+ (modules test_diff)
+ (libraries windtrap test_support spice_diff))
+
+(test
+ (name test_edit)
+ (modules test_edit)
+ (libraries
+  windtrap
+  test_support
+  spice_digest
+  spice_diff
+  spice_edit
+  spice_workspace
+  spice_path))
+
+(test
+ (name test_mutation)
+ (modules test_mutation)
+ (libraries
+  windtrap
+  test_support
+  jsont
+  jsont.bytesrw
+  spice_mutation
+  spice_edit
+  spice_workspace
+  spice_path
+  spice_session
+  spice_digest))
+
+(test
+ (name test_tools_receipt)
+ (modules test_tools_receipt)
+ (libraries windtrap spice_tools spice_edit spice_workspace spice_path))
+
+(test
+ (name test_tools_anchor_tracker)
+ (modules test_tools_anchor_tracker)
+ (libraries windtrap spice_tools spice_workspace spice_path))
+
+(test
+ (name test_fswatch)
+ (modules test_fswatch)
+ (libraries windtrap spice_fswatch spice_path eio eio.unix eio_main unix))
+
+(test
+ (name test_workspace)
+ (modules test_workspace)
+ (libraries windtrap spice_workspace spice_path))
+
+(test
+ (name test_permission)
+ (modules test_permission)
+ (libraries
+  windtrap
+  test_support
+  jsont
+  spice_digest
+  spice_permission
+  spice_path
+  spice_workspace))
+
+(test
+ (name test_cr)
+ (modules test_cr)
+ (libraries windtrap spice_cr spice_digest spice_path))
+
+(test
+ (name test_digest)
+ (modules test_digest)
+ (libraries windtrap test_support spice_digest))
+
+(test
+ (name test_frontmatter)
+ (modules test_frontmatter)
+ (libraries windtrap spice_frontmatter))
+
+(test
+ (name test_modelfit)
+ (modules test_modelfit)
+ (libraries windtrap test_support spice_modelfit))
+
+(test
+ (name test_llm_local)
+ (modules test_llm_local)
+ (deps bin/fake_llama_server.exe)
+ (libraries
+  windtrap
+  test_support
+  jsont
+  jsont.bytesrw
+  spice_llm
+  spice_llm_local
+  spice_modelfit
+  eio
+  eio.unix
+  eio_main
+  unix))
+
+(test
+ (name test_patch)
+ (modules test_patch)
+ (libraries windtrap spice_patch spice_path))
+
+(test
+ (name test_tool)
+ (modules test_tool)
+ (libraries windtrap test_support jsont spice_tool spice_permission))
+
+(test
+ (name test_session)
+ (modules test_session)
+ (libraries
+  windtrap
+  test_support
+  jsont
+  spice_session
+  spice_llm
+  spice_path
+  spice_permission))
+
+(test
+ (name test_host_session)
+ (modules test_host_session)
+ (libraries
+  windtrap
+  jsont
+  spice_host
+  spice_protocol
+  spice_provider
+  spice_session
+  spice_session_store
+  spice_llm
+  spice_tool
+  spice_path
+  spice_permission
+  eio
+  eio_main))
+
+(test
+ (name test_notice)
+ (modules test_notice)
+ (libraries windtrap spice_host spice_protocol eio eio_main))
+
+(test
+ (name test_session_metrics)
+ (modules test_session_metrics)
+ (libraries
+  windtrap
+  test_support
+  jsont
+  spice_session
+  spice_llm
+  spice_path
+  spice_permission))
+
+(test
+ (name test_session_run)
+ (modules test_session_run)
+ (libraries
+  windtrap
+  test_support
+  jsont
+  spice_session
+  spice_llm
+  spice_tool
+  spice_path
+  spice_permission))
+
+(test
+ (name test_session_store)
+ (modules test_session_store)
+ (libraries
+  windtrap
+  test_support
+  jsont
+  spice_diagnostic
+  spice_session
+  spice_session_store
+  spice_llm
+  spice_path
+  eio
+  eio_main))
+
+(test
+ (name test_account)
+ (modules test_account)
+ (libraries windtrap test_support jsont spice_account spice_llm))
+
+(test
+ (name test_provider)
+ (modules test_provider)
+ (libraries windtrap test_support spice_account spice_llm spice_provider uri))
+
+(test
+ (name test_provider_builtin)
+ (modules test_provider_builtin)
+ (libraries
+  windtrap
+  spice_llm
+  spice_llm_anthropic
+  spice_llm_deepseek
+  spice_llm_google
+  spice_llm_local
+  spice_llm_ollama
+  spice_llm_openai
+  spice_provider
+  spice_provider_builtin))
+
+(test
+ (name test_llm)
+ (modules test_llm)
+ (libraries windtrap test_support jsont spice_llm eio eio.unix unix))
+
+(test
+ (name test_llm_openai)
+ (modules test_llm_openai)
+ (libraries
+  windtrap
+  test_support
+  jsont
+  jsont.bytesrw
+  spice_llm
+  spice_llm_openai
+  eio
+  eio.unix
+  eio_main
+  unix))
+
+(test
+ (name test_llm_anthropic)
+ (modules test_llm_anthropic)
+ (libraries
+  windtrap
+  test_support
+  jsont
+  jsont.bytesrw
+  spice_llm
+  spice_llm_anthropic
+  eio
+  eio.unix
+  eio_main
+  unix))
+
+(test
+ (name test_llm_google)
+ (modules test_llm_google)
+ (libraries
+  windtrap
+  test_support
+  jsont
+  jsont.bytesrw
+  spice_llm
+  spice_llm_google
+  eio
+  eio.unix
+  eio_main
+  unix))
+
+(test
+ (name test_oauth2)
+ (modules test_oauth2)
+ (libraries windtrap test_support oauth2 jsont uri))
+
+(test
+ (name test_oauth2_eio)
+ (modules test_oauth2_eio)
+ (libraries
+  cohttp
+  cohttp-eio
+  eio
+  eio_main
+  oauth2
+  oauth2_eio
+  uri
+  windtrap
+  test_support))
+
+(test
+ (name test_review)
+ (modules test_review)
+ (libraries
+  windtrap
+  test_support
+  jsont
+  jsont.bytesrw
+  spice_review
+  spice_cr
+  spice_diff
+  spice_digest
+  spice_path))
+
+(test
+ (name test_review_git)
+ (modules test_review_git)
+ (libraries
+  windtrap
+  eio
+  eio_main
+  unix
+  spice_diff
+  spice_review
+  spice_review_git
+  spice_cr
+  spice_path))
+
+(test
+ (name test_protocol)
+ (modules test_protocol)
+ (libraries
+  windtrap
+  test_support
+  jsont
+  jsont.bytesrw
+  spice_protocol
+  spice_session
+  spice_llm
+  spice_tool
+  spice_permission
+  spice_path))

@@ -1,0 +1,3 @@
+(library
+ (name spice_sandbox)
+ (libraries jsont logs spice_path spice_digest unix))

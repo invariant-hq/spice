@@ -1,0 +1,111 @@
+; The prompts generator's own tests: a golden output for a valid builtin
+; skill, and the build-failure diagnostics for invalid ones. Fixtures live
+; here, outside prompts/, so the real Spice_prompts build never sees them.
+
+(rule
+ (targets good.out)
+ (deps
+  (:gen ../../prompts/gen/gen.exe)
+  fixtures/skills/good.md)
+ (action
+  (run %{gen} -o %{targets} fixtures/skills/good.md)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff good.expected good.out)))
+
+(rule
+ (targets bad-name.out)
+ (deps
+  (:gen ../../prompts/gen/gen.exe)
+  fixtures/skills/Bad_Name.md)
+ (action
+  (with-outputs-to
+   %{targets}
+   (with-accepted-exit-codes
+    1
+    (run %{gen} -o bad-name.ml fixtures/skills/Bad_Name.md)))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff bad-name.expected bad-name.out)))
+
+(rule
+ (targets missing-description.out)
+ (deps
+  (:gen ../../prompts/gen/gen.exe)
+  fixtures/skills/missing-description.md)
+ (action
+  (with-outputs-to
+   %{targets}
+   (with-accepted-exit-codes
+    1
+    (run
+     %{gen}
+     -o
+     missing-description.ml
+     fixtures/skills/missing-description.md)))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff missing-description.expected missing-description.out)))
+
+(rule
+ (targets unterminated.out)
+ (deps
+  (:gen ../../prompts/gen/gen.exe)
+  fixtures/skills/unterminated.md)
+ (action
+  (with-outputs-to
+   %{targets}
+   (with-accepted-exit-codes
+    1
+    (run %{gen} -o unterminated.ml fixtures/skills/unterminated.md)))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff unterminated.expected unterminated.out)))
+
+(rule
+ (targets nested.out)
+ (deps
+  (:gen ../../prompts/gen/gen.exe)
+  fixtures/deep/skills/nested/file.md)
+ (action
+  (with-outputs-to
+   %{targets}
+   (with-accepted-exit-codes
+    1
+    (run %{gen} -o nested.ml fixtures/deep/skills/nested/file.md)))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff nested.expected nested.out)))
+
+(rule
+ (targets duplicate.out)
+ (deps
+  (:gen ../../prompts/gen/gen.exe)
+  fixtures/dup/a/skills/same.md
+  fixtures/dup/b/skills/same.md)
+ (action
+  (with-outputs-to
+   %{targets}
+   (with-accepted-exit-codes
+    1
+    (run
+     %{gen}
+     -o
+     duplicate.ml
+     fixtures/dup/a/skills/same.md
+     fixtures/dup/b/skills/same.md)))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff duplicate.expected duplicate.out)))

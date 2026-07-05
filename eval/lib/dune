@@ -1,0 +1,4 @@
+(library
+ (name spice_eval)
+ (modules spice_eval usage check task result report)
+ (libraries jsont))

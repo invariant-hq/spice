@@ -1,0 +1,3 @@
+(library
+ (name oauth2)
+ (libraries base64 spice.digest jsont jsont.bytesrw uri))

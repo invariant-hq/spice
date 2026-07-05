@@ -1,0 +1,12 @@
+(library
+ (name spice_session_store)
+ (libraries
+  eio
+  eio.unix
+  jsont.bytesrw
+  logs
+  spice_diagnostic
+  spice_digest
+  spice_path
+  spice_session
+  unix))

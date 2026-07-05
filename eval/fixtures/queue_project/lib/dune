@@ -1,0 +1,2 @@
+(library
+ (name queue_contract))

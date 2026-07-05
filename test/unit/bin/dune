@@ -1,0 +1,4 @@
+(executable
+ (name fake_llama_server)
+ (modules fake_llama_server)
+ (libraries unix))

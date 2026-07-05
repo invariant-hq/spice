@@ -1,0 +1,17 @@
+(library
+ (name spice_auth)
+ (libraries
+  base64
+  cohttp
+  cohttp-eio
+  eio
+  eio.unix
+  jsont
+  jsont.bytesrw
+  logs
+  oauth2
+  oauth2_eio
+  spice_account
+  spice_llm
+  spice_provider
+  uri))

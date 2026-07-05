@@ -1,0 +1,20 @@
+(library
+ (name spice_llm_openai)
+ (private_modules api)
+ (libraries
+  ca-certs
+  cohttp
+  cohttp-eio
+  cstruct
+  domain-name
+  eio
+  eio.unix
+  jsont
+  jsont.bytesrw
+  logs
+  mirage-crypto-rng
+  mirage-crypto-rng.unix
+  spice_llm
+  tls
+  tls-eio
+  uri))

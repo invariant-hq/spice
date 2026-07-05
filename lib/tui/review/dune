@@ -1,0 +1,12 @@
+(library
+ (name spice_tui_review)
+ (private_modules review_panel review_rows review_diff review_compose style)
+ (libraries
+  mosaic
+  mosaic.ui
+  matrix
+  spice_review
+  spice_cr
+  spice_diff
+  spice_digest
+  spice_path))

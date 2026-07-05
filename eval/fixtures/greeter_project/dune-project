@@ -1,0 +1,10 @@
+(lang dune 3.22)
+
+(name eval_greeter)
+
+(package
+ (name eval_greeter)
+ (allow_empty)
+ (depends
+  (ocaml
+   (>= 5.5.0))))

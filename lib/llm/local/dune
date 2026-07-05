@@ -1,0 +1,17 @@
+(library
+ (name spice_llm_local)
+ (private_modules api)
+ (libraries
+  cohttp
+  cohttp-eio
+  cstruct
+  digestif
+  eio
+  eio.unix
+  jsont
+  jsont.bytesrw
+  logs
+  unix
+  uri
+  spice_llm
+  spice_modelfit))

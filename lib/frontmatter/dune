@@ -1,0 +1,4 @@
+(library
+ (name spice_frontmatter)
+ (public_name spice.frontmatter)
+ (libraries yaml))

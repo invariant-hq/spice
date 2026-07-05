@@ -1,0 +1,624 @@
+(*---------------------------------------------------------------------------
+  Copyright (c) 2026 Invariant Systems. All rights reserved.
+  SPDX-License-Identifier: ISC
+ ---------------------------------------------------------------------------*)
+
+open Import
+module Patch = Spice_patch
+
+let name = "apply_patch"
+let default_max_file_bytes = 1024 * 1024
+let json_null = Json.null ()
+let description = Spice_prompts.Tools.apply_patch
+
+let json_obj fields =
+  Json.object'
+    (List.map (fun (name, value) -> Json.mem (Json.name name) value) fields)
+
+module Input = struct
+  type t = { patch : string; operations : Patch.Operation.t list }
+
+  let make ~patch =
+    if String.is_empty patch then Error "patch must not be empty"
+    else
+      match Patch.parse patch with
+      | Ok operations -> Ok { patch; operations }
+      | Error error -> Error (Patch.Error.message error)
+
+  let patch t = t.patch
+  let operations t = t.operations
+
+  let make_from_json patch =
+    match make ~patch with
+    | Ok input -> input
+    | Error message -> invalid_arg message
+
+  let codec =
+    Jsont.Object.map ~kind:"apply_patch input" (fun patch ->
+        decode_invalid_arg (fun () -> make_from_json patch))
+    |> Jsont.Object.mem "patch" Jsont.string ~enc:patch
+    |> Jsont.Object.error_unknown |> Jsont.Object.finish
+
+  let schema =
+    json_obj
+      [
+        ("type", Json.string "object");
+        ( "properties",
+          json_obj
+            [
+              ( "patch",
+                json_obj
+                  [
+                    ("type", Json.string "string");
+                    ( "description",
+                      Json.string
+                        "Complete Codex-style patch text. Patch paths must be \
+                         workspace-root relative." );
+                  ] );
+            ] );
+        ("required", Json.list [ Json.string "patch" ]);
+        ("additionalProperties", Json.bool false);
+      ]
+
+  let contract = Tool.Input.make codec ~schema
+  let decode json = Tool.Input.decode contract json
+end
+
+module Output = struct
+  type kind = Create | Modify | Delete | Move of { from : Workspace.Path.t }
+  type entry = { path : Workspace.Path.t; kind : kind; diff : string }
+
+  let make_entry ~path ~kind ~diff = { path; kind; diff }
+  let path t = t.path
+  let kind t = t.kind
+
+  let source_path t =
+    match t.kind with
+    | Move { from } -> Some from
+    | Create | Modify | Delete -> None
+
+  let entry_diff (t : entry) = t.diff
+
+  type t = {
+    entries : entry list;
+    diff : string;
+    edit : Edit.Result.t;
+    created_directories : Workspace.Path.t list;
+  }
+
+  let make ~entries ~diff ~edit ~created_directories =
+    { entries; diff; edit; created_directories }
+
+  let entries t = t.entries
+  let paths t = List.map path t.entries
+  let diff (t : t) = t.diff
+
+  let logical_change (entry : entry) =
+    let kind =
+      match entry.kind with
+      | Create -> Receipt.Logical_change.Create
+      | Modify -> Receipt.Logical_change.Modify
+      | Delete -> Receipt.Logical_change.Delete
+      | Move { from } -> Receipt.Logical_change.Move { from }
+    in
+    ({
+       Receipt.Logical_change.path = entry.path;
+       Receipt.Logical_change.kind;
+       Receipt.Logical_change.diff = Some (entry_diff entry);
+     }
+      : Receipt.Logical_change.t)
+
+  let receipt t =
+    Receipt.make ~logical_changes:(List.map logical_change t.entries) t.edit
+
+  let kind_to_string = function
+    | Create -> "create"
+    | Modify -> "modify"
+    | Delete -> "delete"
+    | Move _ -> "move"
+
+  let summary_line t =
+    match t.kind with
+    | Create -> "create " ^ Workspace.Path.display t.path
+    | Modify -> "modify " ^ Workspace.Path.display t.path
+    | Delete -> "delete " ^ Workspace.Path.display t.path
+    | Move { from } ->
+        "move "
+        ^ Workspace.Path.display from
+        ^ " -> "
+        ^ Workspace.Path.display t.path
+
+  let text t =
+    let lines =
+      "Success. Updated the following files:" :: List.map summary_line t.entries
+    in
+    String.concat "\n" lines ^ "\n"
+
+  let entry_json (t : entry) =
+    json_obj
+      [
+        ("path", Json.string (Workspace.Path.display t.path));
+        ("operation", Json.string (kind_to_string t.kind));
+        ( "source_path",
+          match source_path t with
+          | None -> json_null
+          | Some path -> Json.string (Workspace.Path.display path) );
+        ("diff", Json.string (entry_diff t));
+      ]
+
+  let json t =
+    json_obj
+      [
+        ("operation", Json.string "apply_patch");
+        ( "paths",
+          Json.list
+            (List.map
+               (fun path -> Json.string (Workspace.Path.display path))
+               (paths t)) );
+        ("changed_files", Json.list (List.map entry_json t.entries));
+        ( "created_directories",
+          Json.list
+            (List.map
+               (fun path -> Json.string (Workspace.Path.display path))
+               t.created_directories) );
+        ("diff", Json.string t.diff);
+      ]
+
+  let type_id : t Type.Id.t = Type.Id.make ()
+
+  let encode t =
+    Tool.Output.make ~text:(text t) ~json:(json t)
+      ~value:(Tool.Output.pack type_id t)
+      ()
+
+  let of_tool_output output = Tool.Output.value type_id output
+end
+
+type plan_error = Fs of Fs.Error.t | Edit of Edit.Error.t | Patch of string
+
+type planned = {
+  edit : Edit.t;
+  entries : Output.entry list;
+  diff : string;
+  create_parents : Workspace.Path.t list;
+}
+
+let abs_string path = Spice_path.Abs.to_string (Workspace.Path.abs path)
+let path_key path = abs_string path
+let utf8_bom = "\239\187\191"
+let has_utf8_bom text = String.starts_with ~prefix:utf8_bom text
+let drop_utf8_bom text = String.drop_first (String.length utf8_bom) text
+
+type line_ending = Lf | Crlf
+
+let target_line_ending text =
+  let rec loop saw_crlf saw_lf i =
+    if i >= String.length text then if saw_crlf && not saw_lf then Crlf else Lf
+    else if
+      Char.equal text.[i] '\r'
+      && i + 1 < String.length text
+      && Char.equal text.[i + 1] '\n'
+    then loop true saw_lf (i + 2)
+    else if Char.equal text.[i] '\n' then loop saw_crlf true (i + 1)
+    else loop saw_crlf saw_lf (i + 1)
+  in
+  loop false false 0
+
+let normalize_newlines_to_lf text =
+  let b = Buffer.create (String.length text) in
+  let rec loop i =
+    if i = String.length text then Buffer.contents b
+    else if Char.equal text.[i] '\r' then begin
+      Buffer.add_char b '\n';
+      if i + 1 < String.length text && Char.equal text.[i + 1] '\n' then
+        loop (i + 2)
+      else loop (i + 1)
+    end
+    else begin
+      Buffer.add_char b text.[i];
+      loop (i + 1)
+    end
+  in
+  loop 0
+
+let restore_line_endings style text =
+  match style with
+  | Lf -> text
+  | Crlf ->
+      let b = Buffer.create (String.length text) in
+      String.iter
+        (fun c ->
+          if Char.equal c '\n' then Buffer.add_string b "\r\n"
+          else Buffer.add_char b c)
+        text;
+      Buffer.contents b
+
+let patch_contents contents =
+  let bom, text =
+    if has_utf8_bom contents then (`Preserve_bom, drop_utf8_bom contents)
+    else (`Raw, contents)
+  in
+  let line_ending = target_line_ending text in
+  (bom, line_ending, normalize_newlines_to_lf text)
+
+let restore_patch_contents bom line_ending text =
+  let text = restore_line_endings line_ending text in
+  match bom with `Preserve_bom -> utf8_bom ^ text | `Raw -> text
+
+let remove_dir_if_empty path =
+  try Unix.rmdir (abs_string path) with Unix.Unix_error _ -> ()
+
+let rollback_created_dirs dirs = List.iter remove_dir_if_empty (List.rev dirs)
+
+(* [regular_opt] and [ensure_parent_dirs] can surface [Unexpected_kind], which
+   apply_patch words by its own tool context rather than [Fs.Error.message]. *)
+let fs_error_message = function
+  | Fs.Error.Unexpected_kind { path; actual = `Symbolic_link; _ } ->
+      Workspace.Path.display path ^ ": symlink targets are not supported"
+  | Fs.Error.Unexpected_kind { path; _ } ->
+      Workspace.Path.display path ^ ": not a regular file"
+  | ( Fs.Error.Workspace _ | Fs.Error.Not_found _ | Fs.Error.Escapes_workspace _
+    | Fs.Error.Io _ ) as error ->
+      Fs.Error.message error
+
+let failed_edit = Edit_error.failed
+
+let failed_plan = function
+  | Fs error -> Fs_error.failed ~message:(fs_error_message error) error
+  | Edit error -> failed_edit error
+  | Patch message -> Tool.Result.failed `Invalid_input message
+
+let root_path workspace rel =
+  Workspace.Path.make ~root:(Workspace.Path.root (Workspace.cwd workspace)) rel
+
+let duplicate_output operations workspace =
+  let rec loop seen = function
+    | [] -> None
+    | operation :: operations ->
+        let path =
+          root_path workspace (Patch.Operation.output_path operation)
+        in
+        if Workspace.Path.Set.mem path seen then Some path
+        else loop (Workspace.Path.Set.add path seen) operations
+  in
+  loop Workspace.Path.Set.empty operations
+
+let is_strict_ancestor ~parent path =
+  let parent = path_key parent in
+  let path = path_key path in
+  (not (String.equal parent path))
+  && (String.equal parent Filename.dir_sep
+     || String.starts_with ~prefix:(parent ^ Filename.dir_sep) path)
+
+let operation_paths workspace operation =
+  let source = root_path workspace (Patch.Operation.path operation) in
+  let output = root_path workspace (Patch.Operation.output_path operation) in
+  if Workspace.Path.equal source output then [ source ] else [ source; output ]
+
+let nested_path_conflict operations workspace =
+  let paths = List.concat_map (operation_paths workspace) operations in
+  let rec check_path path = function
+    | [] -> None
+    | candidate :: candidates ->
+        if is_strict_ancestor ~parent:path candidate then Some (path, candidate)
+        else if is_strict_ancestor ~parent:candidate path then
+          Some (candidate, path)
+        else check_path path candidates
+  in
+  let rec loop = function
+    | [] -> None
+    | path :: paths -> (
+        match check_path path paths with
+        | Some _ as conflict -> conflict
+        | None -> loop paths)
+  in
+  loop paths
+
+let nested_path_conflict_message (parent, child) =
+  Printf.sprintf "%s: patch path conflicts with nested path %s"
+    (Workspace.Path.display parent)
+    (Workspace.Path.display child)
+
+let check_missing ~fs ~workspace path =
+  match Fs.regular_opt ~fs ~workspace path with
+  | Error error -> Error (Fs error)
+  | Ok None -> Ok ()
+  | Ok (Some _) ->
+      Error
+        (Edit (Edit.Error.state_mismatch ~path ~expected:`Missing ~actual:`Text))
+
+let check_new_contents ~max_bytes path contents =
+  if not (String.is_valid_utf_8 contents) then
+    Error (Edit (Edit.Error.invalid_text ~path "invalid UTF-8"))
+  else if String.length contents > max_bytes then
+    Error
+      (Edit
+         (Edit.Error.too_large ~path
+            ~size:(Int64.of_int (String.length contents))
+            ~max_size:(Int64.of_int max_bytes)))
+  else if Text_helpers.looks_binary contents then
+    Error (Edit (Edit.Error.invalid_text ~path "binary file"))
+  else Ok ()
+
+let plan_add ~fs ~workspace ~max_bytes path contents =
+  match check_new_contents ~max_bytes path contents with
+  | Error _ as error -> error
+  | Ok () -> (
+      match check_missing ~fs ~workspace path with
+      | Error _ as error -> error
+      | Ok () -> (
+          match Edit.create ~path ~contents with
+          | Error error -> Error (Edit error)
+          | Ok edit ->
+              let diff = Edit.diff edit |> Spice_diff.to_string in
+              Ok
+                ( edit,
+                  Output.make_entry ~path ~kind:Output.Create ~diff,
+                  Some path )))
+
+let plan_delete ~fs ~workspace ~max_bytes path =
+  match Fs.Edit.read_text ~fs ~workspace ~max_bytes path with
+  | Error error -> Error (Edit error)
+  | Ok before -> (
+      match Edit.delete ~path ~before with
+      | Error error -> Error (Edit error)
+      | Ok edit ->
+          let diff = Edit.diff edit |> Spice_diff.to_string in
+          Ok (edit, Output.make_entry ~path ~kind:Output.Delete ~diff, None))
+
+let patch_apply_error path error =
+  let mismatch =
+    match error.Patch.Update.mismatch with
+    | Patch.Update.Missing_context line ->
+        Printf.sprintf "missing context %S" line
+    | Patch.Update.Missing_lines { old_lines; end_of_file } ->
+        let eof = if end_of_file then " at end of file" else "" in
+        Printf.sprintf "missing lines%s: %S" eof (String.concat "\\n" old_lines)
+  in
+  Patch
+    (Printf.sprintf "%s: patch chunk %d failed: %s"
+       (Workspace.Path.display path)
+       error.Patch.Update.chunk mismatch)
+
+let plan_update ~fs ~workspace ~max_bytes path move_to update =
+  match Fs.Edit.read_text ~fs ~workspace ~max_bytes path with
+  | Error error -> Error (Edit error)
+  | Ok before -> (
+      let bom, line_ending, patch_before = patch_contents before in
+      match Patch.Update.apply update patch_before with
+      | Error error -> Error (patch_apply_error path error)
+      | Ok after -> (
+          let after = restore_patch_contents bom line_ending after in
+          let output_path = Option.value move_to ~default:path in
+          match check_new_contents ~max_bytes output_path after with
+          | Error _ as error -> error
+          | Ok () -> (
+              match move_to with
+              | None -> (
+                  match Edit.rewrite ~path ~before ~after with
+                  | Error error -> Error (Edit error)
+                  | Ok edit ->
+                      let diff = Edit.diff edit |> Spice_diff.to_string in
+                      Ok
+                        ( edit,
+                          Output.make_entry ~path ~kind:Output.Modify ~diff,
+                          None ))
+              | Some destination -> (
+                  match check_missing ~fs ~workspace destination with
+                  | Error _ as error -> error
+                  | Ok () -> (
+                      match
+                        ( Edit.delete ~path ~before,
+                          Edit.create ~path:destination ~contents:after )
+                      with
+                      | Error error, _ | _, Error error -> Error (Edit error)
+                      | Ok delete, Ok create -> (
+                          match Edit.concat [ delete; create ] with
+                          | Error error -> Error (Edit error)
+                          | Ok edit ->
+                              let diff =
+                                Edit.diff edit |> Spice_diff.to_string
+                              in
+                              Ok
+                                ( edit,
+                                  Output.make_entry ~path:destination
+                                    ~kind:(Output.Move { from = path })
+                                    ~diff,
+                                  Some destination )))))))
+
+let plan_operation ~fs ~workspace ~max_bytes = function
+  | Patch.Operation.Add { path; contents } ->
+      plan_add ~fs ~workspace ~max_bytes (root_path workspace path) contents
+  | Patch.Operation.Delete { path } ->
+      plan_delete ~fs ~workspace ~max_bytes (root_path workspace path)
+  | Patch.Operation.Update { path; move_to; update } ->
+      let path = root_path workspace path in
+      let move_to = Option.map (root_path workspace) move_to in
+      plan_update ~fs ~workspace ~max_bytes path move_to update
+
+let plan ~fs ~workspace ~max_bytes input =
+  let operations = Input.operations input in
+  match nested_path_conflict operations workspace with
+  | Some conflict -> Error (Patch (nested_path_conflict_message conflict))
+  | None -> (
+      match duplicate_output operations workspace with
+      | Some path -> Error (Edit (Edit.Error.duplicate_path path))
+      | None ->
+          let rec loop edits entries parent_targets = function
+            | [] -> (
+                match Edit.concat (List.rev edits) with
+                | Error error -> Error (Edit error)
+                | Ok edit ->
+                    let entries = List.rev entries in
+                    Ok
+                      {
+                        edit;
+                        entries;
+                        diff =
+                          String.concat ""
+                            (List.map
+                               (fun entry -> Output.entry_diff entry)
+                               entries);
+                        create_parents = List.rev parent_targets;
+                      })
+            | operation :: operations -> (
+                match plan_operation ~fs ~workspace ~max_bytes operation with
+                | Error _ as error -> error
+                | Ok (edit, entry, parent_target) ->
+                    let parent_targets =
+                      match parent_target with
+                      | None -> parent_targets
+                      | Some path -> path :: parent_targets
+                    in
+                    loop (edit :: edits) (entry :: entries) parent_targets
+                      operations)
+          in
+          loop [] [] [] operations)
+
+(* Evidence renders the parsed input operations, never the planned change
+   texts: an edit plan's before/after images contain file contents read from
+   disk during planning, which the input-only evidence rule forbids. Hunk
+   context lines are model-supplied patch input, so they are safe to render. *)
+let evidence_of_operation ~path = function
+  | Patch.Operation.Add { contents; _ } ->
+      Some (Change_evidence.creation ~path contents)
+  | Patch.Operation.Update { update; _ } ->
+      let chunks = Patch.Update.chunks update in
+      let side f =
+        String.concat "\n"
+          (List.concat_map (fun (chunk : Patch.Update.chunk) -> f chunk) chunks)
+      in
+      Some
+        (Change_evidence.modify ~path
+           ~before:(side (fun chunk -> chunk.Patch.Update.old_lines))
+           ~after:(side (fun chunk -> chunk.Patch.Update.new_lines)))
+  | Patch.Operation.Delete _ ->
+      (* The removed contents are unknowable from input alone. *)
+      None
+
+(* Permission review is conservative and syntactic: an add may overwrite and a
+   move is reviewed as source delete plus destination create. Planning after
+   approval performs the precise stale-safe checks. *)
+let access_evidence_of_operation ~workspace operation =
+  let access op rel =
+    let path = root_path workspace rel in
+    (Permission.Access.path ~op path, path)
+  in
+  match operation with
+  | Patch.Operation.Add { path; _ } ->
+      let access, path = access `Create path in
+      [ (access, evidence_of_operation ~path operation) ]
+  | Patch.Operation.Delete { path } ->
+      let access =
+        Permission.Access.path ~op:`Delete (root_path workspace path)
+      in
+      [ (access, None) ]
+  | Patch.Operation.Update { path; move_to = None; _ } ->
+      let access, path = access `Modify path in
+      [ (access, evidence_of_operation ~path operation) ]
+  | Patch.Operation.Update { path; move_to = Some destination; _ } ->
+      let delete_access =
+        Permission.Access.path ~op:`Delete (root_path workspace path)
+      in
+      let create_access, destination = access `Create destination in
+      [
+        (delete_access, None);
+        (create_access, evidence_of_operation ~path:destination operation);
+      ]
+
+let syntactic_accesses ~workspace input =
+  List.concat_map
+    (access_evidence_of_operation ~workspace)
+    (Input.operations input)
+
+let permissions ~workspace input =
+  match syntactic_accesses ~workspace input with
+  | [] -> []
+  | pairs ->
+      [
+        Permission.Request.make ~source:name
+          (List.map
+             (fun (access, change) ->
+               Permission.Request.Item.make ?change access)
+             pairs);
+      ]
+
+let ensure_parent_dirs ~fs ~workspace targets =
+  let rec loop created = function
+    | [] -> Ok (List.rev created)
+    | path :: paths -> (
+        match Fs.ensure_parent_dirs ~fs ~workspace path with
+        | Error error ->
+            rollback_created_dirs created;
+            Error (Fs error)
+        | Ok dirs -> loop (List.rev_append dirs created) paths)
+  in
+  loop [] targets
+
+let apply ~fs ~workspace ~max_bytes plan =
+  let io, created_directories =
+    Fs.Edit.io ~fs ~workspace ~max_bytes ~create_parent_dirs:true
+      ~allow_remove:true ()
+  in
+  match Edit.apply ~io ~workspace plan with
+  | Ok result -> Ok (result, created_directories ())
+  | Error error -> Error error
+
+let failed_apply_error (error : Edit.Apply_error.t) =
+  failed_edit (Edit.Apply_error.error error)
+
+let rollback_precreated_dirs_on_preapply_error precreated
+    (error : Edit.Apply_error.t) =
+  match (Edit.Apply_error.applied error, Edit.Apply_error.error error) with
+  | ( [],
+      ( Edit.Error.Conflict _ | Edit.Error.State_mismatch _
+      | Edit.Error.Duplicate_path _ | Edit.Error.Invalid_text _
+      | Edit.Error.Too_large _ | Edit.Error.Workspace _
+      | Edit.Error.Out_of_workspace _ | Edit.Error.Protected_path _ ) ) ->
+      rollback_created_dirs precreated
+  | [], Edit.Error.Io _ | _ :: _, _ -> ()
+
+let default_cancelled () = false
+
+let run ~fs ~workspace ?(max_file_bytes = default_max_file_bytes)
+    ?(cancelled = default_cancelled) input =
+  if max_file_bytes < 0 then invalid_arg "max_file_bytes must be non-negative";
+  if cancelled () then
+    Tool.Result.interrupted ~reason:"tool call cancelled" ~cancelled:true ()
+  else
+    match plan ~fs ~workspace ~max_bytes:max_file_bytes input with
+    | Error error -> failed_plan error
+    | Ok planned -> (
+        if cancelled () then
+          Tool.Result.interrupted ~reason:"tool call cancelled" ~cancelled:true
+            ()
+        else
+          match ensure_parent_dirs ~fs ~workspace planned.create_parents with
+          | Error error -> failed_plan error
+          | Ok precreated -> (
+              if cancelled () then (
+                rollback_created_dirs precreated;
+                Tool.Result.interrupted ~reason:"tool call cancelled"
+                  ~cancelled:true ())
+              else
+                match
+                  apply ~fs ~workspace ~max_bytes:max_file_bytes planned.edit
+                with
+                | Error error ->
+                    rollback_precreated_dirs_on_preapply_error precreated error;
+                    failed_apply_error error
+                | Ok (edit, io_created) ->
+                    Tool.Result.completed
+                      ~output:
+                        (Output.make ~entries:planned.entries ~diff:planned.diff
+                           ~edit ~created_directories:(precreated @ io_created))
+                      ()))
+
+let tool ~fs ~workspace ?max_file_bytes () =
+  Tool.make ~name ~description ~input:Input.contract ~output:Output.encode
+    ~permissions:(fun input -> permissions ~workspace input)
+    ~run:(fun ctx input ->
+      run ~fs ~workspace ?max_file_bytes
+        ~cancelled:(fun () -> Tool.Context.cancelled ctx)
+        input)
+    ()

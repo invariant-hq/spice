@@ -1,0 +1,10 @@
+(lang dune 3.22)
+
+(name eval_auth)
+
+(package
+ (name eval_auth)
+ (allow_empty)
+ (depends
+  (ocaml
+   (>= 5.5.0))))

@@ -1,0 +1,9 @@
+(library
+ (name spice_mutation)
+ (libraries
+  jsont
+  spice_digest
+  spice_path
+  spice_workspace
+  spice_edit
+  spice_session))

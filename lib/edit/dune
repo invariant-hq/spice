@@ -1,0 +1,3 @@
+(library
+ (name spice_edit)
+ (libraries spice_diff spice_digest spice_workspace))

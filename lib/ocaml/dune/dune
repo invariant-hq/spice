@@ -1,0 +1,14 @@
+(library
+ (name spice_ocaml_dune)
+ (modules spice_ocaml_dune)
+ (libraries
+  spice_ocaml
+  spice_workspace
+  spice_path
+  csexp
+  cstruct
+  dune-rpc
+  eio
+  logs
+  unix
+  xdg))

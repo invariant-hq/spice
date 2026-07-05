@@ -1,0 +1,182 @@
+(*---------------------------------------------------------------------------
+  Copyright (c) 2026 Invariant Systems. All rights reserved.
+  SPDX-License-Identifier: ISC
+ ---------------------------------------------------------------------------*)
+
+module Env = Env
+module Config = Config
+module Config_home = Config_home
+module Trust = Trust
+module Host = Host
+module Account = Account
+module Models = Models
+module Reason = Reason
+module Permission = Permission
+module Sandbox = Sandbox
+module Turn_options = Turn_options
+module Context = Context
+module Skills = Skills
+module Notice_queue = Notice_queue
+module Compactor = Compactor
+module Mutations = Mutations
+module Artifacts = Artifacts
+module Handler = Handler
+module Goal_run = Goal_run
+module Session = Session
+module Runner = Runner
+module Live = Live
+module Toolset = Toolset
+module Jobs = Jobs
+module Run = Run
+
+let ( let* ) = Result.bind
+
+let bootstrap ~stdenv ~registry ?cwd ?(overrides = []) () =
+  let process_env = Env.current () in
+  let* config =
+    Config.load ~stdenv ~process_env ?cwd ~overrides ()
+    |> Result.map_error (fun error -> Host.Error.Config error)
+  in
+  Host.load ~stdenv ~registry ~config ()
+
+let timestamp_now stdenv =
+  Eio.Stdenv.clock stdenv |> Eio.Time.now |> Float.floor |> Int64.of_float
+
+let with_refresh_retry ~rebuild ~refresh client =
+  let provider = Spice_llm.Client.provider client in
+  let current = ref client in
+  let run ~cancelled request =
+    match Spice_llm.Client.stream ~cancelled !current request with
+    | Error error as result -> (
+        match Spice_llm.Error.kind error with
+        | Spice_llm.Error.Auth -> (
+            match refresh () with
+            | Ok (Some credential) -> (
+                match rebuild credential with
+                | Ok client ->
+                    current := client;
+                    Spice_llm.Client.stream ~cancelled client request
+                | Error (_ : Host.Error.t) -> result)
+            | Ok None | Error (_ : Host.Error.t) -> result)
+        | _ -> result)
+    | result -> result
+  in
+  Spice_llm.Client.make ~provider ~run ()
+
+let with_model_artifact_prepare ~sw ~stdenv ?observe_model_artifact adapter
+    model client =
+  match Host.Adapter.model_artifact adapter with
+  | None -> client
+  | Some { Host.Adapter.prepare; _ } ->
+      let prepared = ref false in
+      let observe =
+        Option.value observe_model_artifact ~default:(fun _progress -> ())
+      in
+      let run ~cancelled request =
+        if !prepared then Spice_llm.Client.stream ~cancelled client request
+        else
+          match prepare ~sw ~stdenv ~cancelled ~observe model with
+          | Error error -> Error error
+          | Ok () ->
+              prepared := true;
+              Spice_llm.Client.stream ~cancelled client request
+      in
+      Spice_llm.Client.make ~provider:(Spice_llm.Client.provider client) ~run ()
+
+let client ~sw ~stdenv ?observe_model_artifact ?name ?process host model =
+  let provider = Spice_provider.Model.provider model in
+  let provider_requires_credential =
+    match Host.provider host provider with
+    | None -> true
+    | Some declaration ->
+        let auth = Spice_provider.auth declaration in
+        not
+          (List.is_empty (Spice_provider.Auth.env auth)
+          && List.is_empty (Spice_provider.Auth.logins auth))
+  in
+  let map_account_error result =
+    Result.map_error (Account.Error.to_host host) result
+  in
+  let* account = Account.load ~stdenv ?process host |> map_account_error in
+  let* resolved =
+    Account.credential account ?name provider |> map_account_error
+  in
+  match resolved with
+  | None when provider_requires_credential ->
+      Error (Host.Error.Missing_credential provider)
+  | None -> (
+      match Host.adapter host provider with
+      | None -> Error (Host.Error.No_adapter provider)
+      | Some adapter ->
+          let base_url =
+            Config.Models.provider_base_url
+              (Config.models (Host.config host))
+              ~provider
+          in
+          Host.Adapter.build adapter ~sw ~stdenv ?base_url None
+          |> Result.map
+               (with_model_artifact_prepare ~sw ~stdenv ?observe_model_artifact
+                  adapter model))
+  | Some credential -> (
+      match Host.adapter host provider with
+      | None -> Error (Host.Error.No_adapter provider)
+      | Some adapter -> (
+          let base_url =
+            Config.Models.provider_base_url
+              (Config.models (Host.config host))
+              ~provider
+          in
+          let* refreshed =
+            Account.refresh ~sw ~stdenv ~now:(timestamp_now stdenv) ?name
+              account provider
+          in
+          let credential = Option.value refreshed ~default:credential in
+          let build credential =
+            Host.Adapter.build adapter ~sw ~stdenv ?base_url (Some credential)
+            |> Result.map
+                 (with_model_artifact_prepare ~sw ~stdenv
+                    ?observe_model_artifact adapter model)
+          in
+          let* client = build credential in
+          match
+            ( Host.Adapter.refresh adapter,
+              Spice_account.Credential.kind credential )
+          with
+          | Some _, Spice_account.Secret.Kind.OAuth ->
+              let refresh () =
+                Account.refresh ~sw ~stdenv ~now:(timestamp_now stdenv)
+                  ~force:true ?name account provider
+              in
+              Ok (with_refresh_retry ~rebuild:build ~refresh client)
+          | ( Some _,
+              ( Spice_account.Secret.Kind.Api_key
+              | Spice_account.Secret.Kind.Bearer ) )
+          | None, _ ->
+              Ok client))
+
+let model_artifact_status host model =
+  let provider = Spice_provider.Model.provider model in
+  match Host.adapter host provider with
+  | None -> None
+  | Some adapter -> (
+      match Host.Adapter.model_artifact adapter with
+      | None -> None
+      | Some artifact -> artifact.Host.Adapter.status model)
+
+let download_model_artifact host ~sw ~stdenv ?observe ~force model =
+  let provider = Spice_provider.Model.provider model in
+  match Host.adapter host provider with
+  | None -> None
+  | Some adapter -> (
+      match Host.Adapter.model_artifact adapter with
+      | None -> None
+      | Some artifact ->
+          let observe = Option.value observe ~default:(fun _progress -> ()) in
+          Some
+            (artifact.Host.Adapter.download ~sw ~stdenv ~force ~observe model))
+
+let workspace host =
+  let root = Config.cwd (Host.config host) in
+  Ok (Spice_workspace.single (Spice_workspace.Root.make root))
+
+let default_ignore = Watchers.Fswatch.default_ignore

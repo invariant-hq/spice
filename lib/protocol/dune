@@ -1,0 +1,13 @@
+(library
+ (name spice_protocol)
+ (private_modules decode status_lifecycle)
+ (libraries
+  jsont
+  spice_diagnostic
+  spice_llm
+  spice_mutation
+  spice_path
+  spice_permission
+  spice_prompts
+  spice_session
+  spice_tool))

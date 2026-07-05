@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  build:
+    name: Build and test
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    # First uncached run builds the OCaml toolchain and all locked
+    # dependencies from source; the cap guards against hung TUI tests, not
+    # against slow builds.
+    timeout-minutes: 90
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      # Installs a stable dune binary, enables package management, locks and
+      # builds dependencies (dune.lock is not committed), then runs
+      # `dune build` and `dune runtest`. Caches the dune cache and _build
+      # across runs.
+      - name: Set up dune, build, and test
+        uses: ocaml-dune/setup-dune@v2
+        with:
+          # Keep in sync with DUNE_VERSION in release.yml so a green CI
+          # predicts a green release build.
+          version: 3.23.1

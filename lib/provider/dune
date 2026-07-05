@@ -1,0 +1,3 @@
+(library
+ (name spice_provider)
+ (libraries oauth2 spice_account spice_llm uri))

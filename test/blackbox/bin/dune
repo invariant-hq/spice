@@ -1,0 +1,4 @@
+(executable
+ (name spice_fake_provider_server)
+ (modules spice_fake_provider_server)
+ (libraries jsont jsont.bytesrw unix))

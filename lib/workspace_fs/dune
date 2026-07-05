@@ -1,0 +1,11 @@
+(library
+ (name spice_workspace_fs)
+ (libraries
+  cstruct
+  eio
+  logs
+  optint
+  spice_edit
+  spice_path
+  spice_workspace
+  unix))

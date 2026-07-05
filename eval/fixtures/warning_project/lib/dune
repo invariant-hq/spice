@@ -1,0 +1,4 @@
+(library
+ (name warning_case)
+ (flags
+  (:standard -w +a-70 -warn-error +a)))

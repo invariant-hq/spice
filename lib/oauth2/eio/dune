@@ -1,0 +1,17 @@
+(library
+ (name oauth2_eio)
+ (libraries
+  oauth2
+  uri
+  eio
+  cohttp
+  cohttp-eio
+  jsont
+  jsont.bytesrw
+  logs
+  tls-eio
+  ca-certs
+  tls
+  domain-name
+  ipaddr
+  mirage-crypto-rng.unix))

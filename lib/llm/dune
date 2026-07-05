@@ -1,0 +1,3 @@
+(library
+ (name spice_llm)
+ (libraries jsont jsont.bytesrw spice_digest))

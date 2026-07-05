@@ -1,0 +1,81 @@
+# Configuration
+
+Spice configuration is JSON, resolved from layered sources. `spice config
+show --origins` prints the effective configuration and where each value came
+from; `spice config path` prints the file locations.
+
+## Files and precedence
+
+Values are resolved in increasing precedence:
+
+1. User config: `~/.config/spice/config.json` (or
+   `$XDG_CONFIG_HOME/spice/config.json`).
+2. Project config: `.spice/config.json` — shared, checked into the project.
+3. Project-local config: `.spice/config.local.json` — personal, gitignored.
+4. Extra config file named by the `SPICE_CONFIG` environment variable.
+5. `SPICE_*` environment overrides.
+6. Runtime overrides, such as run flags (`--model`, `--sandbox`, ...).
+
+Project layers apply only after the workspace is trusted with `spice trust`
+(revoked with `spice untrust`). Until then, project configuration is ignored.
+
+## Commands
+
+```sh
+spice config path                 # print config file locations
+spice config show [--json] [--origins]
+spice config validate [--strict] [PATH]
+spice config get KEY
+spice config set KEY VALUE [--project | --project-local]
+spice config unset KEY [--project | --project-local]
+spice config init                 # scaffold a config file
+```
+
+Editing commands write the user config by default; `--project` targets
+`.spice/config.json` and `--project-local` targets `.spice/config.local.json`.
+
+## Keys
+
+Keys supported by `get`, `set`, and `unset`:
+
+| Key | Meaning |
+| --- | --- |
+| `model` | Main model selector, e.g. `openai/gpt-5`. |
+| `small_model` | Small-model selector used for cheaper helper tasks. |
+| `reasoning` | Default reasoning effort: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. |
+| `tui.thinking` | Whether the TUI shows thinking summaries. |
+| `providers.ID.base_url` | API root override for provider `ID`. |
+| `run.max_steps` | Maximum model/tool cycles per run. |
+| `permission.mode` | Permission preset: `default`, `accept-edits`, `plan`, or `bypass`. |
+| `shell` | Shell program used for shell commands. |
+| `instructions.global` | Load the global `AGENTS.md` from the config home. |
+| `instructions.project` | Load project instruction files. |
+| `instructions.claude_md` | Load `CLAUDE.md` compatibility files. |
+| `instructions.project_max_bytes` | Byte budget for project instruction text. |
+
+The full configuration surface is larger; `spice config show --json` prints
+all of it. Groups not yet reachable through `set` are edited directly in the
+config files:
+
+- `notices.*` — host notice producers: `fswatch`, `cr_comments`,
+  `dune_diagnostics`, `dune_build`.
+- `skills.*` — skill discovery: `enabled`, `builtin`, `project`, `compat`,
+  `paths`, `catalog_max_bytes`.
+- `tools.anchored_edits` — enable the anchored line-edit tool.
+- `web.*` — web tools: `enabled`, `allow_private_network`, `search_backend`,
+  `fetch_max_bytes`, `output_max_chars`, `timeout_ms`, `max_timeout_ms`.
+- `sandbox.*` — sandbox mode and enforcement requirements.
+
+## Models
+
+`spice models` lists the model catalog. Related commands:
+
+```sh
+spice models show MODEL           # metadata: context window, reasoning support
+spice models current              # effective main/small models
+spice models select MODEL [--small] [--project | --project-local]
+```
+
+Provider credentials are managed separately by `spice auth`; see
+`spice auth --help`. Credentials resolve from provider environment variables
+first, then the auth store at `~/.config/spice/auth.json`.

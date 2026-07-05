@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Why Spice? — Spice</title>
+    <meta name="description"
+        content="Why Spice specializes in OCaml: the coding agent era demands a new foundation for software development.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="site">
+        <header class="hd">
+            <a href="index.html"><pre class="brand">▄▀▀ █▀▄ █ ▄▀▀ ██▀
+▄██ █▀  █ ▀▄▄ █▄▄</pre></a>
+            <nav class="nav">
+                <a class="nav-on" href="why.html">why spice</a>
+                <a href="https://github.com/invariant-hq/spice/tree/main/doc/manual">manual</a>
+                <a class="navbtn" href="https://github.com/invariant-hq/spice">github</a>
+            </nav>
+        </header>
+
+        <main class="essay">
+            <p class="kicker"><span class="kdim">▚</span> THE ARGUMENT</p>
+            <h1 class="h1">Why Spice?</h1>
+            <p class="lede">The coding agent era demands a new foundation for software development.</p>
+
+            <div class="rule"><span class="rulelabel">01 · THE PROBLEM</span><span class="ruleline"></span></div>
+            <p class="p">AI agents are heading toward full autonomy — writing, testing, and shipping
+                software without supervision. For that to work, we need to trust the code they
+                produce.</p>
+            <p class="p">Today, more AI-written code means more bugs and more technical debt. Review
+                and testing become the bottleneck: human developers fixing agent output instead of
+                building. <span class="strong">Linear answers to an exponential problem.</span></p>
+
+            <div class="rule"><span class="rulelabel">02 · WHAT YOU GET TODAY</span><span class="ruleline"></span></div>
+            <p class="p"><span class="strong">If you write OCaml, Spice is the best agent you can
+                point at your codebase today</span> — we use it on Spice itself, daily.</p>
+            <p class="p">General-purpose agents waste cycles on language quirks and tooling
+                confusion. Spice understands the language and its ecosystem: where a generic agent
+                greps and guesses, it asks Merlin where a value is defined, asks Dune what the
+                project looks like, fetches documentation on demand, and gets real-time diagnostics
+                as it generates code. In our use, it converges faster and produces higher-quality
+                work.</p>
+            <p class="p">The agent is only as good as the feedback loops it can rely on. So we're
+                also building them: <a href="https://github.com/invariant-hq/windtrap">windtrap</a>
+                for testing, thumper for benchmarking, a linter, and eventually formal verification
+                tooling — all designed for AI-first usage. Beyond tooling: OCaml-trained models,
+                AST-based code generation, type-guided synthesis.</p>
+
+            <div class="rule"><span class="rulelabel">03 · WHY OCAML</span><span class="ruleline"></span></div>
+            <p class="p">Why build here, when most of the world's code isn't OCaml? Because
+                correctness has to be machine-checkable before it can be automated — and OCaml is
+                the strongest available combination of guarantees.</p>
+            <p class="p">Its type system eliminates entire categories of bugs: no type errors, no
+                memory corruption, no segfaults. With OxCaml's data-race-free parallelism, race
+                conditions go too. QCheck property-based testing and Rocq give a credible path
+                toward provably correct code.</p>
+            <p class="p">We make AI-built software correct so it can become autonomous — agents
+                collaborating on large codebases while you focus on what to build, not how to fix
+                it.</p>
+
+            <div class="rule"><span class="rulelabel">04 · FREE TOOLS</span><span class="ruleline"></span></div>
+            <p class="p">Compilers, editors, linters — the best developer tools have always been
+                free. But as coding agents widen the productivity gap, we're heading toward a future
+                where you need a $200/month subscription to stay competitive. That's not a future we
+                want to live in.</p>
+            <p class="p">Spice is free and always will be. Use any LLM provider — Claude, GPT,
+                Gemini, or local models. No vendor lock-in, no monthly fees. Just like your
+                compiler, Spice belongs in every developer's toolkit, accessible to all.</p>
+
+            <div class="rule"><span class="rulelabel">05 · THE STACK</span><span class="ruleline"></span></div>
+            <p class="p">Spice is the agent layer of <a href="https://invarianthq.dev/">Invariant</a>'s
+                stack — alongside models fine-tuned for OCaml and correctness-sensitive development,
+                and a runtime that deploys models as self-contained binaries, close to the
+                hardware.</p>
+            <p class="p closing">The endgame: you describe what to build, and you can trust what
+                comes back — even as the codebase grows for years under agents. That takes a
+                foundation that prevents bugs by design. It starts with OCaml, and with Spice.</p>
+
+            <p class="statusline">status: experimental — the core loop works, but interfaces and
+                formats will change without notice. Expect rough edges; the foundation is the
+                bet.</p>
+
+            <div class="ctarow">
+                <a class="btn btnp" href="https://github.com/invariant-hq/spice">get spice on github</a>
+                <a class="btn" href="index.html">see what it does</a>
+            </div>
+        </main>
+
+        <footer class="foot why-foot">
+            <span>Spice — part of <a href="https://invarianthq.dev/">Invariant</a>'s stack · ISC license</span>
+            <span class="footlinks">
+                <a href="https://github.com/invariant-hq/spice">github</a>
+                <a href="https://github.com/invariant-hq/spice/tree/main/doc/manual">manual</a>
+                <a href="https://github.com/invariant-hq/spice/issues">issues</a>
+            </span>
+        </footer>
+    </div>
+</body>
+
+</html>

@@ -1,0 +1,3 @@
+(library
+ (name spice_tool)
+ (libraries jsont spice_permission))

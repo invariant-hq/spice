@@ -1,0 +1,10 @@
+(lang dune 3.22)
+
+(name eval_build)
+
+(package
+ (name eval_build)
+ (allow_empty)
+ (depends
+  (ocaml
+   (>= 5.5.0))))

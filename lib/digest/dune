@@ -1,0 +1,11 @@
+(library
+ (name spice_digest)
+ (public_name spice.digest)
+ (libraries jsont)
+ (foreign_stubs
+  (language c)
+  (names sha256 stubs)
+  (flags
+   (:standard -I./native/))))
+
+(include_subdirs unqualified)

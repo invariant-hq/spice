@@ -1,0 +1,97 @@
+Auth commands fail before mutating state when the provider, method, name, store,
+or credential material is invalid.
+
+Unknown providers are usage errors for reads and writes.
+
+  $ spice auth status nope
+  spice: unknown provider: nope
+  [2]
+
+  $ printf key | spice auth login nope --method api-key --api-key-stdin
+  spice: unknown provider: nope
+  [2]
+
+Invalid provider ids are reported as user-facing input errors.
+
+  $ spice auth status OpenAI
+  Usage: spice auth status [--help] [OPTION]… [PROVIDER]
+  spice: PROVIDER argument: invalid provider id "OpenAI": id must start with a
+         lowercase ASCII letter
+  [124]
+
+The positional provider and --provider alias must agree when both are present.
+
+  $ spice auth status openai --provider anthropic
+  spice: provider specified twice with different values: openai and anthropic
+  [2]
+
+API-key login requires stdin so secrets are never accepted as command-line
+arguments.
+
+  $ spice auth login openai --method api-key
+  spice: auth login --method api-key requires --api-key-stdin
+  [2]
+
+  $ spice auth save openai
+  spice: auth save requires --api-key-stdin
+  [2]
+
+Anthropic has no interactive method today, so bare login falls back to API-key
+login and also requires stdin.
+
+  $ spice auth login anthropic
+  spice: auth login --method api-key requires --api-key-stdin
+  [2]
+
+Empty API-key input is rejected before a credential is saved.
+
+  $ printf '' | spice auth login openai --method api-key --api-key-stdin
+  spice: API key must not be empty
+  [2]
+
+Invalid credential names are rejected before mutation.
+
+  $ printf key | spice auth login openai --name bad/name --method api-key --api-key-stdin >err 2>&1; echo "status:$?"; sed -n '1p; s/.*invalid credential name "bad\/name".*/invalid-name/p' err
+  status:124
+  Usage: spice auth login [--help] [--api-key-stdin] [--method=METHOD]
+  invalid-name
+
+Unsupported methods are reported from each provider's auth declaration.
+
+  $ spice auth login anthropic --method browser
+  spice: unknown auth method "browser" for provider anthropic
+  [2]
+
+  $ spice auth login google --method device-code
+  spice: unknown auth method "device-code" for provider google
+  [2]
+
+The API-key stdin flag is rejected for declared interactive login methods before
+any browser, callback server, or network work starts. Undeclared methods fail at
+selection.
+
+  $ spice auth login openai --method browser --api-key-stdin
+  spice: --api-key-stdin cannot be used with browser login
+  [2]
+
+  $ spice auth login openai --method device-code --api-key-stdin
+  spice: --api-key-stdin cannot be used with device-code login
+  [2]
+
+Unsupported auth store versions fail loudly.
+
+  $ mkdir -p "$XDG_CONFIG_HOME/spice"
+  $ printf '{"version":2,"credentials":[]}' > "$XDG_CONFIG_HOME/spice/auth.json"
+  $ spice auth status openai --json
+  spice: $TESTCASE_ROOT/xdg-config/spice/auth.json: unsupported account store version: 2
+  [1]
+
+No failing command created stored credentials.
+
+  $ rm "$XDG_CONFIG_HOME/spice/auth.json"
+
+  $ spice auth names openai --json
+  Usage: spice auth [--help] COMMAND …
+  spice: unknown command names. Must be one of login, logout, remove, save or
+         status
+  [124]

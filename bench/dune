@@ -1,0 +1,16 @@
+(executable
+ (name bench_path)
+ (modules bench_path)
+ (libraries spice_path))
+
+(executable
+ (name bench_diff)
+ (modules bench_diff)
+ (libraries spice_diff))
+
+(rule
+ (alias bench)
+ (action
+  (progn
+   (run ./bench_path.exe)
+   (run ./bench_diff.exe))))

@@ -1,0 +1,3 @@
+(library
+ (name spice_account)
+ (libraries jsont spice_llm))

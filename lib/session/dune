@@ -1,0 +1,10 @@
+(library
+ (name spice_session)
+ (private_modules string_id import)
+ (libraries
+  jsont
+  spice_digest
+  spice_llm
+  spice_path
+  spice_permission
+  spice_tool))

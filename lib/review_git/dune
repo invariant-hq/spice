@@ -1,0 +1,3 @@
+(library
+ (name spice_review_git)
+ (libraries eio jsont jsont.bytesrw logs unix spice_cr spice_diff spice_digest spice_path spice_review))

@@ -1,0 +1,14 @@
+(library
+ (name spice_llm_ollama)
+ (private_modules api)
+ (libraries
+  cohttp
+  cohttp-eio
+  cstruct
+  eio
+  eio.unix
+  jsont
+  jsont.bytesrw
+  logs
+  spice_llm
+  uri))

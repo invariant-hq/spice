@@ -1,0 +1,17 @@
+(library
+ (name spice_llm_deepseek)
+ (libraries
+  cohttp
+  cohttp-eio
+  cstruct
+  deepseek
+  deepseek.dsml
+  digestif
+  eio
+  eio.unix
+  jsont
+  jsont.bytesrw
+  logs
+  unix
+  uri
+  spice_llm))

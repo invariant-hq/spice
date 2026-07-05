@@ -1,0 +1,26 @@
+# opam switch
+_opam/
+
+# Build output directory
+_build/
+
+# Eval output directories
+_evals/
+
+# Spice session stores
+.spice/
+
+# Dune lock files
+dune.lock/
+
+# Local reference repositories
+_ref/
+
+# Catch-all for hidden directories
+_*/
+
+# Release build staging (scripts/release/alpine-build.sh)
+dist/
+
+# Claude
+.claude/

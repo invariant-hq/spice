@@ -1,0 +1,5 @@
+; Fixture projects are eval task material: they are copied into run
+; workspaces and built there. Some are deliberately broken (failing tests,
+; missing docs), so dune must not build them in place.
+
+(data_only_dirs fixtures)

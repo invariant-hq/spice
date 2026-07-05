@@ -1,0 +1,14 @@
+(library
+ (name spice_review)
+ (private_modules
+  error
+  feature
+  scope
+  mark
+  verdict
+  cursor
+  review
+  live
+  op
+  persist)
+ (libraries jsont spice_cr spice_diff spice_digest spice_path))

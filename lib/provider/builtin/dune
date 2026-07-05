@@ -1,0 +1,13 @@
+(library
+ (name spice_provider_builtin)
+ (libraries
+  spice_llm
+  spice_llm_anthropic
+  spice_llm_deepseek
+  spice_llm_google
+  spice_llm_local
+  spice_llm_ollama
+  spice_llm_openai
+  oauth2
+  spice_provider
+  uri))

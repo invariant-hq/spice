@@ -1,0 +1,32 @@
+(library
+ (name spice_host_builtin)
+ (libraries
+  ca-certs
+  cohttp
+  cohttp-eio
+  cstruct
+  domain-name
+  eio
+  eio.unix
+  jsont
+  jsont.bytesrw
+  mirage-crypto-rng
+  mirage-crypto-rng.unix
+  spice_account
+  spice_auth
+  spice_host
+  spice_protocol
+  spice_tools
+  spice_llm
+  spice_llm_anthropic
+  spice_llm_deepseek
+  spice_llm_google
+  spice_llm_local
+  spice_llm_ollama
+  spice_llm_openai
+  spice_provider
+  spice_provider_builtin
+  tls
+  tls-eio
+  unix
+  uri))
