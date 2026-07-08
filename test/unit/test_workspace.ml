@@ -232,14 +232,55 @@ let workspace_uses_explicit_resolution_primitives () =
     (Workspace.resolve_string workspace "../test/a.ml");
   equal
     (result path_value resolve_error)
-    ~msg:"resolve_string rejects malformed input"
-    (Error (Workspace.Resolve_error.Invalid_input Syntax.Error.Escapes_root))
+    ~msg:"resolve_string rejects relative paths outside workspace"
+    (Error (Workspace.Resolve_error.Outside_workspace (abs "/escape.ml")))
     (Workspace.resolve_string workspace "../../../escape.ml");
   equal
     (result path_value resolve_error)
     ~msg:"resolve_string rejects outside absolute paths"
     (Error (Workspace.Resolve_error.Outside_workspace (abs "/outside/a.ml")))
     (Workspace.resolve_string workspace "/outside/a.ml")
+
+let relative_resolution_uses_most_specific_root () =
+  let root = make_root "/workspace" in
+  let nested = make_root "/workspace/vendor" in
+  let workspace = make_workspace [ root; nested ] in
+  equal
+    (result path_value resolve_error)
+    ~msg:"relative input entering nested root is canonicalized"
+    (Ok (make_path nested "pkg.ml"))
+    (Workspace.resolve_string workspace "vendor/pkg.ml");
+  equal
+    (result path_value resolve_error)
+    ~msg:"relative and absolute input choose the same root"
+    (Workspace.resolve_string workspace "/workspace/vendor/pkg.ml")
+    (Workspace.resolve_string workspace "vendor/pkg.ml")
+
+let equivalent_cwd_paths_resolve_the_same () =
+  let root = make_root "/workspace" in
+  let nested = make_root "/workspace/vendor" in
+  let outer_cwd =
+    expect_ok "outer cwd"
+      (Workspace.make
+         ~cwd:(Workspace.Path.make ~root (rel "vendor"))
+         [ root; nested ])
+  in
+  let nested_cwd =
+    expect_ok "nested cwd"
+      (Workspace.make
+         ~cwd:(Workspace.Path.make ~root:nested (rel "."))
+         [ root; nested ])
+  in
+  let input = "../README.md" in
+  let expected = Ok (make_path root "README.md") in
+  equal
+    (result path_value resolve_error)
+    ~msg:"outer-root cwd resolves above nested directory" expected
+    (Workspace.resolve_string outer_cwd input);
+  equal
+    (result path_value resolve_error)
+    ~msg:"nested-root cwd resolves from the same logical cwd" expected
+    (Workspace.resolve_string nested_cwd input)
 
 let absolute_round_trips_through_workspace path =
   let workspace = Workspace.single (Workspace.Path.root path) in
@@ -393,6 +434,10 @@ let () =
           test "converts absolute paths" workspace_converts_absolute_paths;
           test "uses explicit resolution primitives"
             workspace_uses_explicit_resolution_primitives;
+          test "uses most specific root for relative resolution"
+            relative_resolution_uses_most_specific_root;
+          test "resolves equivalent cwd paths consistently"
+            equivalent_cwd_paths_resolve_the_same;
           prop' "workspace paths round-trip through abs" workspace_path
             absolute_round_trips_through_workspace;
           prop' "multi-root paths use most specific root" nested_root_case

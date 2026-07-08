@@ -112,15 +112,15 @@ val resolve_string : t -> string -> (Path.t, Resolve_error.t) result
 (** [resolve_string workspace input] parses and resolves raw path input.
 
     Absolute input must be inside one of the workspace roots. Relative input is
-    parsed and resolved against {!cwd}, so [.] and [..] are interpreted before
-    the resulting workspace path is constructed. Use this at raw product/user
-    input boundaries. Prefer {!Path.append}, {!make_path}, or {!import_abs} when
-    the caller already has typed path syntax.
+    parsed and resolved against {!cwd} as a logical absolute path and then
+    imported with the same most-specific-root rule as {!import_abs}. Use this at
+    raw product/user input boundaries. Prefer {!Path.append}, {!make_path}, or
+    {!import_abs} when the caller already has typed path syntax.
 
     Errors with {!Resolve_error.Invalid_input} if [input] is malformed or
-    relative traversal would escape the workspace root. Errors with
-    {!Resolve_error.Outside_workspace} if absolute [input] parses successfully
-    but is outside every admitted root. *)
+    cannot be parsed as a relative or absolute path. Errors with
+    {!Resolve_error.Outside_workspace} if [input] parses successfully but is
+    outside every admitted root after resolution against {!cwd}. *)
 
 val equal : t -> t -> bool
 (** [equal a b] is [true] iff [a] and [b] have the same roots in the same order

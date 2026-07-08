@@ -78,35 +78,30 @@ let make_path t ~root rel =
 let contains_path t path = contains_root t (Path.root path)
 let specificity root = List.length (Spice_path.Abs.components (Root.dir root))
 
-let import_root t abs =
-  let better candidate candidate_specificity current =
+let import_path t abs =
+  let better root rel specificity current =
     match current with
-    | None -> Some (candidate, candidate_specificity)
-    | Some (_, current_specificity) ->
-        if candidate_specificity > current_specificity then
-          Some (candidate, candidate_specificity)
+    | None -> Some (root, rel, specificity)
+    | Some (_, _, current_specificity) ->
+        if specificity > current_specificity then Some (root, rel, specificity)
         else current
   in
   let rec loop best = function
     | [] -> best
     | root :: roots ->
         let best =
-          if
-            Option.is_some (Spice_path.Abs.relativize ~root:(Root.dir root) abs)
-          then better root (specificity root) best
-          else best
+          match Spice_path.Abs.relativize ~root:(Root.dir root) abs with
+          | None -> best
+          | Some rel -> better root rel (specificity root) best
         in
         loop best roots
   in
-  Option.map fst (loop None t.roots)
+  Option.map (fun (root, rel, _) -> (root, rel)) (loop None t.roots)
 
 let import_abs t abs =
-  match import_root t abs with
+  match import_path t abs with
   | None -> error (Resolve_error.Outside_workspace abs)
-  | Some root -> (
-      match Spice_path.Abs.relativize ~root:(Root.dir root) abs with
-      | Some rel -> Ok (Path.make ~root rel)
-      | None -> error (Resolve_error.Outside_workspace abs))
+  | Some (root, rel) -> Ok (Path.make ~root rel)
 
 let resolve_string t input =
   if (not (String.is_empty input)) && Char.equal input.[0] '/' then
@@ -114,9 +109,9 @@ let resolve_string t input =
     | Error path_error -> error (Resolve_error.Invalid_input path_error)
     | Ok abs -> import_abs t abs
   else
-    match Spice_path.Rel.resolve (Path.rel t.cwd) input with
+    match Spice_path.Abs.resolve (Path.abs t.cwd) input with
     | Error path_error -> error (Resolve_error.Invalid_input path_error)
-    | Ok rel -> Ok (Path.make ~root:(Path.root t.cwd) rel)
+    | Ok abs -> import_abs t abs
 
 let equal a b = List.equal Root.equal a.roots b.roots && Path.equal a.cwd b.cwd
 
