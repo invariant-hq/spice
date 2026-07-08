@@ -127,6 +127,24 @@ let%expect_test "review screen refreshes when the worktree changes" =
 progress reflects both units: true
 refresh notice shown: true|}]
 
+let%expect_test "review CR compose accepts bare bodies with CR prefixes" =
+  Project.with_git_fixture "review-cr-prefix-body" @@ fun project ->
+  Project.write project "lib/code.ml" sample_code;
+  run project @@ fun t ->
+  open_review t;
+  Term.wait t (fun screen ->
+      Screen.has "0/1 reviewed" screen && Screen.has "let alpha" screen);
+  Term.send t "c";
+  Term.wait t (Screen.has "handle: comment");
+  Term.send t "CRDT state needs a note";
+  Term.send t Keys.enter;
+  Term.wait t (Screen.has "CR added");
+  print_fact "bare CR-prefixed body written"
+    (Util.contains
+       (Project.read project "lib/code.ml")
+       "(* CR: CRDT state needs a note *)");
+  [%expect {|bare CR-prefixed body written: true|}]
+
 let%expect_test "review screen adds and resolves CRs in source" =
   Project.with_git_fixture "review-cr-actions" @@ fun project ->
   Project.write project "lib/code.ml" sample_code;

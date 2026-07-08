@@ -550,14 +550,20 @@ let add_anchor review =
 (* Grammar-in-the-draft (11-review.md §CR compose): explicit CR/XCR text is
    parsed verbatim, a leading handle-colon addresses a recipient, and a bare
    body becomes [CR: body]. *)
+let explicit_cr_draft text =
+  let starts_token token =
+    String.equal text token
+    || String.starts_with ~prefix:(token ^ ":") text
+    || String.starts_with ~prefix:(token ^ " ") text
+  in
+  starts_token "CR" || starts_token "CR-soon" || starts_token "XCR"
+
 let parse_draft draft =
   let trimmed = String.trim draft in
   let message error = Format.asprintf "%a" Spice_cr.Error.pp error in
   if String.equal trimmed "" then Error "the CR body must not be empty"
-  else if
-    String.starts_with ~prefix:"CR" trimmed
-    || String.starts_with ~prefix:"XCR" trimmed
-  then Result.map_error message (Spice_cr.parse trimmed)
+  else if explicit_cr_draft trimmed then
+    Result.map_error message (Spice_cr.parse trimmed)
   else
     let fallback () =
       Result.map_error message (Spice_cr.make ~body:trimmed ())
