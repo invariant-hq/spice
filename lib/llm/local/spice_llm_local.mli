@@ -217,7 +217,13 @@ module Artifact : sig
       Missing artifacts are downloaded with [http], verified against their exact
       size and SHA-256 digest, and moved into the configured model directory.
       [observe_download], when supplied, receives progress updates. Unknown ids
-      are treated as explicit local GGUF paths and must already exist. *)
+      are treated as explicit local GGUF paths and must already exist.
+
+      Cancellation returns a {!Spice_llm.Error.Cancelled} error. HTTP, download,
+      verification, memory-guard, and missing explicit-path failures return
+      provider-boundary errors with diagnostic messages. Interrupted or failed
+      downloads may leave a [.part] file next to the target path; only the
+      verified final artifact path is reported as installed. *)
 end
 
 val client :
