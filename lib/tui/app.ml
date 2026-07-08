@@ -17,6 +17,7 @@ type startup = {
   session : Spice_session.Id.t option;
   input : input;
   launch : launch;
+  sandbox : Spice_host.Sandbox.Mode.t option;
 }
 
 (* [startup]'s mode, projected here while the label is unambiguous — the model

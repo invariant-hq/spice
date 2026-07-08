@@ -77,27 +77,30 @@ let permission_bypassed config =
   | Spice_host.Permission.Preset.Bypass -> true
   | _ -> false
 
-(* The configured sandbox mode, labelled for the record; unset means no sandbox
-   line. Iteration 1 reads the config mode, not the fully resolved effective
-   sandbox (the resolve needs the flag/writable-root plumbing the later footer
-   port carries). *)
-let sandbox_mode config =
-  Spice_host.Config.Sandbox.mode (Spice_host.Config.sandbox config)
+(* The sandbox mode and its origin, labelled for the record; unset means no
+   sandbox line. [flag] is the per-run [--sandbox] override — it wins over the
+   config mode with the same precedence {!Spice_host.Sandbox.resolve} applies,
+   so the record and the resolve cannot disagree. *)
+let sandbox_mode ?flag config =
+  match flag with
+  | Some mode -> Some (mode, "flag")
+  | None ->
+      Option.map
+        (fun mode -> (mode, "config"))
+        (Spice_host.Config.Sandbox.mode (Spice_host.Config.sandbox config))
 
-let sandbox_label config =
-  Option.map
-    (fun mode -> Spice_host.Sandbox.Mode.to_string mode ^ " (config)")
-    (sandbox_mode config)
+let sandbox_string (mode, origin) =
+  Spice_host.Sandbox.Mode.to_string mode ^ " (" ^ origin ^ ")"
 
-let sandbox_dangerous config =
-  match sandbox_mode config with
-  | Some Spice_host.Sandbox.Mode.Danger_full_access -> true
-  | _ -> false
+let sandbox_label ?flag config =
+  Option.map sandbox_string (sandbox_mode ?flag config)
 
-let config_warning config =
-  if sandbox_dangerous config then Some "sandbox: danger-full-access (config)"
-  else if permission_bypassed config then Some "permission: never ask"
-  else None
+let config_warning ?flag config =
+  match sandbox_mode ?flag config with
+  | Some ((Spice_host.Sandbox.Mode.Danger_full_access, _) as sandbox) ->
+      Some ("sandbox: " ^ sandbox_string sandbox)
+  | Some _ | None ->
+      if permission_bypassed config then Some "permission: never ask" else None
 
 (* Whether no provider is connected (09-auth.md §9): at least one provider needs
    auth — it declares a login method or an env credential — yet none has a usable
@@ -131,7 +134,7 @@ let account_absent ~stdenv host =
           in
           not (List.exists connected auth_decls))
 
-let build_snapshot host =
+let build_snapshot ?sandbox_flag host =
   let config = Spice_host.Host.config host in
   let choice = Spice_host.Models.choose host Model_choice.Main in
   let model, effort, context_window =
@@ -149,7 +152,7 @@ let build_snapshot host =
     cwd = Spice_host.Config.cwd config;
     context_window;
     permission = permission_label config;
-    sandbox = sandbox_label config;
+    sandbox = sandbox_label ?flag:sandbox_flag config;
   }
 
 (* The CR handle the home brief counts toward: CRs addressed to the spice agent
@@ -177,9 +180,9 @@ let discover_repo ~stdenv ~cwd =
 (* The brief loader: cheap host probes assembled into a {!Home.Brief.t}. The worktree
    glance short-circuits on an unchanged fingerprint so an idle worktree costs
    one probe per tick; the derived lines are cached against it. *)
-let make_brief_loader ~stdenv ~clock ~host ~cwd =
+let make_brief_loader ?sandbox_flag ~stdenv ~clock ~host ~cwd () =
   let config = Spice_host.Host.config host in
-  let warning = config_warning config in
+  let warning = config_warning ?flag:sandbox_flag config in
   let workspace = Spice_workspace.single (Spice_workspace.Root.make cwd) in
   let dune =
     Spice_ocaml_dune.Rpc.Instance.create ~fs:(Eio.Stdenv.fs stdenv)
@@ -637,11 +640,10 @@ let save_model_selection ~stdenv host ~selector ~effort =
          host_error (Spice_host.Host.Error.Config error))
   |> Result.map (fun () -> model)
 
-(* The effective sandbox for a run: the config mode gated, protecting Spice's own
-   config directory. tui-next carries no sandbox CLI flag yet, so there is no
-   [flag] override; the resolution otherwise mirrors the CLI and old TUI so the
-   frontends confine identically. *)
-let resolve_sandbox host ~workspace =
+(* The effective sandbox for a run: the [--sandbox] flag over the config mode,
+   gated, protecting Spice's own config directory. The resolution mirrors the
+   headless CLI and old TUI so the frontends confine identically. *)
+let resolve_sandbox ?flag host ~workspace =
   let process_env = Spice_host.Env.current () in
   let config = Spice_host.Host.config host in
   let sandbox_config = Spice_host.Config.sandbox config in
@@ -651,7 +653,7 @@ let resolve_sandbox host ~workspace =
     in
     Option.to_list (Spice_path.Abs.parent user)
   in
-  Spice_host.Sandbox.resolve
+  Spice_host.Sandbox.resolve ?flag
     ?config_mode:(Spice_host.Config.Sandbox.mode sandbox_config)
     ~require:(Spice_host.Config.Sandbox.require sandbox_config)
     ~protect
@@ -673,13 +675,13 @@ let resolve_main_model host =
    sites can subscribe the threads adapter to it (doc/plans/tui-next-threads.md
    §4.5). [Run.stop] releases the run's notice producers when the switch
    completes. *)
-let build_run ~sw ~stdenv ~host ~mode ~session_id =
+let build_run ?sandbox_flag ~sw ~stdenv ~host ~mode ~session_id () =
   let config = Spice_host.Host.config host in
   let workspace =
     Spice_workspace.single
       (Spice_workspace.Root.make (Spice_host.Config.cwd config))
   in
-  let sandbox = resolve_sandbox host ~workspace in
+  let sandbox = resolve_sandbox ?flag:sandbox_flag host ~workspace in
   let permission = Spice_host.Config.permission_posture config in
   let* plan =
     Spice_host.Run.plan ~workspace ~sandbox ~permission ()
@@ -891,13 +893,13 @@ let append_prompt_history ~stdenv ~clock host ~session entry =
    same effective sandbox as the run, executed by {!Spice_tools.Shell} off the
    session drain — ephemeral, never persisted to the session
    (doc/plans/tui-next-composer.md §Host seams). *)
-let run_user_shell ~stdenv ~host ~cancelled command =
+let run_user_shell ?sandbox_flag ~stdenv ~host ~cancelled command =
   let config = Spice_host.Host.config host in
   let workspace =
     Spice_workspace.single
       (Spice_workspace.Root.make (Spice_host.Config.cwd config))
   in
-  let sandbox = resolve_sandbox host ~workspace in
+  let sandbox = resolve_sandbox ?flag:sandbox_flag host ~workspace in
   match Spice_host.Sandbox.gate sandbox with
   | Error error -> Error (Spice_host.Sandbox.Gate_error.message error)
   | Ok () ->
@@ -1140,8 +1142,11 @@ let run ~stdenv ~(startup : App.startup) () =
     | Ok host ->
         let clock = Eio.Stdenv.clock stdenv in
         let cwd = Spice_host.Config.cwd (Spice_host.Host.config host) in
-        let snapshot = build_snapshot host in
-        let load_brief = make_brief_loader ~stdenv ~clock ~host ~cwd in
+        let sandbox_flag = startup.App.sandbox in
+        let snapshot = build_snapshot ?sandbox_flag host in
+        let load_brief =
+          make_brief_loader ?sandbox_flag ~stdenv ~clock ~host ~cwd ()
+        in
         let load_health = make_health_loader ~stdenv ~clock ~cwd in
         let matrix =
           Matrix_eio.create ~mode:`Alt ~sw ~clock ~stdin:stdenv#stdin
@@ -1219,8 +1224,8 @@ let run ~stdenv ~(startup : App.startup) () =
         Eio.Fiber.fork ~sw (fun () ->
             Eio.Promise.resolve resolve_prewarm
               ( session_seed,
-                build_run ~sw ~stdenv ~host ~mode:!current_mode
-                  ~session_id:session_seed ));
+                build_run ?sandbox_flag ~sw ~stdenv ~host ~mode:!current_mode
+                  ~session_id:session_seed () ));
         (* The session's live attachment, created on the first turn from the
            pre-warmed run. Held as [(live, model)]: the model builds each turn.
            Resume onto an existing session is a later iteration, so exactly one
@@ -1317,7 +1322,8 @@ let run ~stdenv ~(startup : App.startup) () =
                 (fun (runner, _model, jobs, stop) ->
                   prewarm_stop ();
                   (runner, jobs, stop))
-                (build_run ~sw ~stdenv ~host ~mode:!current_mode ~session_id)
+                (build_run ?sandbox_flag ~sw ~stdenv ~host ~mode:!current_mode
+                   ~session_id ())
           in
           let store = Spice_host.Session.store ~stdenv host in
           let created_at =
@@ -1393,7 +1399,8 @@ let run ~stdenv ~(startup : App.startup) () =
                       (Spice_session_store.Document.session document)
                   in
                   let* runner, model, jobs, stop =
-                    build_run ~sw ~stdenv ~host ~mode:!current_mode ~session_id
+                    build_run ?sandbox_flag ~sw ~stdenv ~host
+                      ~mode:!current_mode ~session_id ()
                   in
                   let live = Spice_host.Live.attach ~sw ~runner document in
                   subscribe live;
@@ -1970,7 +1977,10 @@ let run ~stdenv ~(startup : App.startup) () =
                      stands and the next attachment attempt retries. *)
                   match (!attachment, !created_session) with
                   | Some (live, _), Some session_id -> (
-                      match build_run ~sw ~stdenv ~host ~mode ~session_id with
+                      match
+                        build_run ?sandbox_flag ~sw ~stdenv ~host ~mode
+                          ~session_id ()
+                      with
                       | Ok (runner, _model, jobs, stop) ->
                           (* The rebuilt run has a fresh jobs registry; the
                              swapped-in runner mints new spawns there, so
@@ -1992,7 +2002,7 @@ let run ~stdenv ~(startup : App.startup) () =
               shell_cancelled := false;
               perform (fun () ->
                   let result =
-                    run_user_shell ~stdenv ~host
+                    run_user_shell ?sandbox_flag ~stdenv ~host
                       ~cancelled:(fun () -> !shell_cancelled)
                       command
                   in

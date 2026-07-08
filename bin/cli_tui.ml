@@ -24,10 +24,11 @@ let print_goodbye stdenv (outcome : Spice_tui.outcome) =
        ~session:outcome.Spice_tui.last_session)
     stdenv#stdout
 
-let launch ~stdenv ?cwd ?mode ?session ?input ?launch:surface () =
+let launch ~stdenv ?cwd ?mode ?session ?input ?launch:surface ?sandbox () =
   divert_logs_for_tui ();
   let startup =
-    Spice_tui.Startup.make ?cwd ?mode ?session ?input ?launch:surface ()
+    Spice_tui.Startup.make ?cwd ?mode ?session ?input ?launch:surface ?sandbox
+      ()
   in
   match Spice_tui.run ~stdenv ~startup () with
   | Ok outcome ->
@@ -45,7 +46,7 @@ let startup_input draft prompt =
 (* [--continue] resolves the newest session before the TUI starts, over the
    same host bootstrap the TUI performs afterwards; both loads see the same
    raw [--cwd] value, so they resolve the same workspace. *)
-let run ?session cwd mode continue_ draft prompt =
+let run ?session cwd sandbox mode continue_ draft prompt =
   Eio_main.run @@ fun stdenv ->
   status
     (let* cwd_abs =
@@ -84,10 +85,26 @@ let run ?session cwd mode continue_ draft prompt =
            _ ) ->
            Ok ()
      in
-     Ok (launch ~stdenv ?cwd:cwd_abs ?mode ?session ~input ()))
+     Ok (launch ~stdenv ?cwd:cwd_abs ?mode ?session ~input ?sandbox ()))
 
 let cwd =
   Cli_arg.cwd ~short:true ~doc:"Run Spice from working directory $(docv)." ()
+
+let sandbox =
+  let modes =
+    List.map
+      (fun mode -> (Spice_host.Sandbox.Mode.to_string mode, mode))
+      Spice_host.Sandbox.Mode.all
+  in
+  let doc =
+    "Sandbox mode for TUI turns and shell commands: $(b,read-only), \
+     $(b,workspace-write), $(b,danger-full-access), or $(b,external-sandbox). \
+     When absent, $(b,sandbox.mode) config applies; without that, Spice uses \
+     $(b,workspace-write). Restricted modes fail closed when no backend can \
+     enforce them."
+  in
+  CArg.(
+    value & opt (some (enum modes)) None & info [ "sandbox" ] ~docv:"MODE" ~doc)
 
 (* The initial turn mode, so the pty harness can raise a plan-approval dialog by
    starting in plan mode; the composer switches it thereafter. *)
@@ -118,13 +135,14 @@ let prompt =
   CArg.(
     value & opt (some string) None & info [ "p"; "prompt" ] ~docv:"TEXT" ~doc)
 
-let default_run session cwd mode continue_ draft prompt =
-  run ?session cwd mode continue_ draft prompt
+let default_run session cwd sandbox mode continue_ draft prompt =
+  run ?session cwd sandbox mode continue_ draft prompt
 
 let default_term =
   exit_term
     CTerm.(
-      const default_run $ session $ cwd $ mode $ continue_ $ draft $ prompt)
+      const default_run $ session $ cwd $ sandbox $ mode $ continue_ $ draft
+      $ prompt)
 
 let resume_session =
   Cli_arg.session_pos
@@ -141,10 +159,10 @@ let last =
   in
   CArg.(value & flag & info [ "last" ] ~doc)
 
-let resume_run session cwd mode last draft prompt =
+let resume_run session cwd sandbox mode last draft prompt =
   if last && Option.is_some session then
     status (usage "choose SESSION or --last, not both")
-  else run ?session cwd mode last draft prompt
+  else run ?session cwd sandbox mode last draft prompt
 
 let resume_command =
   let man =
@@ -167,9 +185,10 @@ let resume_command =
        ~docs:s_run_commands ~man ~exits)
     (exit_term
        CTerm.(
-         const resume_run $ resume_session $ cwd $ mode $ last $ draft $ prompt))
+         const resume_run $ resume_session $ cwd $ sandbox $ mode $ last $ draft
+         $ prompt))
 
-let review cwd base =
+let review cwd sandbox base =
   Eio_main.run @@ fun stdenv ->
   status
     (let* cwd_abs =
@@ -179,7 +198,7 @@ let review cwd base =
      Ok
        (launch ~stdenv ?cwd:cwd_abs
           ~launch:(Spice_tui.Startup.Launch_review { base_spec = base })
-          ()))
+          ?sandbox ()))
 
 let review_base =
   let doc =
@@ -205,5 +224,5 @@ let review_command =
   CCmd.v
     (CCmd.info "review" ~doc:"Review the worktree changes in the TUI."
        ~docs:s_run_commands ~man ~exits)
-    (exit_term CTerm.(const review $ cwd $ review_base))
+    (exit_term CTerm.(const review $ cwd $ sandbox $ review_base))
 

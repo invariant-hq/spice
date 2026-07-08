@@ -162,3 +162,30 @@ let%expect_test "a shell command settles as a transcript block" =
     shell block header: true
     output line as summary: true
     shell mode exited after submit: true|}]
+
+(* [--sandbox read-only] overrides the configured mode for the run
+   (Startup sandbox → Sandbox.resolve ?flag): the home stage's warning line
+   stays quiet (the harness config's danger-full-access is overridden), the
+   record names the flag origin, and a worktree write is actually refused —
+   the flag reaches the enforcement, not just the label. *)
+let%expect_test "the sandbox flag overrides the configured mode" =
+  Project.with_temp "next-sandbox-flag" @@ fun project ->
+  Term.run project ~env:reduced_motion ~rows:24 ~cols:80
+    ~args:[ "--sandbox"; "read-only" ]
+  @@ fun t ->
+  Term.wait t (Screen.has "dune:");
+  print_fact "config danger warning overridden"
+    (Screen.lacks "danger-full-access" (Term.screen t));
+  Term.send t "!touch sandbox-probe.txt";
+  Term.wait t (Screen.has "touch sandbox-probe.txt");
+  Term.send t Keys.enter;
+  Term.wait t (Screen.has "Operation not permitted");
+  print_fact "record names the flag origin"
+    (Screen.has "read-only (flag)" (Term.screen t));
+  print_fact "write refused under the flag"
+    (Screen.has "Operation not permitted" (Term.screen t));
+  [%expect
+    {|
+    config danger warning overridden: true
+    record names the flag origin: true
+    write refused under the flag: true|}]

@@ -41,17 +41,21 @@ module Startup : sig
     ?session:Spice_session.Id.t ->
     ?input:input ->
     ?launch:launch ->
+    ?sandbox:Spice_host.Sandbox.Mode.t ->
     unit ->
     t
-  (** [make ?cwd ?mode ?session ?input ?launch ()] is startup input for one TUI
-      run. [cwd] is the workspace root; when absent the runtime resolves the
-      process working directory. [mode] is the turn mode the first runner is
-      built under (default {!Spice_protocol.Mode.default}). [session] resumes
-      that saved session at launch ([spice resume]): the TUI opens on its
-      replayed transcript instead of the home stage. [input] (default {!Empty})
-      seeds the composer or submits the first prompt; combining {!Submit} with
-      [session] is unsupported — callers reject it before {!run}. [launch]
-      (default {!Launch_chat}) picks the launch surface. *)
+  (** [make ?cwd ?mode ?session ?input ?launch ?sandbox ()] is startup input
+      for one TUI run. [cwd] is the workspace root; when absent the runtime
+      resolves the process working directory. [mode] is the turn mode the
+      first runner is built under (default {!Spice_protocol.Mode.default}).
+      [session] resumes that saved session at launch ([spice resume]): the TUI
+      opens on its replayed transcript instead of the home stage. [input]
+      (default {!Empty}) seeds the composer or submits the first prompt;
+      combining {!Submit} with [session] is unsupported — callers reject it
+      before {!run}. [launch] (default {!Launch_chat}) picks the launch
+      surface. [sandbox] overrides the configured sandbox mode for this run's
+      turns and user shell commands ([--sandbox]); the sandbox record names
+      its origin ([(flag)] over [(config)]). *)
 end
 
 module Error : sig

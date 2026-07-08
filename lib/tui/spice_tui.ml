@@ -12,8 +12,8 @@ module Startup = struct
     | Launch_review of { base_spec : string option }
 
   let make ?cwd ?(mode = Spice_protocol.Mode.default) ?session
-      ?(input = App.Empty) ?(launch = App.Launch_chat) () =
-    { App.cwd; mode; session; input; launch }
+      ?(input = App.Empty) ?(launch = App.Launch_chat) ?sandbox () =
+    { App.cwd; mode; session; input; launch; sandbox }
 end
 
 module Error = struct

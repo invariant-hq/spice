@@ -33,6 +33,7 @@ type startup = {
   session : Spice_session.Id.t option;
   input : input;
   launch : launch;
+  sandbox : Spice_host.Sandbox.Mode.t option;
 }
 (** The startup configuration. [cwd] is the workspace root; when absent the
     runtime resolves the process working directory. [mode] is the turn mode the
@@ -41,7 +42,9 @@ type startup = {
     at launch ([spice resume]): the runtime issues the same {!command} the
     sessions screen's resume does, so the TUI opens on the replayed transcript
     instead of the home stage. [input] seeds or submits the first draft.
-    [launch] picks the launch surface. *)
+    [launch] picks the launch surface. [sandbox] is the per-run sandbox-mode
+    override ([--sandbox]): the runtime resolves it over the configured mode,
+    and the sandbox record names its origin. The shell never reads it. *)
 
 type t
 (** The type for the shell model. *)
