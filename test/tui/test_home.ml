@@ -157,24 +157,25 @@ let%expect_test "subagent child sessions are excluded" =
   [%expect {|top-level session present: true
 subagent child excluded: true|}]
 
-(* Resume is honest: [↵] on an empty draft would resume the newest session, but
-   the turn loop lands in iteration 2, so it flashes a muted footer notice rather
-   than half-dropping into an empty chat (12-home.md §Keybindings). *)
-let%expect_test "enter on an empty draft flashes an honest resume notice" =
+(* [↵] on an empty draft resumes the newest session directly — the recognition
+   surface is the workspace block's session line (12-home.md §Keybindings, the
+   v2 revision): the home stage swaps for the session's replayed transcript. *)
+let%expect_test "enter on an empty draft resumes the newest session" =
   Project.with_git_fixture "home-resume" @@ fun project ->
   Seed.prompt_session_titled project "ses_1" ~title:"Parser refactor spike"
     ~prompt:"spike it";
   run project ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
   Term.wait t (Screen.has "Parser refactor spike");
   Term.send t Keys.enter;
-  Term.wait t (Screen.has "session resume lands in a later iteration");
-  print_fact "resume flashes an honest notice"
-    (Screen.has "session resume lands in a later iteration" (Term.screen t));
-  print_fact "stayed on the home stage"
-    (Screen.has "message spice" (Term.screen t));
+  Term.wait t (Screen.has "❯ spike it");
+  print_fact "replayed prompt on screen"
+    (Screen.has "❯ spike it" (Term.screen t));
+  print_fact "home stage gone"
+    (Screen.lacks "welcome — and thanks for trying spice" (Term.screen t));
   [%expect
-    {|resume flashes an honest notice: true
-stayed on the home stage: true|}]
+    {|
+    replayed prompt on screen: true
+    home stage gone: true|}]
 
 (* Short (<20 rows): the workspace facts shed bottom-up so the stage — lockup,
    composer, footer — survives longest (12-home.md §States). At the 14-row
