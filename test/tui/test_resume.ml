@@ -193,6 +193,55 @@ let%expect_test "fork on the home stage flashes the no-session guard" =
     (Screen.has "fork: no active session" (Term.screen t));
   [%expect {| guard flashed: true |}]
 
+(* /clear starts over on a fresh, empty chat (10-commands.md §/clear): the
+   re-bannered transcript carries the echo and the settle copy, the previous
+   conversation is gone from screen but its session stays on disk (the
+   quick-switch panel still lists it), and the next submit attaches a NEW
+   session — the re-armed fresh path — whose turn runs normally. *)
+let%expect_test "clear starts a fresh session and preserves the previous" =
+  Project.with_temp "clear-command" @@ fun project ->
+  seed_prompt_session project "ses_clear" ~title:"streaming parser fix"
+    ~prompt:"trace the streaming parser bug";
+  let answer = "The tokenizer drops the final chunk." in
+  Provider.with_openai project ~answer ~body_contains:[ "off-by-one" ]
+  @@ fun provider ->
+  Term.run project ~provider ~env:reduced_motion ~rows:24 ~cols:80
+    ~command:[ "resume"; "ses_clear" ]
+  @@ fun t ->
+  Term.wait t (Screen.has "trace the streaming parser bug");
+  Term.send t "/clear";
+  Term.wait t (fun s -> Screen.has "/clear" s && Screen.lacks "/fork" s);
+  Term.send t Keys.enter;
+  Term.wait t (Screen.has "cleared the conversation");
+  let s = Term.screen t in
+  print_fact "clear echo recorded" (Screen.has "❯ /clear" s);
+  print_fact "settle copy names the resume path"
+    (Screen.has "previous saved, /sessions to resume" s);
+  print_fact "previous conversation gone"
+    (Screen.lacks "trace the streaming parser bug" s);
+  print_fact "chat layout, not the home stage"
+    (Screen.lacks "welcome — and thanks for trying spice" s);
+  Term.send t "where is the off-by-one";
+  Term.wait t (Screen.has "❯ where is the off-by-one");
+  Term.send t Keys.enter;
+  Term.wait t (Screen.has answer);
+  print_fact "a fresh session attaches and runs a turn"
+    (Screen.has answer (Term.screen t));
+  Term.send t "/sessions";
+  Term.wait t (Screen.has "Show recent sessions");
+  Term.send t Keys.enter;
+  Term.wait t (Screen.has "streaming parser fix");
+  print_fact "previous session still on disk"
+    (Screen.has "streaming parser fix" (Term.screen t));
+  [%expect
+    {|
+    clear echo recorded: true
+    settle copy names the resume path: true
+    previous conversation gone: true
+    chat layout, not the home stage: true
+    a fresh session attaches and runs a turn: true
+    previous session still on disk: true |}]
+
 (* /rename: bare (pasted, so the palette never intercepts) it seeds the draft
    with [/rename ] — the palette's argument-insert idiom — so typing just the
    title and submitting fires the rename; the echo carrying the full

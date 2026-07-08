@@ -100,6 +100,13 @@ type command =
       (** Fork a session and resume into the child: the runtime forks the
           document host-side, then replays and attaches the child exactly as
           {!Resume_session}. Emitted by the screen's [f]. *)
+  | Clear_session
+      (** Start over on a fresh, empty session ([/clear]): the runtime detaches
+          the current session (its document stays on disk), supersedes any
+          in-flight resume, and re-arms the fresh path under a new session id —
+          the next submit creates the new document, exactly as the first submit
+          of a launch does. The shell already swapped to the re-bannered empty
+          chat when this is emitted. *)
   | Load_thread_document of Spice_session.Id.t
       (** Load a settled child's persisted document for a read-only drill-in
           (doc/plans/tui-next-threads.md §6 phase 5a): the runtime reads the

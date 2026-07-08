@@ -1216,12 +1216,18 @@ let run ~stdenv ~(startup : App.startup) () =
            that only need the id (history attribution) never wait on
            [build_run] — which costs seconds on a cold workspace. *)
         let session_seed = Spice_host.Session.fresh_session_id ~clock in
-        let prewarm, resolve_prewarm = Eio.Promise.create () in
-        Eio.Fiber.fork ~sw (fun () ->
-            Eio.Promise.resolve resolve_prewarm
-              ( session_seed,
-                build_run ?sandbox_flag ~sw ~stdenv ~host
-                  ~session_id:session_seed () ));
+        (* The pending fresh run, a ref so [/clear] can re-arm the fresh path
+           with a new seed after the launch prewarm was consumed. *)
+        let arm_fresh seed =
+          let promise, resolve = Eio.Promise.create () in
+          Eio.Fiber.fork ~sw (fun () ->
+              Eio.Promise.resolve resolve
+                ( seed,
+                  build_run ?sandbox_flag ~sw ~stdenv ~host ~session_id:seed ()
+                ));
+          promise
+        in
+        let prewarm = ref (arm_fresh session_seed) in
         (* The session's model selection. [None] derives the model from config
            and account connectivity at each binding, so a /login flips the
            derived default by the next turn; a /model pick pins the pair for
@@ -1376,7 +1382,7 @@ let run ~stdenv ~(startup : App.startup) () =
            {!Spice_host.Live} attachment live here — never pre-warmed — so the
            store gains a session only once the user has actually asked for one. *)
         let attach_fresh () =
-          let session_id, run_result = Eio.Promise.await prewarm in
+          let session_id, run_result = Eio.Promise.await !prewarm in
           let* run, prewarm_stop = run_result in
           (* The binding happens before [Session.create], so a failed binding
              (nothing connected yet) leaves no orphan document — and unlike the
@@ -1408,8 +1414,11 @@ let run ~stdenv ~(startup : App.startup) () =
            the await never completes (teardown reaches it first). Idempotent —
            [build_run]'s [stop] guards itself. *)
         let stop_abandoned_prewarm () =
+          (* Capture the handle now: a [/clear] re-arm must not redirect this
+             daemon onto the replacement run it is not abandoning. *)
+          let abandoned = !prewarm in
           Eio.Fiber.fork_daemon ~sw (fun () ->
-              (match Eio.Promise.await prewarm with
+              (match Eio.Promise.await abandoned with
               | _, Ok (_, prewarm_stop) -> prewarm_stop ()
               | _, Error _ -> ());
               `Stop_daemon)
@@ -1972,6 +1981,28 @@ let run ~stdenv ~(startup : App.startup) () =
           | App.Resume_session id ->
               resume_into (fun () ->
                   store_session id |> Result.map_error failure_message)
+          | App.Clear_session ->
+              perform (fun () ->
+                  (* Start over: supersede any in-flight resume (its producer
+                     sees a non-current pending and goes inert — the same guard
+                     a newer pick relies on), detach the session (its document
+                     stays on disk), stop the run's producers, and re-arm the
+                     fresh path under a new seed. The next submit consumes it
+                     through [attach_fresh], creating the new document exactly
+                     as a launch's first submit does. [stop_abandoned_prewarm]
+                     runs before the re-arm so it captures the outgoing run —
+                     on a pre-submit /clear that is the unconsumed launch
+                     prewarm, and after a submit the stop is idempotent with
+                     the one [adopt] just ran. *)
+                  resume_pending := None;
+                  (match !attachment with
+                  | Some (live, _) -> Spice_host.Live.detach live
+                  | None -> ());
+                  attachment := None;
+                  adopt ignore;
+                  stop_abandoned_prewarm ();
+                  prewarm :=
+                    arm_fresh (Spice_host.Session.fresh_session_id ~clock))
           | App.Fork_session id ->
               resume_into (fun () ->
                   let store = Spice_host.Session.store ~stdenv host in

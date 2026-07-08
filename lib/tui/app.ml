@@ -374,6 +374,7 @@ type command =
   | Load_screen_sessions
   | Resume_session of Spice_session.Id.t
   | Fork_session of Spice_session.Id.t
+  | Clear_session
   (* Load a settled child's persisted document for a read-only drill-in
      (doc/plans/tui-next-threads.md §6 phase 5a): the runtime replays its durable
      events back as [Thread_document_loaded], folded into the drilled chat. *)
@@ -995,6 +996,42 @@ let dispatch_command ?(argument = None) command t =
           ( { t with surface = Screen (Settings (Settings_screen.loading ~tab)) },
             [ Load_settings ] )
       | Command.Open_review -> open_review ?base_spec:argument t
+      | Command.Clear_session ->
+          (* Start over on a fresh, empty chat — the chat layout, never a return
+             to the home stage (its composer moves exactly once per process,
+             12-home.md §The drop) — re-bannered, with the echo and settle copy
+             in the fresh transcript; the previous session stays on disk,
+             resumable from /sessions (10-commands.md §/clear). The session
+             facts reset with it: nothing is attached until the next submit
+             creates the new document. *)
+          let transcript =
+            List.fold_left Transcript.append
+              (Transcript.append Transcript.empty (Transcript.Banner t.snapshot))
+              [
+                Transcript.Notice
+                  (Notice.Echo
+                     { command = Command.slash command; result = None });
+                Transcript.Notice
+                  (Notice.Event
+                     "cleared the conversation · previous saved, /sessions to \
+                      resume");
+              ]
+          in
+          ( {
+              t with
+              phase =
+                Chat (seed_health ~brief:t.brief { empty_chat with transcript });
+              surface = Conversing;
+              motion = Home.Motion.freeze t.motion;
+              session_id = None;
+              attached = false;
+              queued = [];
+              thread_runs = [];
+              strip_focus = None;
+              strip_hover = None;
+              drill = None;
+            },
+            [ Clear_session ] )
       | Command.Fork_session -> (
           (* Fork the attached session into a child and continue there — the
              same {!Fork_session} transition the sessions screen's fork takes
