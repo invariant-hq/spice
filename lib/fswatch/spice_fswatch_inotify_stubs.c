@@ -66,12 +66,13 @@ static int event_is_interesting(const struct inotify_event *event) {
 
 CAMLprim value spice_file_watcher_inotify_read(value fd) {
   CAMLparam1(fd);
+  int c_fd = Int_val(fd);
   char buffer[65536] __attribute__((aligned(__alignof__(struct inotify_event))));
   ssize_t length;
 
   for (;;) {
     caml_release_runtime_system();
-    length = read(Int_val(fd), buffer, sizeof(buffer));
+    length = read(c_fd, buffer, sizeof(buffer));
     caml_acquire_runtime_system();
 
     if (length == -1 && errno == EINTR)
