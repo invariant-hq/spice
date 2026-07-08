@@ -19,15 +19,15 @@
 type target =
   | Add of { path : Spice_path.Rel.t; line : int }
       (** Insert a new CR before [line] of [path]. *)
-  | Edit of { occurrence : Spice_cr.Occurrence.t }
-      (** Rewrite [occurrence]. The occurrence is captured by identity (path and
-          digest), not by a live index, so a background refresh that reorders the
-          review cannot repoint the edit at a different CR; submit re-resolves it
-          against the current review and reports it stale if its identity is
-          gone. *)
-  | Resolve of { occurrence : Spice_cr.Occurrence.t }
+  | Edit of { occurrence : Spice_cr.Occurrence.t; ordinal : int }
+      (** Rewrite [occurrence]. [ordinal] is [occurrence]'s zero-based ordinal
+          among CRs with the same path and digest when the dialog opened. Submit
+          re-resolves by identity and ordinal against the current review, so
+          duplicate identical CRs cannot repoint the edit at the first match
+          after a refresh. *)
+  | Resolve of { occurrence : Spice_cr.Occurrence.t; ordinal : int }
       (** Resolve [occurrence] (prefilled with the [XCR] form). Captured by
-          identity like {!Edit}. *)
+          identity and [ordinal] like {!Edit}. *)
 
 type t
 (** The type for a compose session: its target, draft, and any problem line. *)

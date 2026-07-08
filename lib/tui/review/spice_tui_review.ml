@@ -584,6 +584,28 @@ let same_occurrence a b =
        (Spice_cr.Occurrence.digest a)
        (Spice_cr.Occurrence.digest b)
 
+let occurrence_ordinal review index occurrence =
+  let rec loop ordinal i = function
+    | [] -> ordinal
+    | _ when i >= index -> ordinal
+    | candidate :: rest ->
+        let ordinal =
+          if same_occurrence occurrence candidate then ordinal + 1 else ordinal
+        in
+        loop ordinal (i + 1) rest
+  in
+  loop 0 0 (Spice_review.crs review)
+
+let current_occurrence_by_ordinal review occurrence ordinal =
+  let rec loop i = function
+    | [] -> None
+    | candidate :: rest ->
+        if same_occurrence occurrence candidate then
+          if Int.equal i ordinal then Some candidate else loop (i + 1) rest
+        else loop i rest
+  in
+  loop 0 (Spice_review.crs review)
+
 let compose_op review compose =
   match parse_draft (Review_compose.draft compose) with
   | Error _ as error -> error
@@ -591,15 +613,15 @@ let compose_op review compose =
       match Review_compose.target compose with
       | Review_compose.Add { path; line } ->
           Ok (Spice_review.Op.Add { path; line; cr })
-      | Review_compose.Edit { occurrence } | Review_compose.Resolve { occurrence }
-        -> (
+      | Review_compose.Edit { occurrence; ordinal }
+      | Review_compose.Resolve { occurrence; ordinal } -> (
           (* Re-resolve the anchored occurrence against the CURRENT review: a
              background refresh may have reordered the CR list since the dialog
-             opened, so replaying a bare index could rewrite a different CR. A
-             lost identity means the CR changed on disk. *)
-          match
-            List.find_opt (same_occurrence occurrence) (Spice_review.crs review)
-          with
+             opened, so replaying a bare index could rewrite a different CR.
+             Duplicate identical CRs are disambiguated by their ordinal among
+             path+digest matches at the time the dialog opened. A lost identity
+             or ordinal means the CR changed on disk. *)
+          match current_occurrence_by_ordinal review occurrence ordinal with
           | Some current ->
               Ok (Spice_review.Op.Replace { occurrence = current; cr })
           | None -> Error "CR changed on disk — review it again"))
@@ -885,7 +907,8 @@ let update msg t =
                        ~warning:false))
           | `Edit -> (
               match cursor_cr review with
-              | Some (_, occ) ->
+              | Some (index, occ) ->
+                  let ordinal = occurrence_ordinal review index occ in
                   let draft =
                     match Spice_cr.Occurrence.comment occ with
                     | Ok cr -> Spice_cr.to_string cr
@@ -894,15 +917,17 @@ let update msg t =
                   stay
                     (set_compose
                        (Review_compose.make
-                          ~target:(Review_compose.Edit { occurrence = occ })
+                          ~target:
+                            (Review_compose.Edit { occurrence = occ; ordinal })
                           ~draft))
               | None ->
                   stay (notify screen ~text:"select a CR to edit" ~warning:false))
           | `Resolve -> (
               match cursor_cr review with
-              | Some (_, occ) -> (
+              | Some (index, occ) -> (
                   match Spice_cr.Occurrence.comment occ with
                   | Ok cr -> (
+                      let ordinal = occurrence_ordinal review index occ in
                       let resolver =
                         match Spice_cr.Handle.of_string screen.resolver with
                         | Ok handle -> handle
@@ -917,7 +942,8 @@ let update msg t =
                             (set_compose
                                (Review_compose.make
                                   ~target:
-                                    (Review_compose.Resolve { occurrence = occ })
+                                    (Review_compose.Resolve
+                                       { occurrence = occ; ordinal })
                                   ~draft:(Spice_cr.to_string resolved)))
                       | Error error ->
                           stay

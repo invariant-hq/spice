@@ -263,8 +263,8 @@ let compose_anchor state =
       match Review_compose.target compose with
       | Review_compose.Add { path; line } ->
           Some (Spice_path.Rel.to_string path, line)
-      | Review_compose.Edit { occurrence } | Review_compose.Resolve { occurrence }
-        ->
+      | Review_compose.Edit { occurrence; _ }
+      | Review_compose.Resolve { occurrence; _ } ->
           Some
             ( Spice_path.Rel.to_string (Spice_cr.Occurrence.path occurrence),
               Spice_cr.Occurrence.line occurrence ))

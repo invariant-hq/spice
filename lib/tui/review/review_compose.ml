@@ -16,8 +16,8 @@
 
 type target =
   | Add of { path : Spice_path.Rel.t; line : int }
-  | Edit of { occurrence : Spice_cr.Occurrence.t }
-  | Resolve of { occurrence : Spice_cr.Occurrence.t }
+  | Edit of { occurrence : Spice_cr.Occurrence.t; ordinal : int }
+  | Resolve of { occurrence : Spice_cr.Occurrence.t; ordinal : int }
 
 type t = { target : target; draft : string; problem : string option }
 
@@ -53,8 +53,9 @@ let affordance t _review =
   match t.target with
   | Add { path; line } ->
       Printf.sprintf "CR on %s:%d" (Spice_path.Rel.to_string path) line
-  | Edit { occurrence } -> "edit CR on " ^ occurrence_location occurrence
-  | Resolve { occurrence } -> "resolve CR on " ^ occurrence_location occurrence
+  | Edit { occurrence; _ } -> "edit CR on " ^ occurrence_location occurrence
+  | Resolve { occurrence; _ } ->
+      "resolve CR on " ^ occurrence_location occurrence
 
 let line ?style text = Mosaic.text ?style ~wrap:`None ~flex_shrink:0. text
 let dialog_width = 60
