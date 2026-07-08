@@ -77,10 +77,8 @@ module Unattended = struct
 end
 
 let rule_id rule =
-  Spice_digest.key ~length:12
-    [
-      "spice.permission.rule.v1"; Spice_permission.Policy.Rule.stable_text rule;
-    ]
+  Spice_digest.key ~length:12 ~domain:"spice.permission.rule.v1"
+    [ Spice_permission.Policy.Rule.stable_text rule ]
 
 module Run = struct
   type 'src row = {

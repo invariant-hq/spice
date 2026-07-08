@@ -194,10 +194,11 @@ let fingerprint t ~base =
   | Ok output -> (
       match untracked_paths t with
       | Error _ as error -> error
-      | Ok untracked ->
-          Ok
-            (Spice_digest.key ~length:64
-               [ output; untracked_token t untracked ]))
+          | Ok untracked ->
+              Ok
+                (Spice_digest.key ~length:64
+                   ~domain:"spice.review_git.fingerprint.v1"
+                   [ output; untracked_token t untracked ]))
 
 (* Changed paths from [--name-status -z]: NUL-separated
    [status, path, status, path, ...] records, unquoted. Renames are disabled
@@ -527,7 +528,10 @@ let glance_if_changed t ~base ~known =
 
 module Records = struct
   let dir root = Filename.concat root (Filename.concat ".spice" "reviews")
-  let key ~base = Spice_digest.key ~length:16 [ base; "worktree" ]
+  let key ~base =
+    Spice_digest.key ~length:16 ~domain:"spice.review_git.worktree-record.v1"
+      [ base ]
+
   let path root key = Filename.concat (dir root) (key ^ ".json")
   let keep = 20
 

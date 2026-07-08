@@ -199,7 +199,9 @@ let create ?(max_files = default_max_files) ?(max_lines = default_max_lines)
   }
 
 let key path = Spice_path.Abs.to_string (W.Path.abs path)
-let line_hash text = Spice_digest.key ~length:16 [ text ]
+let line_hash text =
+  Spice_digest.key ~length:16 ~domain:"spice.tools.anchor_tracker.line.v1"
+    [ text ]
 
 (* Deterministic word allocation: pair indexes derive from the seed and a
    monotone counter. After repeated collisions against a file's used set the

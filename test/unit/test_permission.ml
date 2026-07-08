@@ -1045,8 +1045,8 @@ let rule_stable_text_distinguishes_rules () =
    level, with a precise diff, before it silently invalidates every persisted
    permission rule the way a golden-only cram diff would. *)
 let rule_id rule =
-  Spice_digest.key ~length:12
-    [ "spice.permission.rule.v1"; Policy.Rule.stable_text rule ]
+  Spice_digest.key ~length:12 ~domain:"spice.permission.rule.v1"
+    [ Policy.Rule.stable_text rule ]
 
 let rule_ids_are_stable_digests () =
   let deny_env =
@@ -1059,11 +1059,11 @@ let rule_ids_are_stable_digests () =
   let allow_dune_build =
     Policy.Rule.allow (argv_prefix ~program:"dune" ~args:[ "build" ] ())
   in
-  equal string ~msg:"deny .env rule id is stable" "9bbe27537a03"
+  equal string ~msg:"deny .env rule id is stable" "b62807796201"
     (rule_id deny_env);
-  equal string ~msg:"allow workspace read rule id is stable" "7846a2b8d492"
+  equal string ~msg:"allow workspace read rule id is stable" "be7bf2b60ce9"
     (rule_id allow_workspace_read);
-  equal string ~msg:"allow dune build rule id is stable" "076f6458c223"
+  equal string ~msg:"allow dune build rule id is stable" "39dabbb6bf76"
     (rule_id allow_dune_build)
 
 let rule_observers_and_match_eliminator () =

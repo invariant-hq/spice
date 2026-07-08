@@ -524,8 +524,9 @@ module Run = struct
         | None -> false)
       (State.permissions state)
 
-  let digest_id prefix fields =
-    Permission.Id.of_string (prefix ^ ":" ^ Spice_digest.key ~length:16 fields)
+  let digest_id prefix ~domain fields =
+    Permission.Id.of_string
+      (prefix ^ ":" ^ Spice_digest.key ~length:16 ~domain fields)
 
   let access_texts review =
     Spice_permission.Policy.Review.access_set review
@@ -533,15 +534,15 @@ module Run = struct
     |> List.map Spice_permission.Access.stable_text
 
   let permission_id turn_id call review =
-    digest_id "perm"
-      ("permission" :: Turn.Id.to_string turn_id :: Llm.Tool.Call.id call
-     :: access_texts review)
+    digest_id "perm" ~domain:"spice.session.permission.v1"
+      (Turn.Id.to_string turn_id :: Llm.Tool.Call.id call :: access_texts review)
 
   let tool_claim_id turn_id call =
     Tool_claim.Id.of_string
       ("tool_exec:"
       ^ Spice_digest.key ~length:16
-          [ "tool_claim"; Turn.Id.to_string turn_id; Llm.Tool.Call.id call ])
+          ~domain:"spice.session.tool_claim.v1"
+          [ Turn.Id.to_string turn_id; Llm.Tool.Call.id call ])
 
   let request_permission session turn_id call review =
     let requested =

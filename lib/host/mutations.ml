@@ -26,7 +26,10 @@ module Log = struct
        store and orphans every existing blob at its old path. *)
     let text = Spice_digest.Identity.to_string identity in
     let name = String.map (function ':' -> '-' | c -> c) text in
-    let shard = Spice_digest.key ~length:2 [ text ] in
+    let shard =
+      Spice_digest.key ~length:2 ~domain:"spice.host.mutations.blob-shard.v1"
+        [ text ]
+    in
     Filename.concat (Filename.concat (blobs_dir t) shard) name
 
   let io path f =
@@ -207,7 +210,10 @@ module Backend = struct
     in
     if not inside_work_tree then None
     else
-      let key = Spice_digest.key ~length:16 [ workspace_root ] in
+      let key =
+        Spice_digest.key ~length:16
+          ~domain:"spice.host.mutations.git-tree.v1" [ workspace_root ]
+      in
       let git_dir =
         Filename.concat (Filename.concat data_root "checkpoints") key
       in

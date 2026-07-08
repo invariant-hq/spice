@@ -24,10 +24,19 @@ let to_hex digest =
   done;
   Bytes.unsafe_to_string bytes
 
-let key ~length parts =
+let add_frame buffer text =
+  Buffer.add_string buffer (string_of_int (String.length text));
+  Buffer.add_char buffer ':';
+  Buffer.add_string buffer text
+
+let key ~length ~domain parts =
   if length < 0 || length > hex_size then
     invalid_arg "Spice_digest.key: length must be between 0 and 64";
-  String.take_first length (to_hex (string (String.concat "\000" parts)))
+  if String.is_empty domain then invalid_arg "Spice_digest.key: empty domain";
+  let buffer = Buffer.create 128 in
+  add_frame buffer domain;
+  List.iter (add_frame buffer) parts;
+  String.take_first length (to_hex (string (Buffer.contents buffer)))
 
 let equal = String.equal
 let pp ppf t = Format.pp_print_string ppf (to_hex t)

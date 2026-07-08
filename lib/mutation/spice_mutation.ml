@@ -6,7 +6,8 @@
 module Rel = Spice_path.Rel
 
 let decode_error message = Jsont.Error.msg Jsont.Meta.none message
-let short_id prefix parts = prefix ^ ":" ^ Spice_digest.key ~length:16 parts
+let short_id prefix ~domain parts =
+  prefix ^ ":" ^ Spice_digest.key ~length:16 ~domain parts
 
 let rel_jsont =
   Jsont.map ~kind:"workspace-relative path"
@@ -195,9 +196,8 @@ module Checkpoint = struct
 
   let derive_id ~session ~turn ~reason =
     Id.of_string
-      (short_id "chk"
+      (short_id "chk" ~domain:"spice.mutation.checkpoint.v1"
          [
-           "checkpoint";
            Spice_session.Id.to_string session;
            Spice_session.Turn.Id.to_string turn;
            reason_key reason;
@@ -318,9 +318,8 @@ module Change = struct
 
   let derive_id ~execution ~path ~index =
     Id.of_string
-      (short_id "change"
+      (short_id "change" ~domain:"spice.mutation.change.v1"
          [
-           "change";
            Spice_session.Tool_claim.Id.to_string execution;
            Rel.to_string path;
            string_of_int index;
@@ -872,9 +871,8 @@ module Revert = struct
 
   let derive_id ~session ~scope ~ordinal =
     Revert_id.of_string
-      (short_id "revert"
+      (short_id "revert" ~domain:"spice.mutation.revert.v1"
          [
-           "revert";
            Spice_session.Id.to_string session;
            Scope.key scope;
            string_of_int ordinal;

@@ -17,6 +17,7 @@ let hex =
 let digest_hex_size = 64
 let digest_raw_size = 32
 let hex_digits = "0123456789abcdef"
+let key_domain = "spice.digest.test.v1"
 
 let hex_of_raw raw =
   let hex = Bytes.create (String.length raw * 2) in
@@ -31,6 +32,19 @@ let hex_of_raw raw =
 
 let expect_hex msg input expected = equal hex ~msg expected (hex_string input)
 let all_bytes = String.init 256 (fun code -> Char.chr code)
+
+let add_frame buffer text =
+  Buffer.add_string buffer (string_of_int (String.length text));
+  Buffer.add_char buffer ':';
+  Buffer.add_string buffer text
+
+let framed_key_input ~domain parts =
+  let buffer = Buffer.create 128 in
+  add_frame buffer domain;
+  List.iter (add_frame buffer) parts;
+  Buffer.contents buffer
+
+let expected_key ~domain parts = hex_string (framed_key_input ~domain parts)
 
 let sha256_vectors () =
   let cases =
@@ -105,26 +119,59 @@ let hex_format_is_lowercase () =
     text
 
 let key () =
-  let full = hex_string "anchor" in
-  equal string ~msg:"single part is hashed without a separator" full
-    (Digest.key ~length:digest_hex_size [ "anchor" ]);
-  equal string ~msg:"zero-length key" "" (Digest.key ~length:0 [ "anchor" ]);
+  let full = expected_key ~domain:key_domain [ "anchor" ] in
+  equal string ~msg:"single part is hashed with its domain frame" full
+    (Digest.key ~length:digest_hex_size ~domain:key_domain [ "anchor" ]);
+  equal string ~msg:"zero-length key" ""
+    (Digest.key ~length:0 ~domain:key_domain [ "anchor" ]);
   equal string ~msg:"key prefix" (String.take_first 8 full)
-    (Digest.key ~length:8 [ "anchor" ]);
-  equal string ~msg:"parts are NUL-joined" (hex_string "a\000b")
-    (Digest.key ~length:digest_hex_size [ "a"; "b" ]);
+    (Digest.key ~length:8 ~domain:key_domain [ "anchor" ]);
+  equal string ~msg:"empty parts are framed"
+    (expected_key ~domain:key_domain [])
+    (Digest.key ~length:digest_hex_size ~domain:key_domain []);
+  equal string ~msg:"parts are length-framed"
+    (expected_key ~domain:key_domain [ "a"; "b" ])
+    (Digest.key ~length:digest_hex_size ~domain:key_domain [ "a"; "b" ]);
   is_true ~msg:"part boundaries are domain-separated"
     (not
        (String.equal
-          (Digest.key ~length:digest_hex_size [ "ab"; "c" ])
-          (Digest.key ~length:digest_hex_size [ "a"; "bc" ])));
+          (Digest.key ~length:digest_hex_size ~domain:key_domain [ "ab"; "c" ])
+          (Digest.key ~length:digest_hex_size ~domain:key_domain
+             [ "a"; "bc" ])));
+  is_true ~msg:"empty part and no parts are distinct"
+    (not
+       (String.equal
+          (Digest.key ~length:digest_hex_size ~domain:key_domain [])
+          (Digest.key ~length:digest_hex_size ~domain:key_domain [ "" ])));
+  is_true ~msg:"embedded NUL cannot erase a part boundary"
+    (not
+       (String.equal
+          (Digest.key ~length:digest_hex_size ~domain:key_domain [ "a"; "b" ])
+          (Digest.key ~length:digest_hex_size ~domain:key_domain [ "a\000b" ])));
+  is_true ~msg:"embedded NUL cannot move a part boundary"
+    (not
+       (String.equal
+          (Digest.key ~length:digest_hex_size ~domain:key_domain
+             [ "a"; "b\000c" ])
+          (Digest.key ~length:digest_hex_size ~domain:key_domain
+             [ "a\000b"; "c" ])));
+  is_true ~msg:"domains are separated"
+    (not
+       (String.equal
+          (Digest.key ~length:digest_hex_size ~domain:"spice.digest.test.a"
+             [ "same" ])
+          (Digest.key ~length:digest_hex_size ~domain:"spice.digest.test.b"
+             [ "same" ])));
   expect_invalid_arg
     ~expected:"Spice_digest.key: length must be between 0 and 64"
-    "negative key length" (fun () -> Digest.key ~length:(-1) [ "anchor" ]);
+    "negative key length" (fun () ->
+      Digest.key ~length:(-1) ~domain:key_domain [ "anchor" ]);
   expect_invalid_arg
     ~expected:"Spice_digest.key: length must be between 0 and 64"
     "oversized key length" (fun () ->
-      Digest.key ~length:(digest_hex_size + 1) [ "anchor" ])
+      Digest.key ~length:(digest_hex_size + 1) ~domain:key_domain [ "anchor" ]);
+  expect_invalid_arg ~expected:"Spice_digest.key: empty domain" "empty domain"
+    (fun () -> Digest.key ~length:8 ~domain:"" [ "anchor" ])
 
 let comparison_and_formatting () =
   let a = Digest.string "a" in
@@ -229,7 +276,7 @@ let key_input =
     ~gen:key_input_gen ()
 
 let generated_key_is_lowercase_hex_of_length (length, parts) =
-  let key = Digest.key ~length parts in
+  let key = Digest.key ~length ~domain:key_domain parts in
   equal int ~msg:"key has exactly length characters" length (String.length key);
   String.iter
     (fun c ->
@@ -237,10 +284,10 @@ let generated_key_is_lowercase_hex_of_length (length, parts) =
         failf "non-lowercase-hex character in key: %C" c)
     key
 
-let generated_key_matches_nul_join (_length, parts) =
-  equal string ~msg:"full key is the digest of the NUL-joined parts"
-    (hex_string (String.concat "\000" parts))
-    (Digest.key ~length:digest_hex_size parts)
+let generated_key_matches_framing (_length, parts) =
+  equal string ~msg:"full key is the digest of framed domain and parts"
+    (expected_key ~domain:key_domain parts)
+    (Digest.key ~length:digest_hex_size ~domain:key_domain parts)
 
 let generated_hex_round_trips text =
   let value = Digest.string text in
@@ -267,6 +314,6 @@ let () =
       prop' "generated hex is stable" string generated_hex_round_trips;
       prop' "keys are lowercase hex of the requested length" key_input
         generated_key_is_lowercase_hex_of_length;
-      prop' "full keys equal the digest of the NUL-joined parts" key_input
-        generated_key_matches_nul_join;
+      prop' "full keys equal the digest of framed domain and parts" key_input
+        generated_key_matches_framing;
     ]
