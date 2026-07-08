@@ -12,7 +12,7 @@
     The header must be empty or a YAML mapping. Mapping values may use the full
     YAML language so documents written for other agents parse rather than error;
     Spice itself only reads YAML string nodes. A non-string value under a key is
-    visible in {!keys} but reads as [None] from {!val-string}; callers
+    visible in {!keys} but reads as [None] from {!string}; callers
     distinguish "absent" from "present but not a string" with {!keys}.
 
     Parsing splits bytes and never normalizes the body: the body is the exact
@@ -46,12 +46,15 @@ type t
 val parse : string -> (t, Error.t) result
 (** [parse doc] splits [doc] into frontmatter fields and body.
 
-    A document whose first line is exactly [---] (an optional trailing carriage
-    return is accepted) opens a fence; the header ends at the next line that is
-    exactly [---]. The text between the fences is parsed as YAML and must be a
-    mapping or empty. Invalid YAML errors with [Invalid_yaml message]; valid
-    non-mapping YAML errors with [Not_a_mapping]. A document that does not start
-    with [---] has no fields and is all body.
+    A document whose first line is exactly [---] opens a fence, and the header
+    ends at the next line that is exactly [---]. A trailing carriage return is
+    accepted on either fence line to support CRLF input. Leading spaces,
+    trailing spaces, indentation, or additional dashes do not form a fence.
+
+    The text between the fences is parsed as YAML and must be a mapping or
+    empty. Invalid YAML errors with [Invalid_yaml message]; valid non-mapping
+    YAML errors with [Not_a_mapping]. A document that does not start with an
+    exact opening fence has no fields and is all body.
 
     The body is the byte suffix following the closing fence line and its
     newline, if present, unchanged: no trimming, no line-ending normalization.

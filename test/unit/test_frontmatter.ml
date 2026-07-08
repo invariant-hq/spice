@@ -30,6 +30,31 @@ let dashes_not_at_line_start () =
     (Frontmatter.keys t);
   equal string ~msg:"body is the whole document" doc (Frontmatter.body t)
 
+let spaces_do_not_open_a_fence () =
+  let docs =
+    [
+      "--- \nkey: value\n---\nbody\n";
+      " ---\nkey: value\n---\nbody\n";
+      "\t---\nkey: value\n---\nbody\n";
+    ]
+  in
+  List.iter
+    (fun doc ->
+      let t = parsed doc in
+      equal (list string) ~msg:"no keys" [] (Frontmatter.keys t);
+      equal string ~msg:"body is the whole document" doc (Frontmatter.body t))
+    docs
+
+let spaces_do_not_close_a_fence () =
+  match parse_error "---\nkey: value\n--- \nbody\n" with
+  | Frontmatter.Error.Unterminated -> ()
+  | error -> failf "expected Unterminated: %s" (Frontmatter.Error.message error)
+
+let four_dashes_do_not_close_a_fence () =
+  match parse_error "---\nkey: value\n----\nbody\n" with
+  | Frontmatter.Error.Unterminated -> ()
+  | error -> failf "expected Unterminated: %s" (Frontmatter.Error.message error)
+
 let empty_fence () =
   let t = parsed "---\n---\nbody\n" in
   equal (list string) ~msg:"no keys" [] (Frontmatter.keys t);
@@ -163,6 +188,12 @@ let () =
       test "treats a fenceless document as all body" no_fence;
       test "requires the fence to be exactly three dashes"
         dashes_not_at_line_start;
+      test "does not allow spaces around an opening fence"
+        spaces_do_not_open_a_fence;
+      test "does not allow spaces around a closing fence"
+        spaces_do_not_close_a_fence;
+      test "does not allow four dashes as a closing fence"
+        four_dashes_do_not_close_a_fence;
       test "parses an empty fence" empty_fence;
       test "parses a whitespace-only fence" whitespace_only_fence;
       test "reads YAML string fields" string_fields;
