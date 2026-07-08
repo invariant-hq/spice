@@ -58,6 +58,7 @@
   spice_tui
   spice_tool
   spice_workspace
+  spice_workspace_fs
   threads.posix
   unix
   uri))

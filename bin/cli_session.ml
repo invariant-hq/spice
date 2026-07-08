@@ -1204,44 +1204,11 @@ let diff json cwd latest turn path last id =
 (* Revert: lower the plan to Spice_edit so apply inherits locking,
    revalidation, and stale rejection. *)
 
-let revert_io ~stdenv () =
-  let lock = Eio.Mutex.create () in
+let revert_io ~stdenv ~workspace () =
   let fs = Eio.Stdenv.fs stdenv in
-  let native_of path =
-    Spice_path.Abs.to_string (Spice_workspace.Path.abs path)
-  in
-  let io_error path exn = Spice_edit.Error.io ~path (Printexc.to_string exn) in
-  {
-    Spice_edit.Apply.with_write_lock =
-      (fun _paths f -> Eio.Mutex.use_rw ~protect:true lock f);
-    revalidate = (fun path -> Ok path);
-    read =
-      (fun path ->
-        match Eio.Path.load (Eio.Path.( / ) fs (native_of path)) with
-        | contents ->
-            if String.is_valid_utf_8 contents then
-              Ok (Spice_edit.Observed.Text contents)
-            else Ok Spice_edit.Observed.Other
-        | exception Eio.Io (Eio.Fs.E (Eio.Fs.Not_found _), _) ->
-            Ok Spice_edit.Observed.Missing
-        | exception exn -> Error (io_error path exn));
-    commit =
-      (fun ~path ~before ~after ->
-        match (before, after) with
-        | _, Spice_edit.State.Text contents -> (
-            match
-              Eio.Path.save ~create:(`Or_truncate 0o644)
-                (Eio.Path.( / ) fs (native_of path))
-                contents
-            with
-            | () -> Ok ()
-            | exception exn -> Error (io_error path exn))
-        | Spice_edit.State.Text _, Spice_edit.State.Missing
-        | Spice_edit.State.Missing, Spice_edit.State.Missing -> (
-            match Eio.Path.unlink (Eio.Path.( / ) fs (native_of path)) with
-            | () -> Ok ()
-            | exception exn -> Error (io_error path exn)));
-  }
+  Spice_workspace_fs.Edit.io ~fs ~workspace ~max_bytes:max_int
+    ~allow_remove:true ()
+  |> fst
 
 let revert_rows ~log ~session_id ~turn ~revert (result : Spice_edit.Result.t) =
   let index = ref (-1) in
@@ -1338,7 +1305,9 @@ let apply_and_record_revert ~stdenv ~store ~log ~workspace ~workspace_root
     capture_before_revert ~stdenv ~store ~log ~workspace_root ~session:target
       ~turn
   in
-  match Spice_edit.apply ~io:(revert_io ~stdenv ()) ~workspace edits with
+  match
+    Spice_edit.apply ~io:(revert_io ~stdenv ~workspace ()) ~workspace edits
+  with
   | Error error ->
       Error
         (`Runtime ("revert failed: " ^ Spice_edit.Apply_error.message error))
