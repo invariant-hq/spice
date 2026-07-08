@@ -32,12 +32,20 @@ module Client : sig
   (** Connection targets for the local chat-completions server. *)
 
   type t
-  (** A connection target: base URL plus the Eio capabilities to reach it. *)
+  (** A connection target: base URL, constant request headers, plus the Eio
+      capabilities to reach it. *)
 
   val make :
-    base_url:string -> sw:Eio.Switch.t -> env:Eio_unix.Stdenv.base -> unit -> t
+    ?headers:(string * string) list ->
+    base_url:string ->
+    sw:Eio.Switch.t ->
+    env:Eio_unix.Stdenv.base ->
+    unit ->
+    t
   (** [make ~base_url ~sw ~env ()] targets [base_url], e.g.
-      ["http://127.0.0.1:8321"]. *)
+      ["http://127.0.0.1:8321"]. [headers] are sent on every request ahead of
+      the per-call headers and default to [[]]; an authorization header for a
+      key-protected daemon goes here. *)
 end
 
 val health : ?timeout_s:float -> Client.t -> (unit, Error.t) result

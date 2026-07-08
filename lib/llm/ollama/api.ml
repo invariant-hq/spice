@@ -19,9 +19,14 @@ module Error = struct
 end
 
 module Client = struct
-  type t = { base_url : string; sw : Eio.Switch.t; env : Eio_unix.Stdenv.base }
+  type t = {
+    base_url : string;
+    headers : (string * string) list;
+    sw : Eio.Switch.t;
+    env : Eio_unix.Stdenv.base;
+  }
 
-  let make ~base_url ~sw ~env () = { base_url; sw; env }
+  let make ?(headers = []) ~base_url ~sw ~env () = { base_url; headers; sw; env }
 end
 
 let max_error_body_size = 65_536
@@ -54,7 +59,7 @@ let call ?body t meth path headers =
   try
     let response, response_body =
       Cohttp_eio.Client.call (http_client t) ~sw:t.Client.sw
-        ~headers:(cohttp_headers headers)
+        ~headers:(cohttp_headers (t.Client.headers @ headers))
         ?body:(Option.map Cohttp_eio.Body.of_string body)
         meth
         (Uri.of_string (t.Client.base_url ^ path))

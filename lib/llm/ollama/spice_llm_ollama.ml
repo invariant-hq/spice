@@ -30,6 +30,27 @@ module Config = struct
   let base_url t = t.base_url
 end
 
+module Credential = struct
+  type t = Api_key of string | Bearer of string
+
+  let check fn value =
+    if String.is_empty value then invalid fn "value must not be empty"
+
+  let api_key key =
+    check "Credential.api_key" key;
+    Api_key key
+
+  let bearer token =
+    check "Credential.bearer" token;
+    Bearer token
+
+  (* Both kinds authenticate as a bearer token: the daemon (and every
+     OpenAI-compatible server behind the same endpoint shape) reads
+     [Authorization: Bearer]. *)
+  let header = function
+    | Api_key value | Bearer value -> ("authorization", "Bearer " ^ value)
+end
+
 let llm_error ?(phase = Llm.Error.Startup) ?status kind message =
   Llm.Error.make ~kind ~phase ~provider ?status message
 
@@ -525,13 +546,14 @@ let stream_events ~cancelled requested_model api_stream =
   in
   Llm.Stream.make ~close:(fun () -> Api.Chat.close api_stream) next
 
-let client ~sw ~env ?(config = Config.default) () =
+let client ~sw ~env ?(config = Config.default) ?credential () =
   let accepts model =
     Llm.Provider.equal provider (Llm.Model.provider model)
     && Llm.Model.Api.equal api (Llm.Model.api model)
   in
+  let headers = Option.map Credential.header credential |> Option.to_list in
   let api_client =
-    Api.Client.make ~base_url:(Config.base_url config) ~sw ~env ()
+    Api.Client.make ~headers ~base_url:(Config.base_url config) ~sw ~env ()
   in
   let run ~cancelled request =
     if cancelled () then Error (cancelled_error ())

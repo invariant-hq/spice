@@ -12,10 +12,12 @@
     the user's `ollama pull`, not Spice's concern. Spice's provider-neutral
     transcript, tool, response, and stream types remain the public boundary.
 
-    The client is credentialless and connects to {!Config.make}'s [base_url]
-    ([http://127.0.0.1:11434] by default; override it for a daemon on another
-    machine via the provider base-URL config). A request for a model the daemon
-    does not have fails at request time with the daemon's own error. *)
+    The client connects to {!Config.make}'s [base_url] ([http://127.0.0.1:11434]
+    by default; override it for a daemon on another machine via the provider
+    base-URL config). Authentication is optional: a bare daemon needs none, a
+    key-protected one takes a {!Credential.t} sent as a bearer authorization
+    header. A request for a model the daemon does not have fails at request
+    time with the daemon's own error. *)
 
 val provider : Spice_llm.Provider.t
 (** [provider] is the [ollama] provider namespace. *)
@@ -43,11 +45,31 @@ module Config : sig
   (** [default] is [make ()]. *)
 end
 
+module Credential : sig
+  type t
+  (** Authentication material for a key-protected daemon.
+
+      Credential values are inert; the client sends them as a bearer
+      authorization header on every request. *)
+
+  val api_key : string -> t
+  (** [api_key key] is API-key material.
+
+      Raises [Invalid_argument] if [key] is empty. *)
+
+  val bearer : string -> t
+  (** [bearer token] is bearer-token material.
+
+      Raises [Invalid_argument] if [token] is empty. *)
+end
+
 val client :
   sw:Eio.Switch.t ->
   env:Eio_unix.Stdenv.base ->
   ?config:Config.t ->
+  ?credential:Credential.t ->
   unit ->
   Spice_llm.Client.t
-(** [client ~sw ~env ()] is a credentialless Ollama client streaming over the
-    daemon's chat-completions endpoint. *)
+(** [client ~sw ~env ()] is an Ollama client streaming over the daemon's
+    chat-completions endpoint. Without [credential] requests carry no
+    authorization header — the bare local-daemon default. *)
