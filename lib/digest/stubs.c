@@ -11,10 +11,10 @@ CAMLprim value caml_spice_digest_sha256_string(value input)
   CAMLparam1(input);
   CAMLlocal1(output);
   struct sha256_ctx ctx;
-  const uint8_t *data = (const uint8_t *)String_val(input);
   mlsize_t len = caml_string_length(input);
 
   output = caml_alloc_string(SHA256_DIGEST_SIZE);
+  const uint8_t *data = (const uint8_t *)String_val(input);
   spice_sha256_init(&ctx);
   while (len > 0) {
     uint32_t chunk =
