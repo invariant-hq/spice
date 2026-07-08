@@ -722,7 +722,7 @@ let stop_reason finish_reason has_tool_calls =
       | "PROHIBITED_CONTENT" | "SPII" ) ->
       Some Llm.Response.Stop.content_filter
   | Some "MALFORMED_FUNCTION_CALL" -> Some (Llm.Response.Stop.other "error")
-  | Some reason -> Some (Llm.Response.Stop.other reason)
+  | Some _ -> Some (Llm.Response.Stop.other "provider_stop")
   | None -> None
 
 let error_kind_of_status = function
@@ -909,6 +909,14 @@ let update_usage state usage_json =
 
 let finish_response state requested_model =
   let parts = List.rev state.parts in
+  let has_tool_calls =
+    List.exists
+      (function
+        | Llm.Message.Assistant.Tool_call _ -> true
+        | Llm.Message.Assistant.Text _ | Llm.Message.Assistant.Reasoning _ ->
+            false)
+      parts
+  in
   let assistant =
     match parts with
     | [] -> Llm.Message.Assistant.empty
@@ -918,20 +926,22 @@ let finish_response state requested_model =
     if Buffer.length state.reasoning_summary = 0 then []
     else [ Buffer.contents state.reasoning_summary ]
   in
-  let has_tool_calls =
-    List.exists
-      (function
-        | Llm.Message.Assistant.Tool_call _ -> true
-        | Llm.Message.Assistant.Text _ | Llm.Message.Assistant.Reasoning _ ->
-            false)
-      parts
-  in
-  Ok
-    (Llm.Response.make ~model:requested_model
-       ?response_model:state.response_model ?response_id:state.response_id
-       ?provider_stop:state.finish_reason
-       ?stop:(stop_reason state.finish_reason has_tool_calls)
-       ?usage:state.usage ~reasoning_summary assistant)
+  match (state.finish_reason, has_tool_calls) with
+  | None, false ->
+      Error
+        (stream_error Llm.Error.Malformed_stream
+           "Google Gemini stream ended without finishReason")
+  | _ ->
+      let stop =
+        match state.finish_reason with
+        | None when has_tool_calls -> Some Llm.Response.Stop.tool_call
+        | _ -> stop_reason state.finish_reason has_tool_calls
+      in
+      Ok
+        (Llm.Response.make ~model:requested_model
+           ?response_model:state.response_model ?response_id:state.response_id
+           ?provider_stop:state.finish_reason ?stop ?usage:state.usage
+           ~reasoning_summary assistant)
 
 let handle_event state event =
   if not state.terminal then (

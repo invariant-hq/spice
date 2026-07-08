@@ -21,6 +21,12 @@ let expect_stream_ok msg = function
       ignore events;
       failf "%s: %a" msg Llm.Error.pp error
 
+let expect_stream_error msg = function
+  | Ok value ->
+      ignore value;
+      failf "%s: expected stream error" msg
+  | Error value -> value
+
 let json_string json =
   match Jsont_bytesrw.encode_string Jsont.json json with
   | Ok text -> text
@@ -568,6 +574,89 @@ let empty_terminal_candidate_decodes_response () =
   equal (option string) ~msg:"provider stop" (Some "MAX_TOKENS")
     (Llm.Response.provider_stop response)
 
+let unknown_finish_reason_is_provider_stop () =
+  let result, _requests =
+    with_google_server
+      (fun index request ->
+        ignore index;
+        ignore request;
+        sse_response
+          [
+            sse_event
+              (json_object
+                 [
+                   ( "candidates",
+                     Json.list
+                       [
+                         json_object
+                           [
+                             ( "content",
+                               json_object
+                                 [
+                                   ("role", Json.string "model");
+                                   ( "parts",
+                                     Json.list
+                                       [
+                                         json_object
+                                           [ ("text", Json.string "blocked") ];
+                                       ] );
+                                 ] );
+                             ("finishReason", Json.string "OTHER");
+                           ];
+                       ] );
+                 ]);
+          ])
+      (fun port -> run_stream port (request ()))
+  in
+  let _events, response = expect_stream_ok "unknown finish reason" result in
+  equal string ~msg:"response text" "blocked" (Llm.Response.text response);
+  equal (option string) ~msg:"normalized stop" (Some "provider_stop")
+    (Option.map Llm.Response.Stop.label (Llm.Response.stop response));
+  equal (option string) ~msg:"provider stop" (Some "OTHER")
+    (Llm.Response.provider_stop response)
+
+let eof_without_finish_reason_is_malformed () =
+  let result, _requests =
+    with_google_server
+      (fun index request ->
+        ignore index;
+        ignore request;
+        sse_response
+          [
+            sse_event
+              (json_object
+                 [
+                   ( "candidates",
+                     Json.list
+                       [
+                         json_object
+                           [
+                             ( "content",
+                               json_object
+                                 [
+                                   ("role", Json.string "model");
+                                   ( "parts",
+                                     Json.list
+                                       [
+                                         json_object
+                                           [ ("text", Json.string "partial") ];
+                                       ] );
+                                 ] );
+                           ];
+                       ] );
+                 ]);
+          ])
+      (fun port -> run_stream port (request ()))
+  in
+  let events, error = expect_stream_error "truncated stream" result in
+  equal int ~msg:"text event before failure" 1 (List.length events);
+  equal string ~msg:"error kind" "malformed_stream"
+    (Llm.Error.label (Llm.Error.kind error));
+  equal string ~msg:"error phase" "stream"
+    (match Llm.Error.phase error with
+    | Llm.Error.Startup -> "startup"
+    | Llm.Error.Stream -> "stream")
+
 let completed_stream_decodes_events_and_response () =
   let result, requests =
     with_google_server
@@ -771,6 +860,10 @@ let () =
       test "projected tool schema encoding" projected_tool_schema_encoding;
       test "empty terminal candidate decodes response"
         empty_terminal_candidate_decodes_response;
+      test "unknown finish reason is provider stop"
+        unknown_finish_reason_is_provider_stop;
+      test "EOF without finish reason is malformed"
+        eof_without_finish_reason_is_malformed;
       test "completed stream decodes events and response"
         completed_stream_decodes_events_and_response;
     ]
