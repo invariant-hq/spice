@@ -15,7 +15,8 @@
 (** The type for the composer's launch input. *)
 type input =
   | Empty  (** The composer starts blank. *)
-  | Draft of string  (** The composer starts seeded with the text ([--draft]). *)
+  | Draft of string
+      (** The composer starts seeded with the text ([--draft]). *)
   | Submit of string
       (** The text is submitted as the first turn's prompt ([-p]/[--prompt]);
           the shell launches straight into the chat, past the home stage. *)
@@ -77,13 +78,14 @@ type command =
   | Interrupt_force
       (** Force a lagging interrupt: hard-cancel the in-flight step through
           {!Spice_host.Live.force_interrupt}, out of band. Emitted on a single
-          esc pressed while the turn is already draining ([Turn.is_interrupting]),
-          when the cooperative interrupt has not settled. *)
+          esc pressed while the turn is already draining
+          ([Turn.is_interrupting]), when the cooperative interrupt has not
+          settled. *)
   | Load_sessions
-      (** Load the quick-switch panel's rows from the host and dispatch them back
-          with {!sessions_loaded}, or {!sessions_load_failed} on a store error.
-          Emitted once when the panel opens (via the [/sessions] trigger), never
-          refreshed while open. *)
+      (** Load the quick-switch panel's rows from the host and dispatch them
+          back with {!sessions_loaded}, or {!sessions_load_failed} on a store
+          error. Emitted once when the panel opens (via the [/sessions]
+          trigger), never refreshed while open. *)
   | Load_screen_sessions
       (** Load the browse screen's rows — every resumable session in the cwd,
           with recency groups, turn counts, and fork lineage — and dispatch them
@@ -102,10 +104,10 @@ type command =
       (** Load a settled child's persisted document for a read-only drill-in
           (doc/plans/tui-next-threads.md §6 phase 5a): the runtime reads the
           child session by id and replays its durable events back as
-          {!thread_document_loaded}, which the shell folds into the drilled chat.
-          A settled child's document is complete, so a plain store read is
-          race-free (a live child needs [Jobs.observe], §3.2 — deferred). Emitted
-          by [↵]/click on a settled switcher row. *)
+          {!thread_document_loaded}, which the shell folds into the drilled
+          chat. A settled child's document is complete, so a plain store read is
+          race-free (a live child needs [Jobs.observe], §3.2 — deferred).
+          Emitted by [↵]/click on a settled switcher row. *)
   | Rename_session of { id : Spice_session.Id.t; title : string }
       (** Persist [title] for session [id] via the host lifecycle verb, then
           reload the screen's rows ({!screen_loaded}). Emitted by the screen's
@@ -124,8 +126,8 @@ type command =
           tab's edits. *)
   | Toggle_skill of string
       (** Flip the named skill's membership in [skills.disabled] in the user
-          config file, then re-assemble the facts. Emitted by the settings skills
-          tab's toggle. *)
+          config file, then re-assemble the facts. Emitted by the settings
+          skills tab's toggle. *)
   | Load_model_panel
       (** Assemble the model panel's facts — the tool-capable visible catalog
           grouped by provider, each provider's account phase deciding the locked
@@ -140,8 +142,8 @@ type command =
           it as [Field.model] with [effort] as [Field.reasoning] in the user
           config, then dispatch the confirmation back with {!model_switched}.
           Effective the next turn — the live attachment is not hot-swapped
-          (mirrors old [lib/tui/runtime.ml] [save_model_selection]). Emitted by a
-          model-panel pick. *)
+          (mirrors old [lib/tui/runtime.ml] [save_model_selection]). Emitted by
+          a model-panel pick. *)
   | Copy_text of string
       (** Copy the string to the terminal clipboard. Emitted by the settings
           status tab's session-id copy. *)
@@ -170,8 +172,8 @@ type command =
       message : string option;
     }
       (** Resolve a blocked permission dialog: the runtime submits
-          {!Spice_protocol.Command.Reply} to the attached session. Emitted when a
-          permission dialog is allowed or denied. *)
+          {!Spice_protocol.Command.Reply} to the attached session. Emitted when
+          a permission dialog is allowed or denied. *)
   | Answer_tool of {
       turn : Spice_session.Turn.Id.t;
       call_id : string;
@@ -193,15 +195,15 @@ type command =
           the session drain, and dispatch the settled block back with
           {!shell_finished}. The shell surface admits one command at a time. *)
   | Interrupt_shell
-      (** Cancel the in-flight {!Run_shell}: its process group is terminated
-          and the block settles interrupted. Emitted by the interrupt
-          double-press while a shell command runs. *)
+      (** Cancel the in-flight {!Run_shell}: its process group is terminated and
+          the block settles interrupted. Emitted by the interrupt double-press
+          while a shell command runs. *)
   | Review_command of Spice_tui_review.Effect.t
       (** Run one review-screen effect. The review sub-library
-          ({!Spice_tui_review}) owns its whole asynchronous protocol —
-          snapshot load, persistence write, worktree watch, debounced reload,
-          source-comment mutation — and the shell forwards each effect blind; the
-          runtime interprets it and dispatches the completion back as
+          ({!Spice_tui_review}) owns its whole asynchronous protocol — snapshot
+          load, persistence write, worktree watch, debounced reload,
+          source-comment mutation — and the shell forwards each effect blind;
+          the runtime interprets it and dispatches the completion back as
           {!review_msg} (doc/plans/tui-next-review.md §3.3). *)
   | Load_auth_providers
       (** Ask the runtime for the passive provider facts the login / logout
@@ -219,19 +221,20 @@ type command =
           ({!Spice_auth.Secret.api_key}), persists it, and checks it against the
           provider, dispatching the settled record back with {!auth_settled}
           under [request]. The raw [key] is the only secret crossing the seam —
-          validated in the runtime, never rendered, never in the draft or history
-          (09-auth §10). *)
+          validated in the runtime, never rendered, never in the draft or
+          history (09-auth §10). *)
   | Auth_browser_login of {
       request : int;
       provider : Spice_llm.Provider.t;
       method_id : string;
     }
-      (** Drive an OAuth browser flow through {!Spice_host_builtin.Login.browser}
-          off the Mosaic loop (it awaits a localhost callback up to 300 s):
-          challenges dispatch back with {!auth_challenge}, the settled record
-          with {!auth_settled}, both under [request]. A concurrent
-          {!Auth_cancel} preempts the wait. tui-next never auto-opens the browser
-          (09-auth §6) — {!Auth_open_url} does, on the panel's explicit enter. *)
+      (** Drive an OAuth browser flow through
+          {!Spice_host_builtin.Login.browser} off the Mosaic loop (it awaits a
+          localhost callback up to 300 s): challenges dispatch back with
+          {!auth_challenge}, the settled record with {!auth_settled}, both under
+          [request]. A concurrent {!Auth_cancel} preempts the wait. tui-next
+          never auto-opens the browser (09-auth §6) — {!Auth_open_url} does, on
+          the panel's explicit enter. *)
   | Auth_device_login of {
       request : int;
       provider : Spice_llm.Provider.t;
@@ -255,10 +258,11 @@ type command =
       (** Copy the display-safe string (an authorization URL or a device user
           code) to the clipboard. Emitted by the flow panel's [c]. *)
   | Auth_open_url of { request : int; url : Uri.t }
-      (** Launch the OS browser on [url] ({!Spice_host_builtin.Login.open_browser})
-          and dispatch {!auth_browser_opened} back under [request] on success, or
-          {!auth_browser_open_failed} when no browser could be spawned. Emitted by
-          the browser panel's explicit enter (09-auth §6). *)
+      (** Launch the OS browser on [url]
+          ({!Spice_host_builtin.Login.open_browser}) and dispatch
+          {!auth_browser_opened} back under [request] on success, or
+          {!auth_browser_open_failed} when no browser could be spawned. Emitted
+          by the browser panel's explicit enter (09-auth §6). *)
 
 (** How a submitted turn settled, as the runtime reports it to the shell. The
     document and the full {!Spice_protocol.Error.t} do not cross into the pure
@@ -296,16 +300,16 @@ val health_loaded :
   Spice_ocaml_dune.Rpc.Instance.Health.t ->
   msg
 (** [health_loaded ~now ~file health] is the message the runtime dispatches when
-    a {!Reload_health} poll completes: the build-health verdict, the failing file
-    when the diagnostics name one, and the wall clock [now] the poll finished
-    (the heal notice measures the outage from it). *)
+    a {!Reload_health} poll completes: the build-health verdict, the failing
+    file when the diagnostics name one, and the wall clock [now] the poll
+    finished (the heal notice measures the outage from it). *)
 
 val prompt_history_loaded :
   session:Spice_session.Id.t -> History.Entry.t list -> msg
 (** [prompt_history_loaded ~session entries] is the message the runtime
-    dispatches when {!Load_prompt_history} completes: the stored records,
-    newest first, and the session id this process's records will carry —
-    ctrl+r ranks that session's entries first. *)
+    dispatches when {!Load_prompt_history} completes: the stored records, newest
+    first, and the session id this process's records will carry — ctrl+r ranks
+    that session's entries first. *)
 
 val prompt_history_appended : History.Entry.t -> msg
 (** [prompt_history_appended entry] is the message the runtime dispatches after
@@ -327,6 +331,15 @@ val sessions_loaded : Sessions_panel.row list -> msg
 (** [sessions_loaded rows] is the message the runtime dispatches when a
     {!Load_sessions} completes, folding the quick-switch panel's [rows] into the
     surface — dropped if the panel has since closed. *)
+
+val session_forked : parent_title:string -> msg
+(** [session_forked ~parent_title] is the message the runtime dispatches once a
+    {!Fork_session} has persisted the child, before the child's replay events:
+    the shell appends the lineage record
+    [forked to a new session · ↳ from "<parent_title>"] under the fresh banner
+    (10-commands.md §/fork). [parent_title] is the parent's display title — its
+    title, or its id when untitled ({!Spice_protocol.Session_summary}'s
+    convention). *)
 
 val sessions_load_failed : string -> msg
 (** [sessions_load_failed message] is the message the runtime dispatches when
@@ -397,19 +410,16 @@ val thread_settled : now:float -> Spice_protocol.Subagent_run.t -> msg
     dropping it from the live count. *)
 
 val thread_document_loaded :
-  run:Spice_session.Id.t ->
-  now:float ->
-  Spice_protocol.Event.t list ->
-  msg
+  run:Spice_session.Id.t -> now:float -> Spice_protocol.Event.t list -> msg
 (** [thread_document_loaded ~run ~now events] is the message the runtime
     dispatches when a {!Load_thread_document} completes: [events] are [run]'s
-    durable session events, which the shell folds through the turn reducer into a
-    read-only drilled-in chat (doc/plans/tui-next-threads.md §6 phase 5a). *)
+    durable session events, which the shell folds through the turn reducer into
+    a read-only drilled-in chat (doc/plans/tui-next-threads.md §6 phase 5a). *)
 
 val thread_drill_failed : run:Spice_session.Id.t -> string -> msg
-(** [thread_drill_failed ~run message] is the message the runtime dispatches when
-    a {!Load_thread_document} fails to read the child session: the shell flashes
-    [message] and stays on the parent chat. *)
+(** [thread_drill_failed ~run message] is the message the runtime dispatches
+    when a {!Load_thread_document} fails to read the child session: the shell
+    flashes [message] and stays on the parent chat. *)
 
 val auth_providers_loaded :
   (Auth_panel.provider_entry list, string) result -> msg
@@ -421,8 +431,8 @@ val auth_providers_loaded :
 val auth_challenge : request:int -> Auth_panel.challenge -> msg
 (** [auth_challenge ~request challenge] is the message the runtime dispatches
     when a browser / device flow emits its display-safe [challenge] (the
-    authorization URL, or the device URL + user code + expiry): the waiting panel
-    shows it, when [request] matches the attempt on screen. *)
+    authorization URL, or the device URL + user code + expiry): the waiting
+    panel shows it, when [request] matches the attempt on screen. *)
 
 val auth_browser_opened : request:int -> msg
 (** [auth_browser_opened ~request] is the message the runtime dispatches after
@@ -443,8 +453,8 @@ val auth_settled : request:int -> Auth_panel.record -> msg
     no [auth_settled] — nothing happened (09-auth §8). *)
 
 val review_msg : Spice_tui_review.msg -> msg
-(** [review_msg m] wraps a review-screen completion message the runtime built
-    (a snapshot load, a reload, a mutation result, a watch tick or failure) so it
+(** [review_msg m] wraps a review-screen completion message the runtime built (a
+    snapshot load, a reload, a mutation result, a watch tick or failure) so it
     folds through the shell into {!Spice_tui_review.update}
     (doc/plans/tui-next-review.md §3.3). *)
 
@@ -454,16 +464,16 @@ val init :
   reduced_motion:bool ->
   t * command list
 (** [init ~startup ~snapshot ~reduced_motion] is the initial model for
-    [snapshot] and its startup commands, per [startup]'s axes. Without a
-    session it is the home model and a first {!Reload_brief}. With one
-    ([spice resume]) it is the session's chat — the same banner-headed
-    transcript an in-app resume enters — and a {!Resume_session} that replays
-    the durable events into it, so launch-resume and in-app resume are one
-    path. {!Draft} seeds the composer; {!Submit} starts the first turn at once
-    (the drop happens before the first frame; combined with a session — a pair
-    the CLI rejects — it degrades to the draft seat rather than racing the
-    replay). {!Launch_review} opens the review screen over whatever the other
-    axes set up. [reduced_motion] holds the lockup static with no timers. *)
+    [snapshot] and its startup commands, per [startup]'s axes. Without a session
+    it is the home model and a first {!Reload_brief}. With one ([spice resume])
+    it is the session's chat — the same banner-headed transcript an in-app
+    resume enters — and a {!Resume_session} that replays the durable events into
+    it, so launch-resume and in-app resume are one path. {!Draft} seeds the
+    composer; {!Submit} starts the first turn at once (the drop happens before
+    the first frame; combined with a session — a pair the CLI rejects — it
+    degrades to the draft seat rather than racing the replay). {!Launch_review}
+    opens the review screen over whatever the other axes set up.
+    [reduced_motion] holds the lockup static with no timers. *)
 
 val update : msg -> t -> t * command list
 (** [update msg t] folds [msg] into [t]. Composer activity flows through

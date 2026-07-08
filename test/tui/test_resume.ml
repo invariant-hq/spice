@@ -151,6 +151,48 @@ let%expect_test "spice resume --last resumes the newest session" =
     newest session replayed: true
     not on the home prelude: true |}]
 
+(* /fork forks the attached session into a child and continues there
+   (10-commands.md §/fork): the fresh transcript carries the ❯ /fork echo and
+   the lineage record naming the parent's title, and the inherited history
+   replays below both. On the home stage nothing is attached, so the command
+   flashes the guard instead. *)
+let%expect_test "fork continues in a child with the lineage record" =
+  Project.with_temp "fork-command" @@ fun project ->
+  seed_prompt_session project "ses_parent" ~title:"streaming parser fix"
+    ~prompt:"trace the streaming parser bug";
+  Term.run project ~env:reduced_motion ~rows:24 ~cols:80
+    ~command:[ "resume"; "ses_parent" ]
+  @@ fun t ->
+  Term.wait t (Screen.has "trace the streaming parser bug");
+  Term.send t "/fork";
+  Term.wait t (fun s -> Screen.has "/fork" s && Screen.lacks "/thinking" s);
+  Term.send t Keys.enter;
+  Term.wait t (Screen.has "forked to a new session");
+  let s = Term.screen t in
+  print_fact "fork echo recorded" (Screen.has "❯ /fork" s);
+  print_fact "lineage names the parent title"
+    (Screen.has {|↳ from "streaming parser fix"|} s);
+  Term.wait t (Screen.has "trace the streaming parser bug");
+  print_fact "inherited history replayed"
+    (Screen.has "trace the streaming parser bug" (Term.screen t));
+  [%expect
+    {|
+    fork echo recorded: true
+    lineage names the parent title: true
+    inherited history replayed: true |}]
+
+let%expect_test "fork on the home stage flashes the no-session guard" =
+  Project.with_temp "fork-no-session" @@ fun project ->
+  Term.run project ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
+  Term.wait t (Screen.has "dune:");
+  Term.send t "/fork";
+  Term.wait t (fun s -> Screen.has "/fork" s && Screen.lacks "/thinking" s);
+  Term.send t Keys.enter;
+  Term.wait t (Screen.has "fork: no active session");
+  print_fact "guard flashed"
+    (Screen.has "fork: no active session" (Term.screen t));
+  [%expect {| guard flashed: true |}]
+
 (* [--draft] seeds the composer without starting anything: the process stays on
    the home stage with the text ready to edit (App.init [Draft]). *)
 let%expect_test "spice --draft seeds the composer on the home stage" =

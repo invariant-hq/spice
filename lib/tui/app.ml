@@ -6,10 +6,7 @@
 open Mosaic
 
 type input = Empty | Draft of string | Submit of string
-
-type launch =
-  | Launch_chat
-  | Launch_review of { base_spec : string option }
+type launch = Launch_chat | Launch_review of { base_spec : string option }
 
 type startup = {
   cwd : Spice_path.Abs.t option;
@@ -97,12 +94,14 @@ and panel =
           flow, working line) opened by [/login] / [/logout]. The masked api-key
           buffer lives inside the surface, never in the composer draft — a
           secret must never enter a buffer with history (09-auth §10 rule 1). *)
+
 (* The model panel remembers where it was opened from so esc returns there: the
    [/model] command opens it over the chat (esc restores the composer), the
    settings config Model row opens it over the settings screen (esc restores that
    screen unchanged — 03-ia §Settings, the one managed row). *)
 and model_panel = { panel_state : Model_panel.t; return : model_return }
 and model_return = To_chat | To_settings of Settings_screen.t
+
 and screen =
   | Sessions of Sessions_screen.t
   | Settings of Settings_screen.t
@@ -156,6 +155,15 @@ type t = {
      copy is fed separately via [Composer.with_history]. *)
   prompt_history : History.Entry.t list;
   session_id : Spice_session.Id.t option;
+  (* Whether the attached session's document exists on disk. [session_id] alone
+     cannot say: on the fresh path it is the pre-minted seed adopted from
+     {!Prompt_history_loaded}, and the document is only written when the first
+     turn attaches. Live events flow exclusively from an attached session (a
+     first turn, or a resume/fork replay), so the first one — or the
+     {!Thread_runs_loaded} a session entry dispatches — proves the document.
+     Session-mutating commands ([/fork]) gate on it. Never reset: entry into
+     another session re-attaches, and its replay re-proves. *)
+  attached : bool;
   (* Prompts submitted while a turn is in flight, oldest first; drained one per
      settle (finished or interrupted) and editable via [↑] on an empty composer
      (01-transcript.md §The status strip, revised 2026-07-08). *)
@@ -265,6 +273,7 @@ type msg =
     }
   | Toggle_expanded
   | Escape
+  | Session_forked of { parent_title : string }
   | Sessions_loaded of Sessions_panel.row list
   | Sessions_load_failed of string
   | Panel_msg of Sessions_panel.msg
@@ -448,6 +457,7 @@ let live_event ~now event = Live_event { event; now }
 let settled ~now result = Settled { result; now }
 let health_loaded ~now ~file health = Health_loaded { health; file; now }
 let sessions_loaded rows = Sessions_loaded rows
+let session_forked ~parent_title = Session_forked { parent_title }
 let sessions_load_failed message = Sessions_load_failed message
 let screen_loaded rows = Screen_loaded rows
 let screen_failed message = Screen_failed message
@@ -460,8 +470,10 @@ let thread_runs_loaded ~session runs = Thread_runs_loaded { session; runs }
 let thread_started run = Thread_started run
 let thread_asked ~now ~message run = Thread_asked { run; message; now }
 let thread_settled ~now run = Thread_settled { run; now }
+
 let thread_document_loaded ~run ~now events =
   Thread_document_loaded { run; events; now }
+
 let thread_drill_failed ~run message = Thread_drill_failed { run; message }
 let auth_providers_loaded result = Auth_providers_loaded result
 let auth_challenge ~request challenge = Auth_challenge { request; challenge }
@@ -534,35 +546,36 @@ let welcome_notice =
 
 let init_model ~snapshot ~reduced_motion =
   {
-      snapshot;
-      brief = None;
-      notice = welcome_notice;
-      composer = Composer.init ();
-      help = false;
-      motion = Home.Motion.init ~reduced:reduced_motion;
-      frame_accum = 0.;
-      flash = None;
-      phase = Prelude;
-      surface = Conversing;
-      completion = No_completion;
-      prompt_history = [];
-      session_id = None;
-      queued = [];
-      mode = Spice_protocol.Mode.default;
-      posture = Footer.Ask;
-      borrow = Free;
-      shell = None;
-      cols = 80;
-      rows = 24;
-      pane_open = false;
-      armed = None;
-      show_reasoning = true;
-      thread_runs = [];
-      strip_focus = None;
-      strip_hover = None;
-      drill = None;
-      next_request = 0;
-      review_launch = false;
+    snapshot;
+    brief = None;
+    notice = welcome_notice;
+    composer = Composer.init ();
+    help = false;
+    motion = Home.Motion.init ~reduced:reduced_motion;
+    frame_accum = 0.;
+    flash = None;
+    phase = Prelude;
+    surface = Conversing;
+    completion = No_completion;
+    prompt_history = [];
+    session_id = None;
+    queued = [];
+    mode = Spice_protocol.Mode.default;
+    posture = Footer.Ask;
+    borrow = Free;
+    shell = None;
+    cols = 80;
+    rows = 24;
+    pane_open = false;
+    armed = None;
+    show_reasoning = true;
+    thread_runs = [];
+    strip_focus = None;
+    strip_hover = None;
+    drill = None;
+    next_request = 0;
+    review_launch = false;
+    attached = false;
   }
 
 let completion_open t =
@@ -570,7 +583,20 @@ let completion_open t =
   | No_completion -> false
   | Commands _ | Mention _ | History_search _ -> true
 
-let empty_chat = { transcript = Transcript.empty; turn = Turn.idle; board = None; expanded = false; spinner = 0; now = 0.; scroll = 0; reveal = None; health = Spice_ocaml_dune.Rpc.Instance.Health.Disconnected; build = Build_unknown; broken_since = None }
+let empty_chat =
+  {
+    transcript = Transcript.empty;
+    turn = Turn.idle;
+    board = None;
+    expanded = false;
+    spinner = 0;
+    now = 0.;
+    scroll = 0;
+    reveal = None;
+    health = Spice_ocaml_dune.Rpc.Instance.Health.Disconnected;
+    build = Build_unknown;
+    broken_since = None;
+  }
 
 (* Fold one live event into the chat: the reducer produces the settled blocks to
    append and the new tail state. *)
@@ -630,8 +656,9 @@ let clean_notice ~now ~broken_since chat =
     | Some since -> [ Notice.Fact (format_outage (now -. since) ^ " broken") ]
     | None -> []
   in
-  dune_notice ~facts:(Notice.Fact "build clean" :: outage) ~atom:None
-    ~disclosable:false chat
+  dune_notice
+    ~facts:(Notice.Fact "build clean" :: outage)
+    ~atom:None ~disclosable:false chat
 
 (* Seed a fresh chat's Dune baseline from the home brief at the drop: the footer
    reads [health] immediately (no blank across the jump) and the transition law
@@ -703,10 +730,14 @@ let start_turn value t =
       let transcript =
         Transcript.append Transcript.empty (Transcript.Banner t.snapshot)
       in
-      let turn = Turn.request ~now:empty_chat.now ~prompt:value empty_chat.turn in
+      let turn =
+        Turn.request ~now:empty_chat.now ~prompt:value empty_chat.turn
+      in
       ( {
           t with
-          phase = Chat (seed_health ~brief:t.brief { empty_chat with transcript; turn });
+          phase =
+            Chat
+              (seed_health ~brief:t.brief { empty_chat with transcript; turn });
           motion = Home.Motion.freeze t.motion;
         },
         [ Start_turn value ] )
@@ -739,7 +770,8 @@ let start_shell command t =
       in
       ( {
           t with
-          phase = Chat (seed_health ~brief:t.brief { empty_chat with transcript });
+          phase =
+            Chat (seed_health ~brief:t.brief { empty_chat with transcript });
           motion = Home.Motion.freeze t.motion;
         },
         [ Run_shell command ] )
@@ -873,7 +905,8 @@ let dispatch_command ?(argument = None) command t =
       ( {
           t with
           flash =
-            Some (Command.slash command ^ " is available after the turn finishes");
+            Some
+              (Command.slash command ^ " is available after the turn finishes");
         },
         [] )
   | Command.Idle_only | Command.Anytime -> (
@@ -882,11 +915,12 @@ let dispatch_command ?(argument = None) command t =
           ( { t with surface = Panel (Session_switch Sessions_panel.loading) },
             [ Load_sessions ] )
       | Command.Open_model -> open_model_panel ~return:To_chat t
-      | Command.Open_login -> open_auth ~mode:Auth_panel.Login ?provider:argument t
+      | Command.Open_login ->
+          open_auth ~mode:Auth_panel.Login ?provider:argument t
       | Command.Open_logout ->
           open_auth ~mode:Auth_panel.Logout ?provider:argument t
       | Command.Quit -> (t, [ Quit ])
-      | Command.Switch_mode mode ->
+      | Command.Switch_mode mode -> (
           (* Set the next-turn contract and record the switch: the muted echo,
              then the event line naming the mode with its glyph
              (10-commands.md §Mode switches). The composer frame wears the mode
@@ -908,14 +942,15 @@ let dispatch_command ?(argument = None) command t =
             ]
           in
           let t = { t with mode } in
-          (match t.phase with
+          match t.phase with
           | Chat chat ->
               let transcript =
                 List.fold_left Transcript.append chat.transcript notices
               in
-              ({ t with phase = Chat { chat with transcript } }, [ Set_mode mode ])
+              ( { t with phase = Chat { chat with transcript } },
+                [ Set_mode mode ] )
           | Prelude -> (t, [ Set_mode mode ]))
-      | Command.Toggle_thinking ->
+      | Command.Toggle_thinking -> (
           (* Flip the session-scoped reasoning preference and record it: the
              muted [❯ /thinking] echo, then the event-class outcome
              (01-transcript.md §Notices). The flip is honored at append time, so
@@ -927,7 +962,8 @@ let dispatch_command ?(argument = None) command t =
           let outcome =
             if show_reasoning then
               "thinking shown — reasoning returns to the transcript"
-            else "thinking hidden — reasoning stays in the session, not on screen"
+            else
+              "thinking hidden — reasoning stays in the session, not on screen"
           in
           let notices =
             [
@@ -936,7 +972,7 @@ let dispatch_command ?(argument = None) command t =
               Transcript.Notice (Notice.Event outcome);
             ]
           in
-          (match t.phase with
+          match t.phase with
           | Chat chat ->
               let transcript =
                 List.fold_left Transcript.append chat.transcript notices
@@ -957,6 +993,34 @@ let dispatch_command ?(argument = None) command t =
           ( { t with surface = Screen (Settings (Settings_screen.loading ~tab)) },
             [ Load_settings ] )
       | Command.Open_review -> open_review ?base_spec:argument t
+      | Command.Fork_session -> (
+          (* Fork the attached session into a child and continue there — the
+             same {!Fork_session} transition the sessions screen's fork takes
+             (10-commands.md §/fork). The echo lands in the child's fresh
+             transcript (the pre-fork one is swapped out, so an echo there would
+             be wiped); the lineage record follows via {!Session_forked}, then
+             the inherited history replays below both. The gate is [attached],
+             not [session_id] alone — the fresh path's id is a pre-minted seed
+             whose document exists only once the first turn attaches, and
+             forking an unwritten document dies on the store read. *)
+          match t.session_id with
+          | Some id when t.attached ->
+              let t, commands = enter_session (Fork_session id) t in
+              let t =
+                match t.phase with
+                | Chat chat ->
+                    let transcript =
+                      Transcript.append chat.transcript
+                        (Transcript.Notice
+                           (Notice.Echo
+                              { command = Command.slash command; result = None }))
+                    in
+                    { t with phase = Chat { chat with transcript } }
+                | Prelude -> t
+              in
+              (t, commands)
+          | Some _ | None ->
+              ({ t with flash = Some "fork: no active session" }, []))
       | Command.Toggle_verbose -> (
           (* Flip the ctrl+o expand lens — the same [chat.expanded] the key
              flips, so the command and the key cannot drift — and record it:
@@ -1036,7 +1100,8 @@ let submit_text value t =
    the parent turn opens dialogs this iteration. *)
 let command_of_resolution boundary (resolution : Dialog.resolution) =
   match (resolution, (boundary : Spice_protocol.Pending.t)) with
-  | Dialog.Reply { answer; message }, Spice_protocol.Pending.Permission request ->
+  | Dialog.Reply { answer; message }, Spice_protocol.Pending.Permission request
+    ->
       Some
         (Reply_permission
            {
@@ -1159,11 +1224,15 @@ let sync_completion t =
   let query () = String.sub text 1 (String.length text - 1) in
   let token () = Composer.active_file_ref_token t.composer in
   let token_query token = String.sub token 1 (String.length token - 1) in
-  close_help @@
+  close_help
+  @@
   match t.completion with
   | Commands palette ->
       if slash_form then
-        ( { t with completion = Commands (Palette.with_query (query ()) palette) },
+        ( {
+            t with
+            completion = Commands (Palette.with_query (query ()) palette);
+          },
           [] )
       else ({ t with completion = No_completion }, [])
   | Mention mention -> (
@@ -1182,12 +1251,14 @@ let sync_completion t =
       ( {
           t with
           completion =
-            History_search { search = History.Search.with_query text search; saved };
+            History_search
+              { search = History.Search.with_query text search; saved };
         },
         [] )
   | No_completion -> (
       if String.equal text "/" then
-        ({ t with completion = Commands (Palette.with_query "" Palette.make) }, [])
+        ( { t with completion = Commands (Palette.with_query "" Palette.make) },
+          [] )
       else
         match token () with
         | Some token ->
@@ -1250,7 +1321,8 @@ let list_key key t =
           ( {
               t with
               completion =
-                History_search { search = History.Search.move `Up search; saved };
+                History_search
+                  { search = History.Search.move `Up search; saved };
             },
             [] )
       | `Down ->
@@ -1278,8 +1350,13 @@ let list_key key t =
           ({ t with strip_focus = Some (max 0 (i - 1)) }, [])
       | `Down when t.strip_focus <> None ->
           let i = Option.value ~default:0 t.strip_focus in
-          ({ t with strip_focus = Some (min (List.length t.thread_runs) (i + 1)) }, [])
-      | `Down when in_chat && t.thread_runs <> [] && Composer.is_blank t.composer ->
+          ( {
+              t with
+              strip_focus = Some (min (List.length t.thread_runs) (i + 1));
+            },
+            [] )
+      | `Down
+        when in_chat && t.thread_runs <> [] && Composer.is_blank t.composer ->
           ({ t with strip_focus = Some 0 }, [])
       (* [↑] on an empty composer pops the NEWEST queued prompt back into the
          composer for editing, ahead of history recall while the queue is
@@ -1406,8 +1483,10 @@ let agents_active t =
     List.fold_left
       (fun n run ->
         match Thread_view.of_run run with
-        | Thread_view.Running | Thread_view.Blocked | Thread_view.Queued -> n + 1
-        | Thread_view.Completed | Thread_view.Failed | Thread_view.Interrupted ->
+        | Thread_view.Running | Thread_view.Blocked | Thread_view.Queued ->
+            n + 1
+        | Thread_view.Completed | Thread_view.Failed | Thread_view.Interrupted
+          ->
             n)
       0 t.thread_runs
   in
@@ -1473,7 +1552,8 @@ let drill_selected t =
       ( { t with strip_focus = None },
         [ Load_thread_document (Spice_protocol.Subagent_run.child run) ] )
   | Some _ ->
-      ({ t with flash = Some "agent still running — open it once it settles" }, [])
+      ( { t with flash = Some "agent still running — open it once it settles" },
+        [] )
   | None -> (t, [])
 
 (* A run belongs to the attached session when its parent is the session this
@@ -1534,8 +1614,10 @@ let auth_settled_line record =
     | Auth_panel.Saved_unchecked reason ->
         ("Log in to ", "✓ saved · unchecked — " ^ reason)
     | Auth_panel.Removed -> ("Log out of ", "removed" ^ ident)
-    | Auth_panel.Env_active var -> ("Log out of ", "! env " ^ var ^ " still active")
-    | Auth_panel.Failed message -> ("Log in to ", "✗ sign-in failed · " ^ message)
+    | Auth_panel.Env_active var ->
+        ("Log out of ", "! env " ^ var ^ " still active")
+    | Auth_panel.Failed message ->
+        ("Log in to ", "✗ sign-in failed · " ^ message)
   in
   verb ^ provider_title ^ Theme.separator ^ body
 
@@ -1566,11 +1648,14 @@ let interpret_auth_event panel event t =
       | None -> (stay, []))
   | Auth_panel.Cancel { request } -> (stay, [ Auth_cancel { request } ])
   | Auth_panel.Begin_api_key { provider; method_id; key } ->
-      begin_flow (fun request -> Auth_save_api_key { request; provider; method_id; key })
+      begin_flow (fun request ->
+          Auth_save_api_key { request; provider; method_id; key })
   | Auth_panel.Begin_browser { provider; method_id } ->
-      begin_flow (fun request -> Auth_browser_login { request; provider; method_id })
+      begin_flow (fun request ->
+          Auth_browser_login { request; provider; method_id })
   | Auth_panel.Begin_device { provider; method_id } ->
-      begin_flow (fun request -> Auth_device_login { request; provider; method_id })
+      begin_flow (fun request ->
+          Auth_device_login { request; provider; method_id })
   | Auth_panel.Begin_logout { provider } ->
       begin_flow (fun request -> Auth_logout { request; provider })
 
@@ -1607,7 +1692,8 @@ let update msg t =
          the composer with the keystroke applied (doc/plans/tui-next-threads.md
          §2.2); arrow walking of the strip is a separate [List_key] path. *)
       let t, sync_commands =
-        sync_completion { t with composer; motion; armed = None; strip_focus = None }
+        sync_completion
+          { t with composer; motion; armed = None; strip_focus = None }
       in
       List.fold_left
         (fun (t, commands) event ->
@@ -1619,6 +1705,7 @@ let update msg t =
       | Chat chat ->
           ( {
               t with
+              attached = true;
               phase =
                 Chat
                   (apply_event ~show_reasoning:t.show_reasoning ~now event chat);
@@ -1637,19 +1724,28 @@ let update msg t =
                  one arm is the committed interrupt-then-queued-correction-sends
                  fast path. *)
               let t =
-                { t with phase = Chat { chat with now }; armed = disarm_interrupt t.armed }
+                {
+                  t with
+                  phase = Chat { chat with now };
+                  armed = disarm_interrupt t.armed;
+                }
               in
               match t.queued with
               | [] -> (t, [])
               | next :: queued -> start_turn next { t with queued })
-          | Waiting pending ->
+          | Waiting pending -> (
               (* Park the working line, then open a decision dialog on the typed
                  boundary. A boundary with no user-facing form (an unclassifiable
                  host tool) parks without a dialog. *)
               let t =
-                { t with phase = Chat { chat with turn = Turn.waiting chat.turn; now } }
+                {
+                  t with
+                  phase = Chat { chat with turn = Turn.waiting chat.turn; now };
+                }
               in
-              (match Option.bind pending (Dialog.of_pending ~owner:Dialog.Main) with
+              match
+                Option.bind pending (Dialog.of_pending ~owner:Dialog.Main)
+              with
               | Some dialog -> ({ t with surface = Panel (Dialog dialog) }, [])
               | None -> (t, []))
           | Failed { message } ->
@@ -1679,7 +1775,14 @@ let update msg t =
                 if t.queued = [] then t.flash
                 else Some "queued prompts discarded after the failure"
               in
-              ({ t with phase = Chat chat; queued = []; flash; armed = disarm_interrupt t.armed }, [])))
+              ( {
+                  t with
+                  phase = Chat chat;
+                  queued = [];
+                  flash;
+                  armed = disarm_interrupt t.armed;
+                },
+                [] )))
   | Turn_tick -> (
       match t.phase with
       | Chat chat ->
@@ -1697,7 +1800,9 @@ let update msg t =
       | Prelude -> (t, []))
   | Toggle_expanded -> (
       match t.phase with
-      | Chat chat -> ({ t with phase = Chat { chat with expanded = not chat.expanded } }, [])
+      | Chat chat ->
+          ( { t with phase = Chat { chat with expanded = not chat.expanded } },
+            [] )
       | Prelude -> (t, []))
   | Transcript_scrolled y -> (
       match t.phase with
@@ -1733,6 +1838,7 @@ let update msg t =
       ( {
           t with
           session_id = Some session;
+          attached = true;
           thread_runs = runs;
           strip_focus;
           drill = None;
@@ -1789,8 +1895,7 @@ let update msg t =
             List.fold_left
               (fun chat event ->
                 apply_event ~show_reasoning:t.show_reasoning ~now event chat)
-              { empty_chat with now }
-              events
+              { empty_chat with now } events
           in
           ({ t with drill = Some (run, tchat) }, [])
       | Some _ | None -> (t, []))
@@ -1820,37 +1925,42 @@ let update msg t =
           let composer, _ =
             Composer.update (Composer.Restore_history saved) t.composer
           in
-          let composer, _ = Composer.update Composer.End_history_search composer in
+          let composer, _ =
+            Composer.update Composer.End_history_search composer
+          in
           ({ t with composer; completion = No_completion }, [])
-      | No_completion ->
+      | No_completion -> (
           if t.help then ({ t with help = false }, [])
-      else
-        match Composer.input_mode t.composer with
-        | Composer.Input_mode.Shell ->
-            let composer, _ = Composer.update Composer.Exit_shell t.composer in
-            ({ t with composer; armed = None }, [])
-        | Composer.Input_mode.History_search | Composer.Input_mode.Plain -> (
-            if not (Composer.is_blank t.composer) then
-              match t.armed with
-              | Some Clear_armed ->
-                  (* Fold the discard's events: [Draft_saved] carries the JSONL
+          else
+            match Composer.input_mode t.composer with
+            | Composer.Input_mode.Shell ->
+                let composer, _ =
+                  Composer.update Composer.Exit_shell t.composer
+                in
+                ({ t with composer; armed = None }, [])
+            | Composer.Input_mode.History_search | Composer.Input_mode.Plain
+              -> (
+                if not (Composer.is_blank t.composer) then
+                  match t.armed with
+                  | Some Clear_armed ->
+                      (* Fold the discard's events: [Draft_saved] carries the JSONL
                      persistence (Append_prompt_history); dropping it would
                      keep the recall in-memory only. *)
-                  let composer, events =
-                    Composer.update Composer.Clear_to_history t.composer
-                  in
-                  List.fold_left
-                    (fun (t, commands) event ->
-                      let t, more = composer_event event t in
-                      (t, commands @ more))
-                    ({ t with composer; armed = None }, [])
-                    events
-              | Some Quit_armed | Some Interrupt_armed | None ->
-                  ({ t with armed = Some Clear_armed }, [])
-            else
-              match t.phase with
-              | Chat chat when interruptible chat t ->
-                  (* The esc decision ladder with the composer empty and a turn
+                      let composer, events =
+                        Composer.update Composer.Clear_to_history t.composer
+                      in
+                      List.fold_left
+                        (fun (t, commands) event ->
+                          let t, more = composer_event event t in
+                          (t, commands @ more))
+                        ({ t with composer; armed = None }, [])
+                        events
+                  | Some Quit_armed | Some Interrupt_armed | None ->
+                      ({ t with armed = Some Clear_armed }, [])
+                else
+                  match t.phase with
+                  | Chat chat when interruptible chat t ->
+                      (* The esc decision ladder with the composer empty and a turn
                      or user shell in flight. Esc owns interrupt and force and the
                      queue never captures it (01-transcript.md §The status strip,
                      revised 2026-07-08): a wrong-direction turn stops in one
@@ -1866,32 +1976,58 @@ let update msg t =
                      2. else the two-stage interrupt ([interrupt_rung]): arm the
                         notice, then fire — flipping the turn to its draining
                         [Turn.interrupting] state, from which rung 1 is reachable. *)
-                  if Turn.is_forcing chat.turn then
-                    (* The hard cancel is already scheduled; nothing left to
+                      if Turn.is_forcing chat.turn then
+                        (* The hard cancel is already scheduled; nothing left to
                        escalate. *)
-                    (t, [])
-                  else if Turn.is_interrupting chat.turn then
-                    ( {
-                        t with
-                        phase = Chat { chat with turn = Turn.forcing chat.turn };
-                        armed = None;
-                      },
-                      [ Interrupt_force ] )
-                  else interrupt_rung chat t
-              | Chat _ | Prelude -> (t, [])))
+                        (t, [])
+                      else if Turn.is_interrupting chat.turn then
+                        ( {
+                            t with
+                            phase =
+                              Chat { chat with turn = Turn.forcing chat.turn };
+                            armed = None;
+                          },
+                          [ Interrupt_force ] )
+                      else interrupt_rung chat t
+                  | Chat _ | Prelude -> (t, []))))
+  | Session_forked { parent_title } -> (
+      (* The fork persisted; the child's replay events follow this message, so
+         the lineage record lands under the fresh banner (and under /fork's
+         echo when the command drove it), above the inherited history
+         (10-commands.md §/fork). *)
+      match t.phase with
+      | Chat chat ->
+          let transcript =
+            Transcript.append chat.transcript
+              (Transcript.Notice
+                 (Notice.Event
+                    ("forked to a new session · ↳ from \"" ^ parent_title ^ "\"")))
+          in
+          ({ t with phase = Chat { chat with transcript } }, [])
+      | Prelude -> (t, []))
   | Sessions_loaded rows -> (
       (* Fold the runtime-loaded rows into the panel, but only while it is still
          up — the user may have esc'd before the load arrived. *)
       match t.surface with
       | Panel (Session_switch panel) ->
-          ({ t with surface = Panel (Session_switch (Sessions_panel.loaded rows panel)) }, [])
+          ( {
+              t with
+              surface =
+                Panel (Session_switch (Sessions_panel.loaded rows panel));
+            },
+            [] )
       | Conversing | Panel (Model _ | Dialog _ | Auth _) | Screen _ -> (t, []))
   | Sessions_load_failed message -> (
       (* A transient store failure renders the panel's error line, not the empty
          state (doc/plans/tui-next-surfaces.md §Sequencing 5). *)
       match t.surface with
       | Panel (Session_switch panel) ->
-          ({ t with surface = Panel (Session_switch (Sessions_panel.failed message panel)) }, [])
+          ( {
+              t with
+              surface =
+                Panel (Session_switch (Sessions_panel.failed message panel));
+            },
+            [] )
       | Conversing | Panel (Model _ | Dialog _ | Auth _) | Screen _ -> (t, []))
   | Panel_msg m -> (
       match t.surface with
@@ -1907,7 +2043,8 @@ let update msg t =
           | Sessions_panel.Promote { filter; select } ->
               ( {
                   t with
-                  surface = Screen (Sessions (Sessions_screen.promoted ~filter ~select));
+                  surface =
+                    Screen (Sessions (Sessions_screen.promoted ~filter ~select));
                 },
                 [ Load_screen_sessions ] ))
       | Conversing | Panel (Model _ | Dialog _ | Auth _) | Screen _ -> (t, []))
@@ -1930,12 +2067,20 @@ let update msg t =
   | Screen_loaded rows -> (
       match t.surface with
       | Screen (Sessions screen) ->
-          ({ t with surface = Screen (Sessions (Sessions_screen.loaded rows screen)) }, [])
+          ( {
+              t with
+              surface = Screen (Sessions (Sessions_screen.loaded rows screen));
+            },
+            [] )
       | Conversing | Panel _ | Screen (Settings _ | Review _) -> (t, []))
   | Screen_failed message -> (
       match t.surface with
       | Screen (Sessions _) ->
-          ({ t with surface = Screen (Sessions (Sessions_screen.failed message)) }, [])
+          ( {
+              t with
+              surface = Screen (Sessions (Sessions_screen.failed message));
+            },
+            [] )
       | Conversing | Panel _ | Screen (Settings _ | Review _) -> (t, []))
   | Settings_msg m -> (
       match t.surface with
@@ -1957,17 +2102,26 @@ let update msg t =
               (stay, [ Write_config { field; value } ])
           | Settings_screen.Toggle_skill name -> (stay, [ Toggle_skill name ])
           | Settings_screen.Copy id ->
-              ({ stay with flash = Some "session id copied" }, [ Copy_text id ]))
+              ({ stay with flash = Some "session id copied" }, [ Copy_text id ])
+          )
       | Conversing | Panel _ | Screen (Sessions _ | Review _) -> (t, []))
   | Settings_loaded facts -> (
       match t.surface with
       | Screen (Settings screen) ->
-          ({ t with surface = Screen (Settings (Settings_screen.loaded facts screen)) }, [])
+          ( {
+              t with
+              surface = Screen (Settings (Settings_screen.loaded facts screen));
+            },
+            [] )
       | Conversing | Panel _ | Screen (Sessions _ | Review _) -> (t, []))
   | Settings_load_failed message -> (
       match t.surface with
       | Screen (Settings _) ->
-          ({ t with surface = Screen (Settings (Settings_screen.failed message)) }, [])
+          ( {
+              t with
+              surface = Screen (Settings (Settings_screen.failed message));
+            },
+            [] )
       | Conversing | Panel _ | Screen (Sessions _ | Review _) -> (t, []))
   | Review_msg m -> (
       match t.surface with
@@ -2001,14 +2155,16 @@ let update msg t =
               in
               let t, turn = start_turn "Review the current changes." t in
               ( t,
-                forward effects
-                @ (Set_mode Spice_protocol.Mode.Review :: turn) ))
+                forward effects @ (Set_mode Spice_protocol.Mode.Review :: turn)
+              ))
       | Conversing | Panel _ | Screen (Sessions _ | Settings _) -> (t, []))
   | Model_panel_msg m -> (
       match t.surface with
       | Panel (Model { panel_state; return }) -> (
           let panel_state, event = Model_panel.update m panel_state in
-          let stay = { t with surface = Panel (Model { panel_state; return }) } in
+          let stay =
+            { t with surface = Panel (Model { panel_state; return }) }
+          in
           match event with
           | Model_panel.Stay -> (stay, [])
           | Model_panel.Close -> (restore_model_return return t, [])
@@ -2017,7 +2173,8 @@ let update msg t =
              future-session default, and replies with the confirmation
              flash. *)
           | Model_panel.Select { selector; effort } ->
-              (restore_model_return return t, [ Switch_model { selector; effort } ])
+              ( restore_model_return return t,
+                [ Switch_model { selector; effort } ] )
           (* A locked provider's model needs a login: reroute to the login flow
              pre-selected on [provider] (the provider id — 09-auth.md §9). The
              model panel closes to wherever it was opened from before the auth
@@ -2033,7 +2190,12 @@ let update msg t =
           ( {
               t with
               surface =
-                Panel (Model { panel with panel_state = Model_panel.loaded facts panel.panel_state });
+                Panel
+                  (Model
+                     {
+                       panel with
+                       panel_state = Model_panel.loaded facts panel.panel_state;
+                     });
             },
             [] )
       | Conversing | Panel (Session_switch _ | Dialog _ | Auth _) | Screen _ ->
@@ -2044,7 +2206,13 @@ let update msg t =
           ( {
               t with
               surface =
-                Panel (Model { panel with panel_state = Model_panel.failed message panel.panel_state });
+                Panel
+                  (Model
+                     {
+                       panel with
+                       panel_state =
+                         Model_panel.failed message panel.panel_state;
+                     });
             },
             [] )
       | Conversing | Panel (Session_switch _ | Dialog _ | Auth _) | Screen _ ->
@@ -2067,30 +2235,45 @@ let update msg t =
   | Auth_challenge { request; challenge } -> (
       match t.surface with
       | Panel (Auth panel) ->
-          ({ t with surface = Panel (Auth (Auth_panel.challenge ~request challenge panel)) }, [])
+          ( {
+              t with
+              surface =
+                Panel (Auth (Auth_panel.challenge ~request challenge panel));
+            },
+            [] )
       | Conversing | Panel (Session_switch _ | Model _ | Dialog _) | Screen _ ->
           (t, []))
   | Auth_browser_opened { request } -> (
       match t.surface with
       | Panel (Auth panel) ->
-          ({ t with surface = Panel (Auth (Auth_panel.browser_opened ~request panel)) }, [])
+          ( {
+              t with
+              surface = Panel (Auth (Auth_panel.browser_opened ~request panel));
+            },
+            [] )
       | Conversing | Panel (Session_switch _ | Model _ | Dialog _) | Screen _ ->
           (t, []))
   | Auth_browser_open_failed { request } -> (
       match t.surface with
       | Panel (Auth panel) ->
-          ( { t with surface = Panel (Auth (Auth_panel.browser_open_failed ~request panel)) },
+          ( {
+              t with
+              surface =
+                Panel (Auth (Auth_panel.browser_open_failed ~request panel));
+            },
             [] )
       | Conversing | Panel (Session_switch _ | Model _ | Dialog _) | Screen _ ->
           (t, []))
   | Auth_tick -> (
       match t.surface with
-      | Panel (Auth panel) -> ({ t with surface = Panel (Auth (Auth_panel.tick panel)) }, [])
+      | Panel (Auth panel) ->
+          ({ t with surface = Panel (Auth (Auth_panel.tick panel)) }, [])
       | Conversing | Panel (Session_switch _ | Model _ | Dialog _) | Screen _ ->
           (t, []))
   | Auth_paste text -> (
       match t.surface with
-      | Panel (Auth panel) -> ({ t with surface = Panel (Auth (Auth_panel.paste text panel)) }, [])
+      | Panel (Auth panel) ->
+          ({ t with surface = Panel (Auth (Auth_panel.paste text panel)) }, [])
       | Conversing | Panel (Session_switch _ | Model _ | Dialog _) | Screen _ ->
           (t, []))
   (* A settled flow closes the panel and records the outcome. Guarded by the
@@ -2102,7 +2285,8 @@ let update msg t =
      footer's account segment flip on the refresh. *)
   | Auth_settled { request; record } -> (
       match t.surface with
-      | Panel (Auth panel) when Auth_panel.active_request panel = Some request ->
+      | Panel (Auth panel) when Auth_panel.active_request panel = Some request
+        ->
           let t = { t with surface = Conversing } in
           let t =
             match t.phase with
@@ -2115,13 +2299,16 @@ let update msg t =
                         chat with
                         transcript =
                           Transcript.append chat.transcript
-                            (Transcript.Notice (Notice.Event (auth_settled_line record)));
+                            (Transcript.Notice
+                               (Notice.Event (auth_settled_line record)));
                       };
                 }
             | Prelude -> t
           in
           (t, [ Reload_brief ])
-      | Conversing | Panel (Auth _ | Session_switch _ | Model _ | Dialog _) | Screen _ ->
+      | Conversing
+      | Panel (Auth _ | Session_switch _ | Model _ | Dialog _)
+      | Screen _ ->
           (t, []))
   | Dialog_key ev -> (
       match t.surface with
@@ -2137,7 +2324,7 @@ let update msg t =
                  answer, and borrow it (07-dialogs §Deny with feedback). *)
               let saved_draft = Composer.draft_text t.composer in
               let t = set_draft "" t in
-              ( { t with borrow = For_answer { placeholder; saved_draft } }, [] )
+              ({ t with borrow = For_answer { placeholder; saved_draft } }, [])
           | Dialog.Flash message -> ({ t with flash = Some message }, []))
       | Conversing | Panel (Session_switch _ | Model _ | Auth _) | Screen _ ->
           (t, []))
@@ -2241,9 +2428,11 @@ let update msg t =
   | Resized { cols; rows } ->
       (* Recompute the side panel's presence with the width hysteresis — the one
          place it changes (doc/plans/tui-next-side-panel.md §App-wiring). *)
-      ({ t with cols; rows; pane_open = Pane.presence ~cols ~was:t.pane_open }, [])
+      ( { t with cols; rows; pane_open = Pane.presence ~cols ~was:t.pane_open },
+        [] )
   | Ctrl_c -> (
-      (* Ctrl+C is the quit chord, and ONLY the quit chord — it is never an
+      if
+        (* Ctrl+C is the quit chord, and ONLY the quit chord — it is never an
          interrupt (esc owns interrupt; see the esc ladder in [interrupt_rung]
          and [Escape]). A non-empty draft discards to history in
          one press (03-composer.md §Keybindings); otherwise, in every phase and
@@ -2251,7 +2440,8 @@ let update msg t =
          panel up — the first press arms the exit notice and a second within the
          window quits. The quit chord must always reach [Quit]: no turn state
          diverts it. *)
-      if not (Composer.is_blank t.composer) then
+        not (Composer.is_blank t.composer)
+      then
         (* Fold the discard's events: [Draft_saved] carries the JSONL
            persistence, exactly as the esc-clear rung does. *)
         let composer, events =
@@ -2286,15 +2476,16 @@ let update msg t =
       let t = { t with shell = None } in
       match t.phase with
       | Prelude -> (t, [])
-      | Chat chat ->
+      | Chat chat -> (
           let chat =
             {
               chat with
-              transcript = Transcript.append chat.transcript (Transcript.Tool block);
+              transcript =
+                Transcript.append chat.transcript (Transcript.Tool block);
             }
           in
           let t = { t with phase = Chat chat } in
-          (match t.queued with
+          match t.queued with
           | [] -> (t, [])
           | next :: queued -> submit_text next { t with queued }))
 
@@ -2305,7 +2496,9 @@ let update msg t =
    wears the declared mode (03-composer.md §Mode-colored frame). *)
 let composer_element ?placeholder ~width ~top_margin t =
   let turn_running =
-    match t.phase with Chat chat -> Turn.in_flight chat.turn | Prelude -> false
+    match t.phase with
+    | Chat chat -> Turn.in_flight chat.turn
+    | Prelude -> false
   in
   let mode =
     match t.mode with
@@ -2325,7 +2518,8 @@ let completion_rows ~width t =
   | No_completion -> []
   | Commands palette -> [ Palette.view ~width palette ]
   | Mention mention -> [ Mention.view ~width mention ]
-  | History_search { search; saved = _ } -> [ History.Search.view ~width search ]
+  | History_search { search; saved = _ } ->
+      [ History.Search.view ~width search ]
 
 (* The composer region: the completion rows over the frame, one element so both
    geometries place them together. [top_margin] is the frame's idle breathing
@@ -2416,7 +2610,8 @@ let prelude_view t =
            (composer_region ~width:(Home.composer_width t.cols) ~top_margin:0 t))
       t;
   ]
-  @ help_sheet t @ [ footer t ]
+  @ help_sheet t
+  @ [ footer t ]
 
 (* The chat layout after the drop (12-home.md §Transition): one scrollport
    holding the banner record (its first block), the settled document, the live
@@ -2435,11 +2630,11 @@ let board_has_open todo =
   List.exists
     (fun it ->
       match Spice_protocol.Todo.Item.status it with
-      | Spice_protocol.Todo.Status.Pending | Spice_protocol.Todo.Status.In_progress
-        ->
+      | Spice_protocol.Todo.Status.Pending
+      | Spice_protocol.Todo.Status.In_progress ->
           true
-      | Spice_protocol.Todo.Status.Completed | Spice_protocol.Todo.Status.Cancelled
-        ->
+      | Spice_protocol.Todo.Status.Completed
+      | Spice_protocol.Todo.Status.Cancelled ->
           false)
     (Spice_protocol.Todo.items todo)
 
@@ -2498,8 +2693,7 @@ let thread_row_of ~now run =
 let threads_rows ~now t =
   match t.thread_runs with
   | [] -> []
-  | _ ->
-      Threads_strip.Main :: List.map (thread_row_of ~now) (ordered_runs t)
+  | _ -> Threads_strip.Main :: List.map (thread_row_of ~now) (ordered_runs t)
 
 (* Render the switcher at a given width and row budget. [can_open] gates the
    selected row's [enter to open] hint on whether that row is a SETTLED child —
@@ -2562,7 +2756,10 @@ let task_facts todo =
         || is Spice_protocol.Todo.Status.Cancelled it)
   in
   let running_count = count (is Spice_protocol.Todo.Status.In_progress) in
-  [ Printf.sprintf "%d done" done_count; Printf.sprintf "%d running" running_count ]
+  [
+    Printf.sprintf "%d done" done_count;
+    Printf.sprintf "%d running" running_count;
+  ]
 
 let pane_right ~now t chat =
   if not t.pane_open then []
@@ -2597,10 +2794,12 @@ let pane_right ~now t chat =
           Some
             (Pane_sections.section ~label:"agents" ~facts:(agents_facts t)
                (fun ~max_rows ->
-                 Threads_strip.view ~can_open:false ~rows ~selected:t.strip_focus
-                   ~width:(max 1 (width - 2)) ~rows_avail:max_rows ()
+                 Threads_strip.view ~can_open:false ~rows
+                   ~selected:t.strip_focus
+                   ~width:(max 1 (width - 2))
+                   ~rows_avail:max_rows ()
                  |> List.map (fun row ->
-                        box ~padding:(padding_lrtb 2 0 0 0) [ row ])))
+                     box ~padding:(padding_lrtb 2 0 0 0) [ row ])))
     in
     let tasks_section =
       match active_board chat with
@@ -2612,18 +2811,20 @@ let pane_right ~now t chat =
       | None -> None
     in
     Pane_sections.view ~width ~max_rows
-      (List.filter_map Fun.id [ workspace_section; agents_section; tasks_section ])
+      (List.filter_map Fun.id
+         [ workspace_section; agents_section; tasks_section ])
 
 let chat_above t chat ~right =
   (* The transcript is fluid (doc/plans/tui-next-side-panel.md): it renders at the
      reduced column when the pane is open, full width otherwise — never a cap. *)
   let width = Pane.transcript_width ~cols:t.cols ~open_:t.pane_open in
   let now = chat.now and spinner = chat.spinner in
-  let document = Transcript.view ~expanded:chat.expanded ~width chat.transcript in
+  let document =
+    Transcript.view ~expanded:chat.expanded ~width chat.transcript
+  in
   let tail =
     Turn.tail ~now ~spinner ~width ~show_reasoning:t.show_reasoning
-      ~expanded:chat.expanded
-      chat.turn
+      ~expanded:chat.expanded chat.turn
   in
   let working = Turn.working_line ~now ~spinner chat.turn in
   (* The live parts flow after the settled document inside the scrollport
@@ -2672,7 +2873,10 @@ let shell_running_row t =
   match t.shell with
   | None -> []
   | Some command ->
-      [ Tool_block.header Tool_block.Shell ~argument:command ~dot:Tool_block.Running ]
+      [
+        Tool_block.header Tool_block.Shell ~argument:command
+          ~dot:Tool_block.Running;
+      ]
 
 (* The threads switcher strip below the footer (doc/plans/tui-next-threads.md
    §2.6): [main] first, then the child runs live-first, drawn as the unfocused
@@ -2716,7 +2920,9 @@ let thread_banner t id =
   in
   let title =
     "▂▄▆▄▂ " ^ handle
-    ^ if task = "" then "" else " — " ^ Thread_view.clip ~max:(max 8 (t.cols - 14)) task
+    ^
+    if task = "" then ""
+    else " — " ^ Thread_view.clip ~max:(max 8 (t.cols - 14)) task
   in
   box ~key:"thread.banner" ~flex_direction:Flex_direction.Column ~flex_shrink:0.
     ~padding:(padding_lrtb 2 2 1 0)
@@ -2775,15 +2981,18 @@ let chat_view t chat =
           :: Todo_board.view ~width:t.cols ~max_rows todo
       | None -> []
   in
-  let strip = Strip.view ~width:t.cols ~verbose:chat.expanded ~queued:t.queued in
-  let shell = shell_running_row t in
-  let top_margin =
-    if board = [] && strip = [] && shell = [] then 1 else 0
+  let strip =
+    Strip.view ~width:t.cols ~verbose:chat.expanded ~queued:t.queued
   in
+  let shell = shell_running_row t in
+  let top_margin = if board = [] && strip = [] && shell = [] then 1 else 0 in
   let now = now_of chat in
-  chat_above t chat ~right:(pane_right ~now t chat) @ board @ shell @ strip
+  chat_above t chat ~right:(pane_right ~now t chat)
+  @ board @ shell @ strip
   @ [ composer_region ~width:t.cols ~top_margin t ]
-  @ help_sheet t @ [ footer t ] @ threads_strip_view ~now t
+  @ help_sheet t
+  @ [ footer t ]
+  @ threads_strip_view ~now t
 
 (* One panel geometry everywhere (doc/plans/tui-next-surfaces.md §Panel
    geometry): the panel block is bottom-anchored where the composer and footer
@@ -2809,9 +3018,7 @@ let surface_view t panel =
               ~flex_shrink:0.
               ~size:{ width = pct 100; height = auto }
               [
-                box
-                  ~padding:(padding_lrtb 2 2 0 0)
-                  ~flex_shrink:0.
+                box ~padding:(padding_lrtb 2 2 0 0) ~flex_shrink:0.
                   [
                     Mosaic.text ~style:Theme.accent ~wrap:`Word
                       (Dialog.borrow_summary dialog);
@@ -2859,7 +3066,8 @@ let screen_view t screen =
            rule, two-pane split, bottom legend), so it does not go through
            {!Screen.view}'s shared chrome (doc/plans/tui-next-review.md §3.1). *)
         Spice_tui_review.view ~width:t.cols ~height:t.rows
-          ~inject:(fun m -> Review_msg m) review
+          ~inject:(fun m -> Review_msg m)
+          review
   in
   let fill =
     box ~key:"screen.fill" ~flex_direction:Flex_direction.Column
@@ -2945,9 +3153,10 @@ let key_msg t ev =
   let open Matrix.Input in
   let ctrl c =
     data.Key.modifier.Modifier.ctrl
-    && (match data.Key.key with
-       | Key.Char u -> Uchar.equal u (Uchar.of_char c)
-       | _ -> false)
+    &&
+    match data.Key.key with
+    | Key.Char u -> Uchar.equal u (Uchar.of_char c)
+    | _ -> false
   in
   let is_escape = match data.Key.key with Key.Escape -> true | _ -> false in
   let is_page_up = match data.Key.key with Key.Page_up -> true | _ -> false in
@@ -2973,11 +3182,11 @@ let key_msg t ev =
     | Panel (Auth _) ->
         Mosaic.Event.Key.prevent_default ev;
         Option.map (fun m -> Auth_panel_msg m) (Auth_panel.key data)
-    | Panel (Dialog _) ->
+    | Panel (Dialog _) -> (
         (* While the composer is borrowed the composer owns typing; esc steps
            back to the option list. Otherwise the dialog is modal: every key
            goes to it (prevented so unclaimed keys die below the boundary). *)
-        (match t.borrow with
+        match t.borrow with
         | For_answer _ -> if is_escape then emit Cancel_borrow else None
         | Free -> emit (Dialog_key data))
     | Screen (Sessions _) ->
@@ -3013,7 +3222,9 @@ let key_msg t ev =
 let subscriptions t =
   let prelude = match t.phase with Prelude -> true | Chat _ -> false in
   let turn_running =
-    match t.phase with Chat chat -> Turn.in_flight chat.turn | Prelude -> false
+    match t.phase with
+    | Chat chat -> Turn.in_flight chat.turn
+    | Prelude -> false
   in
   Mosaic.Sub.batch
     [

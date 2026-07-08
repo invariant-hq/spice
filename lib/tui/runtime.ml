@@ -264,7 +264,8 @@ let make_brief_loader ?sandbox_flag ~stdenv ~clock ~host ~cwd () =
     let session = session () in
     incr tick;
     {
-      Home.Brief.dune = Spice_ocaml_dune.Rpc.Instance.build_health dune ~clock ();
+      Home.Brief.dune =
+        Spice_ocaml_dune.Rpc.Instance.build_health dune ~clock ();
       worktree;
       crs;
       session;
@@ -335,7 +336,8 @@ let make_health_loader ~stdenv ~clock ~cwd =
    forwarded so the panel renders its error line rather than the empty state. *)
 let load_recent_sessions ~stdenv ~clock ~store ~cwd ~limit =
   match
-    Spice_host.Session.recent_in_cwd store ~fs:(Eio.Stdenv.fs stdenv) ~cwd ~limit
+    Spice_host.Session.recent_in_cwd store ~fs:(Eio.Stdenv.fs stdenv) ~cwd
+      ~limit
   with
   | Error error -> Error (Spice_protocol.Error.message error)
   | Ok (summaries, _corrupt) ->
@@ -363,7 +365,10 @@ let recency_group ~now updated =
       (Spice_session.Time.to_unix_ms now)
       (Spice_session.Time.to_unix_ms updated)
   in
-  let secs = if Int64.compare delta_ms 0L <= 0 then 0 else Int64.to_int (Int64.div delta_ms 1000L) in
+  let secs =
+    if Int64.compare delta_ms 0L <= 0 then 0
+    else Int64.to_int (Int64.div delta_ms 1000L)
+  in
   if secs < 24 * 3600 then Sessions_screen.Today
   else if secs < 7 * 24 * 3600 then Sessions_screen.This_week
   else Sessions_screen.Older
@@ -485,7 +490,8 @@ let model_description model =
     String.includes ~affix:needle (String.lowercase_ascii text)
   in
   let family =
-    Option.value (Spice_provider.Model.family model)
+    Option.value
+      (Spice_provider.Model.family model)
       ~default:(Spice_provider.Model.id model)
   in
   if contains "nano" family || contains "haiku" family then
@@ -520,8 +526,8 @@ let model_detail ~defaults model =
 let default_model_selectors catalog =
   Spice_provider.Catalog.providers catalog
   |> List.filter_map (fun provider ->
-         Option.map Spice_provider.Model.selector
-           (Spice_provider.default_model provider))
+      Option.map Spice_provider.Model.selector
+        (Spice_provider.default_model provider))
 
 let load_model_facts ?selected ~stdenv ~host () =
   let catalog = Spice_host.Host.catalog host in
@@ -537,7 +543,7 @@ let load_model_facts ?selected ~stdenv ~host () =
           host Model_choice.Main
         |> Result.to_option
         |> Option.map (fun choice ->
-               Spice_provider.Model.selector (Model_choice.model choice))
+            Spice_provider.Model.selector (Model_choice.model choice))
   in
   let reasoning =
     Spice_host.Config.Models.reasoning (Spice_host.Config.models config)
@@ -556,9 +562,9 @@ let load_model_facts ?selected ~stdenv ~host () =
     let ids =
       Spice_host.Host.providers host
       |> List.filter_map (fun decl ->
-             if Spice_provider.Auth.required (Spice_provider.auth decl) then
-               Some (Spice_llm.Provider.id (Spice_provider.id decl))
-             else None)
+          if Spice_provider.Auth.required (Spice_provider.auth decl) then
+            Some (Spice_llm.Provider.id (Spice_provider.id decl))
+          else None)
     in
     fun provider -> List.mem (Spice_llm.Provider.id provider) ids
   in
@@ -572,34 +578,33 @@ let load_model_facts ?selected ~stdenv ~host () =
   let models =
     Spice_provider.Catalog.models catalog
     |> List.filter (fun model ->
-           Spice_provider.Model.visible model
-           && Spice_provider.Model.has_capability
-                Spice_provider.Model.Capability.tools model)
+        Spice_provider.Model.visible model
+        && Spice_provider.Model.has_capability
+             Spice_provider.Model.Capability.tools model)
     |> List.map (fun model ->
-           let selector = Spice_provider.Model.selector model in
-           let provider = Spice_provider.Model.provider model in
-           let name =
-             match Spice_provider.Model.display_name model with
-             | Some name -> name
-             | None -> Spice_provider.Model.id model
-           in
-           {
-             Model_panel.selector;
-             name;
-             provider_title = model_provider_title provider;
-             detail = model_detail ~defaults model;
-             locked = locked provider;
-             is_current =
-               (match current with
-               | Some current -> String.equal current selector
-               | None -> false);
-             supported_reasoning = Spice_provider.Model.supported_reasoning model;
-             default_reasoning = Spice_provider.Model.default_reasoning model;
-             warning = model_warning model;
-             search_key =
-               String.concat " "
-                 [ selector; name; Spice_llm.Provider.id provider ];
-           })
+        let selector = Spice_provider.Model.selector model in
+        let provider = Spice_provider.Model.provider model in
+        let name =
+          match Spice_provider.Model.display_name model with
+          | Some name -> name
+          | None -> Spice_provider.Model.id model
+        in
+        {
+          Model_panel.selector;
+          name;
+          provider_title = model_provider_title provider;
+          detail = model_detail ~defaults model;
+          locked = locked provider;
+          is_current =
+            (match current with
+            | Some current -> String.equal current selector
+            | None -> false);
+          supported_reasoning = Spice_provider.Model.supported_reasoning model;
+          default_reasoning = Spice_provider.Model.default_reasoning model;
+          warning = model_warning model;
+          search_key =
+            String.concat " " [ selector; name; Spice_llm.Provider.id provider ];
+        })
   in
   { Model_panel.models; reasoning }
 
@@ -619,8 +624,7 @@ let save_model_selection ~stdenv host ~selector ~effort =
   in
   let files = Spice_host.Config.files (Spice_host.Host.config host) in
   Spice_host.Config.Config_file.edit ~stdenv files
-    Spice_host.Config.Config_file.User
-    ~f:(fun doc ->
+    Spice_host.Config.Config_file.User ~f:(fun doc ->
       let* doc =
         Spice_host.Config.Config_file.set Spice_host.Config.Field.model
           (Some selector) doc
@@ -628,7 +632,7 @@ let save_model_selection ~stdenv host ~selector ~effort =
       Spice_host.Config.Config_file.set Spice_host.Config.Field.reasoning
         effort_string doc)
   |> Result.map_error (fun error ->
-         host_error (Spice_host.Host.Error.Config error))
+      host_error (Spice_host.Host.Error.Config error))
   |> Result.map (fun () -> model)
 
 (* The effective sandbox for a run: the [--sandbox] flag over the config mode,
@@ -650,7 +654,8 @@ let resolve_sandbox ?flag host ~workspace =
     ~protect
     ~writable_roots:(Spice_host.Config.Sandbox.writable_roots sandbox_config)
     ~network:(Spice_host.Config.Sandbox.network sandbox_config)
-    ~toolchain_caches:(Spice_host.Config.Sandbox.toolchain_caches sandbox_config)
+    ~toolchain_caches:
+      (Spice_host.Config.Sandbox.toolchain_caches sandbox_config)
     ~env:(Spice_host.Env.get process_env)
     ~workspace ()
 
@@ -696,7 +701,9 @@ let build_run ?sandbox_flag ~sw ~stdenv ~host ~session_id () =
   Ok (run, stop)
 
 let turn_reasoning config model =
-  match Spice_host.Config.Models.reasoning (Spice_host.Config.models config) with
+  match
+    Spice_host.Config.Models.reasoning (Spice_host.Config.models config)
+  with
   | Some effort -> Some effort
   | None -> Spice_provider.Model.default_reasoning model
 
@@ -712,7 +719,9 @@ let make_turn ~clock ~config ~model ~effort ~mode prompt =
     ~id:(Spice_host.Session.fresh_turn_id ~clock)
     ~input:(Spice_session.Turn.Input.user_text prompt)
     ~model:(Spice_provider.Model.llm model)
-    ~options ~mode:(Spice_protocol.Mode.to_string mode) ~host_tools ()
+    ~options
+    ~mode:(Spice_protocol.Mode.to_string mode)
+    ~host_tools ()
 
 (* The unified @ completion's ignore set: the host's default ignores plus
    picker-local extras — directories a mention would never target (VCS innards,
@@ -1084,7 +1093,8 @@ let auth_record_of_settled ~title (settled : Spice_host_builtin.Login.settled) :
         outcome = Auth_panel.Saved_unchecked reason;
         acct_fingerprint = Option.bind account Spice_account.fingerprint;
         source_word =
-          Option.bind account (fun a -> auth_source_word (Spice_account.source a));
+          Option.bind account (fun a ->
+              auth_source_word (Spice_account.source a));
       }
   | Spice_host_builtin.Login.Failed message ->
       {
@@ -1105,7 +1115,12 @@ let auth_record_of_logout ~title
     (result : (Spice_host_builtin.Login.logout, string) result) :
     Auth_panel.record =
   let base outcome =
-    { Auth_panel.provider_title = title; outcome; acct_fingerprint = None; source_word = None }
+    {
+      Auth_panel.provider_title = title;
+      outcome;
+      acct_fingerprint = None;
+      source_word = None;
+    }
   in
   match result with
   | Ok { Spice_host_builtin.Login.env_still_active = Some var } ->
@@ -1387,7 +1402,7 @@ let run ~stdenv ~(startup : App.startup) () =
           let result = Eio.Promise.await pending in
           match !resume_pending with
           | Some current when current != pending -> consume_resume current
-          | None ->
+          | None -> (
               (* Another consumer already cleared [resume_pending] and is mid
                  attach: reuse its attachment once it lands, else mint fresh.
                  Reachable only with two concurrent [Start_turn] consumers, which
@@ -1396,7 +1411,7 @@ let run ~stdenv ~(startup : App.startup) () =
                  than dispatching a second [Start_turn]) — this rides on that
                  invariant. Without the [attachment] check a second consumer would
                  mint a spurious fresh session over the first's. *)
-              (match !attachment with
+              match !attachment with
               | Some att -> Ok att
               | None -> attach_fresh ())
           | Some _ -> (
@@ -1478,11 +1493,13 @@ let run ~stdenv ~(startup : App.startup) () =
              just seeds an empty set, but the attribution must still land or the
              resumed session's LIVE spawns are gated out of the switcher. *)
           let store = Spice_host.Session.store ~stdenv host in
-          let root = Spice_path.Abs.to_string (Spice_session_store.root store) in
+          let root =
+            Spice_path.Abs.to_string (Spice_session_store.root store)
+          in
           let runs =
             match
-              Spice_host.Artifacts.Subagent_run.list
-                ~fs:(Eio.Stdenv.fs stdenv) ~root ~parent:session_id
+              Spice_host.Artifacts.Subagent_run.list ~fs:(Eio.Stdenv.fs stdenv)
+                ~root ~parent:session_id
             with
             | Ok runs -> runs
             | Error _ -> []
@@ -1519,7 +1536,9 @@ let run ~stdenv ~(startup : App.startup) () =
                  the one it actually consumes, so a superseded producer cannot
                  wipe the newer pending. *)
               let is_current () =
-                match !resume_pending with Some p -> p == pending | None -> false
+                match !resume_pending with
+                | Some p -> p == pending
+                | None -> false
               in
               if not (is_current ()) then
                 Eio.Promise.resolve resolve (Error "resume superseded")
@@ -1544,7 +1563,8 @@ let run ~stdenv ~(startup : App.startup) () =
            directly. *)
         let live_for id =
           match (!attachment, !created_session) with
-          | Some (live, _), Some current when Spice_session.Id.equal id current ->
+          | Some (live, _), Some current when Spice_session.Id.equal id current
+            ->
               Some live
           | _ -> None
         in
@@ -1584,7 +1604,9 @@ let run ~stdenv ~(startup : App.startup) () =
           (match Spice_host.Config.Field.of_string field with
           | Error _ -> ()
           | Ok (Spice_host.Config.Field.Any f) ->
-              let files = Spice_host.Config.files (Spice_host.Host.config host) in
+              let files =
+                Spice_host.Config.files (Spice_host.Host.config host)
+              in
               let (_ : (unit, Spice_host.Config.Error.t) result) =
                 Spice_host.Config.Config_file.edit ~stdenv files
                   Spice_host.Config.Config_file.User
@@ -1602,7 +1624,8 @@ let run ~stdenv ~(startup : App.startup) () =
           | Ok fresh ->
               let config = Spice_host.Host.config fresh in
               let disabled =
-                Spice_host.Config.Skills.disabled (Spice_host.Config.skills config)
+                Spice_host.Config.Skills.disabled
+                  (Spice_host.Config.skills config)
               in
               let disabled =
                 if List.mem name disabled then
@@ -1762,8 +1785,7 @@ let run ~stdenv ~(startup : App.startup) () =
               ~f:(fun _events ->
                 deliver
                   (App.review_msg
-                     (Spice_tui_review.fs_changed
-                        ~now:(Unix.gettimeofday ()))))
+                     (Spice_tui_review.fs_changed ~now:(Unix.gettimeofday ()))))
               ~on_error:(fun error ->
                 deliver
                   (App.review_msg
@@ -1803,7 +1825,8 @@ let run ~stdenv ~(startup : App.startup) () =
                   deliver
                     (App.auth_settled ~request
                        (auth_record_of_settled
-                          ~title:(model_provider_title provider) settled)))
+                          ~title:(model_provider_title provider)
+                          settled)))
         in
         let command = function
           | App.Quit -> Mosaic.Cmd.quit
@@ -1898,11 +1921,12 @@ let run ~stdenv ~(startup : App.startup) () =
           | App.Load_sessions ->
               perform (fun () ->
                   let store = Spice_host.Session.store ~stdenv host in
-                  match load_recent_sessions ~stdenv ~clock ~store ~cwd ~limit:4 with
+                  match
+                    load_recent_sessions ~stdenv ~clock ~store ~cwd ~limit:4
+                  with
                   | Ok rows -> deliver (App.sessions_loaded rows)
                   | Error message -> deliver (App.sessions_load_failed message))
-          | App.Load_screen_sessions ->
-              perform (fun () -> reload_screen ())
+          | App.Load_screen_sessions -> perform (fun () -> reload_screen ())
           | App.Resume_session id ->
               resume_into (fun () ->
                   store_session id |> Result.map_error failure_message)
@@ -1919,10 +1943,25 @@ let run ~stdenv ~(startup : App.startup) () =
                     (* [fork] persists the child document here, inside the load,
                        before [resume_into]'s supersession check runs — so a fork
                        superseded by a racing resume leaves an unreferenced child
-                       session in the store. Accepted: the store tolerates
-                       orphaned sessions and the window needs a second pick
-                       landing during this write. *)
-                    Spice_host.Session.fork ~store ~clock ?title ~cwd parent
+                       session in the store, and the lineage record below can
+                       land in the superseding session's transcript. Accepted:
+                       the store tolerates orphaned sessions and the window
+                       needs a second pick landing during this write. *)
+                    let* child =
+                      Spice_host.Session.fork ~store ~clock ?title ~cwd parent
+                    in
+                    (* Delivered before [enter_session]'s replay events, so the
+                       shell's lineage record sits under the fresh banner, above
+                       the inherited history. The display title is the parent's
+                       title, or its id when untitled
+                       ({!Spice_protocol.Session_summary}'s convention). *)
+                    let parent_title =
+                      match title with
+                      | Some t when String.trim t <> "" -> t
+                      | Some _ | None -> Spice_session.Id.to_string id
+                    in
+                    deliver (App.session_forked ~parent_title);
+                    Ok child
                   in
                   Result.map_error failure_message forked)
           | App.Load_thread_document run ->
@@ -2027,8 +2066,7 @@ let run ~stdenv ~(startup : App.startup) () =
                       command
                   in
                   deliver (App.shell_finished (shell_block ~command result)))
-          | App.Interrupt_shell ->
-              perform (fun () -> shell_cancelled := true)
+          | App.Interrupt_shell -> perform (fun () -> shell_cancelled := true)
           (* Provider login / logout (09-auth.md). [perform] runs each thunk in a
              daemon fiber (Mosaic's ~process_perform), so the browser / device
              flows' up-to-300 s waits never block the UI; the engine's own
@@ -2048,7 +2086,8 @@ let run ~stdenv ~(startup : App.startup) () =
                              Auth_panel.provider_title =
                                model_provider_title provider;
                              outcome =
-                               Auth_panel.Failed (Spice_auth.Error.message error);
+                               Auth_panel.Failed
+                                 (Spice_auth.Error.message error);
                              acct_fingerprint = None;
                              source_word = None;
                            })
@@ -2073,8 +2112,8 @@ let run ~stdenv ~(startup : App.startup) () =
                     (App.auth_settled ~request
                        (auth_record_of_logout
                           ~title:(model_provider_title provider)
-                          (Spice_host_builtin.Login.logout ~stdenv host ~provider
-                             ()))))
+                          (Spice_host_builtin.Login.logout ~stdenv host
+                             ~provider ()))))
           | App.Auth_cancel { request } ->
               perform (fun () -> resolve_auth_cancel request)
           | App.Auth_copy text -> Mosaic.Cmd.copy_to_clipboard text
@@ -2094,8 +2133,8 @@ let run ~stdenv ~(startup : App.startup) () =
               | Spice_tui_review.Effect.Store { root; key; record } ->
                   perform (fun () ->
                       match
-                        Spice_review_git.Records.save
-                          ~fs:(Eio.Stdenv.fs stdenv) ~root ~key record
+                        Spice_review_git.Records.save ~fs:(Eio.Stdenv.fs stdenv)
+                          ~root ~key record
                       with
                       | Ok () -> ()
                       | Error message ->
@@ -2113,8 +2152,7 @@ let run ~stdenv ~(startup : App.startup) () =
                         (App.review_msg
                            (Spice_tui_review.tick request
                               ~now:(Unix.gettimeofday ()))))
-              | Spice_tui_review.Effect.Load { request; root; base; known }
-                ->
+              | Spice_tui_review.Effect.Load { request; root; base; known } ->
                   perform (fun () ->
                       deliver
                         (App.review_msg
