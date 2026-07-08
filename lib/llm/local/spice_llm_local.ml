@@ -173,7 +173,7 @@ module Manifest = struct
 
   let fit entry =
     Spice_modelfit.Model.make ~weights_bytes:(Int64.to_int entry.size)
-      ~n_layers:entry.kv_layers ~n_kv_heads:entry.n_kv_heads
+      ~n_kv_layers:entry.kv_layers ~n_kv_heads:entry.n_kv_heads
       ~head_dim:entry.head_dim ~max_context:entry.context_length
 end
 

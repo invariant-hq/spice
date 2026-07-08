@@ -78,35 +78,36 @@ end
 module Model = struct
   type t = {
     weights_bytes : int;
-    n_layers : int;
+    n_kv_layers : int;
     n_kv_heads : int;
     head_dim : int;
     max_context : int;
   }
 
-  let make ~weights_bytes ~n_layers ~n_kv_heads ~head_dim ~max_context =
+  let make ~weights_bytes ~n_kv_layers ~n_kv_heads ~head_dim ~max_context =
     let field name value =
       if value <= 0 then
         invalid_arg
           (Printf.sprintf "Spice_modelfit.Model.make: %s must be positive" name)
     in
     field "weights_bytes" weights_bytes;
-    field "n_layers" n_layers;
+    field "n_kv_layers" n_kv_layers;
     field "n_kv_heads" n_kv_heads;
     field "head_dim" head_dim;
     field "max_context" max_context;
-    { weights_bytes; n_layers; n_kv_heads; head_dim; max_context }
+    { weights_bytes; n_kv_layers; n_kv_heads; head_dim; max_context }
 
   let weights_bytes t = t.weights_bytes
-  let n_layers t = t.n_layers
+  let n_kv_layers t = t.n_kv_layers
   let n_kv_heads t = t.n_kv_heads
   let head_dim t = t.head_dim
   let max_context t = t.max_context
 
   let pp ppf t =
     Format.fprintf ppf
-      "%a weights, %d layers, %d kv heads, head dim %d, max context %d" pp_bytes
-      t.weights_bytes t.n_layers t.n_kv_heads t.head_dim t.max_context
+      "%a weights, %d kv layers, %d kv heads, head dim %d, max context %d"
+      pp_bytes t.weights_bytes t.n_kv_layers t.n_kv_heads t.head_dim
+      t.max_context
 end
 
 type kv_dtype = F16 | Q8_0 | Q4_0
@@ -120,7 +121,7 @@ let kv_bytes_per_element = function
 
 let kv_bytes_per_token kv_dtype model =
   2.0
-  *. float (Model.n_layers model)
+  *. float (Model.n_kv_layers model)
   *. float (Model.n_kv_heads model)
   *. float (Model.head_dim model)
   *. kv_bytes_per_element kv_dtype
@@ -534,7 +535,7 @@ module Gguf = struct
         Ok ((sum / 2) + (sum mod 2))
     in
     let open Result.Syntax in
-    let* n_layers = positive "block_count" t.n_layers in
+    let* n_kv_layers = positive "block_count" t.n_layers in
     let* max_context = positive "context_length" t.context_length in
     let* n_kv_heads =
       match t.head_count_kv with
@@ -561,5 +562,6 @@ module Gguf = struct
     if head_dim <= 0 then invalid_head_dimensions ()
     else
       Ok
-        (Model.make ~weights_bytes ~n_layers ~n_kv_heads ~head_dim ~max_context)
+        (Model.make ~weights_bytes ~n_kv_layers ~n_kv_heads ~head_dim
+           ~max_context)
 end

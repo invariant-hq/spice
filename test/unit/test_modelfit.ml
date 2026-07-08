@@ -48,7 +48,7 @@ let gguf_model_error =
 (* A reference shape: 32 layers, 8 KV heads, head dim 128. At a 32768-token
    f16 cache this is exactly 4 GiB of KV. *)
 let reference ?(weights_bytes = 8 * gib) ?(max_context = 131072) () =
-  Fit.Model.make ~weights_bytes ~n_layers:32 ~n_kv_heads:8 ~head_dim:128
+  Fit.Model.make ~weights_bytes ~n_kv_layers:32 ~n_kv_heads:8 ~head_dim:128
     ~max_context
 
 (* Machine *)
@@ -231,7 +231,7 @@ let gguf_parses_metadata () =
   equal (option string) ~msg:"name" (Some "Qwen3 Coder 30B")
     (Fit.Gguf.name parsed);
   let model = expect_model ~weights_bytes:(19 * gib) parsed in
-  equal int ~msg:"layers" 48 (Fit.Model.n_layers model);
+  equal int ~msg:"kv layers" 48 (Fit.Model.n_kv_layers model);
   equal int ~msg:"kv heads" 4 (Fit.Model.n_kv_heads model);
   equal int ~msg:"head dim from embedding/head_count" 64
     (Fit.Model.head_dim model);
@@ -302,7 +302,7 @@ let gguf_stops_before_tokenizer () =
   in
   let model = expect_model ~weights_bytes:gib (expect_gguf data) in
   equal int ~msg:"metadata before the tokenizer is enough" 48
-    (Fit.Model.n_layers model)
+    (Fit.Model.n_kv_layers model)
 
 let gguf_truncation_and_malformed () =
   let whole = gguf qwen_kvs in
@@ -344,7 +344,7 @@ let gguf_missing_keys () =
     (Error
        (Fit.Gguf.Model_error.Missing_metadata
           { key = "qwen3moe.block_count" }))
-    (Result.map Fit.Model.n_layers
+    (Result.map Fit.Model.n_kv_layers
        (Fit.Gguf.model ~weights_bytes:gib (expect_gguf (gguf no_layers))));
   expect_invalid_arg "weights must be positive" (fun () ->
       Fit.Gguf.model ~weights_bytes:0 (expect_gguf (gguf qwen_kvs)))

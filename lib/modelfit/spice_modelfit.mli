@@ -14,7 +14,7 @@
 
     Estimates follow the standard decomposition for llama.cpp-family engines:
     weights (the quantized file size) plus KV cache
-    ([2 x layers x kv_heads x head_dim x context] elements) plus a fixed
+    ([2 x kv_layers x kv_heads x head_dim x context] elements) plus a fixed
     allowance for the compute graph and engine overhead. The KV term assumes
     grouped-query or multi-head attention; architectures with compressed KV
     (multi-head latent attention) are overestimated, which errs toward caution.
@@ -76,23 +76,26 @@ module Model : sig
 
   val make :
     weights_bytes:int ->
-    n_layers:int ->
+    n_kv_layers:int ->
     n_kv_heads:int ->
     head_dim:int ->
     max_context:int ->
     t
   (** [make] describes one quantized model file. [weights_bytes] is the file's
-      exact size — quantization is already priced into it. [n_kv_heads] is the
-      grouped-query head count (equal to the attention head count for multi-head
-      attention). [max_context] is the model's trained context length in tokens.
+      exact size — quantization is already priced into it. [n_kv_layers] is the
+      number of layers that allocate KV cache. [n_kv_heads] is the grouped-query
+      head count (equal to the attention head count for multi-head attention).
+      [max_context] is the model's trained context length in tokens.
 
       Raises [Invalid_argument] if any field is not positive. *)
 
   val weights_bytes : t -> int
   (** [weights_bytes t] is the model file size in bytes. *)
 
-  val n_layers : t -> int
-  (** [n_layers t] is the transformer block count. *)
+  val n_kv_layers : t -> int
+  (** [n_kv_layers t] is the count of layers that allocate KV cache. For
+      ordinary full-attention models this is the transformer block count; for
+      hybrid-attention models it is only the KV-bearing subset. *)
 
   val n_kv_heads : t -> int
   (** [n_kv_heads t] is the KV head count. *)
