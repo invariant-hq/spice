@@ -16,7 +16,12 @@
     workspace observation when later code needs to apply or prove a change.
 
     Use {!Label.escaped} for arbitrary labels. Use {!Label.of_string} only for
-    labels that already satisfy the unified diff header constraints. *)
+    labels that already satisfy the unified diff header constraints.
+
+    Unbounded rendering, hunking, and statistics are exact and may perform
+    unbounded line-diff work. Pass {!Limits.t} to {!render}, or
+    [max_edit_distance] to {!hunks}, when input text is large, untrusted, or
+    model-controlled. *)
 
 (** {1:labels Labels} *)
 
@@ -33,6 +38,10 @@ module Label : sig
 
       Raises [Invalid_argument] if [label] is empty or contains a newline,
       carriage return, or NUL byte. Use {!escaped} for arbitrary display text.
+
+      This checks only diff header structure. It does not make [label] safe for
+      terminals, logs, or prompts; use {!render} in [`Display] mode for display
+      escaping.
   *)
 
   val escaped : string -> t
@@ -133,9 +142,11 @@ module Hunk : sig
 
   module Line : sig
     type kind =
-      | Context
-      | Added
-      | Removed  (** The type for line roles within a hunk. *)
+      | Context  (** An unchanged line present in both text states. *)
+      | Added  (** A line present only in the after text. *)
+      | Removed  (** A line present only in the before text. *)
+    (** The type for line roles within a hunk. Removals precede additions within
+        each change block, matching {!Hunk.lines} and rendered output. *)
 
     type t
     (** The type for one hunk line. *)
@@ -160,8 +171,10 @@ module Hunk : sig
         is [None] iff {!kind} is [Removed]. *)
 
     val pp : Format.formatter -> t -> unit
-    (** [pp ppf line] formats [line] as its unified diff form: a [' '], ['-'],
-        or ['+'] prefix followed by the content. *)
+    (** [pp ppf line] formats [line] as a raw structural hunk line: a [' '],
+        ['-'], or ['+'] prefix followed by the unescaped content. It does not
+        append a line terminator or missing-final-newline marker. Use {!render}
+        for prompt, log, terminal, or patch-like display text. *)
   end
 
   type t
@@ -193,9 +206,10 @@ module Hunk : sig
       lines. *)
 
   val pp : Format.formatter -> t -> unit
-  (** [pp ppf hunk] formats [hunk] as unified diff text: the [@@] header
-      followed by one line per {!Line.t}. Missing final newlines are not marked;
-      use {!render} for authoritative unified text. *)
+  (** [pp ppf hunk] formats [hunk] as raw structural hunk text: the [@@] header
+      followed by one line per {!Line.t}. Content is not display-escaped and
+      missing final newlines are not marked. Use {!render} for prompt, log,
+      terminal, or patch-like display text. *)
 end
 
 val hunks :
@@ -214,7 +228,9 @@ val hunks :
     rendered [@@] headers for the same inputs.
 
     Equal texts are [Some []]. The result is [None] iff [max_edit_distance] is
-    provided and the Myers edit distance between the texts exceeds it.
+    provided and the Myers edit distance between the texts exceeds it. Without
+    [max_edit_distance], hunk computation is exact and may perform unbounded
+    diff work.
 
     Raises [Invalid_argument] if [context] or [max_edit_distance] is negative.
 *)
@@ -283,7 +299,8 @@ val render :
     When [limits] are exceeded, affected file content is represented by
     display-only omission notes instead of full hunks. The returned {!stats}
     still counts omitted files but does not include omitted additions or
-    deletions.
+    deletions. Without [limits], rendering is exact and may perform unbounded
+    diff work.
 
     Raises [Invalid_argument] if [context] is negative. *)
 
@@ -300,7 +317,8 @@ val omitted : t -> int
 
 val stats_of_changes : File_change.t list -> stats
 (** [stats_of_changes changes] is the structured statistics for [changes]
-    without rendering unified text. No-op modifications are omitted.
+    without rendering unified text. No-op modifications are omitted. The result
+    is exact and may perform unbounded diff work for modifications.
 
     With no rendering limits, [stats_of_changes changes] is equal to
     [stats (render changes)]. Use {!render} when display limits must affect
