@@ -324,6 +324,17 @@ let polling_respects_ignore_predicate () =
   touch_mtime (path root "ignored/a");
   events [] (poll watcher)
 
+let polling_ignores_watched_root () =
+  with_temp_dir @@ fun root ->
+  with_eio @@ fun ~sw ~clock ->
+  let ignore path = Path.Rel.equal path Path.Rel.root in
+  let watcher = make ~backend:`Polling ~ignore ~sw ~clock root in
+  write_file (path root "a") "a";
+  events [] (poll watcher);
+  write_file (path root "a") "changed";
+  touch_mtime (path root "a");
+  events [] (poll watcher)
+
 let polling_does_not_emit_spurious_events () =
   with_temp_dir @@ fun root ->
   write_file (path root "a") "a";
@@ -460,6 +471,20 @@ let close_wakes_polling_next () =
   Eio.Fiber.fork ~sw (fun () ->
       Eio.Time.sleep clock 0.05;
       Fswatch.close watcher);
+  equal
+    (option (list event))
+    ~msg:"closed watcher returns None" None
+    (next_timeout ~clock watcher)
+
+let closed_watcher_operations_return_empty () =
+  with_temp_dir @@ fun root ->
+  with_eio @@ fun ~sw ~clock ->
+  let watcher = make ~backend:`Polling ~sw ~clock root in
+  Fswatch.close watcher;
+  Fswatch.close watcher;
+  write_file (path root "a") "a";
+  events [] (poll watcher);
+  reset watcher;
   equal
     (option (list event))
     ~msg:"closed watcher returns None" None
@@ -606,10 +631,10 @@ let best_backend_constructs () =
   let watcher = make ~backend:`Best ~sw ~clock root in
   match Fswatch.backend watcher with `Native | `Polling -> ()
 
-let with_native_watcher root f =
+let with_native_watcher ?(poll_interval = 0.01) root f =
   with_eio @@ fun ~sw ~clock ->
   match
-    Fswatch.make ~sw ~clock ~backend:`Native ~poll_interval:0.01 ~root ()
+    Fswatch.make ~sw ~clock ~backend:`Native ~poll_interval ~root ()
   with
   | Ok watcher -> f ~sw ~clock watcher
   | Error (Error.Backend_unavailable _) ->
@@ -626,6 +651,26 @@ let native_close_wakes_next () =
     (option (list event))
     ~msg:"closed native watcher returns None" None
     (next_timeout ~clock watcher)
+
+let native_wakeup_observes_create () =
+  with_temp_dir @@ fun root ->
+  with_native_watcher ~poll_interval:5.0 root @@ fun ~sw:_ ~clock watcher ->
+  write_file (path root "a") "a";
+  match next_timeout ~clock ~timeout:1.0 watcher with
+  | Some actual -> events [ ev Event.Created "a" ] actual
+  | None -> failf "native watcher closed unexpectedly"
+
+let native_wakeup_observes_nested_create () =
+  with_temp_dir @@ fun root ->
+  with_native_watcher ~poll_interval:5.0 root @@ fun ~sw:_ ~clock watcher ->
+  Unix.mkdir (path root "dir") 0o755;
+  write_file (path root "dir/file") "file";
+  match next_timeout ~clock ~timeout:1.0 watcher with
+  | Some actual ->
+      events
+        [ ev Event.Created "dir"; ev Event.Created "dir/file" ]
+        actual
+  | None -> failf "native watcher closed unexpectedly"
 
 let () =
   run "spice.fswatch"
@@ -655,6 +700,7 @@ let () =
           test "symlink replacements change stable path"
             polling_symlink_replacements_change_stable_path;
           test "respects ignore predicate" polling_respects_ignore_predicate;
+          test "ignores watched root" polling_ignores_watched_root;
           test "does not emit spurious events"
             polling_does_not_emit_spurious_events;
           test "coalesces by snapshot diff" polling_coalesces_by_snapshot_diff;
@@ -668,6 +714,8 @@ let () =
           test ~timeout:3.0 "polling next observes changes"
             next_polling_observes_changes;
           test ~timeout:3.0 "close wakes polling next" close_wakes_polling_next;
+          test ~timeout:3.0 "closed watcher operations return empty"
+            closed_watcher_operations_return_empty;
           test ~timeout:3.0 "iter stops on close" iter_stops_on_close;
           test ~timeout:3.0 "iter propagates callback exceptions"
             iter_propagates_callback_exceptions;
@@ -687,6 +735,10 @@ let () =
         [
           test "best backend constructs" best_backend_constructs;
           test ~timeout:4.0 "native close wakes next" native_close_wakes_next;
+          test ~timeout:2.0 "native wakeup observes create"
+            native_wakeup_observes_create;
+          test ~timeout:2.0 "native wakeup observes nested create"
+            native_wakeup_observes_nested_create;
         ];
       group "slow"
         [
