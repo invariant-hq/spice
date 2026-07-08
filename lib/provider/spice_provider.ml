@@ -217,16 +217,21 @@ module Auth = struct
     let protocol t = t.protocol
   end
 
-  type t = { env : Env.t list; login : Login.t list }
+  type t = { required : bool; env : Env.t list; login : Login.t list }
 
-  let make ?(env = []) ?(login = []) () =
+  let make ?required ?(env = []) ?(login = []) () =
     check_no_duplicates "Auth.make" "environment declarations" String.compare
       (List.map Env.name env);
     check_no_duplicates "Auth.make" "login methods" String.compare
       (List.map Login.id login);
-    { env; login }
+    let has_method = not (List.is_empty env && List.is_empty login) in
+    let required = Option.value required ~default:has_method in
+    if required && not has_method then
+      invalid "Auth.make" "required auth declares no env or login method";
+    { required; env; login }
 
   let none = make ()
+  let required t = t.required
   let env t = t.env
   let logins t = t.login
 

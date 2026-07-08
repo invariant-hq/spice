@@ -218,7 +218,15 @@ let login_contracts () =
   expect_invalid_arg "duplicate login methods rejected" (fun () ->
       Auth.make
         ~login:[ Login.api_key (); Login.api_key ~label:"Other API key" () ]
-        ())
+        ());
+  is_true ~msg:"declaring methods defaults to required"
+    (Auth.required (Auth.make ~login:[ Login.api_key () ] ()));
+  is_true ~msg:"no methods defaults to not required"
+    (not (Auth.required (Auth.make ())));
+  is_true ~msg:"optional auth keeps its methods"
+    (not (Auth.required (Auth.make ~required:false ~login:[ Login.api_key () ] ())));
+  expect_invalid_arg "required auth must declare a method" (fun () ->
+      Auth.make ~required:true ())
 
 let modality_contracts () =
   let depth = Modality.extension "depth_map" in

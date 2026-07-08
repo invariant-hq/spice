@@ -257,13 +257,23 @@ module Auth : sig
   val none : t
   (** [none] declares no auth inputs or login methods. *)
 
-  val make : ?env:Env.t list -> ?login:Login.t list -> unit -> t
-  (** [make ?env ?login ()] is an auth declaration.
+  val make : ?required:bool -> ?env:Env.t list -> ?login:Login.t list -> unit -> t
+  (** [make ?required ?env ?login ()] is an auth declaration.
 
-      [env] and [login] default to [[]].
+      [env] and [login] default to [[]]. [required] states whether a usable
+      credential is mandatory to use the provider; it defaults to [true] when
+      [env] or [login] declares a method and to [false] otherwise. Declaring
+      [~required:false] alongside methods describes optional authentication: a
+      self-hosted provider that serves unauthenticated by default but accepts a
+      credential when its deployment demands one.
 
       Raises [Invalid_argument] if two environment declarations use the same
-      variable name or two login methods use the same method id. *)
+      variable name, if two login methods use the same method id, or if
+      [required] is [true] while no method is declared. *)
+
+  val required : t -> bool
+  (** [required t] is whether a usable credential is mandatory to use the
+      provider. [false] for {!none} and for optional-auth declarations. *)
 
   val env : t -> Env.t list
   (** [env t] is [t]'s provider-local environment credential declarations. *)
