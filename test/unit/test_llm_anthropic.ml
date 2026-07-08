@@ -877,6 +877,58 @@ let completed_stream_decodes_events_and_response () =
       equal int ~msg:"cache write" 1 usage.Llm.Usage.cache_write
   end
 
+let durable_parts_preserve_content_block_order () =
+  let result, _requests =
+    with_anthropic_server
+      (fun index request ->
+        ignore index;
+        ignore request;
+        sse_response
+          [
+            message_start ();
+            content_block_start 0
+              (json_object
+                 [
+                   ("type", Json.string "thinking"); ("thinking", Json.string "");
+                 ]);
+            content_block_delta 0
+              (json_object
+                 [
+                   ("type", Json.string "thinking_delta");
+                   ("thinking", Json.string "thought");
+                 ]);
+            signature_delta 0 "sig_1";
+            content_block_stop 0;
+            content_block_start 1
+              (json_object
+                 [ ("type", Json.string "text"); ("text", Json.string "") ]);
+            content_block_delta 1
+              (json_object
+                 [
+                   ("type", Json.string "text_delta");
+                   ("text", Json.string "answer");
+                 ]);
+            content_block_stop 1;
+            message_delta "end_turn";
+            message_stop;
+          ])
+      (fun port -> run_stream port (request ()))
+  in
+  let _events, response = expect_stream_ok "durable part order" result in
+  let parts = Llm.Message.Assistant.parts (Llm.Response.assistant response) in
+  begin match parts with
+  | [
+   Llm.Message.Assistant.Reasoning reasoning; Llm.Message.Assistant.Text text;
+  ] ->
+      equal (option string) ~msg:"reasoning text" (Some "thought")
+        (Llm.Message.Assistant.Reasoning.text reasoning);
+      equal (option string) ~msg:"reasoning signature" (Some "sig_1")
+        (Llm.Message.Assistant.Reasoning.signature reasoning);
+      equal string ~msg:"text" "answer" text
+  | parts ->
+      failf "expected reasoning before text, got %d parts" (List.length parts)
+  end
+
 let stream_failures_are_classified () =
   let cases =
     [
@@ -1129,6 +1181,8 @@ let () =
       test "retry policy" retry_policy;
       test "completed stream decodes events and response"
         completed_stream_decodes_events_and_response;
+      test "durable parts preserve content block order"
+        durable_parts_preserve_content_block_order;
       test "stream failures are classified" stream_failures_are_classified;
       test "response stop reasons are normalized"
         response_stop_reasons_are_normalized;

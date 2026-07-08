@@ -643,6 +643,7 @@ let stream_events ~cancelled ~elapsed requested_model api_stream =
   let stopped_blocks = Hashtbl.create 8 in
   let pending = Queue.create () in
   let parts = ref [] in
+  let part_order = ref 0 in
   let usage = ref None in
   let stop = ref None in
   let provider_stop = ref None in
@@ -655,10 +656,14 @@ let stream_events ~cancelled ~elapsed requested_model api_stream =
     terminal := true;
     emit (Llm.Stream.Failed error)
   in
-  let add_part part = parts := part :: !parts in
-  let add_text text =
+  let add_part index part =
+    let order = !part_order in
+    incr part_order;
+    parts := (index, order, part) :: !parts
+  in
+  let add_text index text =
     if not (String.is_empty text) then (
-      add_part (Llm.Message.Assistant.text_part text);
+      add_part index (Llm.Message.Assistant.text_part text);
       emit (Llm.Stream.Event (Llm.Stream.Event.text_delta text)))
   in
   let add_reasoning index text =
@@ -676,13 +681,13 @@ let stream_events ~cancelled ~elapsed requested_model api_stream =
     if not (String.is_empty data) then
       (reasoning_at reasonings index).encrypted <- Some data
   in
-  let emit_tool_call partial =
+  let emit_tool_call index partial =
     if not partial.emitted_tool then
       match tool_call_of_partial partial with
       | Error error -> fail error
       | Ok call ->
           partial.emitted_tool <- true;
-          add_part (Llm.Message.Assistant.tool_call call);
+          add_part index (Llm.Message.Assistant.tool_call call);
           emit (Llm.Stream.Event (Llm.Stream.Event.tool_call call))
   in
   let field_string_or name ~default json =
@@ -721,13 +726,19 @@ let stream_events ~cancelled ~elapsed requested_model api_stream =
                   ()
               with
               | value ->
-                  (index, Llm.Message.Assistant.reasoning_part value) :: acc
+                  (index, -1, Llm.Message.Assistant.reasoning_part value) :: acc
               | exception Invalid_argument _ -> acc))
         reasonings []
-      |> List.sort (fun (left, _) (right, _) -> Int.compare left right)
-      |> List.map snd
     in
-    let parts = List.rev !parts @ reasoning_parts in
+    let parts =
+      !parts @ reasoning_parts
+      |> List.sort
+           (fun (left_index, left_order, _) (right_index, right_order, _) ->
+             match Int.compare left_index right_index with
+             | 0 -> Int.compare left_order right_order
+             | order -> order)
+      |> List.map (fun (_index, _order, part) -> part)
+    in
     match parts with
     | [] -> decode_error "Anthropic response produced no assistant parts"
     | parts ->
@@ -768,7 +779,7 @@ let stream_events ~cancelled ~elapsed requested_model api_stream =
                 | Some block -> (
                     match string_field "type" block with
                     | Some "text" ->
-                        Option.iter add_text (string_field "text" block)
+                        Option.iter (add_text index) (string_field "text" block)
                     | Some "thinking" ->
                         Option.iter (add_reasoning index)
                           (string_field "thinking" block)
@@ -805,7 +816,7 @@ let stream_events ~cancelled ~elapsed requested_model api_stream =
                 | Some delta -> (
                     match string_field "type" delta with
                     | Some "text_delta" ->
-                        Option.iter add_text (string_field "text" delta)
+                        Option.iter (add_text index) (string_field "text" delta)
                     | Some "thinking_delta" ->
                         Option.iter (add_reasoning index)
                           (string_field "thinking" delta)
@@ -842,7 +853,8 @@ let stream_events ~cancelled ~elapsed requested_model api_stream =
                      "Anthropic duplicate content_block_stop")
               else (
                 Hashtbl.add stopped_blocks index ();
-                Option.iter emit_tool_call (Hashtbl.find_opt partials index))
+                Option.iter (emit_tool_call index)
+                  (Hashtbl.find_opt partials index))
           | "message_delta" ->
               update_usage (object_field "usage" json);
               begin match object_field "delta" json with
