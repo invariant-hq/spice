@@ -43,8 +43,8 @@ The status JSON exposes the same prompt detail structurally: mode, reviewed
 accesses with explanations, and evidence — enough to render a prompt without
 exporting the session.
 
-  $ spice session show --json blocked-detail | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/' | grep -o '"mode":"default"; s/"created_at":[0-9]+/"created_at":$TIME/g; s/"updated_at":[0-9]+/"updated_at":$TIME/g'
-  [1]
+  $ spice session show --json blocked-detail | grep -o '"mode":"default"'
+  "mode":"default"
   $ spice session show --json blocked-detail | grep -o '"kind":"needs_review"'
   "kind":"needs_review"
   $ spice session show --json blocked-detail | grep -o '"additions":2'
@@ -159,6 +159,6 @@ reflecting that resume rechecks policy.
   >     "matcher": { "type": "path-exact-relative", "relative": "render.txt" } } ] } }
   > JSON
   $ spice session show render-time | grep '^- '
-  - write create $TESTCASE_ROOT/render.txt  [allow: rule f6c5d3f4a312 (user)]
+  - write create $TESTCASE_ROOT/render.txt  [allow: rule 1cfc42dd0417 (user)]
   - write create $TESTCASE_ROOT/render.txt (+1 -0)
   $ rm -f "$XDG_CONFIG_HOME/spice/config.json"

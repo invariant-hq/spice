@@ -44,8 +44,8 @@ string-replace editor family to keep write_file in the catalog for these flows.
 
 The waiting session status exposes the live permission request structurally.
 
-  $ spice session show --json permission-allow | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/' | grep -o '"phase":"waiting"; s/"created_at":[0-9]+/"created_at":$TIME/g; s/"updated_at":[0-9]+/"updated_at":$TIME/g'
-  [1]
+  $ spice session show --json permission-allow | grep -o '"phase":"waiting"'
+  "phase":"waiting"
   $ spice session show --json permission-allow | grep -o '"kind":"permission"'
   "kind":"permission"
   $ spice session show --json permission-allow | grep -o '"tool":"write_file"'
@@ -77,8 +77,8 @@ and sends the model-visible tool result to the provider.
   • tool write_file running
   ✓ tool write_file approved.txt completed: A approved.txt
   changed 1 file (+1 -0)
-  diff: spice session diff permission-allow --latest
-  revert: spice session revert permission-allow --latest
+  diff: spice session diff --latest 'permission-allow'
+  revert: spice session revert --latest 'permission-allow'
   allowed write finished
   spice: session saved; resume with: spice resume 'permission-allow'
   $ wait_fake_server
