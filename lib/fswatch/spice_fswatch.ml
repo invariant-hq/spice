@@ -506,7 +506,7 @@ let validate_root root =
                   root_error root "root is not a directory"
                 else Ok root))
 
-let check_timing name value =
+let check_timing ~caller name value =
   let finite =
     match classify_float value with
     | FP_nan | FP_infinite -> false
@@ -514,13 +514,13 @@ let check_timing name value =
   in
   if not (value > 0.0 && finite) then
     invalid_arg
-      (Printf.sprintf "Spice_fswatch.make: %s=%g must be positive and finite"
-         name value)
+      (Printf.sprintf "Spice_fswatch.%s: %s=%g must be positive and finite"
+         caller name value)
 
 let make ~sw ~clock ?(backend = `Best) ?(poll_interval = 0.25)
     ?(settle_delay = 0.05) ?(ignore = fun _ -> false) ~root () =
-  check_timing "poll_interval" poll_interval;
-  check_timing "settle_delay" settle_delay;
+  check_timing ~caller:"make" "poll_interval" poll_interval;
+  check_timing ~caller:"make" "settle_delay" settle_delay;
   let initialized =
     Eio_unix.run_in_systhread ~label:"spice-file-watcher-init" (fun () ->
         match validate_root root with
@@ -744,8 +744,10 @@ let iter t ~f =
   in
   loop ()
 
-let watch ~sw ~clock ?backend ?poll_interval ?settle_delay ?ignore
-    ?(on_error = Stdlib.ignore) ~root ~f () =
+let watch ~sw ~clock ?backend ?(poll_interval = 0.25) ?(settle_delay = 0.05)
+    ?ignore ?on_ready ~on_error ~root ~f () =
+  check_timing ~caller:"watch" "poll_interval" poll_interval;
+  check_timing ~caller:"watch" "settle_delay" settle_delay;
   (* Fork before [make] so construction stays non-blocking, then close under
      the mutex if a stop arrived while [make] was scanning. This is the same
      start/close-race guard [next]'s [close] contract relies on. *)
@@ -759,17 +761,20 @@ let watch ~sw ~clock ?backend ?poll_interval ?settle_delay ?ignore
   Eio.Fiber.fork_daemon ~sw (fun () ->
       Eio.Switch.run ~name:"spice-fswatch" (fun watch_sw ->
           match
-            make ~sw:watch_sw ~clock ?backend ?poll_interval ?settle_delay
+            make ~sw:watch_sw ~clock ?backend ~poll_interval ~settle_delay
               ?ignore ~root ()
           with
           | Error e -> on_error e
           | Ok w -> (
-              let stop_early =
+              let ready =
                 Eio.Mutex.use_rw ~protect:true mutex (fun () ->
                     watcher := Some w;
-                    !stopped)
+                    if !stopped then `Stopped else `Ready)
               in
-              if stop_early then close w
-              else match iter w ~f with Ok () -> () | Error e -> on_error e));
+              match ready with
+              | `Stopped -> close w
+              | `Ready ->
+                  Option.iter (fun on_ready -> on_ready w) on_ready;
+                  (match iter w ~f with Ok () -> () | Error e -> on_error e)));
       `Stop_daemon);
   stop

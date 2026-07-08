@@ -169,7 +169,8 @@ val watch :
   ?poll_interval:float ->
   ?settle_delay:float ->
   ?ignore:(Spice_path.Rel.t -> bool) ->
-  ?on_error:(Error.t -> unit) ->
+  ?on_ready:(t -> unit) ->
+  on_error:(Error.t -> unit) ->
   root:string ->
   f:(Event.t list -> unit) ->
   unit ->
@@ -180,13 +181,18 @@ val watch :
     released.
 
     Construction is non-blocking: [watch] returns immediately and the initial
-    scan runs in the background. A construction failure, or a later filesystem
-    failure that ends the loop, is passed to [on_error], which defaults to
-    ignoring the error. [f] and [on_error] run in the watcher's own fiber.
+    scan runs in the background. Changes made after [watch] returns but before
+    that scan completes may be captured in the initial baseline and not
+    delivered as events. [on_ready t], when supplied, is called after the
+    baseline has been captured and before [f] receives any batch.
+
+    A construction failure, or a later filesystem failure that ends the loop, is
+    passed to [on_error]. [f], [on_ready], and [on_error] run in the watcher's
+    own fiber; exceptions raised by these callbacks are not caught.
 
     Calling the returned function, or releasing [sw], stops the watcher; both
     are idempotent. The watcher's arguments are those of {!make}; invalid timing
-    values raise [Invalid_argument] from within the watcher fiber. *)
+    values raise [Invalid_argument] before [watch] returns. *)
 
 val poll : t -> (Event.t list, Error.t) result
 (** [poll t] rescans immediately and advances [t]'s baseline to the current

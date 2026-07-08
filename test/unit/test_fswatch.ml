@@ -101,6 +101,7 @@ let make ?backend ?(poll_interval = 0.01) ?(settle_delay = 0.01)
 
 let poll watcher = expect_ok "poll watcher" (Fswatch.poll watcher)
 let reset watcher = expect_ok "reset watcher" (Fswatch.reset watcher)
+let fail_on_watch_error error = failf "watcher error: %a" Error.pp error
 
 let next_timeout ~clock ?(timeout = 2.0) watcher =
   match
@@ -169,6 +170,19 @@ let construction_rejects_invalid_timing_values () =
     [ 0.0; -1.0; infinity; nan ];
   expect_invalid_argument "invalid settle delay" (fun () ->
       Fswatch.make ~sw ~clock ~backend:`Polling ~settle_delay:0.0 ~root ())
+
+let watch_rejects_invalid_timing_values () =
+  with_temp_dir @@ fun root ->
+  with_eio @@ fun ~sw ~clock ->
+  List.iter
+    (fun poll_interval ->
+      expect_invalid_argument "invalid watch poll interval" (fun () ->
+          Fswatch.watch ~sw ~clock ~backend:`Polling ~poll_interval
+            ~on_error:fail_on_watch_error ~root ~f:ignore ()))
+    [ 0.0; -1.0; infinity; nan ];
+  expect_invalid_argument "invalid watch settle delay" (fun () ->
+      Fswatch.watch ~sw ~clock ~backend:`Polling ~settle_delay:0.0
+        ~on_error:fail_on_watch_error ~root ~f:ignore ())
 
 let polling_initial_snapshot_is_baseline () =
   with_temp_dir @@ fun root ->
@@ -488,15 +502,15 @@ let watch_delivers_batches_until_stopped () =
   with_temp_dir @@ fun root ->
   with_eio @@ fun ~sw ~clock ->
   let events = Eio.Stream.create max_int in
+  let ready = Eio.Stream.create max_int in
   let stop =
     Fswatch.watch ~sw ~clock ~backend:`Polling ~poll_interval:0.01 ~root
+      ~on_ready:(fun _ -> Eio.Stream.add ready ())
+      ~on_error:fail_on_watch_error
       ~f:(fun batch -> List.iter (Eio.Stream.add events) batch)
       ()
   in
-  (* Construction is non-blocking, so wait for the async baseline scan before
-     mutating; otherwise the file is captured in the baseline and never
-     reported as created. *)
-  Eio.Time.sleep clock 0.1;
+  ignore (stream_take ~clock ready);
   write_file (path root "a") "a";
   equal event ~msg:"watch delivers the create batch" (ev Event.Created "a")
     (stream_take ~clock events);
@@ -511,6 +525,7 @@ let watch_stop_is_idempotent () =
   let events = Eio.Stream.create max_int in
   let stop =
     Fswatch.watch ~sw ~clock ~backend:`Polling ~poll_interval:0.01 ~root
+      ~on_error:fail_on_watch_error
       ~f:(fun batch -> List.iter (Eio.Stream.add events) batch)
       ()
   in
@@ -527,10 +542,13 @@ let watch_stop_during_callback () =
   with_temp_dir @@ fun root ->
   with_eio @@ fun ~sw ~clock ->
   let events = Eio.Stream.create max_int in
+  let ready = Eio.Stream.create max_int in
   let stop_ref = ref (fun () -> ()) in
   let batches = ref 0 in
   let stop =
     Fswatch.watch ~sw ~clock ~backend:`Polling ~poll_interval:0.01 ~root
+      ~on_ready:(fun _ -> Eio.Stream.add ready ())
+      ~on_error:fail_on_watch_error
       ~f:(fun batch ->
         incr batches;
         List.iter (Eio.Stream.add events) batch;
@@ -538,7 +556,7 @@ let watch_stop_during_callback () =
       ()
   in
   stop_ref := stop;
-  Eio.Time.sleep clock 0.1;
+  ignore (stream_take ~clock ready);
   write_file (path root "a") "a";
   equal event ~msg:"first batch is delivered" (ev Event.Created "a")
     (stream_take ~clock events);
@@ -564,14 +582,17 @@ let watch_stops_when_switch_released () =
   with_temp_dir @@ fun root ->
   with_eio @@ fun ~sw:_ ~clock ->
   let events = Eio.Stream.create max_int in
+  let ready = Eio.Stream.create max_int in
   Eio.Switch.run (fun child ->
       let _stop =
         Fswatch.watch ~sw:child ~clock ~backend:`Polling ~poll_interval:0.01
           ~root
+          ~on_ready:(fun _ -> Eio.Stream.add ready ())
+          ~on_error:fail_on_watch_error
           ~f:(fun batch -> List.iter (Eio.Stream.add events) batch)
           ()
       in
-      Eio.Time.sleep clock 0.1;
+      ignore (stream_take ~clock ready);
       write_file (path root "a") "a";
       ignore (stream_take ~clock events));
   write_file (path root "b") "b";
@@ -615,6 +636,8 @@ let () =
           test "rejects invalid roots" construction_rejects_invalid_roots;
           test "rejects invalid timing values"
             construction_rejects_invalid_timing_values;
+          test "watch rejects invalid timing values"
+            watch_rejects_invalid_timing_values;
         ];
       group "polling"
         [
