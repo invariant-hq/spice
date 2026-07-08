@@ -68,6 +68,27 @@ let executable_tool ?(subject = "alpha") () =
     ~run:(fun _context () -> Tool.Result.completed ~output:() ())
     ()
 
+let repeated_access_tool () =
+  let access =
+    Permission.Access.custom ~kind:`Write ~subject:"same" "review_tool"
+  in
+  let permissions () =
+    [
+      Permission.Request.of_accesses ~source:"first" [ access ];
+      Permission.Request.make ~source:"second"
+        [
+          Permission.Request.Item.make
+            ~change:
+              (Permission.Request.Change.make ~diff:"+line" ~additions:1 ())
+            access;
+        ];
+    ]
+  in
+  Tool.make ~name:"review_tool" ~description:"Reviewed test tool."
+    ~input:Tool.Input.empty ~output ~permissions
+    ~run:(fun _context () -> Tool.Result.completed ~output:() ())
+    ()
+
 let config ?(policy = Permission.Policy.default) ?host_tools ?prelude tools =
   Run.Config.make ~tools ?host_tools ~policy ?prelude ()
 
@@ -114,6 +135,25 @@ let deterministic_permission_ids () =
     (Session.Permission.Id.equal
        (Session.Permission.Requested.id first)
        (Session.Permission.Requested.id changed))
+
+let permission_ids_include_request_position () =
+  let config = config [ repeated_access_tool () ] in
+  let blocked = run_response config (response (call ())) in
+  let first = permission_from_step blocked in
+  match
+    Run.resolve_permission config
+      (Session.Permission.Requested.id first)
+      (Permission.Policy.Review.Allow Permission.Policy.Review.Once)
+      (Run.Step.session blocked)
+  with
+  | Error error -> failf "first allow failed: %a" Run.Error.pp error
+  | Ok step ->
+      let second = permission_from_step step in
+      is_false
+        ~msg:"metadata-distinct requests with the same access get distinct ids"
+        (Session.Permission.Id.equal
+           (Session.Permission.Requested.id first)
+           (Session.Permission.Requested.id second))
 
 let tool_claim_from_step step =
   match Run.Step.next step with
@@ -449,6 +489,42 @@ let policy_denial_uses_configured_message () =
     [ "Custom denial steering." ]
     denial_texts
 
+let current_policy_is_checked_after_permission_allow () =
+  let tool = executable_tool () in
+  let blocked_config = config [ tool ] in
+  let blocked = run_response blocked_config (response (call ())) in
+  let request = permission_from_step blocked in
+  let deny_rule =
+    Permission.Policy.Rule.deny (Permission.Policy.Match.kind `Write)
+  in
+  let deny_policy = Permission.Policy.make [ deny_rule ] in
+  let deny_config =
+    Run.Config.make ~tools:[ tool ] ~policy:deny_policy
+      ~denial_message:(fun denial ->
+        is_true ~msg:"current denial rule is applied"
+          (Permission.Policy.Rule.equal deny_rule
+             (Permission.Policy.Denial.rule denial));
+        "Denied by current policy.")
+      ()
+  in
+  match
+    Run.resolve_permission deny_config
+      (Session.Permission.Requested.id request)
+      (Permission.Policy.Review.Allow Permission.Policy.Review.Once)
+      (Run.Step.session blocked)
+  with
+  | Error error ->
+      failf "allow under changed policy failed: %a" Run.Error.pp error
+  | Ok step -> (
+      let state = Session.state (Run.Step.session step) in
+      is_true ~msg:"policy denial answers the pending tool call"
+        (Llm.Transcript.is_ready (Session.State.transcript state));
+      match Run.Step.next step with
+      | Run.Step.Request_model _ -> ()
+      | next ->
+          failf "expected model request after current policy denial, got %a"
+            Run.Step.pp_next next)
+
 let resolved_value =
   testable ~pp:Session.Permission.Resolved.pp
     ~equal:Session.Permission.Resolved.equal ()
@@ -551,6 +627,8 @@ let () =
       test "config construction is programmer-local"
         config_construction_is_programmer_local;
       test "deterministic permission ids" deterministic_permission_ids;
+      test "permission ids include request position"
+        permission_ids_include_request_position;
       test "deterministic tool claim ids" deterministic_tool_claim_ids;
       test "block accessors identify call and turn"
         block_accessors_identify_call_and_turn;
@@ -565,6 +643,8 @@ let () =
       test "interrupt finishes pending claim" interrupt_finishes_pending_claim;
       test "policy denial uses configured message"
         policy_denial_uses_configured_message;
+      test "current policy is checked after permission allow"
+        current_policy_is_checked_after_permission_allow;
       test "unattended denials record provenance"
         unattended_denials_record_provenance;
       test "recomputed change keeps allowed permissions matching"

@@ -533,9 +533,11 @@ module Run = struct
     |> Spice_permission.Access.Set.elements
     |> List.map Spice_permission.Access.stable_text
 
-  let permission_id turn_id call review =
-    digest_id "perm" ~domain:"spice.session.permission.v1"
-      (Turn.Id.to_string turn_id :: Llm.Tool.Call.id call :: access_texts review)
+  let permission_id turn_id call request_index review =
+    digest_id "perm" ~domain:"spice.session.permission.v2"
+      (Turn.Id.to_string turn_id :: Llm.Tool.Call.id call
+      :: string_of_int request_index
+      :: access_texts review)
 
   let tool_claim_id turn_id call =
     Tool_claim.Id.of_string
@@ -544,10 +546,10 @@ module Run = struct
           ~domain:"spice.session.tool_claim.v1"
           [ Turn.Id.to_string turn_id; Llm.Tool.Call.id call ])
 
-  let request_permission session turn_id call review =
+  let request_permission session turn_id call request_index review =
     let requested =
       Permission.Requested.of_review
-        ~id:(permission_id turn_id call review)
+        ~id:(permission_id turn_id call request_index review)
         ~turn:turn_id ~tool_call:call review
     in
     Step.make ~session
@@ -616,22 +618,23 @@ module Run = struct
 
   and review_tool_permissions config session turn_id call tool_call =
     let state = state session in
-    let rec loop = function
+    let rec loop request_index = function
       | [] -> Ok `Allowed
       | request :: requests -> (
-          if permission_already_allows state call request then loop requests
-          else
-            match
-              Spice_permission.Policy.decide ~grants:(State.grants state)
-                (Config.policy config) request
-            with
-            | Spice_permission.Policy.Decision.Allowed -> loop requests
-            | Spice_permission.Policy.Decision.Denied (first, rest) ->
-                Ok (`Denied (first, rest))
-            | Spice_permission.Policy.Decision.Review review ->
-                Ok (`Review review))
+          match
+            Spice_permission.Policy.decide ~grants:(State.grants state)
+              (Config.policy config) request
+          with
+          | Spice_permission.Policy.Decision.Allowed ->
+              loop (request_index + 1) requests
+          | Spice_permission.Policy.Decision.Denied (first, rest) ->
+              Ok (`Denied (first, rest))
+          | Spice_permission.Policy.Decision.Review review ->
+              if permission_already_allows state call request then
+                loop (request_index + 1) requests
+              else Ok (`Review (request_index, review)))
     in
-    let* decision = loop (Tool.Call.permissions tool_call) in
+    let* decision = loop 0 (Tool.Call.permissions tool_call) in
     match decision with
     | `Allowed -> Ok `Allowed
     | `Denied denials ->
@@ -641,8 +644,10 @@ module Run = struct
             (Config.denial_message config denial)
         in
         Ok (`Step step)
-    | `Review review ->
-        let* step = request_permission session turn_id call review in
+    | `Review (request_index, review) ->
+        let* step =
+          request_permission session turn_id call request_index review
+        in
         Ok (`Step step)
 
   and run_tool_action session turn_id call tool_call =
