@@ -76,7 +76,6 @@ type fate =
           {!Spice_protocol.Mode.Build} and {!Spice_protocol.Mode.Plan} are
           reached this way; [/review] opens a screen ({!Open_review}) rather
           than switching mode. *)
-  | Toggle_fast  (** Flip fast mode for new turns. *)
   | Toggle_thinking  (** Flip whether thinking summaries are shown. *)
   | Toggle_verbose  (** Flip tool-output expansion (also [ctrl+o]). *)
   | Quit  (** Request process exit; the footer carries the press-again guard. *)

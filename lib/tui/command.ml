@@ -18,7 +18,6 @@ type fate =
   | Open_login
   | Open_logout
   | Switch_mode of Spice_protocol.Mode.t
-  | Toggle_fast
   | Toggle_thinking
   | Toggle_verbose
   | Quit
@@ -43,7 +42,10 @@ let entry ?argument_hint ~availability ~echoes ~fate slash title description =
 (* The catalog, in palette display order. Gates and echo behavior are ported
    from lib/tui/app.ml ([command_allowed_while_working], [echoes_command]); the
    fate mirrors [run_command_action_now]'s per-command dispatch. /stats is
-   dropped — the usage tab absorbs it (03-ia-screens-overlays.md §Settings). *)
+   dropped — the usage tab absorbs it (03-ia-screens-overlays.md §Settings) —
+   and so is /fast: the model panel owns the effort choice, and a toggle that
+   silently remapped to an effort preset would contradict that ownership
+   (decided 2026-07-08). *)
 let all =
   [
     entry "/clear" "Clear"
@@ -56,8 +58,6 @@ let all =
       ~availability:Idle_only ~echoes:false ~fate:Compact_session;
     entry "/model" "Model" "Select model and effort" ~availability:Anytime
       ~echoes:false ~fate:Open_model;
-    entry "/fast" "Fast" "Toggle fast mode for new turns" ~availability:Anytime
-      ~echoes:false ~fate:Toggle_fast;
     entry "/thinking" "Thinking" "Toggle thinking summaries"
       ~availability:Anytime ~echoes:true ~fate:Toggle_thinking;
     entry "/verbose" "Verbose" "Expand or collapse tool output (ctrl+o)"
@@ -117,7 +117,7 @@ let implemented t =
   | Open_logout | Quit | Toggle_thinking | Switch_mode _ ->
       true
   | Clear_session | Fork_session | Compact_session | Rename_session
-  | Toggle_fast | Toggle_verbose ->
+  | Toggle_verbose ->
       false
 
 let is_substring ~affix s =
