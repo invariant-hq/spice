@@ -16,6 +16,7 @@
 #include <CoreServices/CoreServices.h>
 #include <dispatch/dispatch.h>
 #include <stdbool.h>
+#include <stdatomic.h>
 
 #ifndef kFSEventStreamEventFlagMustScanSubDirs
 #define kFSEventStreamEventFlagMustScanSubDirs 0x00000001
@@ -50,15 +51,16 @@ typedef struct spice_fsevents_t {
   value callback;
   FSEventStreamRef stream;
   dispatch_queue_t queue;
-  bool stopped;
+  bool callback_rooted;
+  atomic_bool stopped;
 } spice_fsevents_t;
 
 #define Fsevents_val(v) (*((spice_fsevents_t **)Data_custom_val(v)))
 
 static void stop_fsevents(spice_fsevents_t *t) {
-  if (t == NULL || t->stopped)
+  if (t == NULL ||
+      atomic_exchange_explicit(&t->stopped, true, memory_order_acq_rel))
     return;
-  t->stopped = true;
   if (t->stream != NULL) {
     FSEventStreamStop(t->stream);
     FSEventStreamInvalidate(t->stream);
@@ -75,8 +77,10 @@ static void finalize_fsevents(value v_t) {
   spice_fsevents_t *t = Fsevents_val(v_t);
   if (t != NULL) {
     stop_fsevents(t);
-    caml_remove_global_root(&t->callback);
+    if (t->callback_rooted)
+      caml_remove_global_root(&t->callback);
     caml_stat_free(t);
+    Fsevents_val(v_t) = NULL;
   }
 }
 
@@ -111,7 +115,8 @@ static void fsevents_callback(const FSEventStreamRef streamRef, void *client,
   spice_fsevents_t *t = (spice_fsevents_t *)client;
   bool interesting = false;
 
-  if (t == NULL || t->stopped)
+  if (t == NULL ||
+      atomic_load_explicit(&t->stopped, memory_order_acquire))
     return;
 
   for (size_t i = 0; i < numEvents; i++) {
@@ -149,14 +154,23 @@ CAMLprim value spice_file_watcher_fsevents_create(value v_path, value v_latency,
   t->callback = v_callback;
   t->stream = NULL;
   t->queue = NULL;
-  t->stopped = false;
-  caml_register_global_root(&t->callback);
+  t->callback_rooted = false;
+  atomic_init(&t->stopped, false);
 
   CFStringRef path =
       CFStringCreateWithCString(NULL, String_val(v_path), kCFStringEncodingUTF8);
+  if (path == NULL) {
+    caml_stat_free(t);
+    caml_failwith("FSEvents path is not valid UTF-8");
+  }
+
   CFArrayRef paths = CFArrayCreate(NULL, (const void **)&path, 1,
                                    &kCFTypeArrayCallBacks);
   CFRelease(path);
+  if (paths == NULL) {
+    caml_stat_free(t);
+    caml_failwith("CFArrayCreate failed");
+  }
 
   FSEventStreamContext context = {0, t, NULL, NULL, NULL};
   FSEventStreamCreateFlags flags =
@@ -167,16 +181,24 @@ CAMLprim value spice_file_watcher_fsevents_create(value v_path, value v_latency,
       kFSEventStreamEventIdSinceNow, Double_val(v_latency), flags);
   CFRelease(paths);
   if (t->stream == NULL) {
-    caml_remove_global_root(&t->callback);
     caml_stat_free(t);
     caml_failwith("FSEventStreamCreate failed");
   }
 
   t->queue = dispatch_queue_create("spice.file_watcher.fsevents", NULL);
+  if (t->queue == NULL) {
+    stop_fsevents(t);
+    caml_stat_free(t);
+    caml_failwith("dispatch_queue_create failed");
+  }
+
+  caml_register_global_root(&t->callback);
+  t->callback_rooted = true;
   FSEventStreamSetDispatchQueue(t->stream, t->queue);
   if (!FSEventStreamStart(t->stream)) {
     stop_fsevents(t);
     caml_remove_global_root(&t->callback);
+    t->callback_rooted = false;
     caml_stat_free(t);
     caml_failwith("FSEventStreamStart failed");
   }
@@ -201,14 +223,12 @@ CAMLprim value spice_file_watcher_fsevents_available(value unit) {
 
 CAMLprim value spice_file_watcher_fsevents_create(value v_path, value v_latency,
                                                   value v_callback) {
-  (void)v_path;
-  (void)v_latency;
-  (void)v_callback;
+  CAMLparam3(v_path, v_latency, v_callback);
   caml_failwith("fsevents is only available on macos");
 }
 
 CAMLprim value spice_file_watcher_fsevents_stop(value v_t) {
-  (void)v_t;
+  CAMLparam1(v_t);
   caml_failwith("fsevents is only available on macos");
 }
 
