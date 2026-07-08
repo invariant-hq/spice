@@ -79,25 +79,39 @@ module Update : sig
       Values contain at least one chunk. Use {!chunks} for inspection and
       {!apply} to execute the update; a chunk list alone is not an update. *)
 
-  type mismatch =
-    | Missing_context of string
-    | Missing_lines of { old_lines : string list; end_of_file : bool }
-    | Missing_insertion_point of { end_of_file : bool }
-        (** Update-application mismatch.
+  module Error : sig
+    type mismatch =
+      | Missing_context of string
+      | Missing_lines of { old_lines : string list; end_of_file : bool }
+      | Missing_insertion_point of { end_of_file : bool }
+          (** Update-application mismatch.
 
-            [Missing_context line] means the exact context line was not found at
-            or after the current search position. [Missing_lines] means the
-            chunk's exact [old_lines] sequence was not found.
-            [Missing_insertion_point] means an insertion-only chunk could not
-            be placed. [end_of_file] records whether [*** End of File]
-            constrained the failed match or insertion.
-        *)
+              [Missing_context line] means the exact context line was not found
+              at or after the current search position. [Missing_lines] means
+              the chunk's exact [old_lines] sequence was not found.
+              [Missing_insertion_point] means an insertion-only chunk could not
+              be placed. [end_of_file] records whether [*** End of File]
+              constrained the failed match or insertion.
+          *)
 
-  type apply_error = { chunk : int; mismatch : mismatch }
-  (** Update-application error.
+    type t
+    (** Update-application error. *)
 
-      [chunk] is the zero-based index in the update passed to {!Update.apply}.
-  *)
+    val chunk : t -> int
+    (** [chunk e] is the zero-based index of the first chunk that failed in the
+        update passed to {!Update.apply}. *)
+
+    val mismatch : t -> mismatch
+    (** [mismatch e] is the exact application mismatch for [e]. *)
+
+    val message : t -> string
+    (** [message e] is a human-readable diagnostic. The wording is for UI,
+        logs, and model-facing tool errors; callers should branch on
+        {!mismatch} rather than parse the message. *)
+
+    val pp : Format.formatter -> t -> unit
+    (** [pp ppf e] formats [e] for diagnostics. It prints {!message}[ e]. *)
+  end
 
   type chunk = private {
     context : string option;
@@ -125,7 +139,7 @@ module Update : sig
       of parsed patch input; callers inspect them for diagnostics, permissions,
       and evidence, but apply the enclosing {!type:t}. *)
 
-  val apply : t -> string -> (string, apply_error) result
+  val apply : t -> string -> (string, Error.t) result
   (** [apply update contents] applies [update] to [contents].
 
       Chunks apply in order to the evolving text and search from the position

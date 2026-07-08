@@ -369,21 +369,9 @@ let plan_delete ~fs ~workspace ~max_bytes path =
           Ok (edit, Output.make_entry ~path ~kind:Output.Delete ~diff, None))
 
 let patch_apply_error path error =
-  let mismatch =
-    match error.Patch.Update.mismatch with
-    | Patch.Update.Missing_context line ->
-        Printf.sprintf "missing context %S" line
-    | Patch.Update.Missing_lines { old_lines; end_of_file } ->
-        let eof = if end_of_file then " at end of file" else "" in
-        Printf.sprintf "missing lines%s: %S" eof (String.concat "\\n" old_lines)
-    | Patch.Update.Missing_insertion_point { end_of_file } ->
-        let eof = if end_of_file then " at end of file" else "" in
-        Printf.sprintf "missing insertion point%s" eof
-  in
   Patch
-    (Printf.sprintf "%s: patch chunk %d failed: %s"
-       (Workspace.Path.display path)
-       error.Patch.Update.chunk mismatch)
+    (Printf.sprintf "%s: %s" (Workspace.Path.display path)
+       (Patch.Update.Error.message error))
 
 let plan_update ~fs ~workspace ~max_bytes path move_to update =
   match Fs.Edit.read_text ~fs ~workspace ~max_bytes path with

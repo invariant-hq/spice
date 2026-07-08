@@ -10,22 +10,18 @@ let patch lines = String.concat "\n" lines
 let rel path = Spice_path.Rel.to_string path
 
 let pp_apply_mismatch ppf = function
-  | Patch.Update.Missing_context context ->
+  | Patch.Update.Error.Missing_context context ->
       Format.fprintf ppf "Missing_context %S" context
-  | Patch.Update.Missing_lines { old_lines; end_of_file } ->
+  | Patch.Update.Error.Missing_lines { old_lines; end_of_file } ->
       Format.fprintf ppf "Missing_lines { old_lines = [%a]; end_of_file = %b }"
         Format.(
           pp_print_list ~pp_sep:(fun ppf () -> fprintf ppf "; ") pp_print_string)
         old_lines end_of_file
-  | Patch.Update.Missing_insertion_point { end_of_file } ->
+  | Patch.Update.Error.Missing_insertion_point { end_of_file } ->
       Format.fprintf ppf "Missing_insertion_point { end_of_file = %b }"
         end_of_file
 
-let pp_apply_error ppf { Patch.Update.chunk; mismatch } =
-  Format.fprintf ppf "{ chunk = %d; mismatch = %a }" chunk pp_apply_mismatch
-    mismatch
-
-let apply_error = testable ~pp:pp_apply_error ~equal:( = ) ()
+let apply_mismatch = testable ~pp:pp_apply_mismatch ~equal:( = ) ()
 
 let parse text =
   match Patch.parse text with
@@ -49,13 +45,16 @@ let parsed_update text =
 let apply contents update =
   match Patch.Update.apply update contents with
   | Ok contents -> contents
-  | Error error -> failf "apply failed: %a" pp_apply_error error
+  | Error error -> failf "apply failed: %a" Patch.Update.Error.pp error
 
-let expect_apply_error contents update expected =
-  equal
-    (result string apply_error)
-    ~msg:"apply error" (Error expected)
-    (Patch.Update.apply update contents)
+let expect_apply_error contents update ~chunk ~mismatch =
+  match Patch.Update.apply update contents with
+  | Ok _ -> fail "expected apply error"
+  | Error error ->
+      equal int ~msg:"apply error chunk" chunk
+        (Patch.Update.Error.chunk error);
+      equal apply_mismatch ~msg:"apply error mismatch" mismatch
+        (Patch.Update.Error.mismatch error)
 
 let parses_operations () =
   let operations =
@@ -382,11 +381,10 @@ let applies_eof_constrained_chunks () =
   equal string ~msg:"EOF replacement changes suffix" "keep\nnew\n"
     (apply "keep\nold\n" replace_suffix);
   expect_apply_error "old\nkeep\n" replace_suffix
-    {
-      Patch.Update.chunk = 0;
-      mismatch =
-        Patch.Update.Missing_lines { old_lines = [ "old" ]; end_of_file = true };
-    };
+    ~chunk:0
+    ~mismatch:
+      (Patch.Update.Error.Missing_lines
+         { old_lines = [ "old" ]; end_of_file = true });
   let insert_after_eof_context =
     parsed_update
       (patch
@@ -402,10 +400,9 @@ let applies_eof_constrained_chunks () =
   equal string ~msg:"EOF insertion after final context" "before\nanchor\ntail\n"
     (apply "before\nanchor\n" insert_after_eof_context);
   expect_apply_error "anchor\nafter\n" insert_after_eof_context
-    {
-      Patch.Update.chunk = 0;
-      mismatch = Patch.Update.Missing_insertion_point { end_of_file = true };
-    };
+    ~chunk:0
+    ~mismatch:
+      (Patch.Update.Error.Missing_insertion_point { end_of_file = true });
   let insert_at_eof =
     parsed_update
       (patch
@@ -436,11 +433,10 @@ let applies_eof_constrained_chunks () =
   equal string ~msg:"whitespace around EOF marker" "keep\nnew\n"
     (apply "keep\nold\n" marker_whitespace);
   expect_apply_error "old\nkeep\n" marker_whitespace
-    {
-      Patch.Update.chunk = 0;
-      mismatch =
-        Patch.Update.Missing_lines { old_lines = [ "old" ]; end_of_file = true };
-    }
+    ~chunk:0
+    ~mismatch:
+      (Patch.Update.Error.Missing_lines
+         { old_lines = [ "old" ]; end_of_file = true })
 
 let preserves_final_newline_state () =
   let update =
@@ -486,15 +482,13 @@ let reports_apply_mismatches () =
            "*** End Patch";
          ])
   in
-  expect_apply_error "body\n" update
-    { Patch.Update.chunk = 0; mismatch = Patch.Update.Missing_context "anchor" };
+  expect_apply_error "body\n" update ~chunk:0
+    ~mismatch:(Patch.Update.Error.Missing_context "anchor");
   expect_apply_error "anchor\nother\n" update
-    {
-      Patch.Update.chunk = 0;
-      mismatch =
-        Patch.Update.Missing_lines
-          { old_lines = [ "old" ]; end_of_file = false };
-    };
+    ~chunk:0
+    ~mismatch:
+      (Patch.Update.Error.Missing_lines
+         { old_lines = [ "old" ]; end_of_file = false });
   let second_chunk_fails =
     parsed_update
       (patch
@@ -511,12 +505,10 @@ let reports_apply_mismatches () =
          ])
   in
   expect_apply_error "a\nb\n" second_chunk_fails
-    {
-      Patch.Update.chunk = 1;
-      mismatch =
-        Patch.Update.Missing_lines
-          { old_lines = [ "missing" ]; end_of_file = false };
-    }
+    ~chunk:1
+    ~mismatch:
+      (Patch.Update.Error.Missing_lines
+         { old_lines = [ "missing" ]; end_of_file = false })
 
 let () =
   run "spice.patch"

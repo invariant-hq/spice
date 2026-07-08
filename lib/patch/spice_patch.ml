@@ -65,12 +65,34 @@ let split_lines text =
   loop [] 0 0
 
 module Update = struct
-  type mismatch =
-    | Missing_context of string
-    | Missing_lines of { old_lines : string list; end_of_file : bool }
-    | Missing_insertion_point of { end_of_file : bool }
+  module Error = struct
+    type mismatch =
+      | Missing_context of string
+      | Missing_lines of { old_lines : string list; end_of_file : bool }
+      | Missing_insertion_point of { end_of_file : bool }
 
-  type apply_error = { chunk : int; mismatch : mismatch }
+    type t = { chunk : int; mismatch : mismatch }
+
+    let make ~chunk mismatch = { chunk; mismatch }
+    let chunk t = t.chunk
+    let mismatch t = t.mismatch
+
+    let mismatch_message = function
+      | Missing_context line -> Printf.sprintf "missing context %S" line
+      | Missing_lines { old_lines; end_of_file } ->
+          let eof = if end_of_file then " at end of file" else "" in
+          Printf.sprintf "missing lines%s: %S" eof
+            (String.concat "\\n" old_lines)
+      | Missing_insertion_point { end_of_file } ->
+          let eof = if end_of_file then " at end of file" else "" in
+          Printf.sprintf "missing insertion point%s" eof
+
+    let message t =
+      Printf.sprintf "patch chunk %d failed: %s" t.chunk
+        (mismatch_message t.mismatch)
+
+    let pp ppf t = Format.pp_print_string ppf (message t)
+  end
 
   type chunk = {
     context : string option;
@@ -145,7 +167,7 @@ module Update = struct
       | Some context -> (
           match find_sequence ~from:line_index [ context ] lines with
           | Some index -> Ok (index + 1)
-          | None -> Error (Missing_context context))
+          | None -> Error (Error.Missing_context context))
     in
     match line_index_result with
     | Error _ as error -> error
@@ -174,10 +196,11 @@ module Update = struct
         | None ->
             if List.is_empty chunk.old_lines then
               Error
-                (Missing_insertion_point { end_of_file = chunk.end_of_file })
+                (Error.Missing_insertion_point
+                   { end_of_file = chunk.end_of_file })
             else
               Error
-                (Missing_lines
+                (Error.Missing_lines
                    {
                      old_lines = chunk.old_lines;
                      end_of_file = chunk.end_of_file;
@@ -195,7 +218,7 @@ module Update = struct
       | [] -> Ok (join_lines text)
       | chunk :: chunks -> (
           match apply_chunk line_index text chunk with
-          | Error mismatch -> Error { chunk = chunk_index; mismatch }
+          | Error mismatch -> Error (Error.make ~chunk:chunk_index mismatch)
           | Ok (line_index, text) ->
               loop (chunk_index + 1) line_index text chunks)
     in
