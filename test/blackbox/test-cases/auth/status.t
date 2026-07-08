@@ -23,6 +23,21 @@ Credentialless providers are auth-ready and never suggest a login repair.
   $ spice auth status deepseek --json
   {"schema_version":3,"type":"auth_status","storage_backend":"file","auth_store_path":"$TESTCASE_ROOT/xdg-config/spice/auth.json","providers":[{"provider":"deepseek","route":null,"source":null,"source_name":null,"fingerprint":null,"env":[],"store_names":[],"phase":"ready","checked_at":null,"problems":[],"transient":false,"repair":null}]}
 
+An optional-auth provider (Ollama) with a stored credential keeps its real
+phase — the credential is reported, not masked to the no-login-needed ready.
+Only the missing phase reads as ready where auth is optional.
+
+  $ mkdir -p "$XDG_CONFIG_HOME/spice"
+  $ printf '{"version":1,"credentials":{"ollama":{"default":{"kind":"api_key","api_key":"lab-key-1234"}}}}' > "$XDG_CONFIG_HOME/spice/auth.json"
+  $ chmod 600 "$XDG_CONFIG_HOME/spice/auth.json"
+  $ spice auth status ollama --json | grep -o '"route":"ollama/api-key"'
+  "route":"ollama/api-key"
+  $ spice auth status ollama --json | grep -o '"phase":"unchecked"'
+  "phase":"unchecked"
+  $ rm "$XDG_CONFIG_HOME/spice/auth.json"
+  $ spice auth status ollama --json | grep -o '"phase":"ready"'
+  "phase":"ready"
+
 Text output is a compact table for humans.
 
   $ spice auth status openai
