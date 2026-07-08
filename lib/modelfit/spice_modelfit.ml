@@ -174,13 +174,15 @@ module Verdict = struct
 end
 
 let max_context ?(kv_dtype = F16) ~budget model =
-  let available = budget - Model.weights_bytes model - overhead_bytes in
-  if available <= 0 then None
+  if budget <= 0 then None
   else
-    let tokens =
-      Float.to_int (float available /. kv_bytes_per_token kv_dtype model)
-    in
-    if tokens < 1 then None else Some (Int.min tokens (Model.max_context model))
+    let available = budget - Model.weights_bytes model - overhead_bytes in
+    if available <= 0 then None
+    else
+      let tokens =
+        Float.to_int (float available /. kv_bytes_per_token kv_dtype model)
+      in
+      if tokens < 1 then None else Some (Int.min tokens (Model.max_context model))
 
 let verdict ?(kv_dtype = F16) ?(context = default_context) ~budget model =
   if context <= 0 then

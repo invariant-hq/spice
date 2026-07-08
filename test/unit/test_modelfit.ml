@@ -130,6 +130,10 @@ let budget_for_tokens tokens = (8 * gib) + overhead + (tokens * 128 * 1024)
 
 let max_context_boundaries () =
   let model = reference () in
+  equal (option int) ~msg:"zero budget" None
+    (Fit.max_context ~budget:0 model);
+  equal (option int) ~msg:"minimum int budget" None
+    (Fit.max_context ~budget:min_int model);
   equal (option int) ~msg:"weights alone over budget" None
     (Fit.max_context ~budget:(8 * gib) model);
   equal (option int) ~msg:"exact budget for 16k tokens" (Some 16384)
@@ -148,6 +152,8 @@ let verdict_boundaries () =
     (Fit.verdict ~budget:(budget_for_tokens 4096) model);
   equal verdict ~msg:"weights alone over budget won't run" Fit.Verdict.Wont_run
     (Fit.verdict ~budget:gib model);
+  equal verdict ~msg:"minimum int budget won't run" Fit.Verdict.Wont_run
+    (Fit.verdict ~budget:min_int model);
   equal verdict ~msg:"a small-context model can still fit" Fit.Verdict.Fits
     (Fit.verdict ~budget:(budget_for_tokens 4096)
        (reference ~max_context:4096 ()));
