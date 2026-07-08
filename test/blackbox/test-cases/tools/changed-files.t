@@ -52,6 +52,32 @@ Diff is model-independent and structured under --json.
   $ spice session diff --json edit-run --latest | sed -E 's/"sources":\[[^]]*\]/"sources":["$ID"]/'
   {"schema_version":1,"type":"session.diff","session_id":"edit-run","files":1,"additions":1,"deletions":1,"changes":[{"path":"note.txt","operation":"M","contiguous":true,"sources":["$ID"]}],"diff":"--- note.txt\n+++ note.txt\n@@ -1,1 +1,1 @@\n-hello world\n+goodbye world\n"}
 
+Failed edit_file calls report tool failures to the model, leave the file
+unchanged, and do not record changed-file evidence for a failed-only run.
+
+  $ printf 'red red blue\n' > fail.txt
+  $ cat > edit-fail.jsonl <<'JSONL'
+  > {"expect":{"body_contains":["\"name\":\"edit_file\""]},"response":{"id":"resp-fail-1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-fail-1","call_id":"call-fail-1","name":"edit_file","arguments":"{\"path\":\"fail.txt\",\"old_string\":\"missing\",\"new_string\":\"green\"}"}]}}
+  > {"expect":{"body_contains":["function_call_output","call-fail-1","old_string was not found"]},"response":{"id":"resp-fail-2","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-fail-2","call_id":"call-fail-2","name":"edit_file","arguments":"{\"path\":\"fail.txt\",\"old_string\":\"red\",\"new_string\":\"green\"}"}]}}
+  > {"expect":{"body_contains":["function_call_output","call-fail-2","matched 2 times"]},"response":{"id":"resp-fail-3","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-fail-3","call_id":"call-fail-3","name":"edit_file","arguments":"{\"path\":\"fail.txt\",\"old_string\":\"red\",\"new_string\":\"green\",\"occurrence\":\"many\"}"}]}}
+  > {"expect":{"body_contains":["function_call_output","call-fail-3","occurrence"]},"response":{"id":"resp-fail-4","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"edit failures reported"}]}]}}
+  > JSONL
+
+  $ start_fake_openai edit-fail.jsonl capture-fail port-fail
+  $ spice run --cwd "$PWD" --permission-mode bypass --id edit-fail-run "try failing edits" > edit-fail.out 2>&1
+  $ sed -n '/tool edit_file/p;/edit failures reported/p;/session saved/p' edit-fail.out
+  • tool edit_file running
+  ✗ tool edit_file failed: fail.txt: old_string was not found
+  • tool edit_file running
+  ✗ tool edit_file failed: fail.txt: old_string matched 2 times; provide more context or set occurrence=all
+  edit failures reported
+  spice: session saved; resume with: spice resume 'edit-fail-run'
+  $ wait_fake_server
+  $ grep -c '^changed ' edit-fail.out || true
+  0
+  $ cat fail.txt
+  red red blue
+
 Runtime paths that need escaping remain display-safe in diff headers.
 
   $ cat > newline-path.jsonl <<'JSONL'
