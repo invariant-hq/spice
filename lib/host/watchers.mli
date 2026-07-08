@@ -16,9 +16,9 @@ module Fswatch : sig
   (** Best-effort filesystem change watcher for a workspace root. *)
 
   val default_ignore : Spice_path.Rel.t -> bool
-  (** [default_ignore path] is [true] for workspace-relative paths under
-      [".git"], ["_build"], ["_opam"], or [".spice"]. The workspace root itself
-      is not ignored. *)
+  (** [default_ignore path] is [true] when any workspace-relative path component
+      is [".git"], ["_build"], ["_opam"], or [".spice"]. The workspace root
+      itself is not ignored. *)
 
   val start :
     ?notice:bool ->
@@ -41,10 +41,10 @@ module Fswatch : sig
       [notice] defaults to [true]; when [false], the watcher still invokes
       [on_events] but publishes no filesystem notices.
 
-      [on_events], when supplied, is called with the same non-filtered batches
-      that produce file-change notices. It is intended for host-side observers
-      that should share the single filesystem watcher, such as
-      {!Cr_comments.observe}. *)
+      [on_events], when supplied, is called with each non-empty batch after
+      {!default_ignore} has been applied and before the notice body truncates
+      its path preview. It is intended for host-side observers that should share
+      the single filesystem watcher, such as {!Cr_comments.observe}. *)
 end
 
 module Cr_comments : sig

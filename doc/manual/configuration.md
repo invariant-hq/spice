@@ -66,6 +66,22 @@ config files:
   `fetch_max_bytes`, `output_max_chars`, `timeout_ms`, `max_timeout_ms`.
 - `sandbox.*` — sandbox mode and enforcement requirements.
 
+## Filesystem Notices
+
+`notices.fswatch=true` publishes "Workspace files changed" notices while a run
+is active. The notice is a snapshot-diff summary since the previous watcher
+scan, with a bounded preview of changed workspace-relative paths.
+
+The filesystem watcher ignores any path with a `.git`, `_build`, `_opam`, or
+`.spice` path segment. Ignored directories are not scanned and do not appear in
+filesystem notice batches.
+
+`notices.fswatch=false` suppresses file-change notices, but the shared
+filesystem watcher may still run when `notices.cr_comments=true`; the CR
+comment observer uses the same watcher batches. Watcher startup and runtime
+failures degrade to warning notices when filesystem notices are enabled instead
+of failing the run.
+
 ## Models
 
 `spice models` lists the model catalog. Related commands:

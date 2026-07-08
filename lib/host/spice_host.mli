@@ -215,7 +215,7 @@ val workspace : Host.t -> (Spice_workspace.t, Host.Error.t) result
     directory. *)
 
 val default_ignore : Spice_path.Rel.t -> bool
-(** [default_ignore path] is [true] for workspace-relative paths under [".git"],
-    ["_build"], ["_opam"], or [".spice"]. It is the filesystem-watch ignore
-    predicate the run's producers use, exposed for surfaces that walk the
-    workspace themselves. *)
+(** [default_ignore path] is [true] when any workspace-relative path component
+    is [".git"], ["_build"], ["_opam"], or [".spice"]. It is the
+    filesystem-watch ignore predicate the run's producers use, exposed for
+    surfaces that walk the workspace themselves. *)
