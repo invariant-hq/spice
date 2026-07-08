@@ -15,6 +15,9 @@ Usage:
   lines, not ten.
 - Pass if_identity from a complete read_file observation to reject the
   edit if the file changed underneath you.
+- Line endings in old_string and new_string are matched to the file's
+  existing style. Existing UTF-8 BOMs are preserved; do not add or remove a
+  BOM in the replacement text.
 
 For a new file or a full rewrite, use write_file. To delete or move a
 file, use shell. Directories, symlinks, binary files, invalid UTF-8, and
