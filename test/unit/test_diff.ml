@@ -28,6 +28,15 @@ let text_gen =
   Gen.string_size (Gen.int_range 0 12)
     (Gen.oneofl [ 'a'; 'b'; 'c'; '+'; '-'; ' '; '\n' ])
 
+let numbered_lines count =
+  let buffer = Buffer.create (count * 8) in
+  for i = 1 to count do
+    Buffer.add_string buffer "line ";
+    Buffer.add_string buffer (string_of_int i);
+    Buffer.add_char buffer '\n'
+  done;
+  Buffer.contents buffer
+
 let file_change_gen =
   Gen.bind label_gen (fun label ->
       Gen.bind text_gen (fun before ->
@@ -130,6 +139,23 @@ let stats_of_changes_match_rendered_stats () =
   equal int ~msg:"unlimited render omits nothing" 0
     (Diff.omitted (Diff.render changes))
 
+let pure_creates_and_deletes_count_lines_directly () =
+  let line_count = 2_048 in
+  let contents = numbered_lines line_count in
+  let created =
+    Diff.File_change.create ~label:(label "created.txt") ~contents
+  in
+  let deleted =
+    Diff.File_change.delete ~label:(label "deleted.txt") ~contents
+  in
+  equal_stats "pure stats" ~files:2 ~additions:line_count
+    ~deletions:line_count
+    (Diff.stats_of_changes [ created; deleted ]);
+  let diff = Diff.render ~context:0 [ created; deleted ] in
+  equal_stats "pure rendered stats" ~files:2 ~additions:line_count
+    ~deletions:line_count (Diff.stats diff);
+  equal int ~msg:"pure render omits nothing" 0 (Diff.omitted diff)
+
 let context_must_be_non_negative () =
   expect_invalid_arg ~expected:"context must be non-negative"
     "negative context is rejected" (fun () ->
@@ -208,7 +234,20 @@ let limited_render_counts_omitted_files_without_omitted_lines () =
     (Diff.omitted distance_limited);
   equal_stats "edit-distance-limited render keeps the file, drops the lines"
     ~files:1 ~additions:0 ~deletions:0
-    (Diff.stats distance_limited)
+    (Diff.stats distance_limited);
+  let pure_distance_limited =
+    Diff.render ~limits:distance_limits
+      [
+        Diff.File_change.create ~label:(label "create-rewrite.txt")
+          ~contents:"a\nb\n";
+      ]
+  in
+  equal int ~msg:"pure edit-distance-limited render omits one file" 1
+    (Diff.omitted pure_distance_limited);
+  equal_stats
+    "pure edit-distance-limited render keeps the file, drops the lines" ~files:1
+    ~additions:0 ~deletions:0
+    (Diff.stats pure_distance_limited)
 
 let raw_mode_preserves_file_text () =
   let unsafe_label = Diff.Label.of_string "bad\027.txt" in
@@ -421,6 +460,8 @@ let () =
       test "omits no-op changes" noop_changes_are_omitted;
       test "stats_of_changes matches rendered stats"
         stats_of_changes_match_rendered_stats;
+      test "pure creates and deletes count lines directly"
+        pure_creates_and_deletes_count_lines_directly;
       test "requires non-negative context" context_must_be_non_negative;
       test "requires non-negative limits" limits_must_be_non_negative;
       test "limited render stats omit omitted lines"

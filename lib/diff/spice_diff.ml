@@ -674,24 +674,6 @@ let stats_for_ops ops =
     ops;
   { files = 1; additions = !additions; deletions = !deletions }
 
-let ops_for_file_text ?max_distance text =
-  edit_script ?max_distance
-    (split_lines text.before_text)
-    (split_lines text.after_text)
-
-let diff_label label = function None -> "/dev/null" | Some _ -> label
-
-let stats_for_file file =
-  if is_noop file then empty_stats
-  else
-    let text = file_text file in
-    edit_stats (split_lines text.before_text) (split_lines text.after_text)
-
-let add_omission buffer reason =
-  Buffer.add_string buffer "[diff omitted: ";
-  Buffer.add_string buffer reason;
-  Buffer.add_string buffer "]\n"
-
 let line_count text =
   let len = String.length text in
   let rec loop count i =
@@ -702,6 +684,47 @@ let line_count text =
     else loop count (i + 1)
   in
   loop 0 0
+
+let ops_of_lines op lines =
+  let ops = ref [] in
+  for i = Array.length lines - 1 downto 0 do
+    ops := op lines.(i) :: !ops
+  done;
+  !ops
+
+let pure_change_ops ?max_distance op contents =
+  let distance = line_count contents in
+  match max_distance with
+  | Some max_distance when distance > max_distance -> None
+  | None | Some _ -> Some (ops_of_lines op (split_lines contents))
+
+let ops_for_file_text ?max_distance text =
+  match (text.before_state, text.after_state) with
+  | None, None -> Some []
+  | None, Some after -> pure_change_ops ?max_distance (fun l -> Insert_line l) after
+  | Some before, None ->
+      pure_change_ops ?max_distance (fun l -> Delete_line l) before
+  | Some _, Some _ ->
+      edit_script ?max_distance
+        (split_lines text.before_text)
+        (split_lines text.after_text)
+
+let diff_label label = function None -> "/dev/null" | Some _ -> label
+
+let stats_for_file file =
+  match file with
+  | File_change.Add { contents; _ } ->
+      { files = 1; additions = line_count contents; deletions = 0 }
+  | File_change.Delete { contents; _ } ->
+      { files = 1; additions = 0; deletions = line_count contents }
+  | File_change.Modify { before; after; _ } ->
+      if String.equal before after then empty_stats
+      else edit_stats (split_lines before) (split_lines after)
+
+let add_omission buffer reason =
+  Buffer.add_string buffer "[diff omitted: ";
+  Buffer.add_string buffer reason;
+  Buffer.add_string buffer "]\n"
 
 let max_text_bytes text =
   max (String.length text.before_text) (String.length text.after_text)
