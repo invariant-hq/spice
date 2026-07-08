@@ -5,11 +5,11 @@
 
 (** OpenAI-compatible chat-completions transport for the Ollama daemon.
 
-    This is the wire layer for {!Spice_llm_local}: plain-HTTP requests against a
-    loopback base URL, no authentication, no TLS, no retries — a local server
-    that fails is reported, not retried. Request and stream shapes mimic the
-    OpenAI chat-completions API, which is the surface every local inference
-    server exposes. *)
+    This is the wire layer for {!Spice_llm_ollama}: HTTP requests against an
+    external Ollama or compatible daemon, optional static request headers, and
+    no retries — a daemon that fails is reported, not retried. Request and
+    stream shapes mimic the OpenAI chat-completions API, which is the surface
+    Ollama-compatible inference servers expose. *)
 
 module Error : sig
   (** Transport failures: non-2xx responses, transport errors, and decode
