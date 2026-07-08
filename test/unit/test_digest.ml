@@ -261,6 +261,25 @@ let identity_parser_rejects_noncanonical_forms () =
     (Format.asprintf "%a" Digest.Identity.Parse_error.pp
        Digest.Identity.Parse_error.Invalid_identity)
 
+let identity_json_codec () =
+  let identity = Digest.Identity.of_contents "hello\000spice\n" in
+  let text = Digest.Identity.to_string identity in
+  let json = encode Digest.Identity.jsont identity in
+  is_true ~msg:"identity encodes as JSON string"
+    (Json.equal (Json.string text) json);
+  let decoded = decode Digest.Identity.jsont json in
+  is_true ~msg:"identity JSON round-trips"
+    (Digest.Identity.equal identity decoded);
+  (match Json.decode Digest.Identity.jsont (Json.string "bad") with
+  | Ok parsed -> failf "invalid identity decoded as %a" Digest.Identity.pp parsed
+  | Error message ->
+      is_true ~msg:"decode error includes identity grammar"
+        (String.includes
+           ~affix:"identity must be sha256:<64 lowercase hex>:<length>"
+           message));
+  is_true ~msg:"identity JSON rejects non-string values"
+    (Result.is_error (Json.decode Digest.Identity.jsont (Json.int 1)))
+
 let key_input_gen =
   Gen.bind (Gen.int_range 0 digest_hex_size) (fun length ->
       Gen.map
@@ -289,12 +308,12 @@ let generated_key_matches_framing (_length, parts) =
     (expected_key ~domain:key_domain parts)
     (Digest.key ~length:digest_hex_size ~domain:key_domain parts)
 
-let generated_hex_round_trips text =
+let generated_raw_and_hex_serializers_agree text =
   let value = Digest.string text in
-  equal hex ~msg:"generated hex matches to_hex" (hex_string text)
-    (Digest.to_hex value);
-  equal int ~msg:"generated hex size" digest_hex_size
-    (String.length (Digest.to_hex value))
+  let raw = Digest.to_raw_string value in
+  equal int ~msg:"generated raw digest size" digest_raw_size (String.length raw);
+  equal hex ~msg:"generated raw bytes encode to generated hex"
+    (Digest.to_hex value) (hex_of_raw raw)
 
 let () =
   run "spice.digest"
@@ -311,7 +330,9 @@ let () =
       test "round-trips zero-length identities" identity_zero_length;
       test "rejects noncanonical identities"
         identity_parser_rejects_noncanonical_forms;
-      prop' "generated hex is stable" string generated_hex_round_trips;
+      test "encodes identities as JSON strings" identity_json_codec;
+      prop' "raw and hex serializers agree for generated inputs" string
+        generated_raw_and_hex_serializers_agree;
       prop' "keys are lowercase hex of the requested length" key_input
         generated_key_is_lowercase_hex_of_length;
       prop' "full keys equal the digest of framed domain and parts" key_input
