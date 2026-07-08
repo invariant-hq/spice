@@ -17,6 +17,9 @@ let pp_apply_mismatch ppf = function
         Format.(
           pp_print_list ~pp_sep:(fun ppf () -> fprintf ppf "; ") pp_print_string)
         old_lines end_of_file
+  | Patch.Update.Missing_insertion_point { end_of_file } ->
+      Format.fprintf ppf "Missing_insertion_point { end_of_file = %b }"
+        end_of_file
 
 let pp_apply_error ppf { Patch.Update.chunk; mismatch } =
   Format.fprintf ppf "{ chunk = %d; mismatch = %a }" chunk pp_apply_mismatch
@@ -401,8 +404,7 @@ let applies_eof_constrained_chunks () =
   expect_apply_error "anchor\nafter\n" insert_after_eof_context
     {
       Patch.Update.chunk = 0;
-      mismatch =
-        Patch.Update.Missing_lines { old_lines = []; end_of_file = true };
+      mismatch = Patch.Update.Missing_insertion_point { end_of_file = true };
     };
   let insert_at_eof =
     parsed_update

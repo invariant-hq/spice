@@ -82,13 +82,15 @@ module Update : sig
   type mismatch =
     | Missing_context of string
     | Missing_lines of { old_lines : string list; end_of_file : bool }
+    | Missing_insertion_point of { end_of_file : bool }
         (** Update-application mismatch.
 
             [Missing_context line] means the exact context line was not found at
             or after the current search position. [Missing_lines] means the
-            chunk's exact [old_lines] sequence was not found, or that an
-            insertion-only chunk could not be placed. [end_of_file] records
-            whether [*** End of File] constrained the failed match or insertion.
+            chunk's exact [old_lines] sequence was not found.
+            [Missing_insertion_point] means an insertion-only chunk could not
+            be placed. [end_of_file] records whether [*** End of File]
+            constrained the failed match or insertion.
         *)
 
   type apply_error = { chunk : int; mismatch : mismatch }

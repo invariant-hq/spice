@@ -376,6 +376,9 @@ let patch_apply_error path error =
     | Patch.Update.Missing_lines { old_lines; end_of_file } ->
         let eof = if end_of_file then " at end of file" else "" in
         Printf.sprintf "missing lines%s: %S" eof (String.concat "\\n" old_lines)
+    | Patch.Update.Missing_insertion_point { end_of_file } ->
+        let eof = if end_of_file then " at end of file" else "" in
+        Printf.sprintf "missing insertion point%s" eof
   in
   Patch
     (Printf.sprintf "%s: patch chunk %d failed: %s"

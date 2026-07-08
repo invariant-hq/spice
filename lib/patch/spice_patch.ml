@@ -68,6 +68,7 @@ module Update = struct
   type mismatch =
     | Missing_context of string
     | Missing_lines of { old_lines : string list; end_of_file : bool }
+    | Missing_insertion_point of { end_of_file : bool }
 
   type apply_error = { chunk : int; mismatch : mismatch }
 
@@ -171,12 +172,16 @@ module Update = struct
         in
         match found with
         | None ->
-            Error
-              (Missing_lines
-                 {
-                   old_lines = chunk.old_lines;
-                   end_of_file = chunk.end_of_file;
-                 })
+            if List.is_empty chunk.old_lines then
+              Error
+                (Missing_insertion_point { end_of_file = chunk.end_of_file })
+            else
+              Error
+                (Missing_lines
+                   {
+                     old_lines = chunk.old_lines;
+                     end_of_file = chunk.end_of_file;
+                   })
         | Some index ->
             let lines =
               replace_at index
