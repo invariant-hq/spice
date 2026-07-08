@@ -13,6 +13,8 @@ external string : string -> t = "caml_spice_digest_sha256_string"
 
 let to_raw_string digest = digest
 
+(* Digest values are produced by the C stub as exactly [digest_size] raw
+   SHA-256 bytes, which makes the unsafe fixed-size loop valid. *)
 let to_hex digest =
   let bytes = Bytes.create hex_size in
   for i = 0 to digest_size - 1 do
