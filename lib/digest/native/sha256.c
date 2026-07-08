@@ -24,21 +24,6 @@
 
 #include <string.h>
 #include "sha256.h"
-#include "bitfn.h"
-
-void spice_sha224_init(struct sha224_ctx *ctx)
-{
-	memset(ctx, 0, sizeof(*ctx));
-
-	ctx->h[0] = 0xc1059ed8;
-	ctx->h[1] = 0x367cd507;
-	ctx->h[2] = 0x3070dd17;
-	ctx->h[3] = 0xf70e5939;
-	ctx->h[4] = 0xffc00b31;
-	ctx->h[5] = 0x68581511;
-	ctx->h[6] = 0x64f98fa7;
-	ctx->h[7] = 0xbefa4fa4;
-}
 
 void spice_sha256_init(struct sha256_ctx *ctx)
 {
@@ -74,6 +59,11 @@ static const uint32_t k[] = {
 #define s0(x)       (ror32(x, 7) ^ ror32(x,18) ^ (x >> 3))
 #define s1(x)       (ror32(x,17) ^ ror32(x,19) ^ (x >> 10))
 
+static uint32_t ror32(uint32_t word, uint32_t shift)
+{
+	return (word >> shift) | (word << (32 - shift));
+}
+
 static uint32_t load_be32(const uint8_t *p)
 {
 	return ((uint32_t)p[0] << 24) |
@@ -88,6 +78,18 @@ static void store_be32(uint8_t *p, uint32_t w)
 	p[1] = (uint8_t)(w >> 16);
 	p[2] = (uint8_t)(w >> 8);
 	p[3] = (uint8_t)w;
+}
+
+static void store_be64(uint8_t *p, uint64_t w)
+{
+	p[0] = (uint8_t)(w >> 56);
+	p[1] = (uint8_t)(w >> 48);
+	p[2] = (uint8_t)(w >> 40);
+	p[3] = (uint8_t)(w >> 32);
+	p[4] = (uint8_t)(w >> 24);
+	p[5] = (uint8_t)(w >> 16);
+	p[6] = (uint8_t)(w >> 8);
+	p[7] = (uint8_t)w;
 }
 
 static void sha256_do_chunk(struct sha256_ctx *ctx, const uint8_t block[64])
@@ -127,12 +129,6 @@ static void sha256_do_chunk(struct sha256_ctx *ctx, const uint8_t block[64])
 	ctx->h[4] += e; ctx->h[5] += f; ctx->h[6] += g; ctx->h[7] += h;
 }
 
-void spice_sha224_update(struct sha224_ctx *ctx, const uint8_t *data,
-                         uint32_t len)
-{
-	spice_sha256_update(ctx, data, len);
-}
-
 void spice_sha256_update(struct sha256_ctx *ctx, const uint8_t *data,
                          uint32_t len)
 {
@@ -162,22 +158,13 @@ void spice_sha256_update(struct sha256_ctx *ctx, const uint8_t *data,
 		memcpy(ctx->buf + index, data, len);
 }
 
-void spice_sha224_finalize(struct sha224_ctx *ctx, uint8_t *out)
-{
-	uint8_t intermediate[SHA256_DIGEST_SIZE];
-
-	spice_sha256_finalize(ctx, intermediate);
-	memcpy(out, intermediate, SHA224_DIGEST_SIZE);
-}
-
 void spice_sha256_finalize(struct sha256_ctx *ctx, uint8_t *out)
 {
 	static uint8_t padding[64] = { 0x80, };
-	uint64_t bits;
+	uint8_t length[8];
 	uint32_t i, index, padlen;
 
-	/* cpu -> big endian */
-	bits = cpu_to_be64(ctx->sz << 3);
+	store_be64(length, ctx->sz << 3);
 
 	/* pad out to 56 */
 	index = (uint32_t) (ctx->sz & 0x3f);
@@ -185,7 +172,7 @@ void spice_sha256_finalize(struct sha256_ctx *ctx, uint8_t *out)
 	spice_sha256_update(ctx, padding, padlen);
 
 	/* append length */
-	spice_sha256_update(ctx, (const uint8_t *) &bits, sizeof(bits));
+	spice_sha256_update(ctx, length, sizeof(length));
 
 	/* store to digest */
 	for (i = 0; i < 8; i++)
