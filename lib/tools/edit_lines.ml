@@ -51,7 +51,9 @@ module Input = struct
   module Range = struct
     type t = Line of Anchor.t | Between of Anchor.t * Anchor.t
 
-    let line anchor = Line anchor
+    let line anchor =
+      ignore (validate_anchor "anchor" anchor);
+      Line anchor
 
     let between start finish =
       ignore (validate_anchor "anchor" start);
@@ -92,9 +94,10 @@ module Input = struct
           Anchor.to_string anchor
 
     let end_anchor = function
+      | Replace_edit { range = Range.Line anchor; _ } ->
+          Some (Anchor.to_string anchor)
       | Replace_edit { range = Range.Between (_, anchor); _ } ->
           Some (Anchor.to_string anchor)
-      | Replace_edit { range = Range.Line _; _ }
       | Insert_before_edit _ | Insert_after_edit _ ->
           None
 

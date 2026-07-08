@@ -5,7 +5,9 @@
 
 open Windtrap
 module Apply_patch = Spice_tools.Apply_patch
+module Anchor = Spice_tools.Anchor
 module Edit_file = Spice_tools.Edit_file
+module Edit_lines = Spice_tools.Edit_lines
 module Json = Jsont.Json
 module Read_file = Spice_tools.Read_file
 module Tool = Spice_tool
@@ -271,6 +273,26 @@ let print_apply_constructor label patch =
   in
   Printf.printf "%s: %s\n" label status
 
+let print_edit_lines_decode label json =
+  let status =
+    match Edit_lines.Input.decode json with
+    | Error _ -> "error"
+    | Ok input ->
+        Printf.sprintf "ok path=%s edits=%d" (Edit_lines.Input.path input)
+          (List.length (Edit_lines.Input.edits input))
+  in
+  Printf.printf "%s: %s\n" label status
+
+let print_edit_lines_constructor label f =
+  let status =
+    match f () with
+    | input ->
+        Printf.sprintf "ok path=%s edits=%d" (Edit_lines.Input.path input)
+          (List.length (Edit_lines.Input.edits input))
+    | exception Invalid_argument message -> "error " ^ message
+  in
+  Printf.printf "%s: %s\n" label status
+
 let apply_kind = function
   | Apply_patch.Output.Create -> "create"
   | Apply_patch.Output.Modify -> "modify"
@@ -365,6 +387,57 @@ let%expect_test "input contracts validate decoded and constructed requests" =
   print_apply_constructor "patch empty" "";
   print_apply_constructor "patch escape"
     (patch [ "*** Add File: ../outside.txt"; "+nope" ]);
+  print_edit_lines_decode "lines single replace"
+    (json_obj
+       [
+         ("path", Json.string "note.txt");
+         ( "edits",
+           Json.list
+             [
+               json_obj
+                 [
+                   ("op", Json.string "replace");
+                   ("anchor", Json.string "AppleBanana§alpha");
+                   ("end_anchor", Json.string "AppleBanana§alpha");
+                   ("text", Json.string "ALPHA");
+                 ];
+             ] );
+       ]);
+  print_edit_lines_decode "lines replace missing end"
+    (json_obj
+       [
+         ("path", Json.string "note.txt");
+         ( "edits",
+           Json.list
+             [
+               json_obj
+                 [
+                   ("op", Json.string "replace");
+                   ("anchor", Json.string "AppleBanana§alpha");
+                   ("text", Json.string "ALPHA");
+                 ];
+             ] );
+       ]);
+  print_edit_lines_constructor "lines typed single replace" (fun () ->
+      let anchor = Anchor.of_string "AppleBanana§alpha" in
+      Edit_lines.Input.make ~path:"note.txt"
+        ~edits:
+          [
+            Edit_lines.Input.Edit.replace
+              (Edit_lines.Input.Range.line anchor)
+              ~text:"ALPHA";
+          ]
+        ());
+  print_edit_lines_constructor "lines typed invalid anchor" (fun () ->
+      let anchor = Anchor.of_string "\255" in
+      Edit_lines.Input.make ~path:"note.txt"
+        ~edits:
+          [
+            Edit_lines.Input.Edit.replace
+              (Edit_lines.Input.Range.line anchor)
+              ~text:"ALPHA";
+          ]
+        ());
   [%expect
     {|
     edit minimal: ok path=note.txt occurrence=once if=false
@@ -378,7 +451,11 @@ let%expect_test "input contracts validate decoded and constructed requests" =
     patch valid: ok ops=2
     patch unknown: error
     patch empty: error
-    patch escape: error |}]
+    patch escape: error
+    lines single replace: ok path=note.txt edits=1
+    lines replace missing end: error
+    lines typed single replace: ok path=note.txt edits=1
+    lines typed invalid anchor: error anchor must be valid UTF-8 |}]
 
 let%expect_test "edit_file replacement identity and normalization behavior" =
   with_fixture @@ fun ~root ~outside:_ ~fs ~workspace ->

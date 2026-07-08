@@ -51,7 +51,9 @@ module Input : sig
         between two anchors. *)
 
     val line : Anchor.t -> t
-    (** [line anchor] is the single line named by [anchor]. *)
+    (** [line anchor] is the single line named by [anchor].
+
+        Raises [Invalid_argument] if [anchor] is empty or not valid UTF-8. *)
 
     val between : Anchor.t -> Anchor.t -> t
     (** [between first last] is the inclusive line range from [first] to [last].
