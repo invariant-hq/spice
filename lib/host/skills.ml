@@ -299,6 +299,19 @@ let find_active t name =
 let skill_file = "SKILL.md"
 let max_description_bytes = 1024
 
+let metadata_text field value =
+  if
+    String.exists
+      (fun c ->
+        let code = Char.code c in
+        code < 0x20 || code = 0x7F)
+      value
+  then
+    Error
+      (`Invalid_frontmatter
+        (Printf.sprintf "frontmatter %s must be single-line text" field))
+  else Ok value
+
 let fs_abs stdenv abs =
   Eio.Path.( / ) (Eio.Stdenv.fs stdenv) (Spice_path.Abs.to_string abs)
 
@@ -327,25 +340,38 @@ let content_of_text ~resources text =
       | Some description when String.length description > max_description_bytes
         ->
           Error `Description_too_long
-      | Some description ->
-          let display_name = Spice_frontmatter.string "name" header in
-          let body = Spice_frontmatter.body header in
-          let ignored_keys =
-            Spice_frontmatter.keys header
-            |> List.filter (fun key ->
-                not (List.mem key [ "name"; "description" ]))
-          in
-          Ok
-            {
-              Skill.description;
-              display_name;
-              text;
-              body;
-              bytes = String.length text;
-              digest = digest_string text;
-              resources;
-              ignored_keys;
-            })
+      | Some description -> (
+          match metadata_text "description" description with
+          | Error _ as error -> error
+          | Ok description -> (
+              let display_name =
+                match Spice_frontmatter.string "name" header with
+                | None -> Ok None
+                | Some name -> (
+                    match metadata_text "name" name with
+                    | Error _ as error -> error
+                    | Ok name -> Ok (Some name))
+              in
+              match display_name with
+              | Error _ as error -> error
+              | Ok display_name ->
+                  let body = Spice_frontmatter.body header in
+                  let ignored_keys =
+                    Spice_frontmatter.keys header
+                    |> List.filter (fun key ->
+                        not (List.mem key [ "name"; "description" ]))
+                  in
+                  Ok
+                    {
+                      Skill.description;
+                      display_name;
+                      text;
+                      body;
+                      bytes = String.length text;
+                      digest = digest_string text;
+                      resources;
+                      ignored_keys;
+                    })))
 
 (* One filesystem skills root. [gate] of [None] reads candidates; [Some
    disabled] lists them from existence checks only, without content reads. *)

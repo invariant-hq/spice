@@ -53,6 +53,31 @@ Invalid skills are visible facts, not errors.
   $ spice skills list > /dev/null && echo exit-zero
   exit-zero
 
+Multiline metadata is invalid because the catalog and display name are
+single-line surfaces.
+
+  $ mkdir -p .spice/skills/bad-description .spice/skills/bad-name
+  $ cat > .spice/skills/bad-description/SKILL.md <<'EOF'
+  > ---
+  > description: |
+  >   First line.
+  >   Second line.
+  > ---
+  > Body.
+  > EOF
+  $ cat > .spice/skills/bad-name/SKILL.md <<'EOF'
+  > ---
+  > name: "Bad\nName"
+  > description: Display name has a newline.
+  > ---
+  > Body.
+  > EOF
+  $ spice skills list | grep -E 'bad-(description|name)'
+    bad-description invalid invalid_frontmatter ($TESTCASE_ROOT/.spice/skills/bad-description)
+    bad-name invalid invalid_frontmatter ($TESTCASE_ROOT/.spice/skills/bad-name)
+    skill bad-description ($TESTCASE_ROOT/.spice/skills/bad-description): frontmatter description must be single-line text
+    skill bad-name ($TESTCASE_ROOT/.spice/skills/bad-name): frontmatter name must be single-line text
+
 Ignored migration frontmatter produces a warning, not a failure.
 
   $ mkdir -p .spice/skills/ported

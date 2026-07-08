@@ -75,6 +75,15 @@ let entry path =
 let max_skill_name_bytes = 64
 let max_skill_description_bytes = 1024
 
+let metadata_text path field value =
+  if
+    String.exists
+      (fun c ->
+        let code = Char.code c in
+        code < 0x20 || code = 0x7F)
+      value
+  then fail "%s: frontmatter %s must be single-line text" path field
+
 let is_valid_skill_name name =
   String.length name > 0
   && String.length name <= max_skill_name_bytes
@@ -104,7 +113,10 @@ let skill_entry path =
   | Some description
     when String.length description > max_skill_description_bytes ->
       fail "%s: description exceeds %d bytes" path max_skill_description_bytes
-  | Some _ -> ());
+  | Some description -> metadata_text path "description" description);
+  (match Spice_frontmatter.string "name" header with
+  | None -> ()
+  | Some name -> metadata_text path "name" name);
   (name, contents)
 
 let skill_entries paths =

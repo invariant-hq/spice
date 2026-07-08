@@ -54,6 +54,27 @@
   (diff missing-description.expected missing-description.out)))
 
 (rule
+ (targets multiline-description.out)
+ (deps
+  (:gen ../../prompts/gen/gen.exe)
+  fixtures/skills/multiline-description.md)
+ (action
+  (with-outputs-to
+   %{targets}
+   (with-accepted-exit-codes
+    1
+    (run
+     %{gen}
+     -o
+     multiline-description.ml
+     fixtures/skills/multiline-description.md)))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff multiline-description.expected multiline-description.out)))
+
+(rule
  (targets unterminated.out)
  (deps
   (:gen ../../prompts/gen/gen.exe)
