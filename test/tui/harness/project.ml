@@ -19,7 +19,7 @@ let exists t local = Sys.file_exists (path t local)
 let write t local text = Util.write_file (path t local) text
 let read t local = Util.read_file (path t local)
 
-let env ?openai_base_url ?(extra = []) t =
+let env ?openai_base_url ?(unset = []) ?(extra = []) t =
   (* Keep the home/XDG scratch dirs OUTSIDE the workspace root: created inside
      it they pollute the file picker's shallow listing of the project (the
      picker window is only a few rows, so real entries scroll out of view). *)
@@ -50,8 +50,18 @@ let env ?openai_base_url ?(extra = []) t =
     | Some base_url ->
         [ ("OPENAI_API_KEY", "test-key"); ("SPICE_OPENAI_BASE_URL", base_url) ]
   in
+  (* [unset] names are absent from the child env entirely: dropped from the
+     defaults above and filtered from the inherited environment, so a test can
+     stage the genuinely-unconfigured state (no SPICE_MODEL, no key) rather
+     than fight the harness defaults with empty-string overrides the config
+     layer would reject. *)
+  let unset_name name = List.exists (String.equal name) unset in
+  let overrides =
+    List.filter (fun (key, _) -> not (unset_name key)) overrides
+  in
   let overridden name =
     List.exists (fun (key, _) -> String.equal key name) overrides
+    || unset_name name
   in
   (* The spice under test must not see the dune that runs this test suite:
      an inherited RPC environment makes the footer read "dune: connected"

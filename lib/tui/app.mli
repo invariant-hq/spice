@@ -383,6 +383,15 @@ val model_switched : string -> msg
     success, or the host error on a rejected selector, shown as a footer flash.
 *)
 
+val snapshot_refreshed : Snapshot.t -> msg
+(** [snapshot_refreshed snapshot] is the message the runtime dispatches after
+    an action that can move the slow session facts — a model pick, a
+    credential-store mutation, a turn binding — carrying the rebuilt
+    {!Snapshot.t}. The shell replaces its snapshot only when the facts
+    actually changed, so the footer tracks the model the next turn would use
+    while an unchanged push stays render-inert. Banners already appended to
+    the transcript keep the facts they recorded. *)
+
 val thread_runs_loaded :
   session:Spice_session.Id.t -> Spice_protocol.Subagent_run.t list -> msg
 (** [thread_runs_loaded ~session runs] is the message the runtime dispatches

@@ -168,7 +168,7 @@ let spice_bin () = Util.resolve_env_path "SPICE_BIN"
    its presence is the boot marker. *)
 let booted = Screen.has "dune:"
 
-let run ?provider ?(command = []) ?(args = []) ?(env = [])
+let run ?provider ?(command = []) ?(args = []) ?unset ?(env = [])
     ?(rows = default_rows) ?(cols = default_cols) ?(ready = booted) project f =
   let root = Project.root project in
   let openai_base_url = Option.map Provider.base_url provider in
@@ -177,7 +177,7 @@ let run ?provider ?(command = []) ?(args = []) ?(env = [])
      subcommand under test must precede the [--cwd] option. *)
   let pty =
     Pty.spawn ~cwd:root
-      ~env:(Project.env ?openai_base_url ~extra:env project)
+      ~env:(Project.env ?openai_base_url ?unset ~extra:env project)
       ~winsize ~prog:(spice_bin ())
       ~args:(command @ ("--cwd" :: root :: args))
       ()

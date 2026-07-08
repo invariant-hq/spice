@@ -290,6 +290,7 @@ type msg =
   | Model_facts_loaded of Model_panel.facts
   | Model_facts_failed of string
   | Model_switched of string
+  | Snapshot_refreshed of Snapshot.t
   | Dir_loaded of {
       dir : Spice_path.Rel.t;
       result : (Mention.item list, string) result;
@@ -466,6 +467,7 @@ let settings_load_failed message = Settings_load_failed message
 let model_facts_loaded facts = Model_facts_loaded facts
 let model_facts_failed message = Model_facts_failed message
 let model_switched notice = Model_switched notice
+let snapshot_refreshed snapshot = Snapshot_refreshed snapshot
 let thread_runs_loaded ~session runs = Thread_runs_loaded { session; runs }
 let thread_started run = Thread_started run
 let thread_asked ~now ~message run = Thread_asked { run; message; now }
@@ -2256,6 +2258,10 @@ let update msg t =
       | Conversing | Panel (Session_switch _ | Dialog _ | Auth _) | Screen _ ->
           (t, []))
   | Model_switched notice -> ({ t with flash = Some notice }, [])
+  (* An unchanged push keeps the model physically equal, so memoized renders
+     stay valid; only real fact movement re-renders the footer. *)
+  | Snapshot_refreshed snapshot ->
+      ((if Snapshot.equal snapshot t.snapshot then t else { t with snapshot }), [])
   | Auth_panel_msg m -> (
       match t.surface with
       | Panel (Auth panel) ->

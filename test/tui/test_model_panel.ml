@@ -255,4 +255,31 @@ let%expect_test "no-auth local models are not locked" =
     deepseek row present: true
     not locked (no log-in affordance): true |}]
 
+(* A pick takes effect in the frame: the runtime pins the session selection and
+   pushes the rebuilt snapshot, so the home model line (and the footer's compact
+   label, rendered from the same snapshot) name the picked model without a
+   restart — the label tracks what the next turn's binding will use. Facts
+   only, no golden: the picked model's effort suffix is catalog data this test
+   does not pin. *)
+let%expect_test "a pick updates the rendered model facts" =
+  Project.with_temp "model-pick-refresh" @@ fun project ->
+  run project ~rows:24 ~cols:80 @@ fun t ->
+  Term.wait t (Screen.has "dev · openai/gpt-5.5");
+  print_fact "launch model line" (Screen.has "dev · openai/gpt-5.5" (Term.screen t));
+  open_model t;
+  (* Filter to GPT-5.4 and confirm the highlighted row. *)
+  Term.send t "gpt-5.4";
+  Term.wait t (fun s -> Screen.has "GPT-5.4" s && Screen.lacks "GPT-5.5" s);
+  Term.send t Keys.enter;
+  Term.wait t (Screen.has "model set to");
+  (* The model line re-renders from the pushed snapshot; the [dev · ] prefix
+     disambiguates it from the confirmation flash naming the same selector. *)
+  Term.wait t (Screen.has "dev · openai/gpt-5.4");
+  print_fact "model line tracks the pick"
+    (Screen.has "dev · openai/gpt-5.4" (Term.screen t));
+  [%expect
+    {|
+    launch model line: true
+    model line tracks the pick: true |}]
+
 [%%run_tests "spice.tui-next.model-panel"]

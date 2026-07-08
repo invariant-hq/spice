@@ -1266,6 +1266,37 @@ let run ~stdenv ~(startup : App.startup) () =
           in
           Ok (runner, model, effort)
         in
+        (* Push the rebuilt slow facts to the shell after an action that can
+           move them — a model pick, a credential-store mutation, a turn
+           binding — so the rendered model line tracks what the next turn's
+           binding will use. The facts come from the same hierarchy the
+           binding reads: the session pin first (the loaded host's in-memory
+           config predates the pick's file write, so re-deriving would miss
+           it), else a re-derivation over config and the freshly re-read
+           credential store. The shell drops no-op pushes. *)
+        let refresh_snapshot () =
+          let snapshot =
+            match !current_selection with
+            | Some (model, effort) ->
+                let config = Spice_host.Host.config host in
+                let effort =
+                  match effort with
+                  | Some _ -> effort
+                  | None -> turn_reasoning config model
+                in
+                {
+                  snapshot with
+                  Snapshot.model = model_label model;
+                  effort =
+                    Option.map
+                      Spice_llm.Request.Options.Reasoning_effort.to_string
+                      effort;
+                  context_window = Spice_provider.Model.context_window model;
+                }
+            | None -> build_snapshot ?sandbox_flag ~stdenv host
+          in
+          deliver (App.snapshot_refreshed snapshot)
+        in
         (* The session's live attachment, created on the first turn from the
            pre-warmed run. Held as [(live, run)]: the run is the workspace
            assembly each turn's contract binds over. Resume onto an existing
@@ -1666,6 +1697,7 @@ let run ~stdenv ~(startup : App.startup) () =
           match save_model_selection ~stdenv host ~selector ~effort with
           | Ok model ->
               current_selection := Some (model, effort);
+              refresh_snapshot ();
               let effort_label =
                 match effort with
                 | Some e ->
@@ -1822,6 +1854,15 @@ let run ~stdenv ~(startup : App.startup) () =
               match settled with
               | Spice_host_builtin.Login.Cancelled -> ()
               | settled ->
+                  (* A saved credential (checked or not) can flip the derived
+                     default model; a failed login saved nothing. *)
+                  (match settled with
+                  | Spice_host_builtin.Login.Checked _
+                  | Spice_host_builtin.Login.Unchecked _ ->
+                      refresh_snapshot ()
+                  | Spice_host_builtin.Login.Failed _
+                  | Spice_host_builtin.Login.Cancelled ->
+                      ());
                   deliver
                     (App.auth_settled ~request
                        (auth_record_of_settled
@@ -1871,6 +1912,7 @@ let run ~stdenv ~(startup : App.startup) () =
                                (App.Failed { message }))
                       | Ok (runner, model, effort) ->
                           Spice_host.Live.set_runner live runner;
+                          refresh_snapshot ();
                           let turn =
                             make_turn ~clock
                               ~config:(Spice_host.Host.config host)
@@ -2092,12 +2134,21 @@ let run ~stdenv ~(startup : App.startup) () =
                              source_word = None;
                            })
                   | Ok secret ->
+                      let settled =
+                        Spice_host_builtin.Login.save ~stdenv host ~provider
+                          secret
+                      in
+                      (match settled with
+                      | Spice_host_builtin.Login.Checked _
+                      | Spice_host_builtin.Login.Unchecked _ ->
+                          refresh_snapshot ()
+                      | Spice_host_builtin.Login.Failed _
+                      | Spice_host_builtin.Login.Cancelled ->
+                          ());
                       deliver
                         (App.auth_settled ~request
                            (auth_record_of_settled
-                              ~title:(model_provider_title provider)
-                              (Spice_host_builtin.Login.save ~stdenv host
-                                 ~provider secret))))
+                              ~title:(model_provider_title provider) settled)))
           | App.Auth_browser_login { request; provider; method_id } ->
               run_login ~request ~provider (fun ~cancel events ->
                   Spice_host_builtin.Login.browser ~stdenv host ~provider
@@ -2108,12 +2159,17 @@ let run ~stdenv ~(startup : App.startup) () =
                     ~method_id ~cancel events)
           | App.Auth_logout { request; provider } ->
               perform (fun () ->
+                  let result =
+                    Spice_host_builtin.Login.logout ~stdenv host ~provider ()
+                  in
+                  (* A removed credential can flip the derived default back. *)
+                  (match result with
+                  | Ok _ -> refresh_snapshot ()
+                  | Error _ -> ());
                   deliver
                     (App.auth_settled ~request
                        (auth_record_of_logout
-                          ~title:(model_provider_title provider)
-                          (Spice_host_builtin.Login.logout ~stdenv host
-                             ~provider ()))))
+                          ~title:(model_provider_title provider) result)))
           | App.Auth_cancel { request } ->
               perform (fun () -> resolve_auth_cancel request)
           | App.Auth_copy text -> Mosaic.Cmd.copy_to_clipboard text

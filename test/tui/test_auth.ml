@@ -275,3 +275,47 @@ let%expect_test "a locked model row reroutes to login pre-selected" =
   print_fact "locked row -> anthropic login pre-selected"
     (Screen.has "Paste your Anthropic API key" (Term.screen t));
   [%expect {| locked row -> anthropic login pre-selected: true |}]
+
+(* 9. With NO provider connected the model line shows the registry-order
+   default (openai/gpt-5.5). An api-key login makes Anthropic the only
+   connected provider, so the derived default — and the rendered model line —
+   flip to its default model without a restart: the login is the next
+   binding's input, and the settle pushes the rebuilt snapshot. The provider
+   base URL points at a closed port so the persist-then-check settles
+   Unchecked immediately (saved, unvalidated) instead of reaching the real
+   API; a saved-but-unchecked credential still counts as connected. *)
+let%expect_test "api-key login flips the derived default model line" =
+  Project.with_temp "auth-default-flip" @@ fun project ->
+  (* SPICE_MODEL is unset — the harness default would CONFIGURE the model, and
+     a configured selection never flips on login (that is the design); the
+     derived default is what connectivity moves. *)
+  let env =
+    [
+      ("SPICE_REDUCED_MOTION", "1");
+      ("SPICE_ANTHROPIC_BASE_URL", "http://127.0.0.1:9/v1");
+    ]
+  in
+  Term.run ~unset:[ "SPICE_MODEL" ] ~env ~rows:24 ~cols:80 project @@ fun t ->
+  Term.wait t (Screen.has "dev \xc2\xb7 openai/gpt-5.5");
+  print_fact "registry default before login"
+    (Screen.has "dev \xc2\xb7 openai/gpt-5.5" (Term.screen t));
+  (* Reach the api-key entry through the model panel's locked-row reroute (the
+     [/login PROVIDER] arg-command path is exercised by test 2). *)
+  Term.send t "/model";
+  Term.wait t (Screen.has "/model");
+  Term.send t Keys.enter;
+  Term.wait t (Screen.has "Default (recommended)");
+  Term.send t "claude";
+  Term.wait t (Screen.has "log in to use");
+  Term.send t Keys.enter;
+  Term.wait t (Screen.has "Paste your Anthropic API key");
+  Term.send t "sk-ant-test-key-1234";
+  Term.wait t (Screen.has "\xe2\x80\xa2");
+  Term.send t Keys.enter;
+  Term.wait t (Screen.has "dev \xc2\xb7 anthropic/claude-sonnet-4-6");
+  print_fact "model line flips to the connected default"
+    (Screen.has "dev \xc2\xb7 anthropic/claude-sonnet-4-6" (Term.screen t));
+  [%expect
+    {|
+    registry default before login: true
+    model line flips to the connected default: true |}]
