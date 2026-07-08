@@ -24,19 +24,26 @@ let print_goodbye stdenv (outcome : Spice_tui.outcome) =
        ~session:outcome.Spice_tui.last_session)
     stdenv#stdout
 
-let launch ~stdenv ?cwd ?mode ?session () =
+let launch ~stdenv ?cwd ?mode ?session ?input () =
   divert_logs_for_tui ();
-  let startup = Spice_tui.Startup.make ?cwd ?mode ?session () in
+  let startup = Spice_tui.Startup.make ?cwd ?mode ?session ?input () in
   match Spice_tui.run ~stdenv ~startup () with
   | Ok outcome ->
       print_goodbye stdenv outcome;
       Success
   | Error error -> Runtime_error (Spice_tui.Error.message error)
 
+let startup_input draft prompt =
+  match (draft, prompt) with
+  | None, None -> Ok Spice_tui.Startup.Empty
+  | Some draft, None -> Ok (Spice_tui.Startup.Draft draft)
+  | None, Some prompt -> Ok (Spice_tui.Startup.Submit prompt)
+  | Some _, Some _ -> usage "choose only one of --draft or --prompt"
+
 (* [--continue] resolves the newest session before the TUI starts, over the
    same host bootstrap the TUI performs afterwards; both loads see the same
    raw [--cwd] value, so they resolve the same workspace. *)
-let run ?session cwd mode continue_ =
+let run ?session cwd mode continue_ draft prompt =
   Eio_main.run @@ fun stdenv ->
   status
     (let* cwd_abs =
@@ -53,6 +60,7 @@ let run ?session cwd mode continue_ =
                   `Usage
                     ("unknown mode: " ^ raw ^ " (expected build, plan, or review)"))
      in
+     let* input = startup_input draft prompt in
      let* session =
        match (session, continue_) with
        | Some _, true -> usage "choose only one of --continue or --session"
@@ -63,7 +71,18 @@ let run ?session cwd mode continue_ =
            Ok (Some id)
        | None, false -> Ok None
      in
-     Ok (launch ~stdenv ?cwd:cwd_abs ?mode ?session ()))
+     let* () =
+       match (input, session) with
+       | Spice_tui.Startup.Submit _, Some _ ->
+           (* Submitting into a resumed session would race the replay; reject
+              until the runtime orders the two. *)
+           usage "--prompt starts a fresh session; drop --session/--continue"
+       | ( ( Spice_tui.Startup.Empty | Spice_tui.Startup.Draft _
+           | Spice_tui.Startup.Submit _ ),
+           _ ) ->
+           Ok ()
+     in
+     Ok (launch ~stdenv ?cwd:cwd_abs ?mode ?session ~input ()))
 
 let cwd =
   Cli_arg.cwd ~short:true ~doc:"Run Spice from working directory $(docv)." ()
@@ -88,10 +107,22 @@ let session =
     & opt (some Cli_arg.session_id) None
     & info [ "session" ] ~docv:"SESSION" ~doc)
 
-let default_run session cwd mode continue_ = run ?session cwd mode continue_
+let draft =
+  let doc = "Open the TUI with text $(docv) in the composer." in
+  CArg.(value & opt (some string) None & info [ "draft" ] ~docv:"TEXT" ~doc)
+
+let prompt =
+  let doc = "Submit prompt $(docv) as the first turn once the TUI is up." in
+  CArg.(
+    value & opt (some string) None & info [ "p"; "prompt" ] ~docv:"TEXT" ~doc)
+
+let default_run session cwd mode continue_ draft prompt =
+  run ?session cwd mode continue_ draft prompt
 
 let default_term =
-  exit_term CTerm.(const default_run $ session $ cwd $ mode $ continue_)
+  exit_term
+    CTerm.(
+      const default_run $ session $ cwd $ mode $ continue_ $ draft $ prompt)
 
 let resume_session =
   Cli_arg.session_pos
@@ -108,10 +139,10 @@ let last =
   in
   CArg.(value & flag & info [ "last" ] ~doc)
 
-let resume_run session cwd mode last =
+let resume_run session cwd mode last draft prompt =
   if last && Option.is_some session then
     status (usage "choose SESSION or --last, not both")
-  else run ?session cwd mode last
+  else run ?session cwd mode last draft prompt
 
 let resume_command =
   let man =
@@ -132,5 +163,7 @@ let resume_command =
   CCmd.v
     (CCmd.info "resume" ~doc:"Resume a saved session in the TUI."
        ~docs:s_run_commands ~man ~exits)
-    (exit_term CTerm.(const resume_run $ resume_session $ cwd $ mode $ last))
+    (exit_term
+       CTerm.(
+         const resume_run $ resume_session $ cwd $ mode $ last $ draft $ prompt))
 

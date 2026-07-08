@@ -5,9 +5,11 @@
 
 module Startup = struct
   type t = App.startup
+  type input = App.input = Empty | Draft of string | Submit of string
 
-  let make ?cwd ?(mode = Spice_protocol.Mode.default) ?session () =
-    { App.cwd; mode; session }
+  let make ?cwd ?(mode = Spice_protocol.Mode.default) ?session
+      ?(input = App.Empty) () =
+    { App.cwd; mode; session; input }
 end
 
 module Error = struct

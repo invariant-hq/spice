@@ -12,17 +12,27 @@
     supplies the {!Snapshot.t} at init and the {!Home.Brief.t} on the refresh
     tick, and interprets the effect intents. *)
 
+(** The type for the composer's launch input. *)
+type input =
+  | Empty  (** The composer starts blank. *)
+  | Draft of string  (** The composer starts seeded with the text ([--draft]). *)
+  | Submit of string
+      (** The text is submitted as the first turn's prompt ([-p]/[--prompt]);
+          the shell launches straight into the chat, past the home stage. *)
+
 type startup = {
   cwd : Spice_path.Abs.t option;
   mode : Spice_protocol.Mode.t;
   session : Spice_session.Id.t option;
+  input : input;
 }
 (** The startup configuration. [cwd] is the workspace root; when absent the
     runtime resolves the process working directory. [mode] is the turn mode the
     first runner is built under (the composer can switch it later). [session]
     is a session to resume at launch ([spice resume]): the runtime issues the
     same {!command} the sessions screen's resume does, so the TUI opens on the
-    replayed transcript instead of the home stage. *)
+    replayed transcript instead of the home stage. [input] seeds or submits the
+    first draft. *)
 
 type t
 (** The type for the shell model. *)
@@ -428,17 +438,20 @@ val review_msg : Spice_tui_review.msg -> msg
 
 val init :
   ?session:Spice_session.Id.t ->
+  ?input:input ->
   snapshot:Snapshot.t ->
   reduced_motion:bool ->
   unit ->
   t * command list
-(** [init ?session ~snapshot ~reduced_motion ()] is the initial model for [snapshot]
-    and its startup commands. Without [session] it is the home model and a first
-    {!Reload_brief}. With [session] ([spice resume]) it is the session's chat —
-    the same banner-headed transcript an in-app resume enters — and a
-    {!Resume_session} that replays the durable events into it, so launch-resume
-    and in-app resume are one path. [reduced_motion] holds the lockup static with
-    no timers. *)
+(** [init ?session ?input ~snapshot ~reduced_motion ()] is the initial model for
+    [snapshot] and its startup commands. Without [session] it is the home model
+    and a first {!Reload_brief}. With [session] ([spice resume]) it is the
+    session's chat — the same banner-headed transcript an in-app resume enters —
+    and a {!Resume_session} that replays the durable events into it, so
+    launch-resume and in-app resume are one path. [input] (default {!Empty})
+    seeds the composer ({!Draft}) or starts the first turn at once ({!Submit} —
+    the drop happens before the first frame; combining it with [session] is
+    unsupported). [reduced_motion] holds the lockup static with no timers. *)
 
 val update : msg -> t -> t * command list
 (** [update msg t] folds [msg] into [t]. Composer activity flows through

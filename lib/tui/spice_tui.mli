@@ -17,18 +17,31 @@ module Startup : sig
   type t
   (** The type for one TUI run's startup input. *)
 
+  (** The type for the composer's launch input. *)
+  type input =
+    | Empty  (** The composer starts blank. *)
+    | Draft of string
+        (** The composer starts seeded with the text ([--draft]). *)
+    | Submit of string
+        (** The text is submitted as the first turn's prompt
+            ([-p]/[--prompt]); the TUI launches straight into the chat, past
+            the home stage. *)
+
   val make :
     ?cwd:Spice_path.Abs.t ->
     ?mode:Spice_protocol.Mode.t ->
     ?session:Spice_session.Id.t ->
+    ?input:input ->
     unit ->
     t
-  (** [make ?cwd ?mode ?session ()] is startup input for one TUI run. [cwd] is
-      the workspace root; when absent the runtime resolves the process working
-      directory. [mode] is the turn mode the first runner is built under
-      (default {!Spice_protocol.Mode.default}). [session] resumes that saved
-      session at launch ([spice resume]): the TUI opens on its replayed
-      transcript instead of the home stage. *)
+  (** [make ?cwd ?mode ?session ?input ()] is startup input for one TUI run.
+      [cwd] is the workspace root; when absent the runtime resolves the process
+      working directory. [mode] is the turn mode the first runner is built
+      under (default {!Spice_protocol.Mode.default}). [session] resumes that
+      saved session at launch ([spice resume]): the TUI opens on its replayed
+      transcript instead of the home stage. [input] (default {!Empty}) seeds
+      the composer or submits the first prompt; combining {!Submit} with
+      [session] is unsupported — callers reject it before {!run}. *)
 end
 
 module Error : sig

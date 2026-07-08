@@ -151,6 +151,46 @@ let%expect_test "spice resume --last resumes the newest session" =
     newest session replayed: true
     not on the home prelude: true |}]
 
+(* [--draft] seeds the composer without starting anything: the process stays on
+   the home stage with the text ready to edit (App.init [Draft]). *)
+let%expect_test "spice --draft seeds the composer on the home stage" =
+  Project.with_temp "launch-draft" @@ fun project ->
+  Term.run project ~env:reduced_motion ~rows:24 ~cols:80
+    ~command:[ "--draft"; "fix the parser first" ]
+  @@ fun t ->
+  Term.wait t (Screen.has "fix the parser first");
+  let s = Term.screen t in
+  print_fact "draft in the composer" (Screen.has "❯ fix the parser first" s);
+  print_fact "still on the home prelude"
+    (Screen.has "welcome — and thanks for trying spice" s);
+  [%expect
+    {|
+    draft in the composer: true
+    still on the home prelude: true |}]
+
+(* [-p]/[--prompt] submits the text as the first turn: the TUI opens on the
+   chat layout with the prompt echoed and the reply streaming — the home stage
+   never shows (App.init [Submit] takes the drop before the first frame). *)
+let%expect_test "spice -p submits the first prompt at launch" =
+  Project.with_temp "launch-prompt" @@ fun project ->
+  let answer = "The parser drops the final chunk." in
+  Provider.with_openai project ~answer ~body_contains:[ "fix the parser" ]
+  @@ fun provider ->
+  Term.run project ~provider ~env:reduced_motion ~rows:24 ~cols:80
+    ~command:[ "-p"; "fix the parser" ]
+  @@ fun t ->
+  Term.wait t (Screen.has answer);
+  let s = Term.screen t in
+  print_fact "prompt echoed" (Screen.has "❯ fix the parser" s);
+  print_fact "reply streamed" (Screen.has answer s);
+  print_fact "not on the home prelude"
+    (Screen.lacks "welcome — and thanks for trying spice" s);
+  [%expect
+    {|
+    prompt echoed: true
+    reply streamed: true
+    not on the home prelude: true |}]
+
 (* Resume the seeded session, then submit a turn: the reply must land in the
    SAME transcript, below the replayed prompt. This exercises the consumer path
    end-to-end (runtime.ml [ensure_attachment] -> [consume_resume] -> [build_run]

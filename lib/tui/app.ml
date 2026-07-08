@@ -5,10 +5,13 @@
 
 open Mosaic
 
+type input = Empty | Draft of string | Submit of string
+
 type startup = {
   cwd : Spice_path.Abs.t option;
   mode : Spice_protocol.Mode.t;
   session : Spice_session.Id.t option;
+  input : input;
 }
 
 (* The in-flight chat: the settled transcript document, the reducer state for the
@@ -747,17 +750,42 @@ let enter_session command t =
     },
     [ command ] )
 
-let init ?session ~snapshot ~reduced_motion () =
+(* Replace the draft wholesale (a palette completion or insertion, or the
+   [--draft] startup seed), cursor at end: the text-only history-entry
+   round-trip is the composer's one out-of-band setter. *)
+let set_draft text t =
+  let composer, _ =
+    Composer.update
+      (Composer.Restore_history (Draft.history_entry (Draft.of_text text)))
+      t.composer
+  in
+  { t with composer }
+
+let init ?session ?(input = Empty) ~snapshot ~reduced_motion () =
   let model = init_model ~snapshot ~reduced_motion in
-  match session with
-  | None -> (model, [ Reload_brief; Load_prompt_history ])
-  | Some id ->
-      (* [spice resume <id>]: launch straight into the session's chat through the
-         very transition an in-app resume takes, so both are one path by
-         construction. The prelude brief tick is dropped (the drop stops it
-         anyway); the replayed events rebuild the transcript. *)
-      let model, commands = enter_session (Resume_session id) model in
-      (model, commands @ [ Load_prompt_history ])
+  let model, commands =
+    match session with
+    | None -> (model, [ Reload_brief ])
+    | Some id ->
+        (* [spice resume <id>]: launch straight into the session's chat through
+           the very transition an in-app resume takes, so both are one path by
+           construction. The prelude brief tick is dropped (the drop stops it
+           anyway); the replayed events rebuild the transcript. *)
+        enter_session (Resume_session id) model
+  in
+  let model, commands =
+    match input with
+    | Empty -> (model, commands)
+    | Draft text -> (set_draft text model, commands)
+    | Submit prompt ->
+        (* [-p]/[--prompt]: the first turn starts before the first frame — the
+           drop happens at once, so the process never shows the home stage. The
+           fresh-session path drops the prelude [Reload_brief] along with the
+           prelude itself. *)
+        let model, more = start_turn prompt model in
+        (model, (match session with None -> [] | Some _ -> commands) @ more)
+  in
+  (model, commands @ [ Load_prompt_history ])
 
 (* Open the model panel over the current surface and load its facts; [return]
    records where esc restores to — the composer for [/model], the settings screen
@@ -937,17 +965,6 @@ let submit_text value t =
    only effect. (The composer's arrow-walk recalls slash commands too, so the
    file keeps them — a deliberate divergence from the old TUI, which persisted
    only turn prompts.) *)
-(* Replace the draft wholesale (a palette completion or insertion), cursor at
-   end: the text-only history-entry round-trip is the composer's one
-   out-of-band setter. *)
-let set_draft text t =
-  let composer, _ =
-    Composer.update
-      (Composer.Restore_history (Draft.history_entry (Draft.of_text text)))
-      t.composer
-  in
-  { t with composer }
-
 (* The continuation command a resolved dialog submits, reading the boundary ids
    from the dialog's pending projection. The resolution kind and the boundary
    kind always agree by construction (a permission dialog yields a [Reply], a
