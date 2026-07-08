@@ -75,6 +75,27 @@
   (diff multiline-description.expected multiline-description.out)))
 
 (rule
+ (targets duplicate-description.out)
+ (deps
+  (:gen ../../prompts/gen/gen.exe)
+  fixtures/skills/duplicate-description.md)
+ (action
+  (with-outputs-to
+   %{targets}
+   (with-accepted-exit-codes
+    1
+    (run
+     %{gen}
+     -o
+     duplicate-description.ml
+     fixtures/skills/duplicate-description.md)))))
+
+(rule
+ (alias runtest)
+ (action
+  (diff duplicate-description.expected duplicate-description.out)))
+
+(rule
  (targets unterminated.out)
  (deps
   (:gen ../../prompts/gen/gen.exe)

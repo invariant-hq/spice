@@ -299,6 +299,21 @@ let find_active t name =
 let skill_file = "SKILL.md"
 let max_description_bytes = 1024
 
+let is_consumed_metadata_key key =
+  String.equal key "name" || String.equal key "description"
+
+let duplicate_consumed_metadata_key keys =
+  let rec loop seen = function
+    | [] -> None
+    | key :: keys ->
+        if is_consumed_metadata_key key && List.exists (String.equal key) seen
+        then Some key
+        else
+          let seen = if is_consumed_metadata_key key then key :: seen else seen in
+          loop seen keys
+  in
+  loop [] keys
+
 let metadata_text field value =
   if
     String.exists
@@ -335,6 +350,12 @@ let content_of_text ~resources text =
   | Error error ->
       Error (`Invalid_frontmatter (Spice_frontmatter.Error.message error))
   | Ok header -> (
+      match duplicate_consumed_metadata_key (Spice_frontmatter.keys header) with
+      | Some key ->
+          Error
+            (`Invalid_frontmatter
+              (Printf.sprintf "frontmatter %s must appear only once" key))
+      | None -> (
       match Spice_frontmatter.string "description" header with
       | None -> Error `Description_missing
       | Some description when String.length description > max_description_bytes
@@ -359,7 +380,7 @@ let content_of_text ~resources text =
                   let ignored_keys =
                     Spice_frontmatter.keys header
                     |> List.filter (fun key ->
-                        not (List.mem key [ "name"; "description" ]))
+                        not (is_consumed_metadata_key key))
                   in
                   Ok
                     {
@@ -371,7 +392,7 @@ let content_of_text ~resources text =
                       digest = digest_string text;
                       resources;
                       ignored_keys;
-                    })))
+                    }))))
 
 (* One filesystem skills root. [gate] of [None] reads candidates; [Some
    disabled] lists them from existence checks only, without content reads. *)

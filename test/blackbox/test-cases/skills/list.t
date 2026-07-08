@@ -78,6 +78,31 @@ single-line surfaces.
     skill bad-description ($TESTCASE_ROOT/.spice/skills/bad-description): frontmatter description must be single-line text
     skill bad-name ($TESTCASE_ROOT/.spice/skills/bad-name): frontmatter name must be single-line text
 
+Consumed metadata keys are invalid when duplicated; the loader does not pick
+one value silently.
+
+  $ mkdir -p .spice/skills/duplicate-description .spice/skills/duplicate-name
+  $ cat > .spice/skills/duplicate-description/SKILL.md <<'EOF'
+  > ---
+  > description: First description.
+  > description: Second description.
+  > ---
+  > Body.
+  > EOF
+  $ cat > .spice/skills/duplicate-name/SKILL.md <<'EOF'
+  > ---
+  > name: First
+  > name: Second
+  > description: Duplicate display name.
+  > ---
+  > Body.
+  > EOF
+  $ spice skills list | grep -E 'duplicate-(description|name)'
+    duplicate-description invalid invalid_frontmatter ($TESTCASE_ROOT/.spice/skills/duplicate-description)
+    duplicate-name invalid invalid_frontmatter ($TESTCASE_ROOT/.spice/skills/duplicate-name)
+    skill duplicate-description ($TESTCASE_ROOT/.spice/skills/duplicate-description): frontmatter description must appear only once
+    skill duplicate-name ($TESTCASE_ROOT/.spice/skills/duplicate-name): frontmatter name must appear only once
+
 Ignored migration frontmatter produces a warning, not a failure.
 
   $ mkdir -p .spice/skills/ported

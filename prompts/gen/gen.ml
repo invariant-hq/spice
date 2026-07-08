@@ -75,6 +75,21 @@ let entry path =
 let max_skill_name_bytes = 64
 let max_skill_description_bytes = 1024
 
+let is_consumed_metadata_key key =
+  String.equal key "name" || String.equal key "description"
+
+let duplicate_consumed_metadata_key keys =
+  let rec loop seen = function
+    | [] -> None
+    | key :: keys ->
+        if is_consumed_metadata_key key && List.exists (String.equal key) seen
+        then Some key
+        else
+          let seen = if is_consumed_metadata_key key then key :: seen else seen in
+          loop seen keys
+  in
+  loop [] keys
+
 let metadata_text path field value =
   if
     String.exists
@@ -108,6 +123,9 @@ let skill_entry path =
     | Ok header -> header
     | Error error -> fail "%s: %s" path (Spice_frontmatter.Error.message error)
   in
+  (match duplicate_consumed_metadata_key (Spice_frontmatter.keys header) with
+  | None -> ()
+  | Some key -> fail "%s: frontmatter %s must appear only once" path key);
   (match Spice_frontmatter.string "description" header with
   | None -> fail "%s: frontmatter must carry a description string" path
   | Some description
