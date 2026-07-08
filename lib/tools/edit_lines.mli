@@ -70,18 +70,24 @@ module Input : sig
 
     val replace : Range.t -> text:string -> t
     (** [replace range ~text] replaces [range] with [text]. Empty [text] deletes
-        the range.
+        the range. Non-empty [text] is split on ['\n'] into logical lines; a
+        trailing ['\n'] denotes a final empty line, not merely a line
+        terminator.
 
         Raises [Invalid_argument] if [text] is not valid UTF-8. *)
 
     val insert_before : Anchor.t -> text:string -> t
-    (** [insert_before anchor ~text] inserts [text] before [anchor].
+    (** [insert_before anchor ~text] inserts [text] before [anchor]. [text] is
+        split on ['\n'] into logical lines; a trailing ['\n'] denotes a final
+        empty line. Empty [text] inserts no lines.
 
         Raises [Invalid_argument] if [anchor] is empty or [text] is not valid
         UTF-8. *)
 
     val insert_after : Anchor.t -> text:string -> t
-    (** [insert_after anchor ~text] inserts [text] after [anchor].
+    (** [insert_after anchor ~text] inserts [text] after [anchor]. [text] is
+        split on ['\n'] into logical lines; a trailing ['\n'] denotes a final
+        empty line. Empty [text] inserts no lines.
 
         Raises [Invalid_argument] if [anchor] is empty or [text] is not valid
         UTF-8. *)
@@ -113,7 +119,10 @@ module Input : sig
   (** [contract] is the JSON input contract for tool calls.
 
       The model-visible fields are [path] and [edits], where each edit has [op],
-      [anchor], optional [end_anchor], and [text]. Unknown fields are rejected.
+      [anchor], optional [end_anchor], and [text]. [replace] requires
+      [end_anchor]; use the same value as [anchor] for a single-line replace.
+      [insert_before] and [insert_after] reject [end_anchor]. Unknown fields are
+      rejected.
   *)
 
   val decode : Jsont.json -> (t, string) result
@@ -201,7 +210,8 @@ val run :
     guidance — when any anchor is unknown or names a line whose text differs
     from the provided text. Malformed anchors, inverted replace ranges, and
     overlapping edits fail as invalid input. Valid batches apply bottom-up over
-    the current lines; untouched lines keep their exact bytes, and inserted
+    the current lines; if multiple insertions target the same gap, their input
+    order is preserved. Untouched lines keep their exact bytes, and inserted
     lines use the file's dominant line ending.
 
     The final complete contents are lowered to {!Spice_edit.rewrite} and applied
