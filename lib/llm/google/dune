@@ -1,5 +1,6 @@
 (library
  (name spice_llm_google)
+ (private_modules api)
  (libraries
   ca-certs
   cohttp
