@@ -234,7 +234,7 @@ module Syntax : sig
       Errors with {!Error.Invalid_syntax} if either delimiter is empty or
       contains NUL or newline. *)
 
-  val of_path : string -> t option
+  val of_path : Spice_path.Rel.t -> t option
   (** [of_path path] is the conventional source comment syntax for [path]'s
       basename and extension: [dune] files use [;] line comments, OCaml sources
       use block comments, C-family sources use [//], script and configuration

@@ -153,7 +153,7 @@ module Cr_comments = struct
   let scan_file t path =
     let rel = Spice_path.Rel.to_string path in
     (* Guard on [of_path] before reading so non-source files are never loaded. *)
-    if Option.is_none (Cr.Syntax.of_path rel) then []
+    if Option.is_none (Cr.Syntax.of_path path) then []
     else
       match read_text t rel with
       | Error _ -> []
@@ -199,18 +199,16 @@ module Cr_comments = struct
                         (Filename.concat abs name)
                     end)
             | Unix.S_REG ->
-                if
-                  Option.is_some (Cr.Syntax.of_path rel)
-                  && can_scan_source_file ()
-                then begin
+                if can_scan_source_file () then begin
                   incr source_files_seen;
                   (* [rel] is a raw readdir path; validate it before scanning. *)
                   match Spice_path.Rel.of_string rel with
                   | Error _ -> ()
-                  | Ok path -> (
-                      match scan_file t path with
-                      | [] -> ()
-                      | issues -> Hashtbl.replace t.by_path rel issues)
+                  | Ok path ->
+                      if Option.is_some (Cr.Syntax.of_path path) then
+                        match scan_file t path with
+                        | [] -> ()
+                        | issues -> Hashtbl.replace t.by_path rel issues
                 end
             | Unix.S_LNK | Unix.S_CHR | Unix.S_BLK | Unix.S_FIFO | Unix.S_SOCK
               ->

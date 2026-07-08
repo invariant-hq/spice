@@ -45,10 +45,12 @@ let check_identity_form msg identity =
 
 let syntax_value = testable ~pp:Cr.Syntax.pp ~equal:Cr.Syntax.equal ()
 
-let source_path =
-  match Path.Rel.of_string "lib/a.ml" with
+let rel path =
+  match Path.Rel.of_string path with
   | Ok path -> path
-  | Error error -> failf "invalid source path: %a" Path.Error.pp error
+  | Error error -> failf "invalid relative path: %a" Path.Error.pp error
+
+let source_path = rel "lib/a.ml"
 
 let expect_ok msg = function
   | Ok value -> value
@@ -204,7 +206,7 @@ let syntax_validation () =
 
 let syntax_of_path_conventions () =
   let some msg expected path =
-    match Cr.Syntax.of_path path with
+    match Cr.Syntax.of_path (rel path) with
     | Some syntax -> equal syntax_value ~msg expected syntax
     | None -> failf "%s: expected a syntax for %s" msg path
   in
@@ -222,9 +224,9 @@ let syntax_of_path_conventions () =
   some "yaml uses hash comments" (line "#") ".github/workflows/ci.yml";
   some "css uses block comments" (block "/*" "*/") "web/site.css";
   is_true ~msg:"unknown extensions have no syntax"
-    (Option.is_none (Cr.Syntax.of_path "README.md"));
+    (Option.is_none (Cr.Syntax.of_path (rel "README.md")));
   is_true ~msg:"extensionless files have no syntax"
-    (Option.is_none (Cr.Syntax.of_path "LICENSE"))
+    (Option.is_none (Cr.Syntax.of_path (rel "LICENSE")))
 
 let scan_ocaml_block_comments () =
   let text =

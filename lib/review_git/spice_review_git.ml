@@ -621,9 +621,7 @@ let apply_op t ~base ~expected op =
           let edited =
             match op with
             | Spice_review.Op.Add { line; cr; _ } -> (
-                match
-                  Spice_cr.Syntax.of_path (Spice_path.Rel.to_string rel)
-                with
+                match Spice_cr.Syntax.of_path rel with
                 | None ->
                     Error
                       (Printf.sprintf "%s has no conventional comment syntax"

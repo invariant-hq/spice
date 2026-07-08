@@ -234,6 +234,7 @@ module Syntax = struct
     else error Error.Invalid_syntax "invalid block comment syntax"
 
   let of_path path =
+    let path = Spice_path.Rel.to_string path in
     let basename = Filename.basename path in
     let extension = Filename.extension basename in
     match (basename, extension) with
@@ -497,7 +498,7 @@ let scan ~syntax ~path ~text =
   | Syntax.Block { open_; close } -> scan_block ~path ~syntax ~open_ ~close text
 
 let scan_file ~path ~text =
-  match Syntax.of_path (Spice_path.Rel.to_string path) with
+  match Syntax.of_path path with
   | None -> []
   | Some syntax -> scan ~syntax ~path ~text
 
