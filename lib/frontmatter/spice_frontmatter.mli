@@ -20,24 +20,30 @@
 
 (** {1:errors Errors} *)
 
-type error =
-  | Unterminated  (** An opening fence without a closing [---] line. *)
-  | Invalid_yaml of string
-      (** The fenced text is not valid YAML; carries the parser message. *)
-  | Not_a_mapping
-      (** The fenced YAML is valid but its top level is not a mapping. *)
+module Error : sig
+  (** Frontmatter parse errors. *)
 
-val error_message : error -> string
-(** [error_message error] is a one-line human-readable description of [error].
-    The wording is for diagnostics and is not a stable programmatic interface.
-*)
+  type t =
+    | Unterminated  (** An opening fence without a closing [---] line. *)
+    | Invalid_yaml of string
+        (** The fenced text is not valid YAML; carries the parser message. *)
+    | Not_a_mapping
+        (** The fenced YAML is valid but its top level is not a mapping. *)
+
+  val message : t -> string
+  (** [message error] is a one-line human-readable description of [error]. The
+      wording is for diagnostics and is not a stable programmatic interface. *)
+
+  val pp : Format.formatter -> t -> unit
+  (** [pp ppf error] formats [error] for diagnostics. *)
+end
 
 (** {1:parsing Parsing} *)
 
 type t
 (** The type for parsed documents: header fields and the exact body bytes. *)
 
-val parse : string -> (t, error) result
+val parse : string -> (t, Error.t) result
 (** [parse doc] splits [doc] into frontmatter fields and body.
 
     A document whose first line is exactly [---] (an optional trailing carriage

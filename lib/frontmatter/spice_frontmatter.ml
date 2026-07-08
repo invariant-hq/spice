@@ -3,13 +3,17 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-type error = Unterminated | Invalid_yaml of string | Not_a_mapping
+module Error = struct
+  type t = Unterminated | Invalid_yaml of string | Not_a_mapping
 
-let error_message = function
-  | Unterminated -> "frontmatter fence has no closing --- line"
-  | Invalid_yaml message ->
-      Printf.sprintf "invalid frontmatter YAML: %s" message
-  | Not_a_mapping -> "frontmatter YAML must be a mapping of keys to values"
+  let message = function
+    | Unterminated -> "frontmatter fence has no closing --- line"
+    | Invalid_yaml message ->
+        Printf.sprintf "invalid frontmatter YAML: %s" message
+    | Not_a_mapping -> "frontmatter YAML must be a mapping of keys to values"
+
+  let pp ppf error = Format.pp_print_string ppf (message error)
+end
 
 type t = { fields : (string * Yaml.value) list; body : string }
 
@@ -33,7 +37,7 @@ let parse doc =
   else
     let yaml_start = next_line_start doc first_end in
     let rec find_close start =
-      if start >= len then Error Unterminated
+      if start >= len then Error Error.Unterminated
       else
         let stop = line_end doc start in
         if is_fence doc start stop then Ok (start, stop)
@@ -48,10 +52,10 @@ let parse doc =
         if String.trim yaml_text = "" then Ok { fields = []; body }
         else
           match Yaml.of_string yaml_text with
-          | Error (`Msg message) -> Error (Invalid_yaml message)
+          | Error (`Msg message) -> Error (Error.Invalid_yaml message)
           | Ok (`O fields) -> Ok { fields; body }
           | Ok (`Null | `Bool _ | `Float _ | `String _ | `A _) ->
-              Error Not_a_mapping)
+              Error Error.Not_a_mapping)
 
 let body t = t.body
 let keys t = List.map fst t.fields

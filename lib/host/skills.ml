@@ -320,7 +320,7 @@ let find_workspace_root ~stdenv cwd =
 let content_of_text ~resources text =
   match Spice_frontmatter.parse text with
   | Error error ->
-      Error (`Invalid_frontmatter (Spice_frontmatter.error_message error))
+      Error (`Invalid_frontmatter (Spice_frontmatter.Error.message error))
   | Ok header -> (
       match Spice_frontmatter.string "description" header with
       | None -> Error `Description_missing

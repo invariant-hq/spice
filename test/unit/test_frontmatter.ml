@@ -10,7 +10,7 @@ let parsed doc =
   match Frontmatter.parse doc with
   | Ok t -> t
   | Error error ->
-      failf "unexpected parse error: %s" (Frontmatter.error_message error)
+      failf "unexpected parse error: %s" (Frontmatter.Error.message error)
 
 let parse_error doc =
   match Frontmatter.parse doc with
@@ -90,31 +90,31 @@ let structured_fields_are_listed_not_read () =
 
 let unterminated_fence () =
   match parse_error "---\nkey: value\nbody without closing fence\n" with
-  | Frontmatter.Unterminated -> ()
-  | error -> failf "expected Unterminated: %s" (Frontmatter.error_message error)
+  | Frontmatter.Error.Unterminated -> ()
+  | error -> failf "expected Unterminated: %s" (Frontmatter.Error.message error)
 
 let fence_only_document () =
   match parse_error "---" with
-  | Frontmatter.Unterminated -> ()
-  | error -> failf "expected Unterminated: %s" (Frontmatter.error_message error)
+  | Frontmatter.Error.Unterminated -> ()
+  | error -> failf "expected Unterminated: %s" (Frontmatter.Error.message error)
 
 let invalid_yaml () =
   match parse_error "---\nkey: [unclosed\n---\nbody\n" with
-  | Frontmatter.Invalid_yaml message ->
+  | Frontmatter.Error.Invalid_yaml message ->
       is_true ~msg:"carries a parser message" (String.length message > 0)
-  | error -> failf "expected Invalid_yaml: %s" (Frontmatter.error_message error)
+  | error -> failf "expected Invalid_yaml: %s" (Frontmatter.Error.message error)
 
 let non_mapping_top_level () =
   match parse_error "---\n- one\n- two\n---\nbody\n" with
-  | Frontmatter.Not_a_mapping -> ()
+  | Frontmatter.Error.Not_a_mapping -> ()
   | error ->
-      failf "expected Not_a_mapping: %s" (Frontmatter.error_message error)
+      failf "expected Not_a_mapping: %s" (Frontmatter.Error.message error)
 
 let null_top_level () =
   match parse_error "---\nnull\n---\nbody\n" with
-  | Frontmatter.Not_a_mapping -> ()
+  | Frontmatter.Error.Not_a_mapping -> ()
   | error ->
-      failf "expected Not_a_mapping: %s" (Frontmatter.error_message error)
+      failf "expected Not_a_mapping: %s" (Frontmatter.Error.message error)
 
 let crlf_input () =
   let t = parsed "---\r\ndescription: Windows file.\r\n---\r\nbody\r\n" in

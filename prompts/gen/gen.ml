@@ -97,7 +97,7 @@ let skill_entry path =
   let header =
     match Spice_frontmatter.parse contents with
     | Ok header -> header
-    | Error error -> fail "%s: %s" path (Spice_frontmatter.error_message error)
+    | Error error -> fail "%s: %s" path (Spice_frontmatter.Error.message error)
   in
   (match Spice_frontmatter.string "description" header with
   | None -> fail "%s: frontmatter must carry a description string" path
