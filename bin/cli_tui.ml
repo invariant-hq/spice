@@ -24,9 +24,11 @@ let print_goodbye stdenv (outcome : Spice_tui.outcome) =
        ~session:outcome.Spice_tui.last_session)
     stdenv#stdout
 
-let launch ~stdenv ?cwd ?mode ?session ?input () =
+let launch ~stdenv ?cwd ?mode ?session ?input ?launch:surface () =
   divert_logs_for_tui ();
-  let startup = Spice_tui.Startup.make ?cwd ?mode ?session ?input () in
+  let startup =
+    Spice_tui.Startup.make ?cwd ?mode ?session ?input ?launch:surface ()
+  in
   match Spice_tui.run ~stdenv ~startup () with
   | Ok outcome ->
       print_goodbye stdenv outcome;
@@ -166,4 +168,42 @@ let resume_command =
     (exit_term
        CTerm.(
          const resume_run $ resume_session $ cwd $ mode $ last $ draft $ prompt))
+
+let review cwd base =
+  Eio_main.run @@ fun stdenv ->
+  status
+    (let* cwd_abs =
+       optional_absolute_cwd stdenv cwd
+       |> Result.map_error (fun message -> `Usage message)
+     in
+     Ok
+       (launch ~stdenv ?cwd:cwd_abs
+          ~launch:(Spice_tui.Startup.Launch_review { base_spec = base })
+          ()))
+
+let review_base =
+  let doc =
+    "Base revision to review against. When absent, reviews the worktree \
+     against $(b,HEAD)."
+  in
+  CArg.(value & pos 0 (some string) None & info [] ~docv:"BASE" ~doc)
+
+let review_command =
+  let man =
+    [
+      `S CManpage.s_description;
+      `P
+        "Opens the review screen directly: the worktree diff against $(i,BASE) \
+         (default $(b,HEAD)) with the review queue, marks, and verdict. \
+         Closing the screen exits. The same surface is available inside the \
+         chat TUI as $(b,/review).";
+      `S CManpage.s_examples;
+      `Pre "  spice review";
+      `Pre "  spice review main";
+    ]
+  in
+  CCmd.v
+    (CCmd.info "review" ~doc:"Review the worktree changes in the TUI."
+       ~docs:s_run_commands ~man ~exits)
+    (exit_term CTerm.(const review $ cwd $ review_base))
 

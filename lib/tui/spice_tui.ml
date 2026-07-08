@@ -7,9 +7,13 @@ module Startup = struct
   type t = App.startup
   type input = App.input = Empty | Draft of string | Submit of string
 
+  type launch = App.launch =
+    | Launch_chat
+    | Launch_review of { base_spec : string option }
+
   let make ?cwd ?(mode = Spice_protocol.Mode.default) ?session
-      ?(input = App.Empty) () =
-    { App.cwd; mode; session; input }
+      ?(input = App.Empty) ?(launch = App.Launch_chat) () =
+    { App.cwd; mode; session; input; launch }
 end
 
 module Error = struct

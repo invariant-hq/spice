@@ -79,6 +79,7 @@ let command =
       Cli_skills.group;
       Cli_run.group;
       Cli_tui.resume_command;
+      Cli_tui.review_command;
       Cli_sandbox.group;
       Cli_doctor.command;
       Cli_completion.command;

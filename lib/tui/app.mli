@@ -20,19 +20,28 @@ type input =
       (** The text is submitted as the first turn's prompt ([-p]/[--prompt]);
           the shell launches straight into the chat, past the home stage. *)
 
+(** The type for the surface the process launches onto. *)
+type launch =
+  | Launch_chat  (** The home stage (or the chat, per {!input}/[session]). *)
+  | Launch_review of { base_spec : string option }
+      (** The review screen over the worktree diff ([spice review [BASE]]);
+          closing it quits the process. *)
+
 type startup = {
   cwd : Spice_path.Abs.t option;
   mode : Spice_protocol.Mode.t;
   session : Spice_session.Id.t option;
   input : input;
+  launch : launch;
 }
 (** The startup configuration. [cwd] is the workspace root; when absent the
     runtime resolves the process working directory. [mode] is the turn mode the
-    first runner is built under (the composer can switch it later). [session]
-    is a session to resume at launch ([spice resume]): the runtime issues the
-    same {!command} the sessions screen's resume does, so the TUI opens on the
-    replayed transcript instead of the home stage. [input] seeds or submits the
-    first draft. *)
+    first runner is built under (the composer frame wears it from the first
+    frame; the composer can switch it later). [session] is a session to resume
+    at launch ([spice resume]): the runtime issues the same {!command} the
+    sessions screen's resume does, so the TUI opens on the replayed transcript
+    instead of the home stage. [input] seeds or submits the first draft.
+    [launch] picks the launch surface. *)
 
 type t
 (** The type for the shell model. *)
@@ -437,21 +446,21 @@ val review_msg : Spice_tui_review.msg -> msg
     (doc/plans/tui-next-review.md §3.3). *)
 
 val init :
-  ?session:Spice_session.Id.t ->
-  ?input:input ->
+  startup:startup ->
   snapshot:Snapshot.t ->
   reduced_motion:bool ->
-  unit ->
   t * command list
-(** [init ?session ?input ~snapshot ~reduced_motion ()] is the initial model for
-    [snapshot] and its startup commands. Without [session] it is the home model
-    and a first {!Reload_brief}. With [session] ([spice resume]) it is the
-    session's chat — the same banner-headed transcript an in-app resume enters —
-    and a {!Resume_session} that replays the durable events into it, so
-    launch-resume and in-app resume are one path. [input] (default {!Empty})
-    seeds the composer ({!Draft}) or starts the first turn at once ({!Submit} —
-    the drop happens before the first frame; combining it with [session] is
-    unsupported). [reduced_motion] holds the lockup static with no timers. *)
+(** [init ~startup ~snapshot ~reduced_motion] is the initial model for
+    [snapshot] and its startup commands, per [startup]'s axes. Without a
+    session it is the home model and a first {!Reload_brief}. With one
+    ([spice resume]) it is the session's chat — the same banner-headed
+    transcript an in-app resume enters — and a {!Resume_session} that replays
+    the durable events into it, so launch-resume and in-app resume are one
+    path. {!Draft} seeds the composer; {!Submit} starts the first turn at once
+    (the drop happens before the first frame; combined with a session — a pair
+    the CLI rejects — it degrades to the draft seat rather than racing the
+    replay). {!Launch_review} opens the review screen over whatever the other
+    axes set up. [reduced_motion] holds the lockup static with no timers. *)
 
 val update : msg -> t -> t * command list
 (** [update msg t] folds [msg] into [t]. Composer activity flows through

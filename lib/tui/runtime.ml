@@ -2109,10 +2109,8 @@ let run ~stdenv ~(startup : App.startup) () =
                    in-app resume does, so launch-into-session and in-app resume
                    share one path. *)
                 let model, commands =
-                  App.init ?session:startup.App.session
-                    ~input:startup.App.input ~snapshot
+                  App.init ~startup ~snapshot
                     ~reduced_motion:(reduced_motion ())
-                    ()
                 in
                 (model, interpret commands));
             update =

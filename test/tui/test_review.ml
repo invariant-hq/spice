@@ -295,6 +295,30 @@ let%expect_test "esc leaves the review and returns to the stage" =
   [%expect {|review closed: true
 back on the home stage: true|}]
 
+(* [spice review] launches the process straight onto the review screen
+   (Startup [Launch_review], bin/cli_tui.ml review_command) — the home stage
+   never shows — and closing the screen quits: unlike the in-app [/review]
+   above, there is no stage behind it to return to. *)
+let%expect_test "spice review launches onto the screen and its close quits" =
+  Project.with_git_fixture "review-launch" @@ fun project ->
+  Project.write project "lib/code.ml" sample_code;
+  Term.run project ~rows:24 ~cols:80 ~env:reduced_motion
+    ~command:[ "review" ]
+    ~ready:(Screen.has "0/1 reviewed")
+  @@ fun t ->
+  print_fact "review screen at launch"
+    (Screen.has "0/1 reviewed" (Term.screen t));
+  print_fact "home stage never shown"
+    (Screen.lacks "message spice" (Term.screen t));
+  Term.send t Keys.escape;
+  Term.wait_exit t;
+  print_fact "process exited on close" (Term.exited t);
+  [%expect
+    {|
+    review screen at launch: true
+    home stage never shown: true
+    process exited on close: true |}]
+
 let%expect_test "space on a reviewed unit unmarks it" =
   Project.with_git_fixture "review-unmark" @@ fun project ->
   Project.write project "lib/code.ml" sample_code;

@@ -7,12 +7,21 @@ open Mosaic
 
 type input = Empty | Draft of string | Submit of string
 
+type launch =
+  | Launch_chat
+  | Launch_review of { base_spec : string option }
+
 type startup = {
   cwd : Spice_path.Abs.t option;
   mode : Spice_protocol.Mode.t;
   session : Spice_session.Id.t option;
   input : input;
+  launch : launch;
 }
+
+(* [startup]'s mode, projected here while the label is unambiguous — the model
+   record below takes the [mode] label over. *)
+let startup_mode startup = startup.mode
 
 (* The in-flight chat: the settled transcript document, the reducer state for the
    live turn tail, the ctrl+o lens, and the animation clock. [now] is the modeled
@@ -219,6 +228,11 @@ type t = {
      deliberately do NOT — they correlate by the durable ids in
      [Spice_protocol.Pending.t] (doc/plans/tui-next-auth.md §Appendix Q5). *)
   next_request : int;
+  (* Whether the process was launched onto the review screen ([spice review]):
+     closing that screen quits instead of stranding the user on a home stage
+     they never asked for. Cleared by [Task_spice], which deliberately enters
+     the chat. *)
+  review_launch : bool;
 }
 
 type settled =
@@ -547,6 +561,7 @@ let init_model ~snapshot ~reduced_motion =
       strip_hover = None;
       drill = None;
       next_request = 0;
+      review_launch = false;
   }
 
 let completion_open t =
@@ -761,29 +776,56 @@ let set_draft text t =
   in
   { t with composer }
 
-let init ?session ?(input = Empty) ~snapshot ~reduced_motion () =
-  let model = init_model ~snapshot ~reduced_motion in
+(* Open the review screen over the worktree diff (11-review.md): the one
+   opener behind the [/review] dispatch and the [spice review] launch, so the
+   two cannot drift. [base_spec] is the base target ([/review main]); absent,
+   the loader defaults to [HEAD]. The sub-library's initial effect (a snapshot
+   load) is forwarded to the runtime as {!Review_command}. *)
+let open_review ?base_spec t =
+  let review, effects = Spice_tui_review.create ?base_spec () in
+  ( { t with surface = Screen (Review review) },
+    List.map (fun e -> Review_command e) effects )
+
+let init ~(startup : startup) ~snapshot ~reduced_motion =
+  let model =
+    { (init_model ~snapshot ~reduced_motion) with mode = startup_mode startup }
+  in
   let model, commands =
-    match session with
-    | None -> (model, [ Reload_brief ])
-    | Some id ->
+    match (startup.session, startup.input) with
+    | None, Empty -> (model, [ Reload_brief ])
+    | None, Draft text -> (set_draft text model, [ Reload_brief ])
+    | None, Submit prompt ->
+        (* [-p]/[--prompt]: the first turn starts before the first frame — the
+           drop happens at once, so the process never shows the home stage and
+           the prelude [Reload_brief] goes with it. *)
+        start_turn prompt model
+    | Some id, (Empty | Submit _ | Draft _) ->
         (* [spice resume <id>]: launch straight into the session's chat through
            the very transition an in-app resume takes, so both are one path by
            construction. The prelude brief tick is dropped (the drop stops it
-           anyway); the replayed events rebuild the transcript. *)
-        enter_session (Resume_session id) model
+           anyway); the replayed events rebuild the transcript. A [Submit] into
+           a resumed session would race that replay — the CLI rejects the
+           combination, and this shell degrades it to the draft seat. *)
+        let model, commands = enter_session (Resume_session id) model in
+        let model =
+          match startup.input with
+          | Empty -> model
+          | Draft text | Submit text -> set_draft text model
+        in
+        (model, commands)
   in
   let model, commands =
-    match input with
-    | Empty -> (model, commands)
-    | Draft text -> (set_draft text model, commands)
-    | Submit prompt ->
-        (* [-p]/[--prompt]: the first turn starts before the first frame — the
-           drop happens at once, so the process never shows the home stage. The
-           fresh-session path drops the prelude [Reload_brief] along with the
-           prelude itself. *)
-        let model, more = start_turn prompt model in
-        (model, (match session with None -> [] | Some _ -> commands) @ more)
+    match startup.launch with
+    | Launch_chat -> (model, commands)
+    | Launch_review { base_spec } ->
+        (* [spice review [BASE]]: open the review screen at launch through the
+           same opener the [/review] dispatch uses; [review_launch] makes its
+           close quit the process rather than land on an unasked-for home
+           stage. *)
+        let model, effects =
+          open_review ?base_spec { model with review_launch = true }
+        in
+        (model, commands @ effects)
   in
   (model, commands @ [ Load_prompt_history ])
 
@@ -913,14 +955,7 @@ let dispatch_command ?(argument = None) command t =
           in
           ( { t with surface = Screen (Settings (Settings_screen.loading ~tab)) },
             [ Load_settings ] )
-      | Command.Open_review ->
-          (* Open the review screen over the worktree diff (11-review.md). The
-             optional [argument] is the base target (e.g. [/review main]); absent,
-             the loader defaults to [HEAD]. The sub-library's initial effect (a
-             snapshot load) is forwarded to the runtime as {!Review_command}. *)
-          let review, effects = Spice_tui_review.create ?base_spec:argument () in
-          ( { t with surface = Screen (Review review) },
-            List.map (fun e -> Review_command e) effects )
+      | Command.Open_review -> open_review ?base_spec:argument t
       | _ ->
           ( {
               t with
@@ -1911,20 +1946,30 @@ let update msg t =
       | Screen (Review review) -> (
           (* The review sub-library folds the key/completion into new state and an
              event the shell interprets (doc/plans/tui-next-review.md §3.3): [Stay]
-             forwards the effects and stays open, [Close] returns to chat, and
-             [Task_spice] closes then submits the agent review turn — the old
-             [submit_review] as an explicit action, echoing the prompt through
-             {!start_turn} so it shows as user content. *)
+             forwards the effects and stays open, [Close] returns to chat — or
+             quits when the process was launched onto the screen ([spice review]),
+             since there is no chat behind it to return to — and [Task_spice]
+             closes then submits the agent review turn — the old [submit_review]
+             as an explicit action, echoing the prompt through {!start_turn} so
+             it shows as user content. Task spice deliberately enters the chat,
+             so it clears the launch flag. *)
           let review, event = Spice_tui_review.update m review in
           let forward effects = List.map (fun e -> Review_command e) effects in
           match event with
           | Spice_tui_review.Stay effects ->
               ({ t with surface = Screen (Review review) }, forward effects)
+          | Spice_tui_review.Close effects when t.review_launch ->
+              (t, forward effects @ [ Quit ])
           | Spice_tui_review.Close effects ->
               ({ t with surface = Conversing }, forward effects)
           | Spice_tui_review.Task_spice effects ->
               let t =
-                { t with surface = Conversing; mode = Spice_protocol.Mode.Review }
+                {
+                  t with
+                  surface = Conversing;
+                  mode = Spice_protocol.Mode.Review;
+                  review_launch = false;
+                }
               in
               let t, turn = start_turn "Review the current changes." t in
               ( t,

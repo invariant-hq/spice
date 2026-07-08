@@ -27,21 +27,31 @@ module Startup : sig
             ([-p]/[--prompt]); the TUI launches straight into the chat, past
             the home stage. *)
 
+  (** The type for the surface the TUI launches onto. *)
+  type launch =
+    | Launch_chat  (** The home stage (or the chat, per {!input}/[session]). *)
+    | Launch_review of { base_spec : string option }
+        (** The review screen over the worktree diff ([spice review [BASE]]);
+            [base_spec] is the base revision, [HEAD] when absent. Closing the
+            screen quits the process. *)
+
   val make :
     ?cwd:Spice_path.Abs.t ->
     ?mode:Spice_protocol.Mode.t ->
     ?session:Spice_session.Id.t ->
     ?input:input ->
+    ?launch:launch ->
     unit ->
     t
-  (** [make ?cwd ?mode ?session ?input ()] is startup input for one TUI run.
-      [cwd] is the workspace root; when absent the runtime resolves the process
-      working directory. [mode] is the turn mode the first runner is built
-      under (default {!Spice_protocol.Mode.default}). [session] resumes that
-      saved session at launch ([spice resume]): the TUI opens on its replayed
-      transcript instead of the home stage. [input] (default {!Empty}) seeds
-      the composer or submits the first prompt; combining {!Submit} with
-      [session] is unsupported — callers reject it before {!run}. *)
+  (** [make ?cwd ?mode ?session ?input ?launch ()] is startup input for one TUI
+      run. [cwd] is the workspace root; when absent the runtime resolves the
+      process working directory. [mode] is the turn mode the first runner is
+      built under (default {!Spice_protocol.Mode.default}). [session] resumes
+      that saved session at launch ([spice resume]): the TUI opens on its
+      replayed transcript instead of the home stage. [input] (default {!Empty})
+      seeds the composer or submits the first prompt; combining {!Submit} with
+      [session] is unsupported — callers reject it before {!run}. [launch]
+      (default {!Launch_chat}) picks the launch surface. *)
 end
 
 module Error : sig
