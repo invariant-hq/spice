@@ -417,7 +417,7 @@ let write_body_to_file ~cancelled ?observe_download ~model ~label ~path ~total
       let chunk = Cstruct.create 1_048_576 in
       let last_emit = ref 0L in
       let rec loop received ctx =
-        if cancelled () then Error "local model download cancelled"
+        if cancelled () then Error `Cancelled
         else
           match Eio.Flow.single_read body chunk with
           | exception End_of_file ->
@@ -447,6 +447,7 @@ let download_artifact ~sw ~env ~http ~cancelled ?observe_download ~dir entry
   let label = entry.Manifest.file in
   let size = entry.Manifest.size in
   Log.info (fun m -> m "downloading model=%s size=%Ld" id size);
+  let* () = if cancelled () then Error (cancelled_error ()) else Ok () in
   try
     Eio.Path.mkdirs ~exists_ok:true ~perm:0o700 (fs_path env dir);
     download_progress ~observe_download ~model:id ~label ~path ~received:0L
@@ -472,7 +473,7 @@ let download_artifact ~sw ~env ~http ~cancelled ?observe_download ~dir entry
           ~total body
       with
       | Ok _ as result -> result
-      | Error message -> startup_provider_error message
+      | Error `Cancelled -> Error (cancelled_error ())
     in
     let part_path = path ^ ".part" in
     download_progress ~observe_download ~model:id ~label ~path ~received
@@ -502,6 +503,7 @@ let download_artifact ~sw ~env ~http ~cancelled ?observe_download ~dir entry
 
 let ensure_model_path ?http ?observe_download ?(force = false) ~sw ~env
     ~cancelled config id =
+  let* () = if cancelled () then Error (cancelled_error ()) else Ok () in
   match model_dir config.Config.model_dir with
   | Error message -> startup_provider_error message
   | Ok dir -> (

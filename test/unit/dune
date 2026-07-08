@@ -143,6 +143,7 @@
  (libraries
   windtrap
   test_support
+  cohttp-eio
   jsont
   jsont.bytesrw
   spice_llm

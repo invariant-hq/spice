@@ -177,6 +177,24 @@ let artifact_prepare_explicit_paths () =
       equal_error_kind "missing explicit path" Llm.Error.Provider error
   end
 
+let artifact_prepare_cancellation () =
+  with_temp_dir @@ fun dir ->
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let config = Deepseek.Config.make ~model_dir:dir () in
+  let http =
+    Cohttp_eio.Client.make_generic (fun ~sw:_ _ ->
+        failwith "unexpected download request")
+  in
+  match
+    Deepseek.Artifact.prepare ~sw ~env ~http
+      ~cancelled:(fun () -> true)
+      ~config "q2"
+  with
+  | Ok () -> failf "expected cancelled prepare"
+  | Error error ->
+      equal_error_kind "prepare cancellation" Llm.Error.Cancelled error
+
 let unsupported_requests_do_not_resolve_models () =
   let json_options =
     Llm.Request.Options.make
@@ -257,6 +275,7 @@ let () =
       test "model and config contracts" model_and_config_contracts;
       test "artifact status" artifact_status;
       test "artifact prepare explicit paths" artifact_prepare_explicit_paths;
+      test "artifact prepare cancellation" artifact_prepare_cancellation;
       test "unsupported requests do not resolve models"
         unsupported_requests_do_not_resolve_models;
       test "missing models fail before engine load"

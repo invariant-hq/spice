@@ -293,7 +293,7 @@ let write_body_to_file ~cancelled ?observe_download ~model ~artifact ~path
       let chunk = Cstruct.create 1_048_576 in
       let last_emit = ref 0L in
       let rec loop received ctx =
-        if cancelled () then Error "DeepSeek model download cancelled"
+        if cancelled () then Error `Cancelled
         else
           match Eio.Flow.single_read body chunk with
           | exception End_of_file ->
@@ -318,6 +318,7 @@ let write_body_to_file ~cancelled ?observe_download ~model ~artifact ~path
       loop 0L Digestif.SHA256.empty)
 
 let ensure_model_path ?http ?observe_download ~sw ~env ~cancelled config id =
+  let* () = if cancelled () then Error (cancelled_error ()) else Ok () in
   match model_dir config.Config.model_dir with
   | Error message -> startup_provider_error message
   | Ok dir -> (
@@ -363,7 +364,7 @@ let ensure_model_path ?http ?observe_download ~sw ~env ~cancelled config id =
                         ~artifact ~path ~total body
                     with
                     | Ok _ as result -> result
-                    | Error message -> startup_provider_error message
+                    | Error `Cancelled -> Error (cancelled_error ())
                   in
                   let part_path = path ^ ".part" in
                   download_progress ~observe_download ~model:id ~artifact ~path

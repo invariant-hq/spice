@@ -25,6 +25,10 @@ let object_field name = function
   | Jsont.Array _ ->
       None
 
+let equal_error_kind msg kind error =
+  equal string ~msg (Llm.Error.label kind)
+    (Llm.Error.label (Llm.Error.kind error))
+
 let string_field msg name json =
   match object_field name json with
   | Some (Jsont.String (value, _)) -> value
@@ -173,6 +177,24 @@ let artifact_status () =
       check "explicit path absent" (not exists)
   | Local.Artifact.Installed _ | Local.Artifact.Missing _ ->
       failf "expected Explicit_path for unknown id"
+
+let artifact_prepare_cancellation () =
+  with_temp_dir @@ fun dir ->
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let config = Local.Config.make ~model_dir:dir () in
+  let http =
+    Cohttp_eio.Client.make_generic (fun ~sw:_ _ ->
+        failwith "unexpected download request")
+  in
+  match
+    Local.Artifact.prepare ~sw ~env ~http
+      ~cancelled:(fun () -> true)
+      ~config "gpt-oss-20b"
+  with
+  | Ok () -> failf "expected cancelled prepare"
+  | Error error ->
+      equal_error_kind "prepare cancellation" Llm.Error.Cancelled error
 
 (* End-to-end against the fake llama-server *)
 
@@ -494,6 +516,7 @@ let () =
       test "model and config contracts" model_contracts;
       test "fit verdicts" fit_verdicts;
       test "artifact status" artifact_status;
+      test "artifact prepare cancellation" artifact_prepare_cancellation;
       test "managed server round trip" managed_server_round_trip;
       test "co-resident servers within budget" co_resident_servers;
       test "eviction under a tight budget" eviction_under_budget;
