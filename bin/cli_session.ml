@@ -1028,7 +1028,7 @@ let net_file_change ~log (entry : Mutation.Change.Net.entry) =
     mutation_error (blob_contents ~log entry.Mutation.Change.Net.after)
   in
   let label =
-    Spice_diff.Label.of_string
+    Spice_diff.Label.escaped
       (Spice_path.Rel.to_string entry.Mutation.Change.Net.path)
   in
   Ok (Spice_diff.File_change.of_states ~label ~before ~after)

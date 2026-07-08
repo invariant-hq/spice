@@ -30,8 +30,8 @@ OpenAI-Responses backend.
   • tool edit_file running
   ✓ tool edit_file note.txt completed: M note.txt
   changed 1 file (+1 -1)
-  diff: spice session diff edit-run --latest
-  revert: spice session revert edit-run --latest
+  diff: spice session diff --latest 'edit-run'
+  revert: spice session revert --latest 'edit-run'
   edited
   spice: session saved; resume with: spice resume 'edit-run'
   $ wait_fake_server
@@ -52,12 +52,35 @@ Diff is model-independent and structured under --json.
   $ spice session diff --json edit-run --latest | sed -E 's/"sources":\[[^]]*\]/"sources":["$ID"]/'
   {"schema_version":1,"type":"session.diff","session_id":"edit-run","files":1,"additions":1,"deletions":1,"changes":[{"path":"note.txt","operation":"M","contiguous":true,"sources":["$ID"]}],"diff":"--- note.txt\n+++ note.txt\n@@ -1,1 +1,1 @@\n-hello world\n+goodbye world\n"}
 
+Runtime paths that need escaping remain display-safe in diff headers.
+
+  $ cat > newline-path.jsonl <<'JSONL'
+  > {"expect":{"body_contains":["\"name\":\"write_file\""]},"response":{"id":"resp-newline-1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-newline-1","call_id":"call-newline-1","name":"write_file","arguments":"{\"path\":\"bad\\nname.txt\",\"contents\":\"odd\\n\"}"}]}}
+  > {"expect":{"body_contains":["function_call_output","call-newline-1"]},"response":{"id":"resp-newline-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"created newline path"}]}]}}
+  > JSONL
+
+  $ start_fake_openai newline-path.jsonl capture-newline port-newline
+  $ spice run --cwd "$PWD" --permission-mode bypass --id newline-path-run "create the newline path" > newline-run.out 2>&1
+  $ sed -n '/^changed /p;/^diff:/p;/^spice:/p' newline-run.out
+  changed 1 file (+1 -0)
+  diff: spice session diff --latest 'newline-path-run'
+  spice: session saved; resume with: spice resume 'newline-path-run'
+  $ wait_fake_server
+
+  $ spice session diff newline-path-run --latest | grep -E '^(changed|---|[+][+][+]|[+]odd)'
+  changed 1 file (+1 -0)
+  --- /dev/null
+  +++ bad\nname.txt
+  +odd
+  $ spice session diff --json newline-path-run --latest | sed -E 's/"sources":\[[^]]*\]/"sources":["$ID"]/' | grep -o '"diff":"[^"]*"'
+  "diff":"--- /dev/null\n+++ bad\\nname.txt\n@@ -0,0 +1,1 @@\n+odd\n"
+
 Revert previews by default and mutates nothing.
 
   $ spice session revert edit-run --latest
   would revert 1 file:
   M note.txt
-  apply: spice session revert edit-run --latest --apply
+  apply: spice session revert --latest --apply 'edit-run'
   $ cat note.txt
   goodbye world
 
@@ -89,8 +112,8 @@ A stale workspace refuses the revert loudly and changes nothing.
   • tool write_file running
   ✓ tool write_file target.txt completed: A target.txt
   changed 1 file (+1 -0)
-  diff: spice session diff create-run --latest
-  revert: spice session revert create-run --latest
+  diff: spice session diff --latest 'create-run'
+  revert: spice session revert --latest 'create-run'
   created
   spice: session saved; resume with: spice resume 'create-run'
   $ wait_fake_server

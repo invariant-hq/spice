@@ -393,7 +393,7 @@ let target_text target =
   | Spice_edit.Observed.Missing | Spice_edit.Observed.Other -> None
 
 let row_stats ~path ~before ~after =
-  let label = Spice_diff.Label.of_string (Spice_path.Rel.to_string path) in
+  let label = Spice_diff.Label.escaped (Spice_path.Rel.to_string path) in
   match Spice_diff.File_change.of_states ~label ~before ~after with
   | None -> (0, 0)
   | Some change ->
