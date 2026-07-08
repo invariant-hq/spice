@@ -314,6 +314,21 @@
   unix))
 
 (test
+ (name test_llm_ollama)
+ (modules test_llm_ollama)
+ (libraries
+  windtrap
+  test_support
+  jsont
+  jsont.bytesrw
+  spice_llm
+  spice_llm_ollama
+  eio
+  eio.unix
+  eio_main
+  unix))
+
+(test
  (name test_oauth2)
  (modules test_oauth2)
  (libraries windtrap test_support oauth2 jsont uri))
