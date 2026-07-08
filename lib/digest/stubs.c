@@ -19,7 +19,7 @@ CAMLprim value caml_spice_digest_sha256_string(value input)
   while (len > 0) {
     uint32_t chunk =
         len > (mlsize_t)UINT32_MAX ? UINT32_MAX : (uint32_t)len;
-    spice_sha256_update(&ctx, (uint8_t *)data, chunk);
+    spice_sha256_update(&ctx, data, chunk);
     data += chunk;
     len -= chunk;
   }

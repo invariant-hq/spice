@@ -74,13 +74,30 @@ static const uint32_t k[] = {
 #define s0(x)       (ror32(x, 7) ^ ror32(x,18) ^ (x >> 3))
 #define s1(x)       (ror32(x,17) ^ ror32(x,19) ^ (x >> 10))
 
-static void sha256_do_chunk(struct sha256_ctx *ctx, uint32_t buf[])
+static uint32_t load_be32(const uint8_t *p)
+{
+	return ((uint32_t)p[0] << 24) |
+	       ((uint32_t)p[1] << 16) |
+	       ((uint32_t)p[2] << 8) |
+	       (uint32_t)p[3];
+}
+
+static void store_be32(uint8_t *p, uint32_t w)
+{
+	p[0] = (uint8_t)(w >> 24);
+	p[1] = (uint8_t)(w >> 16);
+	p[2] = (uint8_t)(w >> 8);
+	p[3] = (uint8_t)w;
+}
+
+static void sha256_do_chunk(struct sha256_ctx *ctx, const uint8_t block[64])
 {
 	uint32_t a, b, c, d, e, f, g, h, t1, t2;
 	int i;
 	uint32_t w[64];
 
-	cpu_to_be32_array(w, buf, 16);
+	for (i = 0; i < 16; i++)
+		w[i] = load_be32(block + (i * 4));
 	for (i = 16; i < 64; i++)
 		w[i] = s1(w[i - 2]) + w[i - 7] + s0(w[i - 15]) + w[i - 16];
 
@@ -110,12 +127,14 @@ static void sha256_do_chunk(struct sha256_ctx *ctx, uint32_t buf[])
 	ctx->h[4] += e; ctx->h[5] += f; ctx->h[6] += g; ctx->h[7] += h;
 }
 
-void spice_sha224_update(struct sha224_ctx *ctx, uint8_t *data, uint32_t len)
+void spice_sha224_update(struct sha224_ctx *ctx, const uint8_t *data,
+                         uint32_t len)
 {
 	spice_sha256_update(ctx, data, len);
 }
 
-void spice_sha256_update(struct sha256_ctx *ctx, uint8_t *data, uint32_t len)
+void spice_sha256_update(struct sha256_ctx *ctx, const uint8_t *data,
+                         uint32_t len)
 {
 	uint32_t index, to_fill;
 
@@ -128,7 +147,7 @@ void spice_sha256_update(struct sha256_ctx *ctx, uint8_t *data, uint32_t len)
 	/* process partial buffer if there's enough data to make a block */
 	if (index && len >= to_fill) {
 		memcpy(ctx->buf + index, data, to_fill);
-		sha256_do_chunk(ctx, (uint32_t *) ctx->buf);
+		sha256_do_chunk(ctx, ctx->buf);
 		len -= to_fill;
 		data += to_fill;
 		index = 0;
@@ -136,7 +155,7 @@ void spice_sha256_update(struct sha256_ctx *ctx, uint8_t *data, uint32_t len)
 
 	/* process as much 64-block as possible */
 	for (; len >= 64; len -= 64, data += 64)
-		sha256_do_chunk(ctx, (uint32_t *) data);
+		sha256_do_chunk(ctx, data);
 
 	/* append data into buf */
 	if (len)
@@ -156,7 +175,6 @@ void spice_sha256_finalize(struct sha256_ctx *ctx, uint8_t *out)
 	static uint8_t padding[64] = { 0x80, };
 	uint64_t bits;
 	uint32_t i, index, padlen;
-	uint32_t *p = (uint32_t *) out;
 
 	/* cpu -> big endian */
 	bits = cpu_to_be64(ctx->sz << 3);
@@ -167,9 +185,9 @@ void spice_sha256_finalize(struct sha256_ctx *ctx, uint8_t *out)
 	spice_sha256_update(ctx, padding, padlen);
 
 	/* append length */
-	spice_sha256_update(ctx, (uint8_t *) &bits, sizeof(bits));
+	spice_sha256_update(ctx, (const uint8_t *) &bits, sizeof(bits));
 
 	/* store to digest */
 	for (i = 0; i < 8; i++)
-		p[i] = cpu_to_be32(ctx->h[i]);
+		store_be32(out + (i * 4), ctx->h[i]);
 }
