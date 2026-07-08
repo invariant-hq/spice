@@ -66,7 +66,6 @@ type fate =
   | Open_model
       (** Open the model-and-effort picker (05-overlays-pickers.md). *)
   | Open_sessions  (** Open the session quick-switch. *)
-  | Open_agents  (** Open the agent-thread picker. *)
   | Open_settings of settings_tab  (** Open the settings screen on a tab. *)
   | Open_review  (** Open the review screen over the worktree diff (11). *)
   | Open_login  (** Open the provider login flow (09-auth.md). *)

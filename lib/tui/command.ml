@@ -13,7 +13,6 @@ type fate =
   | Rename_session
   | Open_model
   | Open_sessions
-  | Open_agents
   | Open_settings of settings_tab
   | Open_review
   | Open_login
@@ -57,8 +56,6 @@ let all =
       ~availability:Idle_only ~echoes:false ~fate:Compact_session;
     entry "/model" "Model" "Select model and effort" ~availability:Anytime
       ~echoes:false ~fate:Open_model;
-    entry "/agents" "Agents" "Switch agent" ~availability:Idle_only
-      ~echoes:false ~fate:Open_agents;
     entry "/fast" "Fast" "Toggle fast mode for new turns" ~availability:Anytime
       ~echoes:false ~fate:Toggle_fast;
     entry "/thinking" "Thinking" "Toggle thinking summaries"
@@ -109,15 +106,15 @@ let equal a b = String.equal a.slash b.slash
 (* Each build-out wave flips its fates as the shell gains their dispatch, so
    the palette never advertises a command that would do nothing — and hides
    nothing that works: the session quick-switch panel, the model panel, the
-   settings screen, the review screen, provider login/logout, the agents
-   switcher, quit, the /thinking reasoning toggle, and the /plan//build mode
-   switches are wired today. The match is EXHAUSTIVE by design (no [_] wildcard):
+   settings screen, the review screen, provider login/logout, quit, the
+   /thinking reasoning toggle, and the /plan//build mode switches are wired
+   today. The match is EXHAUSTIVE by design (no [_] wildcard):
    a wildcard once let a wired command ship hidden, so every fate states its
    visibility and the compiler forces the next surface to decide. *)
 let implemented t =
   match t.fate with
   | Open_sessions | Open_model | Open_settings _ | Open_review | Open_login
-  | Open_logout | Open_agents | Quit | Toggle_thinking | Switch_mode _ ->
+  | Open_logout | Quit | Toggle_thinking | Switch_mode _ ->
       true
   | Clear_session | Fork_session | Compact_session | Rename_session
   | Toggle_fast | Toggle_verbose ->

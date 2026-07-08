@@ -893,16 +893,6 @@ let dispatch_command ?(argument = None) command t =
           let review, effects = Spice_tui_review.create ?base_spec:argument () in
           ( { t with surface = Screen (Review review) },
             List.map (fun e -> Review_command e) effects )
-      | Command.Open_agents ->
-          (* [/agents] engages the below-footer switcher's focused browse — the
-             same step-in [↓] performs, so there is no separate surface
-             (doc/plans/tui-next-threads.md §2.7). It works only in chat, where
-             the strip lives; with no threads yet there is nothing to browse. *)
-          (match t.phase with
-          | Chat _ when t.thread_runs <> [] ->
-              ({ t with strip_focus = Some 0 }, [])
-          | Chat _ | Prelude ->
-              ({ t with flash = Some "no agent threads yet" }, []))
       | _ ->
           ( {
               t with
@@ -1229,9 +1219,8 @@ let list_key key t =
 (* ↵ while a list is open activates the selection and never sends the draft
    (03-ia-screens-overlays.md §Completions): a no-argument command runs, an
    arg-taking one seeds the draft with [/command ] and closes; a mention
-   inserts and closes. [None] means no palette row matched — the caller closes
-   the list and lets the submit fall through, so a known-but-unwired command
-   still gets its honest flash. *)
+   inserts and closes. [None] means no palette row matched — the caller
+   swallows the submit, keeping the list up. *)
 let activate_completion t =
   match t.completion with
   | No_completion -> None
