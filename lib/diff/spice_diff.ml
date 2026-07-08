@@ -600,7 +600,11 @@ let add_display_string buffer text =
       | None ->
           let char = text.[i] in
           let code = Char.code char in
-          if (code < 0x20 && not (Char.equal char '\t')) || code = 0x7F then
+          if
+            (code < 0x20 && not (Char.equal char '\t'))
+            || code = 0x7F
+            || (code >= 0x80 && code <= 0x9F)
+          then
             add_escaped_byte buffer code
           else Buffer.add_char buffer char;
           loop (i + 1)
