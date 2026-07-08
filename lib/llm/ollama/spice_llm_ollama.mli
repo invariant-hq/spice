@@ -16,8 +16,8 @@
     by default; override it for a daemon on another machine via the provider
     base-URL config). Authentication is optional: a bare daemon needs none, a
     key-protected one takes a {!Credential.t} sent as a bearer authorization
-    header. A request for a model the daemon does not have fails at request
-    time with the daemon's own error. *)
+    header. A request for a model the daemon does not have fails at request time
+    with the daemon's own error. *)
 
 val provider : Spice_llm.Provider.t
 (** [provider] is the [ollama] provider namespace. *)
@@ -39,10 +39,13 @@ module Config : sig
   val make : ?base_url:string -> unit -> t
   (** [make ()] is a checked connection configuration.
 
-      Raises [Invalid_argument] if [base_url] is empty. *)
+      Raises [Invalid_argument] if [base_url] is empty or contains a newline. *)
 
   val default : t
   (** [default] is [make ()]. *)
+
+  val base_url : t -> string
+  (** [base_url t] is [t]'s normalized daemon root URL. *)
 end
 
 module Credential : sig
@@ -55,12 +58,12 @@ module Credential : sig
   val api_key : string -> t
   (** [api_key key] is API-key material.
 
-      Raises [Invalid_argument] if [key] is empty. *)
+      Raises [Invalid_argument] if [key] is empty or contains a newline. *)
 
   val bearer : string -> t
   (** [bearer token] is bearer-token material.
 
-      Raises [Invalid_argument] if [token] is empty. *)
+      Raises [Invalid_argument] if [token] is empty or contains a newline. *)
 end
 
 val client :

@@ -16,6 +16,9 @@ let api = Llm.Model.Api.make "chat-completions"
 let model id = Llm.Model.make ~provider ~api ~id
 let invalid fn message = invalid_arg ("Spice_llm_ollama." ^ fn ^ ": " ^ message)
 
+let contains_newline value =
+  String.exists (function '\n' | '\r' -> true | _ -> false) value
+
 module Config = struct
   type t = { base_url : string }
 
@@ -24,6 +27,11 @@ module Config = struct
   let make ?(base_url = default_base_url) () =
     if String.is_empty base_url then
       invalid "Config.make" "base_url must not be empty";
+    if contains_newline base_url then
+      invalid "Config.make" "base_url must not contain newline";
+    let base_url = String.drop_last_while (Char.equal '/') base_url in
+    if String.is_empty base_url then
+      invalid "Config.make" "base_url must not be only slashes";
     { base_url }
 
   let default = make ()
@@ -34,7 +42,8 @@ module Credential = struct
   type t = Api_key of string | Bearer of string
 
   let check fn value =
-    if String.is_empty value then invalid fn "value must not be empty"
+    if String.is_empty value then invalid fn "value must not be empty";
+    if contains_newline value then invalid fn "value must not contain newline"
 
   let api_key key =
     check "Credential.api_key" key;

@@ -304,15 +304,28 @@ let model_config_and_credentials () =
   equal string ~msg:"model id" "qwen2.5-coder:7b" (Llm.Model.id model);
   expect_invalid_arg "model id cannot be empty" (fun () ->
       ignore (Ollama.model ""));
+  let config =
+    Ollama.Config.make ~base_url:"http://ollama.example.test///" ()
+  in
+  equal string ~msg:"base_url trimmed" "http://ollama.example.test"
+    (Ollama.Config.base_url config);
   ignore (Ollama.Config.make () : Ollama.Config.t);
   expect_invalid_arg "base_url cannot be empty" (fun () ->
       ignore (Ollama.Config.make ~base_url:"" ()));
+  expect_invalid_arg "base_url cannot be only slashes" (fun () ->
+      ignore (Ollama.Config.make ~base_url:"///" ()));
+  expect_invalid_arg "base_url cannot contain newline" (fun () ->
+      ignore (Ollama.Config.make ~base_url:"http://x\nbad" ()));
   ignore (Ollama.Credential.api_key "ollama-key" : Ollama.Credential.t);
   ignore (Ollama.Credential.bearer "session-token" : Ollama.Credential.t);
   expect_invalid_arg "api key cannot be empty" (fun () ->
       ignore (Ollama.Credential.api_key ""));
+  expect_invalid_arg "api key cannot contain newline" (fun () ->
+      ignore (Ollama.Credential.api_key "key\nbad"));
   expect_invalid_arg "bearer cannot be empty" (fun () ->
-      ignore (Ollama.Credential.bearer ""))
+      ignore (Ollama.Credential.bearer ""));
+  expect_invalid_arg "bearer cannot contain newline" (fun () ->
+      ignore (Ollama.Credential.bearer "token\rbad"))
 
 let maximal_request_encoding () =
   let call =
