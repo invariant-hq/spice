@@ -65,17 +65,24 @@
     (run ./test_sessions_screen.exe))
    (diff? test_sessions_screen.ml test_sessions_screen.ml.corrected))))
 
-; Launch resume ([spice resume <id>]) runs no turn — the replay is pure — so it
-; needs only the real binary, seeding a session document to resume into.
+; Launch resume ([spice resume <id>]) seeds session documents and replays them
+; without a turn, but the resume-then-submit test drives a real turn, so the
+; suite needs the fake provider server alongside the real binary.
 (rule
  (alias runtest)
- (deps %{bin:spice} test_resume.exe)
+ (deps
+  %{bin:spice}
+  ../blackbox/bin/spice_fake_provider_server.exe
+  test_resume.exe)
  (action
   (progn
    (setenv
     SPICE_BIN
     %{bin:spice}
-    (run ./test_resume.exe))
+    (setenv
+     SPICE_FAKE_PROVIDER_BIN
+     %{dep:../blackbox/bin/spice_fake_provider_server.exe}
+     (run ./test_resume.exe)))
    (diff? test_resume.ml test_resume.ml.corrected))))
 
 ; The settings screen runs no turns: the config/status/skills tabs read host
