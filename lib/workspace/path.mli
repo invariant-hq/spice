@@ -60,7 +60,9 @@ val add_component : t -> string -> (t, Spice_path.Error.t) result
 
     [component] must be a valid single path component. It must not contain a
     slash or backslash separator, be [.] or [..], be empty, contain NUL, or use
-    absolute-path syntax. *)
+    absolute-path syntax. Errors with
+    [Spice_path.Error.Malformed_component component] if [component] is
+    malformed. *)
 
 val append : t -> Spice_path.Rel.t -> t
 (** [append path suffix] appends [suffix] below [path], preserving [path]'s
