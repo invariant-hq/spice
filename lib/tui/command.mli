@@ -62,7 +62,8 @@ type fate =
           transcript. *)
   | Rename_session
       (** Rename the active session. With an argument the title is set directly;
-          bare, the shell borrows the composer for the title input. *)
+          bare, the shell seeds the draft with [/rename ] — the palette's
+          argument-insert idiom — so the title is typed inline. *)
   | Open_model
       (** Open the model-and-effort picker (05-overlays-pickers.md). *)
   | Open_sessions  (** Open the session quick-switch. *)

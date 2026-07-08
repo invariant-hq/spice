@@ -1021,6 +1021,44 @@ let dispatch_command ?(argument = None) command t =
               (t, commands)
           | Some _ | None ->
               ({ t with flash = Some "fork: no active session" }, []))
+      | Command.Rename_session -> (
+          (* Rename the attached session. With the trailing title the effect
+             fires directly and the record lands optimistically — the runtime's
+             write is fire-and-forget, exactly as the sessions screen's inline
+             rename. Bare, the shell seeds the draft with [/rename ] — the same
+             argument-insert the palette's ↵ performs — so the title is typed
+             inline; there is no separate borrowed prompt. The [attached] gate
+             mirrors /fork: a pre-minted seed has no document to rename. *)
+          match t.session_id with
+          | Some id when t.attached -> (
+              match argument with
+              | Some title ->
+                  let notices =
+                    [
+                      Transcript.Notice
+                        (Notice.Echo
+                           {
+                             command = Command.slash command ^ " " ^ title;
+                             result = None;
+                           });
+                      Transcript.Notice
+                        (Notice.Event ("renamed to \"" ^ title ^ "\""));
+                    ]
+                  in
+                  let t =
+                    match t.phase with
+                    | Chat chat ->
+                        let transcript =
+                          List.fold_left Transcript.append chat.transcript
+                            notices
+                        in
+                        { t with phase = Chat { chat with transcript } }
+                    | Prelude -> t
+                  in
+                  (t, [ Rename_session { id; title } ])
+              | None -> (set_draft (Command.slash command ^ " ") t, []))
+          | Some _ | None ->
+              ({ t with flash = Some "no session to rename" }, []))
       | Command.Toggle_verbose -> (
           (* Flip the ctrl+o expand lens — the same [chat.expanded] the key
              flips, so the command and the key cannot drift — and record it:

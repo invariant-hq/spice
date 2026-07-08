@@ -193,6 +193,69 @@ let%expect_test "fork on the home stage flashes the no-session guard" =
     (Screen.has "fork: no active session" (Term.screen t));
   [%expect {| guard flashed: true |}]
 
+(* /rename: bare (pasted, so the palette never intercepts) it seeds the draft
+   with [/rename ] — the palette's argument-insert idiom — so typing just the
+   title and submitting fires the rename; the echo carrying the full
+   [/rename <title>] line proves the seed happened. The write persists: the
+   sessions browse screen (which replaces the chat view, so the title string
+   can only come from a row) shows the new title. *)
+let%expect_test "rename seeds bare, renames with a title, and persists" =
+  Project.with_temp "rename-command" @@ fun project ->
+  seed_prompt_session project "ses_rename" ~title:"streaming parser fix"
+    ~prompt:"trace the streaming parser bug";
+  Term.run project ~env:reduced_motion ~rows:24 ~cols:80
+    ~command:[ "resume"; "ses_rename" ]
+  @@ fun t ->
+  Term.wait t (Screen.has "trace the streaming parser bug");
+  (* Uppercase, so the canonical lowercase seed is a VISIBLE change to wait on
+     before typing — the controlled composer widget syncs the seeded value a
+     frame later, and typing into the stale widget would clobber the seed. *)
+  Term.send t (Keys.bracketed_paste "/RENAME");
+  Term.wait t (Screen.has "❯ /RENAME");
+  Term.send t Keys.enter;
+  Term.wait t (Screen.has "❯ /rename");
+  Term.send t "the tokenizer rewrite";
+  Term.send t Keys.enter;
+  Term.wait t (Screen.has {|renamed to "the tokenizer rewrite"|});
+  print_fact "echo proves the seeded prefix"
+    (Screen.has "❯ /rename the tokenizer rewrite" (Term.screen t));
+  Term.send t "/sessions";
+  Term.wait t (Screen.has "Show recent sessions");
+  Term.send t Keys.enter;
+  Term.wait t (fun s ->
+      Screen.has "▔▔▔▔" s && Screen.lacks "loading sessions" s);
+  Term.send t Keys.tab;
+  Term.wait t (Screen.has "f fork");
+  let s = Term.screen t in
+  print_fact "chat view replaced by the browse screen"
+    (Screen.lacks "renamed to" s);
+  print_fact "new title persisted to the store"
+    (Screen.has "the tokenizer rewrite" s);
+  [%expect
+    {|
+    echo proves the seeded prefix: true
+    chat view replaced by the browse screen: true
+    new title persisted to the store: true |}]
+
+(* Typed on the home stage, the palette's ↵ inserts [/rename ]; submitting a
+   title with nothing attached flashes the guard. *)
+let%expect_test "rename on the home stage flashes the no-session guard" =
+  Project.with_temp "rename-no-session" @@ fun project ->
+  Term.run project ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
+  Term.wait t (Screen.has "dune:");
+  Term.send t "/rename";
+  Term.wait t (fun s -> Screen.has "/rename" s && Screen.lacks "/fork" s);
+  Term.send t Keys.enter;
+  (* The insert closes the palette; wait for its row to vanish so the seeded
+     widget value has synced before the title keystrokes land. *)
+  Term.wait t (Screen.lacks "Rename the active session");
+  Term.send t "nope";
+  Term.send t Keys.enter;
+  Term.wait t (Screen.has "no session to rename");
+  print_fact "guard flashed"
+    (Screen.has "no session to rename" (Term.screen t));
+  [%expect {| guard flashed: true |}]
+
 (* [--draft] seeds the composer without starting anything: the process stays on
    the home stage with the text ready to edit (App.init [Draft]). *)
 let%expect_test "spice --draft seeds the composer on the home stage" =
