@@ -152,7 +152,9 @@ module Update = struct
         let found =
           if List.is_empty chunk.old_lines then
             if chunk.end_of_file then
-              if line_index = Array.length lines then Some line_index else None
+              if not has_context then Some (Array.length lines)
+              else if line_index = Array.length lines then Some line_index
+              else None
             else if not has_context then Some (Array.length lines)
             else Some line_index
           else if chunk.end_of_file then

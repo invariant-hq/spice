@@ -133,8 +133,7 @@ module Update : sig
       [true], the occurrence must be the file suffix.
 
       Empty [old_lines] insert [new_lines]. Without a context, insertion is at
-      EOF unless [end_of_file] requires the current search position to already
-      be EOF. With a context, insertion is immediately after the matched context
+      EOF. With a context, insertion is immediately after the matched context
       line; [end_of_file] also requires that context line to be the final line.
 
       Matching splits [contents] on [\n] and compares lines exactly. Carriage

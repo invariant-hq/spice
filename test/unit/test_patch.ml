@@ -404,6 +404,20 @@ let applies_eof_constrained_chunks () =
       mismatch =
         Patch.Update.Missing_lines { old_lines = []; end_of_file = true };
     };
+  let insert_at_eof =
+    parsed_update
+      (patch
+         [
+           "*** Begin Patch";
+           "*** Update File: file.txt";
+           "@@";
+           "+tail";
+           "*** End of File";
+           "*** End Patch";
+         ])
+  in
+  equal string ~msg:"contextless EOF insertion appends to a non-empty file"
+    "head\ntail\n" (apply "head\n" insert_at_eof);
   let marker_whitespace =
     parsed_update
       (patch
