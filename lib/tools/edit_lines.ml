@@ -563,8 +563,22 @@ let splice lines { index; removed; replacement; range = _ } =
   loop 0 lines
 
 let apply_edits lines resolved =
+  let rec reverse_equal_index_group index acc group = function
+    | edit :: rest when edit.index = index ->
+        reverse_equal_index_group index acc (edit :: group) rest
+    | rest -> (List.rev_append group acc, rest)
+  in
+  let rec reverse_equal_index_groups acc = function
+    | [] -> List.rev acc
+    | edit :: rest ->
+        let group, rest =
+          reverse_equal_index_group edit.index acc [ edit ] rest
+        in
+        reverse_equal_index_groups group rest
+  in
   let bottom_up =
     List.stable_sort (fun a b -> Int.compare b.index a.index) resolved
+    |> reverse_equal_index_groups []
   in
   List.fold_left splice lines bottom_up
 

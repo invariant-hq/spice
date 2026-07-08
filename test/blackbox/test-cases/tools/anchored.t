@@ -55,15 +55,16 @@ Turn the flag on.
 
 Flag on: reads render word-pair anchors, an overlapping batch is rejected,
 one stale anchor fails the whole batch with expected-versus-provided text
-and mutates nothing, and a valid bottom-up batch (replace plus insert)
-applies in one call.
+and mutates nothing, same-gap insertions preserve input order, and a valid
+bottom-up batch (replace plus insert) applies in one call.
 
   $ cat > run.jsonl <<'JSONL'
   > {"expect":{"body_contains":["\"name\":\"edit_lines\"","\"name\":\"read_file\""]},"response":{"id":"resp-run-1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-run-1","call_id":"call-run-1","name":"read_file","arguments":"{\"path\":\"note.txt\"}"}]}}
   > {"expect":{"body_contains":["function_call_output","call-run-1","anchors=enabled"]},"response":{"id":"resp-run-2","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-run-2","call_id":"call-run-2","name":"edit_lines","arguments":"{\"path\":\"note.txt\",\"edits\":[{\"op\":\"replace\",\"anchor\":\"PeonyWalnut§alpha\",\"end_anchor\":\"GazellePlum§gamma\",\"text\":\"ALL\"},{\"op\":\"replace\",\"anchor\":\"ElkSlate§beta\",\"end_anchor\":\"ElkSlate§beta\",\"text\":\"B\"}]}"}]}}
   > {"expect":{"body_contains":["overlapping edits"]},"response":{"id":"resp-run-3","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-run-3","call_id":"call-run-3","name":"edit_lines","arguments":"{\"path\":\"note.txt\",\"edits\":[{\"op\":\"replace\",\"anchor\":\"PeonyWalnut§alpha\",\"end_anchor\":\"PeonyWalnut§alpha\",\"text\":\"ALPHA\"},{\"op\":\"insert_after\",\"anchor\":\"ElkSlate§WRONG\",\"text\":\"x\"}]}"}]}}
-  > {"expect":{"body_contains":["Provided"]},"response":{"id":"resp-run-4","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-run-4","call_id":"call-run-4","name":"edit_lines","arguments":"{\"path\":\"note.txt\",\"edits\":[{\"op\":\"replace\",\"anchor\":\"ElkSlate§beta\",\"end_anchor\":\"ElkSlate§beta\",\"text\":\"BETA\"},{\"op\":\"insert_after\",\"anchor\":\"GazellePlum§gamma\",\"text\":\"gamma2\"}]}"}]}}
-  > {"expect":{"body_contains":["function_call_output","call-run-4"]},"response":{"id":"resp-run-5","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"anchored edits applied"}]}]}}
+  > {"expect":{"body_contains":["Provided"]},"response":{"id":"resp-run-4","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-run-4","call_id":"call-run-4","name":"edit_lines","arguments":"{\"path\":\"note.txt\",\"edits\":[{\"op\":\"insert_after\",\"anchor\":\"PeonyWalnut§alpha\",\"text\":\"after-alpha\"},{\"op\":\"insert_before\",\"anchor\":\"ElkSlate§beta\",\"text\":\"before-beta\"}]}"}]}}
+  > {"expect":{"body_contains":["function_call_output","call-run-4"]},"response":{"id":"resp-run-5","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-run-5","call_id":"call-run-5","name":"edit_lines","arguments":"{\"path\":\"note.txt\",\"edits\":[{\"op\":\"replace\",\"anchor\":\"ElkSlate§beta\",\"end_anchor\":\"ElkSlate§beta\",\"text\":\"BETA\"},{\"op\":\"insert_after\",\"anchor\":\"GazellePlum§gamma\",\"text\":\"gamma2\"}]}"}]}}
+  > {"expect":{"body_contains":["function_call_output","call-run-5"]},"response":{"id":"resp-run-6","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"anchored edits applied"}]}]}}
   > JSONL
 
   $ start_fake_openai run.jsonl capture-run port-run
@@ -81,9 +82,11 @@ applies in one call.
   ✗ tool edit_lines failed: anchor: anchor "ElkSlate" exists, but the line text you provided does not match the file's content. Expected: "beta", Provided: "WRONG". Re-read the file to get current anchors and retry
   • tool edit_lines running
   ✓ tool edit_lines note.txt completed: M note.txt
-  changed 1 file (+2 -1)
-  diff: spice session diff anchored-run --latest
-  revert: spice session revert anchored-run --latest
+  • tool edit_lines running
+  ✓ tool edit_lines note.txt completed: M note.txt
+  changed 1 file (+4 -1)
+  diff: spice session diff --latest 'anchored-run'
+  revert: spice session revert --latest 'anchored-run'
   anchored edits applied
   spice: session saved; resume with: spice resume 'anchored-run'
   $ wait_fake_server
@@ -95,12 +98,15 @@ The anchored read rendered deterministic word-pair anchors.
   $ grep -oE '2 [A-Za-z]+\\tbeta' capture-run/request-2.json
   2 ElkSlate\tbeta
 
-Only the valid batch mutated the file: the overlap rejection and the
-all-or-nothing stale failure left it untouched, so the valid batch's
-anchors still resolved.
+Only the valid batches mutated the file: the overlap rejection and the
+all-or-nothing stale failure left it untouched, so the valid batches'
+anchors still resolved. The two edits in the alpha/beta gap kept their input
+order.
 
   $ cat note.txt
   alpha
+  after-alpha
+  before-beta
   BETA
   gamma
   gamma2
@@ -110,13 +116,15 @@ The change rows have the same shape as edit_file's: one modify row, netted
 diff from the ledger, no model involved.
 
   $ spice session diff anchored-run --latest
-  changed 1 file (+2 -1)
+  changed 1 file (+4 -1)
   M note.txt
   --- note.txt
   +++ note.txt
-  @@ -1,4 +1,5 @@
+  @@ -1,4 +1,7 @@
    alpha
   -beta
+  +after-alpha
+  +before-beta
   +BETA
    gamma
   +gamma2
@@ -148,8 +156,8 @@ edit_file inserts a line, a re-read keeps the anchors of unchanged lines
   • tool read_file running
   ✓ tool read_file note2.txt completed: 5 lines
   changed 1 file (+1 -0)
-  diff: spice session diff anchored-stable --latest
-  revert: spice session revert anchored-stable --latest
+  diff: spice session diff --latest 'anchored-stable'
+  revert: spice session revert --latest 'anchored-stable'
   anchors reconciled
   spice: session saved; resume with: spice resume 'anchored-stable'
   $ wait_fake_server
