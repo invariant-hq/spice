@@ -332,7 +332,10 @@ let changed_blocks entries =
 
 let expand_block entries ~context (start, last) =
   let len = Array.length entries in
-  (max 0 (start - context), min (len - 1) (last + context))
+  let first = if context >= start then 0 else start - context in
+  let after_last = len - 1 - last in
+  let last = if context >= after_last then len - 1 else last + context in
+  (first, last)
 
 let merge_ranges ranges =
   let rec loop merged = function

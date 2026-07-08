@@ -300,6 +300,22 @@ let hunks_merge_touching_context () =
   equal int ~msg:"merged old_count" 7 (Diff.Hunk.old_count hunk);
   equal int ~msg:"merged new_count" 8 (Diff.Hunk.new_count hunk)
 
+let hunks_saturate_huge_context () =
+  let before = "a\nb\nc\n" in
+  let after = "a\nB\nc\n" in
+  let hunks =
+    expect_some "expected hunks" (Diff.hunks ~context:max_int ~before ~after ())
+  in
+  equal int ~msg:"huge context produces one hunk" 1 (List.length hunks);
+  let hunk = List.hd hunks in
+  equal int ~msg:"huge context old_start" 1 (Diff.Hunk.old_start hunk);
+  equal int ~msg:"huge context old_count" 3 (Diff.Hunk.old_count hunk);
+  equal int ~msg:"huge context new_start" 1 (Diff.Hunk.new_start hunk);
+  equal int ~msg:"huge context new_count" 3 (Diff.Hunk.new_count hunk);
+  equal (list string) ~msg:"huge context keeps full file"
+    [ " a"; "-b"; "+B"; " c" ]
+    (hunk_line_texts hunk)
+
 let hunks_mark_pure_insertions () =
   let hunks =
     expect_some "expected hunks"
@@ -412,6 +428,7 @@ let () =
       test "raw mode preserves file text" raw_mode_preserves_file_text;
       test "hunks report positions and kinds" hunks_report_positions_and_kinds;
       test "hunks merge touching context" hunks_merge_touching_context;
+      test "hunks saturate huge context" hunks_saturate_huge_context;
       test "hunks mark pure insertions" hunks_mark_pure_insertions;
       test "hunks of equal texts are empty" hunks_of_equal_texts_are_empty;
       test "hunks track missing final newlines"
