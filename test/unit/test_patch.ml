@@ -132,6 +132,43 @@ let parses_update_chunks () =
       equal bool ~msg:"last EOF" true last.Patch.Update.end_of_file
   | chunks -> failf "expected two chunks, got %d" (List.length chunks)
 
+let parses_marker_looking_update_lines_as_content () =
+  let update =
+    parsed_update
+      (patch
+         [
+           "*** Begin Patch";
+           "*** Update File: file.txt";
+           "@@";
+           " *** End Patch";
+           " *** End of File";
+           " *** Update File: other.txt";
+           "-old";
+           "+new";
+           "*** End Patch";
+         ])
+  in
+  match Patch.Update.chunks update with
+  | [ chunk ] ->
+      equal (list string) ~msg:"old lines"
+        [
+          "*** End Patch";
+          "*** End of File";
+          "*** Update File: other.txt";
+          "old";
+        ]
+        chunk.Patch.Update.old_lines;
+      equal (list string) ~msg:"new lines"
+        [
+          "*** End Patch";
+          "*** End of File";
+          "*** Update File: other.txt";
+          "new";
+        ]
+        chunk.Patch.Update.new_lines;
+      equal bool ~msg:"not EOF constrained" false chunk.Patch.Update.end_of_file
+  | chunks -> failf "expected one chunk, got %d" (List.length chunks)
+
 let reports_parse_errors_precisely () =
   let cases =
     [
@@ -376,7 +413,7 @@ let applies_eof_constrained_chunks () =
            "@@";
            "-old";
            "+new";
-           "  *** End of File  ";
+           "*** End of File  ";
            "*** End Patch";
          ])
   in
@@ -470,6 +507,8 @@ let () =
     [
       test "parses operations" parses_operations;
       test "parses update chunks" parses_update_chunks;
+      test "parses marker-looking update lines as content"
+        parses_marker_looking_update_lines_as_content;
       test "reports parse errors precisely" reports_parse_errors_precisely;
       test "reports invalid paths" reports_invalid_paths;
       test "applies replacements insertions and deletions"

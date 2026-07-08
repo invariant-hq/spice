@@ -240,6 +240,11 @@ let is_hunk_header line =
 
 let is_eof_marker line = String.equal (String.trim line) eof_marker
 
+let is_update_line line =
+  (not (String.is_empty line)) && match line.[0] with
+  | ' ' | '+' | '-' -> true
+  | _ -> false
+
 let parse_chunk lines line_index allow_missing_context =
   let context_result =
     match lines with
@@ -247,7 +252,9 @@ let parse_chunk lines line_index allow_missing_context =
     | line :: _ when String.equal line empty_context_marker -> Ok (None, 1)
     | line :: _ when String.starts_with ~prefix:context_marker line ->
         Ok (Some (String.drop_first (String.length context_marker) line), 1)
-    | line :: _ when allow_missing_context && not (is_hunk_header line) ->
+    | line :: _
+      when allow_missing_context
+           && (is_update_line line || not (is_hunk_header line)) ->
         Ok (None, 0)
     | line :: _ ->
         let message =
@@ -267,15 +274,6 @@ let parse_chunk lines line_index allow_missing_context =
       in
       let rec loop old_lines new_lines end_of_file parsed = function
         | [] -> Ok (old_lines, new_lines, end_of_file, parsed, [])
-        | line :: rest when is_eof_marker line ->
-            Ok (old_lines, new_lines, true, parsed + 1, rest)
-        | line :: _ as remaining when is_hunk_header line ->
-            Ok (old_lines, new_lines, end_of_file, parsed, remaining)
-        | line :: _ as remaining
-          when parsed > 0
-               && (String.equal line empty_context_marker
-                  || String.starts_with ~prefix:context_marker line) ->
-            Ok (old_lines, new_lines, end_of_file, parsed, remaining)
         | line :: rest -> (
             if String.is_empty line then invalid_update_line line parsed
             else
@@ -291,7 +289,17 @@ let parse_chunk lines line_index allow_missing_context =
                   loop (data :: old_lines) new_lines end_of_file (parsed + 1)
                     rest
               | _ ->
-                  if parsed = 0 then invalid_update_line line parsed
+                  if is_eof_marker line then
+                    Ok (old_lines, new_lines, true, parsed + 1, rest)
+                  else if is_hunk_header line then
+                    Ok (old_lines, new_lines, end_of_file, parsed, line :: rest)
+                  else if
+                    parsed > 0
+                    && (String.equal line empty_context_marker
+                       || String.starts_with ~prefix:context_marker line)
+                  then
+                    Ok (old_lines, new_lines, end_of_file, parsed, line :: rest)
+                  else if parsed = 0 then invalid_update_line line parsed
                   else
                     Ok (old_lines, new_lines, end_of_file, parsed, line :: rest)
             )
