@@ -692,11 +692,7 @@ module Output = struct
     Workspace.Root.make ~key:"session-replay" (Spice_path.Abs.of_string_exn "/")
 
   let path_of_json value =
-    let parsed =
-      if String.equal value "" then Ok Spice_path.Rel.root
-      else Spice_path.Rel.of_string value
-    in
-    match parsed with
+    match Spice_path.Rel.of_string value with
     | Ok rel -> Some (Workspace.Path.make ~root:replay_root rel)
     | Error _ -> None
 

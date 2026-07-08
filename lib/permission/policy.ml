@@ -382,11 +382,7 @@ module Rule = struct
       [ ("allow", Allow); ("review", Review); ("deny", Deny) ]
 
   let decode_scope_relative relative =
-    let parsed =
-      if String.equal relative "" then Ok Spice_path.Rel.root
-      else Spice_path.Rel.of_string relative
-    in
-    match parsed with
+    match Spice_path.Rel.of_string relative with
     | Ok relative -> relative
     | Error error ->
         decode_error

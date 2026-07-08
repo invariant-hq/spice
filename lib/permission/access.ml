@@ -182,11 +182,7 @@ module Map = Stdlib.Map.Make (struct
 end)
 
 let decode_relative_path path =
-  let parsed =
-    if String.equal path "" then Ok Spice_path.Rel.root
-    else Spice_path.Rel.of_string path
-  in
-  match parsed with
+  match Spice_path.Rel.of_string path with
   | Ok path -> path
   | Error error ->
       decode_error

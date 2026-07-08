@@ -854,6 +854,19 @@ let json_rejects_invalid_state () =
   in
   expect_decode_error "workspace relatives cannot escape root" Access.jsont
     bad_workspace_path;
+  let bad_empty_workspace_path =
+    json_object
+      [
+        ("type", Json.string "path");
+        ("op", Json.string "read");
+        ("scope", Json.string "workspace");
+        ("root_key", Json.string "/repo");
+        ("relative", Json.string "");
+        ("display", Json.string "/repo");
+      ]
+  in
+  expect_decode_error "workspace relatives cannot be empty" Access.jsont
+    bad_empty_workspace_path;
   let bad_path_under =
     json_object
       [
@@ -869,6 +882,21 @@ let json_rejects_invalid_state () =
   in
   expect_decode_error "path-under relatives cannot be absolute"
     Policy.Rule.jsont bad_path_under;
+  let bad_empty_path_under =
+    json_object
+      [
+        ("action", Json.string "allow");
+        ( "matcher",
+          json_object
+            [
+              ("type", Json.string "path-under");
+              ("root_key", Json.string "/repo");
+              ("relative", Json.string "");
+            ] );
+      ]
+  in
+  expect_decode_error "path-under relatives cannot be empty"
+    Policy.Rule.jsont bad_empty_path_under;
   let bad_policy_version =
     json_object [ ("version", Json.int 2); ("rules", Json.list []) ]
   in
