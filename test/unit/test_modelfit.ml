@@ -246,6 +246,37 @@ let gguf_head_dim_overrides () =
   equal int ~msg:"head dim is the mean of key and value lengths" 112
     (Fit.Model.head_dim model)
 
+let gguf_rounds_odd_key_value_lengths_up () =
+  let with_lengths =
+    qwen_kvs
+    @ [
+        (fun b -> kv_u32 b "qwen3moe.attention.key_length" 65);
+        (fun b -> kv_u32 b "qwen3moe.attention.value_length" 64);
+      ]
+  in
+  let model =
+    expect_model ~weights_bytes:gib (expect_gguf (gguf with_lengths))
+  in
+  equal int ~msg:"odd key/value mean rounds up" 65 (Fit.Model.head_dim model)
+
+let gguf_rejects_non_divisible_embedding_heads () =
+  let kvs =
+    [
+      (fun b -> kv_string b "general.architecture" "tiny");
+      (fun b -> kv_u32 b "tiny.block_count" 1);
+      (fun b -> kv_u32 b "tiny.context_length" 8192);
+      (fun b -> kv_u32 b "tiny.embedding_length" 129);
+      (fun b -> kv_u32 b "tiny.attention.head_count" 2);
+      (fun b -> kv_u32 b "tiny.attention.head_count_kv" 1);
+    ]
+  in
+  equal (result int gguf_model_error) ~msg:"non-divisible embedding/head_count"
+    (Error
+       (Fit.Gguf.Model_error.Invalid_head_dimensions
+          { architecture = "tiny" }))
+    (Result.map Fit.Model.head_dim
+       (Fit.Gguf.model ~weights_bytes:gib (expect_gguf (gguf kvs))))
+
 let gguf_per_layer_kv_heads () =
   let kvs =
     List.filteri (fun i _ -> i <> 6) qwen_kvs
@@ -336,6 +367,10 @@ let () =
         [
           test "parses fit metadata" gguf_parses_metadata;
           test "key/value lengths override head dim" gguf_head_dim_overrides;
+          test "rounds odd key/value lengths up"
+            gguf_rounds_odd_key_value_lengths_up;
+          test "rejects non-divisible embedding heads"
+            gguf_rejects_non_divisible_embedding_heads;
           test "per-layer kv heads take the maximum" gguf_per_layer_kv_heads;
           test "stops at the tokenizer boundary" gguf_stops_before_tokenizer;
           test "reports truncated and malformed input"

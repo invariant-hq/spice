@@ -521,6 +521,16 @@ module Gguf = struct
       | Some _ -> invalid suffix
       | None -> missing suffix
     in
+    let invalid_head_dimensions () =
+      Error
+        (Model_error.Invalid_head_dimensions { architecture = t.architecture })
+    in
+    let mean_rounded_up a b =
+      if a > max_int - b then invalid_head_dimensions ()
+      else
+        let sum = a + b in
+        Ok ((sum / 2) + (sum mod 2))
+    in
     let open Result.Syntax in
     let* n_layers = positive "block_count" t.n_layers in
     let* max_context = positive "context_length" t.context_length in
@@ -530,26 +540,23 @@ module Gguf = struct
       | None -> positive "attention.head_count" t.head_count
     in
     let* head_dim =
-      (* The estimate multiplies by [2 * head_dim] for K plus V, so when the
-         two lengths differ their mean is exact. *)
+      (* The estimate multiplies by [2 * head_dim] for K plus V. When the mean
+         is fractional, round up so malformed metadata cannot undercount KV. *)
       match (t.key_length, t.value_length) with
-      | Some k, Some v when k > 0 && v > 0 -> Ok ((k + v) / 2)
+      | Some k, Some v when k > 0 && v > 0 -> mean_rounded_up k v
       | Some k, None when k > 0 -> Ok k
       | Some _, _ -> invalid "attention.key_length"
       | None, _ -> (
           match (t.embedding_length, t.head_count) with
-          | Some embd, Some heads when embd > 0 && heads > 0 -> Ok (embd / heads)
-          | Some _, Some _ ->
-              Error
-                (Model_error.Invalid_head_dimensions
-                   { architecture = t.architecture })
+          | Some embd, Some heads
+            when embd > 0 && heads > 0 && embd mod heads = 0 ->
+              Ok (embd / heads)
+          | Some _, Some _ -> invalid_head_dimensions ()
           | None, _ ->
               missing_any [ "attention.key_length"; "embedding_length" ]
           | _, None -> missing "attention.head_count")
     in
-    if head_dim <= 0 then
-      Error
-        (Model_error.Invalid_head_dimensions { architecture = t.architecture })
+    if head_dim <= 0 then invalid_head_dimensions ()
     else
       Ok
         (Model.make ~weights_bytes ~n_layers ~n_kv_heads ~head_dim ~max_context)
