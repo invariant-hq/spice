@@ -168,7 +168,9 @@ let workspace_display ~root_key ~relative =
 
 let scope_display = function
   | Access.Path_scope.Workspace { root_key; relative } ->
-      workspace_display ~root_key ~relative
+      workspace_display
+        ~root_key:(Spice_workspace.Root.Key.to_string root_key)
+        ~relative
   | Access.Path_scope.Outside_workspace path -> Spice_path.Abs.to_string path
   | Access.Path_scope.Unknown path -> path
 

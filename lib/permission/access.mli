@@ -65,8 +65,10 @@ module Path_scope : sig
       without bypassing validation. *)
 
   type t = private
-    | Workspace of { root_key : string; relative : Spice_path.Rel.t }
-        (** A path proven by the caller to be inside a workspace. *)
+    | Workspace of {
+        root_key : Spice_workspace.Root.Key.t;
+        relative : Spice_path.Rel.t;
+      }  (** A path proven by the caller to be inside a workspace. *)
     | Outside_workspace of Spice_path.Abs.t
         (** A path proven by the caller to be outside the workspace. *)
     | Unknown of string  (** A path whose workspace relation is unknown. *)
@@ -77,15 +79,14 @@ module Path_scope : sig
       The scope is derived from the path's workspace root and root-relative
       syntax. Display text belongs to request-item metadata. *)
 
-  val workspace_key : root_key:string -> relative:Spice_path.Rel.t -> t
+  val workspace_key :
+    root_key:Spice_workspace.Root.Key.t -> relative:Spice_path.Rel.t -> t
   (** [workspace_key ~root_key ~relative] is a scope for a path proven inside
       workspace [root_key].
 
       Use this form when the caller owns a stable workspace identity that is
       more precise than the path's filesystem root, for example a host-level
-      root key.
-
-      Raises [Invalid_argument] if [root_key] is empty. *)
+      root key. *)
 
   val outside_workspace : Spice_path.Abs.t -> t
   (** [outside_workspace path] is a scope proven outside a workspace. *)

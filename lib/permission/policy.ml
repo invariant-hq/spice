@@ -31,25 +31,27 @@ let workspace_parts path =
 
 module Path_match = struct
   type t =
-    | Workspace_exact of { root_key : string; relative : Spice_path.Rel.t }
-    | Workspace_under of { root_key : string; relative : Spice_path.Rel.t }
+    | Workspace_exact of {
+        root_key : Spice_workspace.Root.Key.t;
+        relative : Spice_path.Rel.t;
+      }
+    | Workspace_under of {
+        root_key : Spice_workspace.Root.Key.t;
+        relative : Spice_path.Rel.t;
+      }
     | Relative_exact of { relative : Spice_path.Rel.t }
     | Relative_under of { relative : Spice_path.Rel.t }
     | Any_workspace
     | Any_outside_workspace
     | Any_unknown
 
-  let exact_key ~root_key ~relative =
-    reject_empty "Match.Path.exact_key" "root key" root_key;
-    Workspace_exact { root_key; relative }
+  let exact_key ~root_key ~relative = Workspace_exact { root_key; relative }
 
   let exact path =
     let root_key, relative = workspace_parts path in
     exact_key ~root_key ~relative
 
-  let under_key ~root_key ~relative =
-    reject_empty "Match.Path.under_key" "root key" root_key;
-    Workspace_under { root_key; relative }
+  let under_key ~root_key ~relative = Workspace_under { root_key; relative }
 
   let under path =
     let root_key, relative = workspace_parts path in
@@ -65,11 +67,11 @@ module Path_match = struct
     match (pattern, scope) with
     | Workspace_exact { root_key; relative }, Access.Path_scope.Workspace scope
       ->
-        String.equal scope.root_key root_key
+        Spice_workspace.Root.Key.equal scope.root_key root_key
         && Spice_path.Rel.equal scope.relative relative
     | Workspace_under { root_key; relative }, Access.Path_scope.Workspace scope
       ->
-        String.equal scope.root_key root_key
+        Spice_workspace.Root.Key.equal scope.root_key root_key
         && Option.is_some
              (Spice_path.Rel.relativize ~root:relative scope.relative)
     | Relative_exact { relative }, Access.Path_scope.Workspace scope ->
@@ -87,10 +89,14 @@ module Path_match = struct
 
   let stable_text = function
     | Workspace_exact { root_key; relative } ->
-        "workspace-exact:" ^ stable_field root_key ^ ":"
+        "workspace-exact:"
+        ^ stable_field (Spice_workspace.Root.Key.to_string root_key)
+        ^ ":"
         ^ stable_field (Spice_path.Rel.to_string relative)
     | Workspace_under { root_key; relative } ->
-        "workspace-under:" ^ stable_field root_key ^ ":"
+        "workspace-under:"
+        ^ stable_field (Spice_workspace.Root.Key.to_string root_key)
+        ^ ":"
         ^ stable_field (Spice_path.Rel.to_string relative)
     | Relative_exact { relative } ->
         "relative-exact:" ^ stable_field (Spice_path.Rel.to_string relative)
@@ -102,10 +108,12 @@ module Path_match = struct
 
   let pp ppf = function
     | Workspace_exact { root_key; relative } ->
-        Format.fprintf ppf "scope-exact(%S, %S)" root_key
+        Format.fprintf ppf "scope-exact(%S, %S)"
+          (Spice_workspace.Root.Key.to_string root_key)
           (Spice_path.Rel.to_string relative)
     | Workspace_under { root_key; relative } ->
-        Format.fprintf ppf "scope-under(%S, %S)" root_key
+        Format.fprintf ppf "scope-under(%S, %S)"
+          (Spice_workspace.Root.Key.to_string root_key)
           (Spice_path.Rel.to_string relative)
     | Relative_exact { relative } ->
         Format.fprintf ppf "scope-relative-exact(%S)"
@@ -388,6 +396,14 @@ module Rule = struct
         decode_error
           ("invalid scope relative path: " ^ Spice_path.Error.message error)
 
+  let decode_root_key root_key =
+    match Spice_workspace.Root.Key.of_string root_key with
+    | Ok root_key -> root_key
+    | Error error ->
+        decode_error
+          ("invalid workspace root key: "
+          ^ Spice_workspace.Root.Key.message error)
+
   let any_matcher_jsont =
     Jsont.Object.map ~kind:"any permission matcher" Any
     |> Jsont.Object.error_unknown |> Jsont.Object.finish
@@ -430,7 +446,7 @@ module Rule = struct
             | Path_match.Workspace_under { root_key; _ } );
           _;
         } ->
-        root_key
+        Spice_workspace.Root.Key.to_string root_key
     | Any | Kind _ | Exact _ | Path_scope _ | Command _ | Network_host _
     | Custom _ ->
         assert false
@@ -464,6 +480,7 @@ module Rule = struct
   let workspace_path_matcher_jsont ~kind make_scope =
     let make op root_key relative =
       decode_invalid_arg (fun () ->
+          let root_key = decode_root_key root_key in
           let relative = decode_scope_relative relative in
           path ?op (make_scope ~root_key ~relative))
     in
@@ -519,6 +536,7 @@ module Rule = struct
   let scope_workspace_matcher_jsont kind make =
     let decode root_key relative =
       decode_invalid_arg (fun () ->
+          let root_key = decode_root_key root_key in
           let relative = decode_scope_relative relative in
           make ~root_key ~relative)
     in
@@ -526,7 +544,7 @@ module Rule = struct
     |> Jsont.Object.mem "root_key" Jsont.string ~enc:(function
       | Path_match.Workspace_exact { root_key; _ }
       | Path_match.Workspace_under { root_key; _ } ->
-          root_key
+          Spice_workspace.Root.Key.to_string root_key
       | Path_match.Relative_exact _ | Path_match.Relative_under _
       | Path_match.Any_workspace | Path_match.Any_outside_workspace
       | Path_match.Any_unknown ->

@@ -10,7 +10,10 @@ type kind = [ `Read | `Write | `Command | `Network | `Custom ]
 type path_op = [ `Read | `Create | `Modify | `Delete ]
 
 type path_scope =
-  | Workspace of { root_key : string; relative : Spice_path.Rel.t }
+  | Workspace of {
+      root_key : Spice_workspace.Root.Key.t;
+      relative : Spice_path.Rel.t;
+    }
   | Outside_workspace of Spice_path.Abs.t
   | Unknown of string
 
@@ -40,8 +43,7 @@ and command =
   | Shell of { text : string; cwd : path_scope option }
   | Argv of { program : string; args : string list; cwd : path_scope option }
 
-let workspace_scope_of_parts ~fn ~root_key ~relative =
-  reject_empty fn "workspace root key" root_key;
+let workspace_scope_of_parts ~root_key ~relative =
   Workspace { root_key; relative }
 
 let unknown_scope path =
@@ -50,25 +52,29 @@ let unknown_scope path =
 
 let workspace_scope path =
   let root_key, relative = workspace_parts path in
-  workspace_scope_of_parts ~fn:"Path_scope.workspace" ~root_key ~relative
+  workspace_scope_of_parts ~root_key ~relative
 
 let outside_workspace_scope path = Outside_workspace path
 
 module Path_scope = struct
   type t = path_scope =
-    | Workspace of { root_key : string; relative : Spice_path.Rel.t }
+    | Workspace of {
+        root_key : Spice_workspace.Root.Key.t;
+        relative : Spice_path.Rel.t;
+      }
     | Outside_workspace of Spice_path.Abs.t
     | Unknown of string
 
   let workspace = workspace_scope
-  let workspace_key = workspace_scope_of_parts ~fn:"Path_scope.workspace_key"
+  let workspace_key = workspace_scope_of_parts
   let outside_workspace = outside_workspace_scope
   let unknown = unknown_scope
   let equal a b = a = b
 
   let pp ppf = function
     | Workspace { root_key; relative } ->
-        Format.fprintf ppf "workspace(root_key=%S, relative=%S)" root_key
+        Format.fprintf ppf "workspace(root_key=%S, relative=%S)"
+          (Spice_workspace.Root.Key.to_string root_key)
           (Spice_path.Rel.to_string relative)
     | Outside_workspace path ->
         Format.fprintf ppf "outside(%S)" (Spice_path.Abs.to_string path)
@@ -88,7 +94,7 @@ let check_port = function
 let path_scope ~op scope = Path { op; scope }
 
 let workspace_path_of_parts ~op ~root_key ~relative =
-  path_scope ~op (workspace_scope_of_parts ~fn:"path" ~root_key ~relative)
+  path_scope ~op (workspace_scope_of_parts ~root_key ~relative)
 
 let path ~op workspace_path =
   let root_key, relative = workspace_parts workspace_path in
@@ -114,7 +120,9 @@ module Command = struct
 
   let stable_scope = function
     | Workspace { root_key; relative } ->
-        "workspace:" ^ stable_field root_key ^ ":"
+        "workspace:"
+        ^ stable_field (Spice_workspace.Root.Key.to_string root_key)
+        ^ ":"
         ^ stable_field (Spice_path.Rel.to_string relative)
     | Outside_workspace path ->
         "outside:" ^ stable_field (Spice_path.Abs.to_string path)
@@ -194,9 +202,18 @@ let decode_abs_path path =
   | Error error ->
       decode_error ("invalid absolute path: " ^ Spice_path.Error.message error)
 
+let decode_root_key key =
+  match Spice_workspace.Root.Key.of_string key with
+  | Ok key -> key
+  | Error error ->
+      decode_error
+        ("invalid workspace root key: " ^ Spice_workspace.Root.Key.message error)
+
 let stable_scope = function
   | Workspace { root_key; relative } ->
-      "workspace:" ^ stable_field root_key ^ ":"
+      "workspace:"
+      ^ stable_field (Spice_workspace.Root.Key.to_string root_key)
+      ^ ":"
       ^ stable_field (Spice_path.Rel.to_string relative)
   | Outside_workspace path ->
       "outside:" ^ stable_field (Spice_path.Abs.to_string path)
@@ -217,6 +234,7 @@ let path_jsont =
     match (scope, path_value, root_key, relative) with
     | "workspace", None, Some root_key, Some relative ->
         decode_invalid_arg (fun () ->
+            let root_key = decode_root_key root_key in
             let relative = decode_relative_path relative in
             workspace_path_of_parts ~op ~root_key ~relative)
     | "outside", Some path_text, None, None ->
@@ -247,7 +265,8 @@ let path_jsont =
     | _ -> assert false
   in
   let root_key = function
-    | Path { scope = Workspace { root_key; _ }; _ } -> Some root_key
+    | Path { scope = Workspace { root_key; _ }; _ } ->
+        Some (Spice_workspace.Root.Key.to_string root_key)
     | Path { scope = Outside_workspace _ | Unknown _; _ } -> None
     | _ -> assert false
   in
@@ -270,8 +289,9 @@ let path_scope_jsont =
     match (scope, path, root_key, relative) with
     | "workspace", None, Some root_key, Some relative ->
         decode_invalid_arg (fun () ->
+            let root_key = decode_root_key root_key in
             let relative = decode_relative_path relative in
-            workspace_scope_of_parts ~fn:"Path_scope.jsont" ~root_key ~relative)
+            workspace_scope_of_parts ~root_key ~relative)
     | "outside", Some path, None, None ->
         decode_invalid_arg (fun () ->
             outside_workspace_scope (decode_abs_path path))
@@ -296,7 +316,8 @@ let path_scope_jsont =
     | Workspace _ -> None
   in
   let root_key = function
-    | Workspace { root_key; _ } -> Some root_key
+    | Workspace { root_key; _ } ->
+        Some (Spice_workspace.Root.Key.to_string root_key)
     | Outside_workspace _ | Unknown _ -> None
   in
   let relative = function
@@ -427,7 +448,8 @@ let pp_path_op ppf = function
 
 let pp_scope ppf = function
   | Workspace { root_key; relative } ->
-      Format.fprintf ppf "workspace(root_key=%S, relative=%S)" root_key
+      Format.fprintf ppf "workspace(root_key=%S, relative=%S)"
+        (Spice_workspace.Root.Key.to_string root_key)
         (Spice_path.Rel.to_string relative)
   | Outside_workspace path ->
       Format.fprintf ppf "outside(%S)" (Spice_path.Abs.to_string path)

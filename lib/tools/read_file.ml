@@ -689,7 +689,9 @@ module Output = struct
     Option.bind (json_field name json) (decode_json Jsont.int)
 
   let replay_root =
-    Workspace.Root.make ~key:"session-replay" (Spice_path.Abs.of_string_exn "/")
+    Workspace.Root.make
+      ~key:(Workspace.Root.Key.of_string_exn "session-replay")
+      (Spice_path.Abs.of_string_exn "/")
 
   let path_of_json value =
     match Spice_path.Rel.of_string value with

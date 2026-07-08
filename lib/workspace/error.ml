@@ -12,8 +12,10 @@ let message = function
   | Empty_roots -> "workspace must have at least one root"
   | Conflicting_root { existing; duplicate } ->
       Format.asprintf "conflicting workspace roots: %S -> %a and %S -> %a"
-        (Root.key existing) Root.pp existing (Root.key duplicate) Root.pp
-        duplicate
+        (Root.Key.to_string (Root.key existing))
+        Root.pp existing
+        (Root.Key.to_string (Root.key duplicate))
+        Root.pp duplicate
   | Root_not_in_workspace root ->
       Format.asprintf "root is not in workspace: %a" Root.pp root
 

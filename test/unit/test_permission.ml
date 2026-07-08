@@ -44,16 +44,24 @@ let abs path =
   | Error error ->
       failf "invalid absolute path: %s" (Spice_path.Error.message error)
 
+let workspace_root_key key =
+  match Workspace.Root.Key.of_string key with
+  | Ok key -> key
+  | Error error ->
+      failf "invalid workspace root key: %s" (Workspace.Root.Key.message error)
+
 let workspace_path ?root_key ?(root = "/repo") relative =
   let root =
     match root_key with
     | None -> Workspace.Root.make (abs root)
-    | Some key -> Workspace.Root.make ~key (abs root)
+    | Some key -> Workspace.Root.make ~key:(workspace_root_key key) (abs root)
   in
   Workspace.Path.make ~root (local relative)
 
 let workspace_scope_key ?(root_key = "/repo") relative =
-  Access.Path_scope.workspace_key ~root_key ~relative:(local relative)
+  Access.Path_scope.workspace_key
+    ~root_key:(workspace_root_key root_key)
+    ~relative:(local relative)
 
 let workspace_read relative = Access.path ~op:`Read (workspace_path relative)
 
@@ -144,8 +152,9 @@ let access_constructor_validation () =
   ignore (argv ~program:"printf" [ "" ]);
   expect_invalid_arg "unknown cwd cannot be empty" (fun () ->
       ignore (Access.Path_scope.unknown ""));
-  expect_invalid_arg "workspace scope root key cannot be empty" (fun () ->
-      ignore (workspace_scope_key ~root_key:"" "lib/a.ml"));
+  (match Workspace.Root.Key.of_string "" with
+  | Error Workspace.Root.Key.Empty -> ()
+  | Ok _ -> failf "empty workspace root key should be rejected");
   expect_invalid_arg "network host cannot be empty" (fun () ->
       ignore (Access.network ~protocol:`Https ~host:"" ()));
   expect_invalid_arg "custom protocol cannot be empty" (fun () ->
@@ -363,11 +372,9 @@ let rule_matchers_cover_common_policy_patterns () =
   ignore (argv_prefix ~program:"printf" ~args:[ "" ] ());
   expect_invalid_arg "exec exact program cannot be empty" (fun () ->
       ignore (argv_exact ~program:"" ~args:[] ()));
-  expect_invalid_arg "exec cwd root key cannot be empty" (fun () ->
-      ignore
-        (argv_prefix
-           ~cwd:(Policy.Match.Path.under_key ~root_key:"" ~relative:(local "."))
-           ~program:"dune" ~args:[ "build" ] ()));
+  (match Workspace.Root.Key.of_string "" with
+  | Error Workspace.Root.Key.Empty -> ()
+  | Ok _ -> failf "empty cwd root key should be rejected");
   expect_invalid_arg "network host cannot be empty" (fun () ->
       ignore (Policy.Match.network_host ~host:"" ()));
   expect_invalid_arg "extension subject cannot be empty" (fun () ->
@@ -387,7 +394,8 @@ let rule_matchers_cover_common_policy_patterns () =
       [
         Policy.Rule.allow
           (Policy.Match.path ~op:`Modify
-             (Policy.Match.Path.under_key ~root_key:"/repo"
+             (Policy.Match.Path.under_key
+                ~root_key:(workspace_root_key "/repo")
                 ~relative:(local "lib")));
       ]
   in
@@ -497,7 +505,8 @@ let rule_matchers_cover_common_policy_patterns () =
         Policy.Rule.allow
           (argv_prefix
              ~cwd:
-               (Policy.Match.Path.under_key ~root_key:"/repo"
+               (Policy.Match.Path.under_key
+                  ~root_key:(workspace_root_key "/repo")
                   ~relative:(local "."))
              ~program:"dune" ~args:[ "build" ] ());
       ]
@@ -813,7 +822,8 @@ let json_roundtrips_core_values () =
         Policy.Rule.allow
           (argv_prefix
              ~cwd:
-               (Policy.Match.Path.exact_key ~root_key:"/repo"
+               (Policy.Match.Path.exact_key
+                  ~root_key:(workspace_root_key "/repo")
                   ~relative:(local "."))
              ~program:"dune" ~args:[ "build" ] ());
         Policy.Rule.deny (Policy.Match.network_host ~host:"example.com" ());
@@ -895,8 +905,8 @@ let json_rejects_invalid_state () =
             ] );
       ]
   in
-  expect_decode_error "path-under relatives cannot be empty"
-    Policy.Rule.jsont bad_empty_path_under;
+  expect_decode_error "path-under relatives cannot be empty" Policy.Rule.jsont
+    bad_empty_path_under;
   let bad_policy_version =
     json_object [ ("version", Json.int 2); ("rules", Json.list []) ]
   in
@@ -1006,10 +1016,14 @@ let relative_scopes_match_any_workspace_root () =
 let rule_stable_text_distinguishes_rules () =
   let read_path scope = Policy.Match.path ~op:`Read scope in
   let under_alpha =
-    Policy.Match.Path.under_key ~root_key:"alpha" ~relative:(local "lib")
+    Policy.Match.Path.under_key
+      ~root_key:(workspace_root_key "alpha")
+      ~relative:(local "lib")
   in
   let under_beta =
-    Policy.Match.Path.under_key ~root_key:"beta" ~relative:(local "lib")
+    Policy.Match.Path.under_key
+      ~root_key:(workspace_root_key "beta")
+      ~relative:(local "lib")
   in
   not_equal string ~msg:"root keys distinguish stable text"
     (Policy.Rule.stable_text (Policy.Rule.allow (read_path under_alpha)))

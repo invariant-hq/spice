@@ -12,7 +12,9 @@ module Requested = Spice_session.Permission.Requested
 type t = { request : Requested.t; nav : Option_list.t; expanded : bool }
 
 let option_count = 3
-let make request = { request; nav = Option_list.make ~count:option_count; expanded = false }
+
+let make request =
+  { request; nav = Option_list.make ~count:option_count; expanded = false }
 
 type outcome = Stay | Allow of Review.scope | Deny
 
@@ -38,7 +40,9 @@ let workspace_display ~root_key ~relative =
 
 let scope_display = function
   | Access.Path_scope.Workspace { root_key; relative } ->
-      workspace_display ~root_key ~relative
+      workspace_display
+        ~root_key:(Spice_workspace.Root.Key.to_string root_key)
+        ~relative
   | Access.Path_scope.Outside_workspace path -> Spice_path.Abs.to_string path
   | Access.Path_scope.Unknown path -> path
 
@@ -46,7 +50,9 @@ let scope_display = function
    display. Used in headlines and the exact-grant scope label. *)
 let short_path = function
   | Access.Path_scope.Workspace { root_key; relative } -> (
-      match Spice_path.Rel.to_string relative with "" -> root_key | r -> r)
+      match Spice_path.Rel.to_string relative with
+      | "" -> Spice_workspace.Root.Key.to_string root_key
+      | r -> r)
   | (Access.Path_scope.Outside_workspace _ | Access.Path_scope.Unknown _) as
     scope ->
       scope_display scope
@@ -81,8 +87,8 @@ let access_text access =
          ("custom custom shell.escalate"); a built-in kind still leads, so a
          custom write-class access reads "write custom <name>". *)
       (match kind with
-      | `Custom -> "custom " ^ name
-      | kind -> kind_string kind ^ " custom " ^ name)
+        | `Custom -> "custom " ^ name
+        | kind -> kind_string kind ^ " custom " ^ name)
       ^ Option.fold ~none:"" ~some:(fun s -> " " ^ shell_arg s) subject
 
 let is_path = function
@@ -205,7 +211,8 @@ let key ev t =
   else if letter ev 'd' || letter ev 'n' then (t, Deny)
   else
     match Panel.classify ev with
-    | Panel.Digit d when d >= 1 && d <= option_count -> (t, resolve_index (d - 1))
+    | Panel.Digit d when d >= 1 && d <= option_count ->
+        (t, resolve_index (d - 1))
     | Panel.Digit _ -> (t, Stay)
     | Panel.Action Panel.Up -> ({ t with nav = Option_list.up t.nav }, Stay)
     | Panel.Action Panel.Down -> ({ t with nav = Option_list.down t.nav }, Stay)
@@ -230,7 +237,6 @@ let scope_label t = session_scope (reviewed_accesses t)
 let indent = padding_lrtb 2 2 0 0
 let blank = box ~flex_shrink:0. ~size:{ width = pct 100; height = px 1 } []
 let dim s = text ~style:Theme.muted ~wrap:`Word s
-
 let max_diff_lines = 16
 
 (* [Change.diff] is a rendered unified diff. Colour each line by its role and
@@ -239,7 +245,8 @@ let diff_view ~expanded diff =
   let lines = String.split_on_char '\n' diff in
   let total = List.length lines in
   let shown =
-    if expanded then lines else List.filteri (fun i _ -> i < max_diff_lines) lines
+    if expanded then lines
+    else List.filteri (fun i _ -> i < max_diff_lines) lines
   in
   let style line =
     if String.length line = 0 then Theme.muted
@@ -250,7 +257,9 @@ let diff_view ~expanded diff =
       | '@' -> Theme.faint
       | _ -> Theme.muted
   in
-  let rows = List.map (fun line -> text ~style:(style line) ~wrap:`None line) shown in
+  let rows =
+    List.map (fun line -> text ~style:(style line) ~wrap:`None line) shown
+  in
   let rows =
     if (not expanded) && total > max_diff_lines then
       rows
@@ -293,7 +302,8 @@ let list_preview t accesses =
              [
                text ~style:Theme.success ~wrap:`None
                  (Printf.sprintf "  +%d " additions);
-               text ~style:Theme.error ~wrap:`None (Printf.sprintf "−%d" removals);
+               text ~style:Theme.error ~wrap:`None
+                 (Printf.sprintf "−%d" removals);
              ]
          in
          box ~flex_direction:Flex_direction.Row ~flex_shrink:0.
@@ -311,7 +321,8 @@ let counts_seg (additions, removals) =
     [
       box ~flex_direction:Flex_direction.Row ~flex_shrink:0.
         [
-          text ~style:Theme.success ~wrap:`None (Printf.sprintf "+%d " additions);
+          text ~style:Theme.success ~wrap:`None
+            (Printf.sprintf "+%d " additions);
           text ~style:Theme.error ~wrap:`None (Printf.sprintf "−%d" removals);
         ];
     ]
@@ -346,8 +357,9 @@ let view ~width t =
   let allow_once = primary_allow_once accesses in
   let scope = session_scope accesses in
   let content =
-    (headline_row ~counts (headline accesses)
-     :: blank :: preview_view ~expanded:t.expanded t accesses)
+    headline_row ~counts (headline accesses)
+    :: blank
+    :: preview_view ~expanded:t.expanded t accesses
     @ [ blank; options_view t ~allow_once ~scope ]
   in
   let hint =
@@ -358,5 +370,5 @@ let view ~width t =
   (* The top rule is accent, not the plain [rule] gray: a decision dialog is
      spice asking, and the accent rule is its single piece of chrome (07-dialogs
      §Shared anatomy, §Theme usage; 00-overview §One rule idiom). *)
-  Panel.view ~frame:Theme.color_accent ~name:"permission" ~filter:"" ~hint ~width
-    ~content
+  Panel.view ~frame:Theme.color_accent ~name:"permission" ~filter:"" ~hint
+    ~width ~content

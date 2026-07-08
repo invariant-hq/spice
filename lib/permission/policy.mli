@@ -62,21 +62,19 @@ module Match : sig
     val exact : Spice_workspace.Path.t -> t
     (** [exact path] matches path accesses whose scope is exactly [path]. *)
 
-    val exact_key : root_key:string -> relative:Spice_path.Rel.t -> t
+    val exact_key :
+      root_key:Spice_workspace.Root.Key.t -> relative:Spice_path.Rel.t -> t
     (** [exact_key ~root_key ~relative] matches path accesses in workspace
-        [root_key] whose root-relative path is exactly [relative].
-
-        Raises [Invalid_argument] if [root_key] is empty. *)
+        [root_key] whose root-relative path is exactly [relative]. *)
 
     val under : Spice_workspace.Path.t -> t
     (** [under path] matches path accesses at or under [path]'s workspace
         subtree. *)
 
-    val under_key : root_key:string -> relative:Spice_path.Rel.t -> t
+    val under_key :
+      root_key:Spice_workspace.Root.Key.t -> relative:Spice_path.Rel.t -> t
     (** [under_key ~root_key ~relative] matches path accesses in workspace
-        [root_key] at or under [relative].
-
-        Raises [Invalid_argument] if [root_key] is empty. *)
+        [root_key] at or under [relative]. *)
 
     val exact_relative : Spice_path.Rel.t -> t
     (** [exact_relative relative] matches workspace path accesses whose
@@ -348,9 +346,9 @@ module Review : sig
   (** [grant review scope grants] extends [grants] with [review]'s accesses for
       an allow answer of [scope]: [Session] adds them and [Once] leaves [grants]
       unchanged. A [Session] allow of a non-{!Request.grantable} request also
-      leaves [grants] unchanged, capping that approval at a single use. It is the
-      allow half of {!resolve}, total by construction, for callers that already
-      know the answer is an allow. *)
+      leaves [grants] unchanged, capping that approval at a single use. It is
+      the allow half of {!resolve}, total by construction, for callers that
+      already know the answer is an allow. *)
 end
 
 (** {1:decisions Decisions} *)

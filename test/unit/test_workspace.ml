@@ -41,12 +41,18 @@ let root_values_compare_and_collect () =
   let a = make_root "/workspace/./root" in
   let b = make_root "/workspace/root" in
   let c = make_root "/workspace/other" in
-  let keyed = Workspace.Root.make ~key:"workspace-root" (abs "/tmp/root") in
+  let keyed =
+    Workspace.Root.make
+      ~key:(Workspace.Root.Key.of_string_exn "workspace-root")
+      (abs "/tmp/root")
+  in
   let same_key =
-    Workspace.Root.make ~key:"workspace-root" (abs "/other/root")
+    Workspace.Root.make
+      ~key:(Workspace.Root.Key.of_string_exn "workspace-root")
+      (abs "/other/root")
   in
   equal string ~msg:"default key is normalized directory" "/workspace/root"
-    (Workspace.Root.key a);
+    (Workspace.Root.Key.to_string (Workspace.Root.key a));
   is_true ~msg:"equal uses stable key and directory" (Workspace.Root.equal a b);
   is_true ~msg:"same_key compares root identity"
     (Workspace.Root.same_key keyed same_key);
@@ -114,7 +120,9 @@ let workspace_constructs_and_tracks_cwd () =
     Workspace.Root.make ~key:(Workspace.Root.key root_a) (abs "/other-display")
   in
   let conflicting_dir_a =
-    Workspace.Root.make ~key:"other-root" (Workspace.Root.dir root_a)
+    Workspace.Root.make
+      ~key:(Workspace.Root.Key.of_string_exn "other-root")
+      (Workspace.Root.dir root_a)
   in
   let unknown = make_root "/outside" in
   let workspace = make_workspace [ root_a; duplicate_a; root_b ] in
