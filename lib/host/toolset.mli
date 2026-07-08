@@ -61,14 +61,14 @@ val make :
   cwd:Eio.Fs.dir_ty Eio.Path.t ->
   http:Cohttp_eio.Client.t ->
   fetch_https:Spice_tools.Web_fetch.https ->
-  anchors_seed:string ->
+  ?anchors:Spice_tools.Anchor.Resolver.t ->
   ?dune:Spice_ocaml_dune.Rpc.Instance.t ->
   ?project_source:Spice_ocaml_dune.Project_source.t ->
   ?merlin_program:string list ->
   unit ->
   Spice_tool.t list
 (** [make ~sw ~stdenv host ~workspace ~sandbox ~skills ~cwd ~http ~fetch_https
-     ~anchors_seed ()] is the standard tool catalog for a run over [host].
+     ()] is the standard tool catalog for a run over [host].
 
     [model] selects the file-mutation editor family via {!editor_decision}.
     Absent — the [spice debug tools] snapshot with no resolvable model — the
@@ -82,10 +82,11 @@ val make :
     the HTTPS transport the host does not own — the TLS stack lives in the
     binary package, not this library.
 
-    Anchored edits are gated on [Config.Tools.anchored_edits]: when enabled, one
-    ephemeral {!Spice_tools.Anchor_tracker} resolver is created, seeded from
-    [anchors_seed] (the session id, so scripted transcripts are stable). With
-    the flag off the catalog is byte-identical to an unanchored run.
+    [anchors] is the caller-owned anchored-edit resolver; anchors span turns,
+    so the owner creating a catalog per turn contract must inject one resolver
+    per run — like [dune], per-run state travels in, it is not manufactured
+    here. Absent, the edit tools run unanchored and the catalog is
+    byte-identical to an unanchored run.
 
     [dune] is the shared workspace Dune RPC instance backing the OCaml Dune
     tools; it should be the same instance the notice producers watch, so tool

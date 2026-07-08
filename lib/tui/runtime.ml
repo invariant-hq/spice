@@ -102,41 +102,35 @@ let config_warning ?flag config =
   | Some _ | None ->
       if permission_bypassed config then Some "permission: never ask" else None
 
-(* Whether no provider is connected (09-auth.md §9): at least one provider needs
-   auth — it declares a login method or an env credential — yet none has a usable
-   account, every one [`Missing] or [`Blocked]. A store failure, or a setup with
-   no auth-requiring provider, reads as connected so the nudge never fires without
-   cause. Mirrors the model panel's lock test; drives the home account line and
-   the footer nudge (12-home.md §States). *)
+(* Whether no provider is connected (09-auth.md §9): at least one provider
+   requires auth yet no provider — optional-auth ones included — has a
+   credential. A store failure, or a setup with no required-auth provider,
+   reads as connected so the nudge never fires without cause. Mirrors the
+   model panel's lock test via {!Spice_host.Account.connected}; drives the
+   home account line and the footer nudge (12-home.md §States). *)
 let account_absent ~stdenv host =
-  let needs_auth decl =
-    let auth = Spice_provider.auth decl in
-    not
-      (List.is_empty (Spice_provider.Auth.logins auth)
-      && List.is_empty (Spice_provider.Auth.env auth))
+  let requires_auth decl =
+    Spice_provider.Auth.required (Spice_provider.auth decl)
   in
-  let auth_decls = List.filter needs_auth (Spice_host.Host.providers host) in
-  match auth_decls with
+  match List.filter requires_auth (Spice_host.Host.providers host) with
   | [] -> false
-  | _ -> (
+  | _ :: _ -> (
       match Spice_host.Account.load ~stdenv host with
       | Error _ -> false
       | Ok accounts ->
-          let connected decl =
-            match
-              Spice_host.Account.status accounts (Spice_provider.id decl)
-            with
-            | Ok account -> (
-                match Spice_account.phase account with
-                | `Ready | `Degraded | `Unchecked -> true
-                | `Missing | `Blocked -> false)
-            | Error _ -> false
-          in
-          not (List.exists connected auth_decls))
+          not
+            (List.exists
+               (fun decl ->
+                 Spice_host.Account.connected accounts (Spice_provider.id decl))
+               (Spice_host.Host.providers host)))
 
-let build_snapshot ?sandbox_flag host =
+let build_snapshot ?sandbox_flag ~stdenv host =
   let config = Spice_host.Host.config host in
-  let choice = Spice_host.Models.choose host Model_choice.Main in
+  let choice =
+    Spice_host.Models.choose
+      ~connected:(Spice_host.Account.connectivity ~stdenv host)
+      host Model_choice.Main
+  in
   let model, effort, context_window =
     match choice with
     | Ok choice ->
@@ -529,39 +523,42 @@ let default_model_selectors catalog =
          Option.map Spice_provider.Model.selector
            (Spice_provider.default_model provider))
 
-let load_model_facts ~stdenv ~host =
+let load_model_facts ?selected ~stdenv ~host () =
   let catalog = Spice_host.Host.catalog host in
   let config = Spice_host.Host.config host in
+  (* [selected] is the session's pinned pick; without one the row marks the
+     model the next turn would derive. *)
   let current =
-    Spice_host.Models.choose host Model_choice.Main
-    |> Result.to_option
-    |> Option.map (fun choice ->
-           Spice_provider.Model.selector (Model_choice.model choice))
+    match selected with
+    | Some model -> Some (Spice_provider.Model.selector model)
+    | None ->
+        Spice_host.Models.choose
+          ~connected:(Spice_host.Account.connectivity ~stdenv host)
+          host Model_choice.Main
+        |> Result.to_option
+        |> Option.map (fun choice ->
+               Spice_provider.Model.selector (Model_choice.model choice))
   in
   let reasoning =
     Spice_host.Config.Models.reasoning (Spice_host.Config.models config)
   in
   let defaults = default_model_selectors catalog in
-  (* A model is locked (mute-and-show) only when its provider REQUIRES auth — it
-     declares a login method or an env credential — AND its account is unusable:
-     no credential ([`Missing]) or a stored-but-rejected one ([`Blocked]). Both
-     route to [/login] rather than letting the user pick a model that fails auth
-     mid-turn (09-auth.md §States). A no-auth provider (DeepSeek, the local
-     models) is never locked: [`Missing] there just means "no credential stored",
-     not "needs one" (09-auth.md: those read "no login needed"), so selecting one
-     must use it, never route to login. Loaded once; a store failure leaves every
-     provider unlocked rather than falsely locking the configured model. *)
+  (* A model is locked (mute-and-show) only when its provider REQUIRES auth
+     AND its account is unusable — no credential or a stored-but-rejected one.
+     Both route to [/login] rather than letting the user pick a model that
+     fails auth mid-turn (09-auth.md §States). A no-auth or optional-auth
+     provider (DeepSeek, the local models, Ollama) is never locked: a missing
+     credential there just means "serving bare", so selecting one must use it,
+     never route to login. Loaded once; a store failure leaves every provider
+     unlocked rather than falsely locking the configured model. *)
   let accounts = Result.to_option (Spice_host.Account.load ~stdenv host) in
   let requires_auth =
     let ids =
       Spice_host.Host.providers host
       |> List.filter_map (fun decl ->
-             let auth = Spice_provider.auth decl in
-             if
-               List.is_empty (Spice_provider.Auth.logins auth)
-               && List.is_empty (Spice_provider.Auth.env auth)
-             then None
-             else Some (Spice_llm.Provider.id (Spice_provider.id decl)))
+             if Spice_provider.Auth.required (Spice_provider.auth decl) then
+               Some (Spice_llm.Provider.id (Spice_provider.id decl))
+             else None)
     in
     fun provider -> List.mem (Spice_llm.Provider.id provider) ids
   in
@@ -570,13 +567,7 @@ let load_model_facts ~stdenv ~host =
     &&
     match accounts with
     | None -> false
-    | Some accounts -> (
-        match Spice_host.Account.status accounts provider with
-        | Ok account -> (
-            match Spice_account.phase account with
-            | `Missing | `Blocked -> true
-            | `Unchecked | `Ready | `Degraded -> false)
-        | Error _ -> false)
+    | Some accounts -> not (Spice_host.Account.connected accounts provider)
   in
   let models =
     Spice_provider.Catalog.models catalog
@@ -612,11 +603,11 @@ let load_model_facts ~stdenv ~host =
   in
   { Model_panel.models; reasoning }
 
-(* Persist a model pick (05-overlays-pickers.md §Model picker; the old
-   [save_model_selection] is the reference): validate the selector through
-   [Models.for_select], then set [Field.model] + [Field.reasoning] in the user
-   config in one edit. Effective the next turn via [Turn_options.resolve] — the
-   live attachment is not swapped. *)
+(* Persist a model pick (05-overlays-pickers.md §Model picker): validate the
+   selector through [Models.for_select], then set [Field.model] +
+   [Field.reasoning] in the user config in one edit. The config write seeds
+   future sessions; this session's effectiveness comes from the runtime
+   pinning the pick as its selection, which the next turn's binding reads. *)
 let save_model_selection ~stdenv host ~selector ~effort =
   let* model =
     Spice_host.Models.for_select (Spice_host.Host.catalog host) selector
@@ -663,19 +654,14 @@ let resolve_sandbox ?flag host ~workspace =
     ~env:(Spice_host.Env.get process_env)
     ~workspace ()
 
-let resolve_main_model host =
-  Spice_host.Models.choose host Model_choice.Main
-  |> Result.map Model_choice.model
-  |> Result.map_error host_error
-
-(* Build the coding run for a fresh session: gate the sandbox, resolve the model,
-   build the credentialed client, and start the run under [mode] (the runner's
-   contract — a mid-session switch rebuilds and swaps via {!Spice_host.Live.set_runner},
-   live.mli). The run's {!Spice_host.Jobs} registry is returned so the attach
-   sites can subscribe the threads adapter to it (doc/plans/tui-next-threads.md
-   §4.5). [Run.stop] releases the run's notice producers when the switch
-   completes. *)
-let build_run ?sandbox_flag ~sw ~stdenv ~host ~mode ~session_id () =
+(* Assemble the workspace run for a session: gate the sandbox — the [--sandbox]
+   flag over the config mode — and start the credential-free assembly
+   (run.mli's fail-closed contract). The turn contract — mode, model,
+   credentialed client — binds per turn via {!Spice_host.Run.runner}, so
+   assembly happens once per session and a login, model switch, or mode switch
+   needs no reassembly. [Run.stop] releases the run's notice producers when the
+   run is superseded (a resume) or the TUI exits. *)
+let build_run ?sandbox_flag ~sw ~stdenv ~host ~session_id () =
   let config = Spice_host.Host.config host in
   let workspace =
     Spice_workspace.single
@@ -687,14 +673,9 @@ let build_run ?sandbox_flag ~sw ~stdenv ~host ~mode ~session_id () =
     Spice_host.Run.plan ~workspace ~sandbox ~permission ()
     |> Result.map_error Spice_host.Sandbox.Gate_error.message
   in
-  let* model = resolve_main_model host in
-  let* client =
-    Spice_host.client ~sw ~stdenv host model |> Result.map_error host_error
-  in
   let store = Spice_host.Session.store ~stdenv host in
   let* run =
-    Spice_host.Run.start ~sw ~stdenv host plan ~mode ~model ~client ~store
-      ~session:session_id
+    Spice_host.Run.start ~sw ~stdenv host plan ~store ~session:session_id
       ~http:(Spice_host_builtin.web_http_client stdenv)
       ~fetch_https:(Spice_host_builtin.web_fetch_https ())
       ()
@@ -702,10 +683,8 @@ let build_run ?sandbox_flag ~sw ~stdenv ~host ~mode ~session_id () =
   in
   (* [stop] releases this run's producers (the fswatch process, the Dune watch,
      the notice pollers). It is idempotent and registered on [sw] as the
-     teardown safety net; a run superseded by a mode switch or a resume is
-     stopped early through this handle so its producers do not outlive it
-     (otherwise every /plan↔/build toggle would leak one fswatch subprocess and
-     one Dune watch until the whole TUI exits). *)
+     teardown safety net; a run superseded by a resume is stopped early through
+     this handle so its producers do not outlive it. *)
   let stopped = ref false in
   let stop () =
     if not !stopped then begin
@@ -714,15 +693,17 @@ let build_run ?sandbox_flag ~sw ~stdenv ~host ~mode ~session_id () =
     end
   in
   Eio.Switch.on_release sw stop;
-  Ok (Spice_host.Run.runner run, model, Spice_host.Run.jobs run, stop)
+  Ok (run, stop)
 
 let turn_reasoning config model =
   match Spice_host.Config.Models.reasoning (Spice_host.Config.models config) with
   | Some effort -> Some effort
   | None -> Spice_provider.Model.default_reasoning model
 
-let make_turn ~clock ~config ~model ~mode prompt =
-  let reasoning_effort = turn_reasoning config model in
+let make_turn ~clock ~config ~model ~effort ~mode prompt =
+  let reasoning_effort =
+    match effort with Some _ -> effort | None -> turn_reasoning config model
+  in
   let options = Spice_host.Turn_options.resolve ~model ?reasoning_effort () in
   let host_tools =
     List.map Spice_protocol.Call.Kind.name (Spice_protocol.Mode.host_tools mode)
@@ -1143,7 +1124,7 @@ let run ~stdenv ~(startup : App.startup) () =
         let clock = Eio.Stdenv.clock stdenv in
         let cwd = Spice_host.Config.cwd (Spice_host.Host.config host) in
         let sandbox_flag = startup.App.sandbox in
-        let snapshot = build_snapshot ?sandbox_flag host in
+        let snapshot = build_snapshot ?sandbox_flag ~stdenv host in
         let load_brief =
           make_brief_loader ?sandbox_flag ~stdenv ~clock ~host ~cwd ()
         in
@@ -1224,14 +1205,59 @@ let run ~stdenv ~(startup : App.startup) () =
         Eio.Fiber.fork ~sw (fun () ->
             Eio.Promise.resolve resolve_prewarm
               ( session_seed,
-                build_run ?sandbox_flag ~sw ~stdenv ~host ~mode:!current_mode
+                build_run ?sandbox_flag ~sw ~stdenv ~host
                   ~session_id:session_seed () ));
+        (* The session's model selection. [None] derives the model from config
+           and account connectivity at each binding, so a /login flips the
+           derived default by the next turn; a /model pick pins the pair for
+           this session (and persists as the default future sessions seed
+           from). Touched only between scheduler yields on the UI domain. *)
+        let current_selection :
+            (Spice_provider.Model.t
+            * Spice_llm.Request.Options.Reasoning_effort.t option)
+            option
+            ref =
+          ref None
+        in
+        (* Bind one turn contract over an assembled run: resolve the session's
+           model, build the credentialed client from the CURRENT credential
+           store (Spice_host.client reloads it, so a login applies at the next
+           binding), and derive the interpreter. Cheap and per-turn by design
+           (run.mli). A missing credential on a derived choice means no
+           provider is connected at all — a connected one would have won the
+           derivation — so it reports the login nudge, not a provider name the
+           user never chose. *)
+        let bind_runner run =
+          let* model, effort =
+            match !current_selection with
+            | Some (model, effort) -> Ok (model, effort)
+            | None ->
+                Spice_host.Models.choose
+                  ~connected:(Spice_host.Account.connectivity ~stdenv host)
+                  host Model_choice.Main
+                |> Result.map (fun choice -> (Model_choice.model choice, None))
+                |> Result.map_error host_error
+          in
+          let* client =
+            match Spice_host.client ~sw ~stdenv host model with
+            | Error (Spice_host.Host.Error.Missing_credential _)
+              when Option.is_none !current_selection ->
+                Error "not logged in — run /login to connect a provider"
+            | result -> Result.map_error host_error result
+          in
+          let* runner =
+            Spice_host.Run.runner run ~mode:!current_mode ~model ~client
+            |> Result.map_error host_error
+          in
+          Ok (runner, model, effort)
+        in
         (* The session's live attachment, created on the first turn from the
-           pre-warmed run. Held as [(live, model)]: the model builds each turn.
-           Resume onto an existing session is a later iteration, so exactly one
-           session is ever attached. [Session.create] (the document write) and
-           the {!Spice_host.Live} attachment stay here — never pre-warmed — so
-           the store gains a session only once the user has actually asked for
+           pre-warmed run. Held as [(live, run)]: the run is the workspace
+           assembly each turn's contract binds over. Resume onto an existing
+           session is a later iteration, so exactly one session is ever
+           attached. [Session.create] (the document write) and the
+           {!Spice_host.Live} attachment stay here — never pre-warmed — so the
+           store gains a session only once the user has actually asked for
            one. *)
         let attachment = ref None in
         let created_session = ref None in
@@ -1305,26 +1331,14 @@ let run ~stdenv ~(startup : App.startup) () =
            store gains a session only once the user has actually asked for one. *)
         let attach_fresh () =
           let session_id, run_result = Eio.Promise.await prewarm in
-          let* runner, model, jobs, prewarm_stop = run_result in
-          (* The prewarmed runner was built under the launch mode; a switch before
-             the first turn rebuilds so the runner's contract matches the declared
-             mode. The rebuilt run carries its own jobs registry — the attached
-             runner and the subscribed registry must be the same run's, so both
-             come from the rebuild when it happens, and the superseded prewarmed
-             run's producers are stopped rather than left to run unused until
-             teardown. *)
-          let* runner, jobs, stop =
-            if
-              Spice_protocol.Mode.equal !current_mode Spice_protocol.Mode.default
-            then Ok (runner, jobs, prewarm_stop)
-            else
-              Result.map
-                (fun (runner, _model, jobs, stop) ->
-                  prewarm_stop ();
-                  (runner, jobs, stop))
-                (build_run ?sandbox_flag ~sw ~stdenv ~host ~mode:!current_mode
-                   ~session_id ())
-          in
+          let* run, prewarm_stop = run_result in
+          (* The binding happens before [Session.create], so a failed binding
+             (nothing connected yet) leaves no orphan document — and unlike the
+             assembly, it is re-attempted on the next submit: a /login between
+             two submits turns this very path green. The assembly is mode-free,
+             so a mode switch before the first turn needs no rebuild — the
+             binding carries [!current_mode]. *)
+          let* runner, _model, _effort = bind_runner run in
           let store = Spice_host.Session.store ~stdenv host in
           let created_at =
             Spice_session.Time.of_unix_seconds_float (Eio.Time.now clock)
@@ -1335,11 +1349,11 @@ let run ~stdenv ~(startup : App.startup) () =
           in
           let live = Spice_host.Live.attach ~sw ~runner document in
           subscribe live;
-          subscribe_jobs jobs;
-          adopt stop;
-          attachment := Some (live, model);
+          subscribe_jobs (Spice_host.Run.jobs run);
+          adopt prewarm_stop;
+          attachment := Some (live, run);
           created_session := Some session_id;
-          Ok (live, model)
+          Ok (live, run)
         in
         (* Stop the abandoned prewarmed run on the resume path (only here — the
            fresh path adopts it): a daemon awaits the prewarm build and stops its
@@ -1350,7 +1364,7 @@ let run ~stdenv ~(startup : App.startup) () =
         let stop_abandoned_prewarm () =
           Eio.Fiber.fork_daemon ~sw (fun () ->
               (match Eio.Promise.await prewarm with
-              | _, Ok (_, _, _, prewarm_stop) -> prewarm_stop ()
+              | _, Ok (_, prewarm_stop) -> prewarm_stop ()
               | _, Error _ -> ());
               `Stop_daemon)
         in
@@ -1398,13 +1412,13 @@ let run ~stdenv ~(startup : App.startup) () =
                     Spice_session.id
                       (Spice_session_store.Document.session document)
                   in
-                  let* runner, model, jobs, stop =
-                    build_run ?sandbox_flag ~sw ~stdenv ~host
-                      ~mode:!current_mode ~session_id ()
+                  let* run, stop =
+                    build_run ?sandbox_flag ~sw ~stdenv ~host ~session_id ()
                   in
+                  let* runner, _model, _effort = bind_runner run in
                   let live = Spice_host.Live.attach ~sw ~runner document in
                   subscribe live;
-                  subscribe_jobs jobs;
+                  subscribe_jobs (Spice_host.Run.jobs run);
                   adopt stop;
                   (* Replace any still-attached session: a mid-chat resume whose
                      producer [enter_session] already detached leaves this a
@@ -1413,9 +1427,9 @@ let run ~stdenv ~(startup : App.startup) () =
                   (match !attachment with
                   | Some (old_live, _) -> Spice_host.Live.detach old_live
                   | None -> ());
-                  attachment := Some (live, model);
+                  attachment := Some (live, run);
                   created_session := Some session_id;
-                  Ok (live, model))
+                  Ok (live, run))
         in
         let ensure_attachment () =
           (* [resume_pending] is consulted before [attachment]: a resume armed
@@ -1614,14 +1628,21 @@ let run ~stdenv ~(startup : App.startup) () =
         (* The model panel reads the launch host — no write happens while it is
            open (a pick closes it first), so no reload is needed. *)
         let assemble_model_facts () =
-          deliver (App.model_facts_loaded (load_model_facts ~stdenv ~host))
+          deliver
+            (App.model_facts_loaded
+               (load_model_facts
+                  ?selected:(Option.map fst !current_selection)
+                  ~stdenv ~host ()))
         in
-        (* Persist a model pick and report the outcome as the panel's confirmation
-           flash: the model and effort on success, the host error on a rejected
-           selector. Effective next turn — the live attachment is untouched. *)
+        (* Pin a model pick as the session selection, persist it as the
+           default future sessions seed from, and report the outcome as the
+           panel's confirmation flash: the model and effort on success, the
+           host error on a rejected selector. The next turn's binding reads
+           the pin, so "effective next turn" is literal. *)
         let switch_model selector effort =
           match save_model_selection ~stdenv host ~selector ~effort with
           | Ok model ->
+              current_selection := Some (model, effort);
               let effort_label =
                 match effort with
                 | Some e ->
@@ -1815,14 +1836,25 @@ let run ~stdenv ~(startup : App.startup) () =
                       deliver
                         (App.settled ~now:(Eio.Time.now clock)
                            (App.Failed { message }))
-                  | Ok (live, model) ->
-                      let turn =
-                        make_turn ~clock
-                          ~config:(Spice_host.Host.config host)
-                          ~model ~mode:!current_mode prompt
-                      in
-                      Spice_host.Live.submit live
-                        (Spice_protocol.Command.Start turn))
+                  | Ok (live, run) -> (
+                      (* Every turn re-binds its contract — selection, fresh
+                         credential store, current mode — and swaps the runner
+                         before submitting, so a /login or /model between turns
+                         takes effect on this very turn. *)
+                      match bind_runner run with
+                      | Error message ->
+                          deliver
+                            (App.settled ~now:(Eio.Time.now clock)
+                               (App.Failed { message }))
+                      | Ok (runner, model, effort) ->
+                          Spice_host.Live.set_runner live runner;
+                          let turn =
+                            make_turn ~clock
+                              ~config:(Spice_host.Host.config host)
+                              ~model ~effort ~mode:!current_mode prompt
+                          in
+                          Spice_host.Live.submit live
+                            (Spice_protocol.Command.Start turn)))
           | App.Interrupt ->
               perform (fun () ->
                   match !attachment with
@@ -1971,33 +2003,21 @@ let run ~stdenv ~(startup : App.startup) () =
               perform (fun () ->
                   current_mode := mode;
                   (* An existing attachment's runner carries the old contract:
-                     rebuild under the new mode and swap (live.mli set_runner —
-                     queued commands drain with the new runner). A rebuild
-                     failure surfaces as the failure notice; the declared mode
-                     stands and the next attachment attempt retries. *)
-                  match (!attachment, !created_session) with
-                  | Some (live, _), Some session_id -> (
-                      match
-                        build_run ?sandbox_flag ~sw ~stdenv ~host ~mode
-                          ~session_id ()
-                      with
-                      | Ok (runner, _model, jobs, stop) ->
-                          (* The rebuilt run has a fresh jobs registry; the
-                             swapped-in runner mints new spawns there, so
-                             subscribe it too or a post-switch spawn is invisible
-                             (the old registry keeps delivering its still-running
-                             children). [adopt] stops the superseded run's
-                             producers — set_runner only swaps the runner, so
-                             without this the old fswatch and Dune watch would run
-                             until teardown. *)
-                          Spice_host.Live.set_runner live runner;
-                          subscribe_jobs jobs;
-                          adopt stop
+                     re-derive under the new mode and swap (live.mli set_runner
+                     — queued commands drain with the new runner). The assembly
+                     — producers, jobs registry — is mode-free and stays put; a
+                     derivation failure surfaces as the failure notice, the
+                     declared mode stands, and the next binding retries. *)
+                  match !attachment with
+                  | Some (live, run) -> (
+                      match bind_runner run with
+                      | Ok (runner, _model, _effort) ->
+                          Spice_host.Live.set_runner live runner
                       | Error message ->
                           deliver
                             (App.settled ~now:(Eio.Time.now clock)
                                (App.Failed { message })))
-                  | (Some _ | None), _ -> ())
+                  | None -> ())
           | App.Run_shell command ->
               shell_cancelled := false;
               perform (fun () ->

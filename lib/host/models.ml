@@ -178,12 +178,31 @@ let ( <|> ) candidate next =
 let first_selectable models =
   List.find_opt Spice_provider.Model.selectable models
 
-let first_provider_default t =
-  Host.providers t
-  |> List.filter_map Spice_provider.default_model
-  |> first_selectable
-  |> Option.map (fun model ->
-      { model; reason = Reason.derived "provider_default"; field = None })
+(* A connected provider's default wins over registry order: a derived default
+   must be a model the user can actually run, not whichever provider is
+   declared first. With nothing connected the registry order stands, and the
+   client build reports what is missing. *)
+let first_provider_default ~connected t =
+  let default_of providers =
+    providers
+    |> List.filter_map Spice_provider.default_model
+    |> first_selectable
+  in
+  let providers = Host.providers t in
+  let preferred =
+    default_of
+      (List.filter
+         (fun declaration -> connected (Spice_provider.id declaration))
+         providers)
+  in
+  match preferred with
+  | Some model ->
+      Some { model; reason = Reason.derived "connected_default"; field = None }
+  | None ->
+      Option.map
+        (fun model ->
+          { model; reason = Reason.derived "provider_default"; field = None })
+        (default_of providers)
 
 let first_selectable_model t =
   Spice_provider.Catalog.models ~include_hidden:true (Host.catalog t)
@@ -191,11 +210,14 @@ let first_selectable_model t =
   |> Option.map (fun model ->
       { model; reason = Reason.derived "first_selectable"; field = None })
 
-let main t =
+let main ~connected t =
   match configured_main t with
   | Some result -> result
   | None -> (
-      match first_provider_default t <|> fun () -> first_selectable_model t with
+      match
+        first_provider_default ~connected t <|> fun () ->
+        first_selectable_model t
+      with
       | Some choice -> Ok choice
       | None -> Error Host.Error.No_model)
 
@@ -232,7 +254,7 @@ let cheapest_small t provider =
     None candidates
   |> Option.map fst
 
-let small t =
+let small ~connected t =
   match configured_small t with
   | Some result -> result
   | None ->
@@ -248,13 +270,13 @@ let small t =
                 reason = Reason.derived "main_fallback";
                 field = None;
               })
-        (main t)
+        (main ~connected t)
 
-let choose t role =
+let choose ~connected t role =
   let result =
     match role with
-    | Model_choice.Main -> main t
-    | Model_choice.Small -> small t
+    | Model_choice.Main -> main ~connected t
+    | Model_choice.Small -> small ~connected t
   in
   (match result with
   | Ok { model; reason; _ } ->

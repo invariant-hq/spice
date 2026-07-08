@@ -72,14 +72,16 @@ let json_null_or_int64 = function
 let row_account row = row.account
 
 let provider_requires_auth provider =
-  let auth = Provider.auth provider in
-  not
-    (List.is_empty (Provider.Auth.env auth)
-    && List.is_empty (Provider.Auth.logins auth))
+  Provider.Auth.required (Provider.auth provider)
 
+(* A missing credential only demands repair where auth is required: a no-auth
+   or optional-auth provider serves bare, so its missing account reads ready.
+   A stored credential on an optional-auth provider keeps its real phase — a
+   blocked key is worth reporting even where none was mandatory. *)
 let row_phase row =
-  if provider_requires_auth row.provider then Spice_account.phase row.account
-  else `Ready
+  match Spice_account.phase row.account with
+  | `Missing when not (provider_requires_auth row.provider) -> `Ready
+  | phase -> phase
 
 let row_phase_string row = Spice_account.phase_to_string (row_phase row)
 let row_provider_id row = Llm_provider.id (Provider.id row.provider)
@@ -162,8 +164,8 @@ let provider_json row =
     | Some selected -> [ ("selected_model", selected_model_json row selected) ]
     )
 
-let selected_model_for host provider =
-  match Spice_host.Models.choose host Model_choice.Main with
+let selected_model_for ~connected host provider =
+  match Spice_host.Models.choose ~connected host Model_choice.Main with
   | Error _ -> None
   | Ok choice ->
       let model = Model_choice.model choice in
@@ -266,7 +268,13 @@ let print_login_settled host ~provider_decl ~name ~method_id settled =
       let next =
         match phase with
         | `Ready -> (
-            match selected_model_for host provider with
+            match
+              (* The provider in hand just logged in: it alone reads as
+                 connected, so the freshly connected default wins exactly when
+                 no configured selection names another provider. *)
+              selected_model_for ~connected:(Llm_provider.equal provider) host
+                provider
+            with
             | Some (selector, _) ->
                 Printf.sprintf "spice run --model %s \"...\"" selector
             | None -> "spice models current")
@@ -604,7 +612,9 @@ let status_row ~sw ~stdenv host accounts ?name ~refresh provider_decl =
               provider = provider_decl;
               account;
               store_names;
-              selected_model = selected_model_for host provider;
+              selected_model =
+                selected_model_for ~connected:(Account.connected accounts) host
+                  provider;
             })
 
 let status_rows ~sw ~stdenv host accounts ?name ~refresh providers =
@@ -617,8 +627,8 @@ let status_rows ~sw ~stdenv host accounts ?name ~refresh providers =
   in
   loop [] providers
 
-let summary_json host rows =
-  match Spice_host.Models.choose host Model_choice.Main with
+let summary_json ~connected host rows =
+  match Spice_host.Models.choose ~connected host Model_choice.Main with
   | Error _ -> json_null
   | Ok choice ->
       let model = Model_choice.model choice in
@@ -721,7 +731,10 @@ let status json name refresh provider_filter =
                         @ [
                             ( "providers",
                               rows |> List.map provider_json |> json_list );
-                            ("summary", summary_json host rows);
+                            ( "summary",
+                              summary_json
+                                ~connected:(Account.connected accounts) host
+                                rows );
                           ])))
               else (
                 print_storage ();

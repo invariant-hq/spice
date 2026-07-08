@@ -86,7 +86,9 @@ let auth_check ~sw ~stdenv host =
       | Ok rows ->
           let selected_provider =
             match
-              Spice_host.Models.choose host Spice_host.Models.Model_choice.Main
+              Spice_host.Models.choose
+                ~connected:(Spice_host.Account.connected accounts)
+                host Spice_host.Models.Model_choice.Main
             with
             | Error _ -> None
             | Ok choice ->

@@ -137,8 +137,12 @@ let model_status_string = function
   | Spice_provider.Model.Deprecated -> "deprecated"
   | Spice_provider.Model.Unavailable reason -> "unavailable: " ^ reason
 
-let resolved_model host =
-  match Spice_host.Models.choose host Spice_host.Models.Model_choice.Main with
+let resolved_model ~stdenv host =
+  match
+    Spice_host.Models.choose
+      ~connected:(Spice_host.Account.connectivity ~stdenv host)
+      host Spice_host.Models.Model_choice.Main
+  with
   | Ok choice -> Some (Spice_host.Models.Model_choice.model choice)
   | Error _ -> None
 
@@ -314,7 +318,7 @@ let skills_facts ~stdenv config =
 
 let assemble ~stdenv ~host ~session =
   let config = Spice_host.Host.config host in
-  let model = resolved_model host in
+  let model = resolved_model ~stdenv host in
   {
     Settings_screen.config = config_facts config;
     status = status_facts ~stdenv host config ~session ~model;

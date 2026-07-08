@@ -314,6 +314,7 @@ let config_source_label source =
   | Config.Source.Default _ -> "default"
 
 let derived_reason_label = function
+  | "connected_default" -> "connected default"
   | "provider_default" -> "provider default"
   | "first_selectable" -> "first selectable"
   | "small_heuristic" -> "small heuristic"
@@ -378,9 +379,10 @@ let current json =
   let catalog = Spice_host.Host.catalog host in
   let result =
     let* main, small =
+      let connected = Spice_host.Account.connectivity ~stdenv host in
       match
-        ( Spice_host.Models.choose host Model_choice.Main,
-          Spice_host.Models.choose host Model_choice.Small )
+        ( Spice_host.Models.choose ~connected host Model_choice.Main,
+          Spice_host.Models.choose ~connected host Model_choice.Small )
       with
       | Error error, _ | _, Error error ->
           Error (Runtime_error (host_error_message error))

@@ -233,6 +233,23 @@ let status t ?name provider =
   | Ok None -> Ok (Spice_account.missing ~provider)
   | Ok (Some credential) -> Ok (Spice_account.present credential)
 
+(* Resolution failures read as not connected: connectivity feeds preferences
+   (default-model choice, login nudges, panel locks), never gates a build, so
+   a broken source degrades those to their no-account shape rather than
+   erroring paths that would otherwise work. *)
+let connected t provider =
+  match status t provider with
+  | Error _ -> false
+  | Ok account -> (
+      match Spice_account.phase account with
+      | `Ready | `Degraded | `Unchecked -> true
+      | `Missing | `Blocked -> false)
+
+let connectivity ~stdenv ?process host =
+  match load ~stdenv ?process host with
+  | Error _ -> fun (_ : Spice_llm.Provider.t) -> false
+  | Ok accounts -> connected accounts
+
 let names t provider_id =
   let* _decl = provider t.host provider_id in
   Ok (Spice_account.Store.names t.sources.Sources.store ~provider:provider_id)

@@ -164,8 +164,9 @@ module Adapter : sig
 
       Adapter functions are effectful provider capabilities. They do not carry a
       provider id; the enclosing {!Provider.t} registration supplies the
-      provider namespace. [None] is passed only for providers whose auth
-      declaration requires no credential. *)
+      provider namespace. [None] means no credential resolved; the adapter
+      decides whether that is {!Error.Missing_credential} (mandatory auth) or a
+      bare client (optional auth, no-auth). *)
 
   type observation = {
     problems : Spice_account.Problem.t list;
@@ -272,8 +273,8 @@ module Adapter : sig
     (Spice_llm.Client.t, Error.t) result
   (** [build t ~sw ~stdenv ?base_url credential] builds a provider client with
       [t]'s {!type:build} capability. [base_url] overrides the adapter's default
-      endpoint. [credential] is [None] only for providers whose auth declaration
-      requires no credential. *)
+      endpoint. [credential] is [None] when no credential resolved; see
+      {!type:build} for how adapters answer it. *)
 
   val check : t -> check option
   (** [check t] is [t]'s credential-check capability, if any. *)

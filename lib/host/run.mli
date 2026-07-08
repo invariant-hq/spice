@@ -5,36 +5,43 @@
 
 (** A configured coding run.
 
-    A {!t} is the product's definition of a runnable coding turn, assembled once
+    A {!t} is the assembled workspace posture of a coding session, built once
     and host-side: the workspace, the gated sandbox and permission posture, the
-    model and client, the workspace context and skills, the tool catalog, the
-    run configuration, the compaction policy, the live notice machinery, and the
-    interpreter itself. It is what the CLI and TUI previously built by hand as
-    ~100 lines of copied assembly and a duplicated child-run orchestration.
+    workspace context and skills, the live notice machinery, and the subagent
+    job registry. It holds no mode, no model, and no credential — those are
+    facts of a turn's contract, not of the workspace — so assembly never fails
+    on provider state, and its cost (context load, producers, watches) is paid
+    once per session rather than per turn.
 
-    A run is transparent, not an engine: {!runner} is the assembled interpreter,
-    but every other part is a value a deviating consumer can read and recombine
-    ({!context}, {!skills}, {!tools}, {!Toolset.make}). The whole waist is
-    {!plan} then {!start} then driving {!runner} — or {!Live} — with
-    {!Spice_protocol.Command.t} and rendering {!Spice_protocol.Event.t}.
+    A run is transparent, not an engine: {!runner} derives the interpreter for
+    one turn contract, and every other part is a value a deviating consumer can
+    read and recombine ({!context}, {!Toolset.make}). The whole waist is
+    {!plan}, then {!start}, then {!runner} per turn contract, then driving the
+    interpreter — or {!Live} — with {!Spice_protocol.Command.t} and rendering
+    {!Spice_protocol.Event.t}.
 
-    {2:fail_closed The two-stage fail-closed contract}
+    {2:fail_closed The fail-closed contract}
 
-    Resolution splits into two stages so the fail-closed ordering is a fact of
+    Resolution splits into three steps so the fail-closed ordering is a fact of
     the types, not a doc-comment protocol:
 
     - {!plan} is pure. It {e gates} the sandbox — the require posture that must
       hold before any credential loads or state persists — and bundles the
       readable posture (sandbox and permission). It fails closed on an
-      unenforceable sandbox, before {!start} can touch credentials.
-    - {!start} is effectful. It takes a {!Plan.t} — which only {!plan} produces,
-      so no run starts on an ungated sandbox — plus the credentialed client, and
-      assembles the interpreter.
+      unenforceable sandbox, before any credential is touched.
+    - {!start} is effectful but credential-free. It takes a {!Plan.t} — which
+      only {!plan} produces, so no run assembles on an ungated sandbox — and
+      loads the workspace: context, skills, producers, jobs.
+    - {!runner} is the per-turn derivation. It takes the turn's contract — the
+      mode, the model, and the credentialed client the caller resolved for it —
+      and derives the interpreter over the assembled workspace.
 
-    The stages are separate because the ordering is user-observable: a caller
-    prints the run-start posture summary from a {!Plan.t} {e between} {!plan}
-    and {!start}, then resolves the model and builds the client (both of which
-    may fail {e after} the summary), then calls {!start}. *)
+    The steps are separate because the ordering is user-observable — a caller
+    prints the run-start posture summary from a {!Plan.t} between {!plan} and
+    the first credential load — and because the turn contract is a per-turn
+    fact: a frontend re-resolves the model and rebuilds the client from the
+    current credential store at every turn, so a login or a model switch takes
+    effect on the next turn without reassembling the workspace. *)
 
 (** {1:plan Planning} *)
 
@@ -88,9 +95,6 @@ val start :
   stdenv:Eio_unix.Stdenv.base ->
   Host.t ->
   Plan.t ->
-  mode:Spice_protocol.Mode.t ->
-  model:Spice_provider.Model.t ->
-  client:Spice_llm.Client.t ->
   store:Spice_session_store.t ->
   session:Spice_session.Id.t ->
   http:Cohttp_eio.Client.t ->
@@ -100,25 +104,17 @@ val start :
   ?cwd_override:Spice_path.Abs.t ->
   unit ->
   (t, Host.Error.t) result
-(** [start ~sw ~stdenv host plan ~mode ~model ~client ~store ~session ~http
-     ~fetch_https ()] assembles the run over [plan]'s gated posture.
+(** [start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ()]
+    assembles the workspace run over [plan]'s gated posture.
 
     It loads the workspace {!Context}, loads {!Skills} (unless [skills] reuses a
-    preloaded snapshot), extends the context prelude with [mode]'s messages,
-    builds the {!Toolset} catalog filtered by [mode]'s
-    {!Spice_protocol.Contract}, assembles the {!Spice_session.Run.Config},
-    derives the compaction policy, starts the notice producers, creates the
-    mutation recorder, and constructs the {!runner}: an interpreter over [store]
-    and [client] whose host-tool dispatch is {!Handler.defaults} — with subagent
-    spawning owned here — and whose hooks are the shared notice-injection and
-    mutation-evidence recording. A consumer adds its own observer, terminal, or
-    after-save hooks with {!Runner.with_hooks}, or hands {!runner} to
-    {!Live.attach}.
+    preloaded snapshot), starts the notice producers, creates the {!jobs}
+    registry and the mutation recorder, and wires the shared notice-injection
+    and mutation-evidence hooks. It touches no credential and resolves no model:
+    the turn contract binds later, in {!runner}.
 
-    [client] is the credentialed client the caller built from [plan] and [model]
-    after printing the run-start summary; the credential ordering stays with the
-    caller. [http] and [fetch_https] are the HTTPS transport the host does not
-    own. [max_steps] is the effective per-run step limit; [session] seeds the
+    [http] and [fetch_https] are the HTTPS transport the host does not own.
+    [max_steps] is the effective per-run step limit; [session] seeds the
     anchored-edit resolver and roots the mutation store and workflow artifacts;
     [cwd_override] is the run-directory fallback for {!Context.eio_cwd}.
 
@@ -126,9 +122,8 @@ val start :
     that renders child progress live subscribes with {!Jobs.subscribe}. The
     headless path simply does not subscribe and runs children silently.
 
-    Errors are {!Host.Error.t}: {!Host.Error.Instructions} from prelude
-    construction, {!Host.Error.Workspace} from context loading, and skill-load
-    failures. *)
+    Errors are {!Host.Error.t}: {!Host.Error.Workspace} from context loading,
+    and skill-load failures. *)
 
 val jobs : t -> Jobs.t
 (** [jobs t] is the subagent run registry the assembled handler spawns
@@ -139,16 +134,41 @@ val stop : t -> unit
 (** [stop t] stops [t]'s notice producers and the Dune RPC instance they own.
     Idempotent for the run switch's lifetime; call it once the run ends. *)
 
-(** {1:parts Assembled parts}
+(** {1:parts The interpreter and assembled parts}
 
-    The parts of the assembled run a consumer reads: attach extra hooks onto
-    the {!runner}, report from the {!context}, and drain the {!notices}. *)
+    The interpreter derives per turn contract; every other part is a value a
+    consumer reads: report from the {!context}, drain the {!notices}. *)
 
-val runner : t -> Runner.t
-(** [runner t] is the assembled interpreter: [store], [client], run config,
-    {!Handler.defaults} host-tool dispatch, compaction policy, and the shared
-    notice and mutation hooks. Compose extra {!Session} hooks onto it with
-    {!Runner.with_hooks}, or attach it with {!Live.attach}. *)
+val runner :
+  t ->
+  mode:Spice_protocol.Mode.t ->
+  model:Spice_provider.Model.t ->
+  client:Spice_llm.Client.t ->
+  (Runner.t, Host.Error.t) result
+(** [runner t ~mode ~model ~client] derives the interpreter for one turn
+    contract over the assembled workspace.
+
+    It extends the context prelude with [mode]'s messages, builds the
+    {!Toolset} catalog for [model] filtered by [mode]'s
+    {!Spice_protocol.Contract}, assembles the {!Spice_session.Run.Config},
+    derives the compaction policy from [model], and constructs the interpreter
+    over the run's store and [client] whose host-tool dispatch is
+    {!Handler.defaults} — with subagent spawning owned here, children bound to
+    this contract's [client] — and whose hooks are the assembled
+    notice-injection and mutation-evidence recording. Compose extra {!Session}
+    hooks onto the result with {!Runner.with_hooks}, or hand it to
+    {!Live.attach} / {!Live.set_runner}.
+
+    [client] is the credentialed client the caller resolved for [model] from
+    the current credential store; re-deriving at each turn is how a login or a
+    model switch takes effect mid-session. The derivation is cheap — pure
+    assembly over the loaded workspace — and starts no producer. The turn
+    submitted to the derived interpreter declares the same [mode] and [model]
+    (see {!Spice_session.Turn.make}); the caller stamps both from the values it
+    binds here.
+
+    Errors are {!Host.Error.t}: {!Host.Error.Instructions} from prelude
+    construction. *)
 
 val workspace : t -> Spice_workspace.t
 (** [workspace t] is the run's workspace. *)

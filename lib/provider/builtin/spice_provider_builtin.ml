@@ -401,11 +401,21 @@ let local =
     ~dynamic_model:(gguf_dynamic_model Spice_llm_local.model tools_json_schema)
     local_models
 
+(* Authentication is optional: the default daemon serves bare on localhost,
+   while a remote or proxied deployment may demand a key — a fact of the
+   deployment, not the provider, hence [~required:false]. *)
+let ollama_auth =
+  Auth.make ~required:false
+    ~env:[ Env.api_key "OLLAMA_API_KEY" ]
+    ~login:[ Auth.Login.api_key () ]
+    ()
+
 (* The Ollama daemon owns its model set, so the declaration lists none and
    every id is dynamic: whether ["qwen3-coder:30b"] exists is the daemon's
    runtime answer, not catalog data. *)
 let ollama =
   Provider.make Spice_llm_ollama.provider ~display_name:"Ollama"
+    ~auth:ollama_auth
     ~dynamic_model:(fun id ->
       if String.is_empty id then None
       else

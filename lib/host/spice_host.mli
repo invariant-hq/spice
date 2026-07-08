@@ -176,9 +176,11 @@ val client :
     provider-boundary {!Spice_llm.Error.t} values from the stream call.
 
     All failure modes are {!Host.Error.t}: {!Host.Error.Unknown_provider},
-    {!Host.Error.Credentials}, {!Host.Error.Missing_credential},
-    {!Host.Error.Blocked_credential}, {!Host.Error.No_adapter}, and adapter
-    build errors such as {!Host.Error.Unsupported_credential} or
+    {!Host.Error.Credentials}, {!Host.Error.Blocked_credential},
+    {!Host.Error.No_adapter}, and adapter build errors such as
+    {!Host.Error.Missing_credential} — the adapter, not a host gate, decides
+    whether a missing credential is an error, so an optional-auth provider
+    builds a bare client — {!Host.Error.Unsupported_credential}, or
     {!Host.Error.Client}.
 
     {b Warning.} The returned client holds credential material and borrows [sw]

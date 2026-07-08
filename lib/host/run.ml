@@ -156,11 +156,15 @@ type t = {
   notices : Notice_queue.t;
   producers : Producers.t;
   jobs : Jobs.t;
-  runner : Runner.t;
+  runner_for :
+    mode:Spice_protocol.Mode.t ->
+    model:Spice_provider.Model.t ->
+    client:Spice_llm.Client.t ->
+    (Runner.t, Host.Error.t) result;
 }
 
-let start ~sw ~stdenv host plan ~mode ~model ~client ~store ~session ~http
-    ~fetch_https ?max_steps ?skills:preloaded_skills ?cwd_override () =
+let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
+    ?skills:preloaded_skills ?cwd_override () =
   let config = Host.config host in
   let workspace = Plan.workspace plan in
   let sandbox = Plan.sandbox plan in
@@ -172,106 +176,31 @@ let start ~sw ~stdenv host plan ~mode ~model ~client ~store ~session ~http
     | None -> Skills.load ~stdenv ~builtins:Spice_prompts.Skills.all config
   in
   let cwd_eio = Context.eio_cwd ~stdenv ?override:cwd_override context in
-  let* prelude =
-    Context.extend_prelude context (Spice_protocol.Mode.prelude_messages mode)
-    |> Result.map_error (fun error -> Host.Error.Instructions error)
-  in
   let notices = Notice_queue.create () in
   let workspace_root = workspace_root_string workspace in
   let producers =
     Producers.start ~sw ~stdenv host ~inbox:notices ~workspace ~cwd:cwd_eio
       ~root:workspace_root ()
   in
-  let tools =
-    Toolset.make ~sw ~stdenv host ?model:(Some model) ~workspace ~sandbox
-      ~skills ~cwd:cwd_eio ~http ~fetch_https
-      ~anchors_seed:(Spice_session.Id.to_string session)
-      ~dune:(Producers.dune producers)
-      ~project_source:(Producers.project_source producers)
-      ~merlin_program:(Producers.merlin_program producers)
-      ()
-    |> Spice_protocol.Contract.filter_tools (Spice_protocol.Mode.contract mode)
-  in
-  let policy =
-    Spice_protocol.Contract.policy
-      (Spice_protocol.Mode.contract mode)
-      ~configured:(Permission.Run.policy permission)
-  in
   let denial_message =
     Permission.Run.denial_message ~source:Config.Source.kind_string permission
   in
-  let fs = Eio.Stdenv.fs stdenv in
-  let root = Spice_session_store.root store |> Spice_path.Abs.to_string in
-  (* The mode offer is the ceiling; the goal kind is further conditioned on
-     the session's stored goal. Catalog absence is UX only — the handler
-     rejects a stray update_goal either way — so a load failure just leaves
-     the tool out and surfaces on the next artifact operation. *)
-  let offers_goal =
-    match Artifacts.Goal.load ~fs ~root session with
-    | Ok (Some goal) -> Spice_protocol.Goal.may_update goal
-    | Ok None | Error _ -> false
-  in
-  let host_tools =
-    Spice_protocol.Mode.host_tools mode
-    |> List.filter (fun kind ->
-        match (kind : Spice_protocol.Call.Kind.t) with
-        | Spice_protocol.Call.Kind.Goal -> offers_goal
-        | Spice_protocol.Call.Kind.Question | Spice_protocol.Call.Kind.Plan
-        | Spice_protocol.Call.Kind.Todo | Spice_protocol.Call.Kind.Subagent
-        | Spice_protocol.Call.Kind.Subagent_wait
-        | Spice_protocol.Call.Kind.Subagent_cancel ->
-            true
-        | Spice_protocol.Call.Kind.Subagent_message -> true
-        (* Child-contract only; never offered to a root session. *)
-        | Spice_protocol.Call.Kind.Subagent_message_parent -> false)
-    |> List.map Spice_protocol.Call.Kind.tool
-  in
-  let run_config =
-    Spice_session.Run.Config.make ~tools ~host_tools ~policy ~denial_message
-      ~prelude ?max_steps ()
-  in
-  (* Disabling automatic compaction is the absence of the policy: the
-     interpreter performs neither pressure compaction nor overflow recovery
-     without one. Manual compaction is unaffected. *)
-  let compaction =
-    if Config.Runtime.compaction_auto (Config.runtime config) then
-      Some (Compactor.Policy.of_model ~prelude model)
+  (* Anchored edits are flag-gated: ONE resolver per run, seeded from the
+     session id so scripted transcripts are stable. Anchors span turns — a
+     read in one turn mints anchors a later turn's edit resolves — so the
+     resolver must not be recreated per derivation. *)
+  let anchors =
+    if Config.Tools.anchored_edits (Config.tools config) then
+      Some
+        (Spice_tools.Anchor_tracker.resolver
+           (Spice_tools.Anchor_tracker.create
+              ~seed:(Spice_session.Id.to_string session)
+              ()))
     else None
   in
+  let fs = Eio.Stdenv.fs stdenv in
+  let root = Spice_session_store.root store |> Spice_path.Abs.to_string in
   let mutations = mutations_recorder ~stdenv ~store ~workspace_root in
-  (* Child-run orchestration: the child config derives from the parent env,
-     and the {!Jobs} registry owns minting, the run ledger, the child Live
-     attachment, and settlement. The spawn handler awaits each run
-     immediately, so the model-visible semantics match the historical inline
-     child run; detachment drops the wait, not this assembly. *)
-  let child_run_config role =
-    let contract = Spice_protocol.Subagent.Role.contract role in
-    let parent_policy =
-      Spice_protocol.Contract.policy
-        (Spice_protocol.Mode.contract mode)
-        ~configured:(Permission.Run.policy permission)
-    in
-    let* prelude =
-      Context.extend_prelude context
-        (Spice_protocol.Subagent.Role.prelude_messages role)
-      |> Result.map_error (fun error -> Host.Error.Instructions error)
-    in
-    let child_tools = Spice_protocol.Contract.filter_tools contract tools in
-    let child_policy =
-      Spice_protocol.Contract.policy contract ~configured:parent_policy
-    in
-    let child_max_steps = Config.Runtime.max_steps (Config.runtime config) in
-    (* A child's only host tool is [message_parent]: it can ask, but it
-       cannot spawn further children or touch the parent's workflow state. *)
-    Ok
-      (Spice_session.Run.Config.make ~tools:child_tools ~policy:child_policy
-         ~host_tools:
-           [
-             Spice_protocol.Call.Kind.tool
-               Spice_protocol.Call.Kind.Subagent_message_parent;
-           ]
-         ~denial_message ~prelude ?max_steps:child_max_steps ())
-  in
   let jobs =
     Jobs.create ~sw ~stdenv ~store
       ~max_concurrent:
@@ -279,54 +208,6 @@ let start ~sw ~stdenv host plan ~mode ~model ~client ~store ~session ~http
       ~max_depth:(Config.Runtime.subagent_max_depth (Config.runtime config))
       ~max_exchanges:
         (Config.Runtime.subagent_max_exchanges (Config.runtime config))
-  in
-  let spawn_child spawn ~parent =
-    let parent_session = Spice_session_store.Document.session parent in
-    let role = Spice_protocol.Subagent.Spawn.role spawn in
-    let parent_call_id =
-      match Spice_session.Run.phase parent_session with
-      | Spice_session.Run.Phase.Waiting
-          (Spice_session.Waiting.Host_tool host_tool) ->
-          Spice_llm.Tool.Call.id host_tool.Spice_session.Waiting.call
-      | Spice_session.Run.Phase.Waiting _ | Spice_session.Run.Phase.Idle
-      | Spice_session.Run.Phase.Active ->
-          ""
-    in
-    match
-      Spice_session.State.active_turn (Spice_session.state parent_session)
-    with
-    | None -> Error "subagent spawn has no active parent turn"
-    | Some parent_turn -> (
-        let child_spec =
-          {
-            Jobs.runner =
-              (fun (_ : Spice_session.Id.t) ~notices ->
-                match child_run_config role with
-                | Error error -> Error (Host.Error.message error)
-                | Ok child_config ->
-                    Ok
-                      (Runner.make ~store ~client ~run:child_config
-                         ~host_tool:Handler.child
-                         ~hooks:
-                           (Session.with_notices
-                              ~before_request:(fun () -> ())
-                              notices Session.no_hooks)
-                         ()));
-            prompt = child_prompt spawn;
-            turn_model = Spice_provider.Model.llm model;
-            title = child_session_title spawn;
-            cwd =
-              Spice_session.Metadata.cwd
-                (Spice_session.metadata parent_session);
-          }
-        in
-        match
-          Jobs.spawn jobs
-            ~parent:(Spice_session.id parent_session)
-            ~parent_turn ~parent_call_id ~spawn ~depth:1 child_spec
-        with
-        | Error _ as error -> error
-        | Ok child -> Ok (launched_subagent_text ~child spawn))
   in
   (* Settlement is pushed, not polled: every settled run publishes a notice
      the model sees at its next request, keyed per run so one child's settle
@@ -465,12 +346,6 @@ let start ~sw ~stdenv host plan ~mode ~model ~client ~store ~session ~http
               (Spice_protocol.Subagent.Message.Request.run request)
           ^ "); its result will arrive as a notice.")
   in
-  let handler =
-    Handler.defaults ~fs ~root
-      ~now:(fun () -> now stdenv)
-      ~mode ~spawn:spawn_child ~wait:wait_runs ~cancel:cancel_run
-      ~message:message_run
-  in
   (* The host-side plan resolution the [Resolve_plan] command runs: the durable
      transition and the model-visible wording live in [Artifacts.Plan.resolve].
      A no-longer-proposable plan (a superseded proposal) surfaces as
@@ -488,9 +363,158 @@ let start ~sw ~stdenv host plan ~mode ~model ~client ~store ~session ~http
          notices
     |> Mutations.hook mutations
   in
-  let runner =
-    Runner.make ~store ~client ~run:run_config ~host_tool:handler ~resolve_plan
-      ?compaction ~hooks ()
+  (* The per-turn derivation: everything the turn's contract — mode, model,
+     credentialed client — conditions is built here, over the assembled
+     workspace, so a frontend re-binding at each turn pays only pure assembly
+     and no producer restart. *)
+  let runner_for ~mode ~model ~client =
+    let* prelude =
+      Context.extend_prelude context (Spice_protocol.Mode.prelude_messages mode)
+      |> Result.map_error (fun error -> Host.Error.Instructions error)
+    in
+    let tools =
+      Toolset.make ~sw ~stdenv host ?model:(Some model) ~workspace ~sandbox
+        ~skills ~cwd:cwd_eio ~http ~fetch_https ?anchors
+        ~dune:(Producers.dune producers)
+        ~project_source:(Producers.project_source producers)
+        ~merlin_program:(Producers.merlin_program producers)
+        ()
+      |> Spice_protocol.Contract.filter_tools
+           (Spice_protocol.Mode.contract mode)
+    in
+    let policy =
+      Spice_protocol.Contract.policy
+        (Spice_protocol.Mode.contract mode)
+        ~configured:(Permission.Run.policy permission)
+    in
+    (* The mode offer is the ceiling; the goal kind is further conditioned on
+       the session's stored goal, read at each derivation so a goal update is
+       reflected by the next turn. Catalog absence is UX only — the handler
+       rejects a stray update_goal either way — so a load failure just leaves
+       the tool out and surfaces on the next artifact operation. *)
+    let offers_goal =
+      match Artifacts.Goal.load ~fs ~root session with
+      | Ok (Some goal) -> Spice_protocol.Goal.may_update goal
+      | Ok None | Error _ -> false
+    in
+    let host_tools =
+      Spice_protocol.Mode.host_tools mode
+      |> List.filter (fun kind ->
+          match (kind : Spice_protocol.Call.Kind.t) with
+          | Spice_protocol.Call.Kind.Goal -> offers_goal
+          | Spice_protocol.Call.Kind.Question | Spice_protocol.Call.Kind.Plan
+          | Spice_protocol.Call.Kind.Todo | Spice_protocol.Call.Kind.Subagent
+          | Spice_protocol.Call.Kind.Subagent_wait
+          | Spice_protocol.Call.Kind.Subagent_cancel ->
+              true
+          | Spice_protocol.Call.Kind.Subagent_message -> true
+          (* Child-contract only; never offered to a root session. *)
+          | Spice_protocol.Call.Kind.Subagent_message_parent -> false)
+      |> List.map Spice_protocol.Call.Kind.tool
+    in
+    let run_config =
+      Spice_session.Run.Config.make ~tools ~host_tools ~policy ~denial_message
+        ~prelude ?max_steps ()
+    in
+    (* Disabling automatic compaction is the absence of the policy: the
+       interpreter performs neither pressure compaction nor overflow recovery
+       without one. Manual compaction is unaffected. *)
+    let compaction =
+      if Config.Runtime.compaction_auto (Config.runtime config) then
+        Some (Compactor.Policy.of_model ~prelude model)
+      else None
+    in
+    (* Child-run orchestration: the child config derives from the parent env,
+       and the {!Jobs} registry owns minting, the run ledger, the child Live
+       attachment, and settlement. The spawn handler awaits each run
+       immediately, so the model-visible semantics match the historical inline
+       child run; detachment drops the wait, not this assembly. A child binds
+       this contract's [client] for its whole run. *)
+    let child_run_config role =
+      let contract = Spice_protocol.Subagent.Role.contract role in
+      let parent_policy =
+        Spice_protocol.Contract.policy
+          (Spice_protocol.Mode.contract mode)
+          ~configured:(Permission.Run.policy permission)
+      in
+      let* prelude =
+        Context.extend_prelude context
+          (Spice_protocol.Subagent.Role.prelude_messages role)
+        |> Result.map_error (fun error -> Host.Error.Instructions error)
+      in
+      let child_tools = Spice_protocol.Contract.filter_tools contract tools in
+      let child_policy =
+        Spice_protocol.Contract.policy contract ~configured:parent_policy
+      in
+      let child_max_steps = Config.Runtime.max_steps (Config.runtime config) in
+      (* A child's only host tool is [message_parent]: it can ask, but it
+         cannot spawn further children or touch the parent's workflow state. *)
+      Ok
+        (Spice_session.Run.Config.make ~tools:child_tools ~policy:child_policy
+           ~host_tools:
+             [
+               Spice_protocol.Call.Kind.tool
+                 Spice_protocol.Call.Kind.Subagent_message_parent;
+             ]
+           ~denial_message ~prelude ?max_steps:child_max_steps ())
+    in
+    let spawn_child spawn ~parent =
+      let parent_session = Spice_session_store.Document.session parent in
+      let role = Spice_protocol.Subagent.Spawn.role spawn in
+      let parent_call_id =
+        match Spice_session.Run.phase parent_session with
+        | Spice_session.Run.Phase.Waiting
+            (Spice_session.Waiting.Host_tool host_tool) ->
+            Spice_llm.Tool.Call.id host_tool.Spice_session.Waiting.call
+        | Spice_session.Run.Phase.Waiting _ | Spice_session.Run.Phase.Idle
+        | Spice_session.Run.Phase.Active ->
+            ""
+      in
+      match
+        Spice_session.State.active_turn (Spice_session.state parent_session)
+      with
+      | None -> Error "subagent spawn has no active parent turn"
+      | Some parent_turn -> (
+          let child_spec =
+            {
+              Jobs.runner =
+                (fun (_ : Spice_session.Id.t) ~notices ->
+                  match child_run_config role with
+                  | Error error -> Error (Host.Error.message error)
+                  | Ok child_config ->
+                      Ok
+                        (Runner.make ~store ~client ~run:child_config
+                           ~host_tool:Handler.child
+                           ~hooks:
+                             (Session.with_notices
+                                ~before_request:(fun () -> ())
+                                notices Session.no_hooks)
+                           ()));
+              prompt = child_prompt spawn;
+              turn_model = Spice_provider.Model.llm model;
+              title = child_session_title spawn;
+              cwd =
+                Spice_session.Metadata.cwd
+                  (Spice_session.metadata parent_session);
+            }
+          in
+          match
+            Jobs.spawn jobs
+              ~parent:(Spice_session.id parent_session)
+              ~parent_turn ~parent_call_id ~spawn ~depth:1 child_spec
+          with
+          | Error _ as error -> error
+          | Ok child -> Ok (launched_subagent_text ~child spawn))
+    in
+    let handler =
+      Handler.defaults ~fs ~root
+        ~now:(fun () -> now stdenv)
+        ~mode ~spawn:spawn_child ~wait:wait_runs ~cancel:cancel_run
+        ~message:message_run
+    in
+    Ok
+      (Runner.make ~store ~client ~run:run_config ~host_tool:handler
+         ~resolve_plan ?compaction ~hooks ())
   in
   Ok
     {
@@ -500,12 +524,12 @@ let start ~sw ~stdenv host plan ~mode ~model ~client ~store ~session ~http
       notices;
       producers;
       jobs;
-      runner;
+      runner_for;
     }
 
 let stop t = Producers.stop t.producers
 let jobs t = t.jobs
-let runner t = t.runner
+let runner t ~mode ~model ~client = t.runner_for ~mode ~model ~client
 let workspace t = t.workspace
 let cwd t = t.cwd
 let context t = t.context

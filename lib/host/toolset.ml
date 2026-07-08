@@ -60,23 +60,13 @@ let editor_decision host model =
   | other -> invalid_arg ("unknown tools.editor in resolved config: " ^ other)
 
 let make ~sw ~stdenv host ?model ~workspace ~sandbox ~skills ~cwd ~http
-    ~fetch_https ~anchors_seed ?dune ?project_source ?merlin_program () =
+    ~fetch_https ?anchors ?dune ?project_source ?merlin_program () =
   let config = Host.config host in
   let shell =
     Spice_tools.Shell.Config.make
       ~shell:(Config.Runtime.shell (Config.runtime config))
       ~sandbox:(Sandbox.Effective.sandbox sandbox)
       ()
-  in
-  (* Anchored edits are flag-gated: one ephemeral resolver per run, seeded from
-     the session id so scripted transcripts are stable. With the flag off the
-     catalog and read output are byte-identical to today. *)
-  let anchors =
-    if Config.Tools.anchored_edits (Config.tools config) then
-      Some
-        (Spice_tools.Anchor_tracker.resolver
-           (Spice_tools.Anchor_tracker.create ~seed:anchors_seed ()))
-    else None
   in
   let dune =
     match dune with

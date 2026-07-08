@@ -264,7 +264,7 @@ let prompt json mode overrides cwd =
    without, it resolves the host's main model, and when none resolves (no
    credentials in the snapshot environment) it falls back to no model, i.e. the
    string-replace family. *)
-let resolve_debug_model host raw =
+let resolve_debug_model ~stdenv host raw =
   match raw with
   | Some input -> (
       match Spice_host.Models.resolve (Spice_host.Host.catalog host) input with
@@ -272,7 +272,9 @@ let resolve_debug_model host raw =
       | Error error -> Error (`Host error))
   | None -> (
       match
-        Spice_host.Models.choose host Spice_host.Models.Model_choice.Main
+        Spice_host.Models.choose
+          ~connected:(Spice_host.Account.connectivity ~stdenv host)
+          host Spice_host.Models.Model_choice.Main
       with
       | Ok choice -> Ok (Some (Spice_host.Models.Model_choice.model choice))
       | Error _ -> Ok None)
@@ -309,12 +311,24 @@ let declarations ~sw ~stdenv host ~model mode =
       ~net:(Eio.Stdenv.net stdenv) ~workspace ()
   in
   let cwd = Spice_host.Context.eio_cwd ~stdenv context in
+  (* The debug snapshot mirrors a run's flag-gated anchored-edit catalog; the
+     one-shot resolver only shapes the printed declarations. *)
+  let anchors =
+    if
+      Spice_host.Config.Tools.anchored_edits
+        (Spice_host.Config.tools (Spice_host.Host.config host))
+    then
+      Some
+        (Spice_tools.Anchor_tracker.resolver
+           (Spice_tools.Anchor_tracker.create ~seed:"debug" ()))
+    else None
+  in
   let tools =
     Spice_host.Toolset.make ~sw ~stdenv host ?model ~workspace
       ~sandbox:effective ~skills ~cwd
       ~http:(Spice_host_builtin.web_http_client stdenv)
       ~fetch_https:(Spice_host_builtin.web_fetch_https ())
-      ~anchors_seed:"debug" ~dune ()
+      ?anchors ~dune ()
     |> Spice_protocol.Contract.filter_tools (Spice_protocol.Mode.contract mode)
   in
   let permission = permission_args host None in
@@ -354,7 +368,7 @@ let print_declaration declaration =
 let tools json model_raw mode overrides cwd =
   with_host ?cwd ~overrides @@ fun ~stdenv host ->
   Eio.Switch.run @@ fun sw ->
-  match resolve_debug_model host model_raw with
+  match resolve_debug_model ~stdenv host model_raw with
   | Error (`Host error) -> Runtime_error (Spice_host.Host.Error.message error)
   | Ok model -> (
       (* Report the editor family and why it was chosen so the snapshot is
@@ -390,8 +404,8 @@ let decision_json ~value ~reason =
     [ ("value", Jsont.Json.string value); ("reason", Jsont.Json.string reason) ]
 
 let model_report json model_raw overrides cwd =
-  with_host ?cwd ~overrides @@ fun ~stdenv:_ host ->
-  match resolve_debug_model host model_raw with
+  with_host ?cwd ~overrides @@ fun ~stdenv host ->
+  match resolve_debug_model ~stdenv host model_raw with
   | Error (`Host error) -> Runtime_error (Spice_host.Host.Error.message error)
   | Ok resolved ->
       let model_id =

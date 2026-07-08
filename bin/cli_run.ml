@@ -135,11 +135,15 @@ let configured_reasoning_error error =
    environment selection, gate failures on the configured model) are runtime
    errors. *)
 
-let resolve_run_model ?reasoning_request host raw =
+let resolve_run_model ?reasoning_request ~stdenv host raw =
   let catalog = Spice_host.Host.catalog host in
   let* choice =
     match raw with
-    | None -> assembly (Spice_host.Models.choose host Model_choice.Main)
+    | None ->
+        assembly
+          (Spice_host.Models.choose
+             ~connected:(Spice_host.Account.connectivity ~stdenv host)
+             host Model_choice.Main)
     | Some input -> invalid_input (Models.resolve catalog input)
   in
   let classify =
@@ -163,10 +167,33 @@ let resolve_run_model ?reasoning_request host raw =
         end
     | Error _ as error -> classify error
   in
-  Ok (Model_choice.model choice)
+  Ok choice
 
 let provider_client ~sw ~stdenv host model =
   Spice_host.client ~sw ~stdenv host model
+
+(* A missing credential on a choice nobody made is not about that provider: it
+   means no provider is connected at all (a connected one would have won the
+   derived default), and the recovery is any login, not that provider's. *)
+let bind_client ~sw ~stdenv host choice =
+  let model = Model_choice.model choice in
+  match provider_client ~sw ~stdenv host model with
+  | Error (Spice_host.Host.Error.Missing_credential _)
+    when (match Spice_host.Reason.source (Model_choice.reason choice) with
+         | Spice_host.Reason.Derived _ -> true
+         | Spice_host.Reason.Explicit _ | Spice_host.Reason.Config _ -> false)
+    ->
+      Error
+        (`Runtime
+           (Spice_diagnostic.to_string
+              (Spice_diagnostic.make
+                 ~hints:
+                   [
+                     "run `spice auth login PROVIDER` to connect one";
+                     "run `spice auth status` to list providers";
+                   ]
+                 "no provider is connected")))
+  | result -> assembly result
 
 let effective_max_steps host override =
   match override with
@@ -607,12 +634,12 @@ let assemble ?cwd_override_abs ?skills:preloaded_skills ~sw ~stdenv ~json ~store
   run_started ~json
     ~preset:(Spice_host.Permission.Run.preset permission)
     effective;
-  let* model = resolve_run_model ?reasoning_request host model in
-  let* client = assembly (provider_client ~sw ~stdenv host model) in
+  let* choice = resolve_run_model ?reasoning_request ~stdenv host model in
+  let model = Model_choice.model choice in
+  let* client = bind_client ~sw ~stdenv host choice in
   let* run =
     assembly
-      (Spice_host.Run.start ~sw ~stdenv host plan ~mode ~model ~client ~store
-         ~session:session_id
+      (Spice_host.Run.start ~sw ~stdenv host plan ~store ~session:session_id
          ~http:(Spice_host_builtin.web_http_client stdenv)
          ~fetch_https:(Spice_host_builtin.web_fetch_https ())
          ?max_steps ?skills:preloaded_skills ?cwd_override:cwd_override_abs ())
@@ -631,8 +658,9 @@ let assemble ?cwd_override_abs ?skills:preloaded_skills ~sw ~stdenv ~json ~store
     | Ok (Some goal) -> Spice_protocol.Goal.is_unfinished goal
     | Ok None | Error _ -> false
   in
+  let* runner = assembly (Spice_host.Run.runner run ~mode ~model ~client) in
   let runner =
-    Spice_host.Run.runner run
+    runner
     |> Spice_host.Runner.with_hooks (fun hooks ->
         let hooks =
           hooks |> Host_session.with_observe (render_timeline ~json ~session_id)
@@ -666,10 +694,11 @@ let assemble ?cwd_override_abs ?skills:preloaded_skills ~sw ~stdenv ~json ~store
 (* [spice session compact] runs no tools: it only needs the summary model
    client and the compaction policy. *)
 let summary_compaction ~sw ~stdenv host model =
-  let* model = resolve_run_model host model in
+  let* choice = resolve_run_model ~stdenv host model in
+  let model = Model_choice.model choice in
+  let* client = bind_client ~sw ~stdenv host choice in
   assembly
-    (let* client = provider_client ~sw ~stdenv host model in
-     let* context = host_context ~stdenv host in
+    (let* context = host_context ~stdenv host in
      Ok
        ( client,
          Spice_host.Compactor.Policy.of_model
@@ -1209,7 +1238,11 @@ let maybe_generate_title ~sw ~stdenv host store document =
   if auto_title_enabled () then
     let session = Store.Document.session document in
     if Option.is_none (Session.Metadata.title (Session.metadata session)) then
-      match Spice_host.Models.choose host Model_choice.Small with
+      match
+        Spice_host.Models.choose
+          ~connected:(Spice_host.Account.connectivity ~stdenv host)
+          host Model_choice.Small
+      with
       | Error error -> debug_title_failure (Spice_host.Host.Error.message error)
       | Ok choice -> (
           let model = Model_choice.model choice in

@@ -17,9 +17,9 @@ Environment credentials surface as passive readiness. Readiness is local
 presence only; no provider call validates the credential.
 
   $ OPENAI_API_KEY=test-key spice models current
-  ROLE   MODEL                SOURCE            CREDENTIALS
-  model  openai/gpt-5.5       provider default  present (env OPENAI_API_KEY)
-  small  openai/gpt-5.4-nano  small heuristic   present (env OPENAI_API_KEY)
+  ROLE   MODEL                SOURCE             CREDENTIALS
+  model  openai/gpt-5.5       connected default  present (env OPENAI_API_KEY)
+  small  openai/gpt-5.4-nano  small heuristic    present (env OPENAI_API_KEY)
 
   $ OPENAI_API_KEY=test-key spice models current --json | grep -o '"credentials":{[^}]*}' | sort -u
   "credentials":{"status":"present","source":"env","source_name":"OPENAI_API_KEY"}

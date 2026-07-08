@@ -83,17 +83,11 @@ let with_model_artifact_prepare ~sw ~stdenv ?observe_model_artifact adapter
       in
       Spice_llm.Client.make ~provider:(Spice_llm.Client.provider client) ~run ()
 
+(* Whether a missing credential is an error is the adapter's answer, not a
+   host-side gate: a mandatory-auth adapter returns [Missing_credential] on
+   [None] itself, and an optional-auth adapter builds a bare client. *)
 let client ~sw ~stdenv ?observe_model_artifact ?name ?process host model =
   let provider = Spice_provider.Model.provider model in
-  let provider_requires_credential =
-    match Host.provider host provider with
-    | None -> true
-    | Some declaration ->
-        let auth = Spice_provider.auth declaration in
-        not
-          (List.is_empty (Spice_provider.Auth.env auth)
-          && List.is_empty (Spice_provider.Auth.logins auth))
-  in
   let map_account_error result =
     Result.map_error (Account.Error.to_host host) result
   in
@@ -102,8 +96,6 @@ let client ~sw ~stdenv ?observe_model_artifact ?name ?process host model =
     Account.credential account ?name provider |> map_account_error
   in
   match resolved with
-  | None when provider_requires_credential ->
-      Error (Host.Error.Missing_credential provider)
   | None -> (
       match Host.adapter host provider with
       | None -> Error (Host.Error.No_adapter provider)

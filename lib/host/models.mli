@@ -66,15 +66,24 @@ end
 (** {1:roles Role resolution} *)
 
 val choose :
-  Host.t -> Model_choice.role -> (Model_choice.t, Host.Error.t) result
-(** [choose host role] is [host]'s model for [role], explained.
+  connected:(Spice_llm.Provider.t -> bool) ->
+  Host.t ->
+  Model_choice.role ->
+  (Model_choice.t, Host.Error.t) result
+(** [choose ~connected host role] is [host]'s model for [role], explained.
 
-    The main model is the configured selector, else the first provider default,
+    The main model is the configured selector, else the first provider default
+    among providers [connected] admits, else the first provider default overall,
     else the first selectable model; when none exists it errors with
-    {!Host.Error.No_model}. The small model is the configured selector, else the
-    cheapest selectable same-provider text model, else a fallback to the main
-    model. A configured selector resolves through the same rules as {!resolve},
-    so a configured but unresolvable selector surfaces its resolution error. *)
+    {!Host.Error.No_model}. [connected] states which providers have a usable
+    account ({!Account.connected} over a loaded snapshot —
+    {!Account.connectivity} is the one-line way to supply it): preferring them
+    keeps a derived default on a provider the user can actually run, and never
+    overrides an explicit or configured selection. The small model is the
+    configured selector, else the cheapest selectable same-provider text model,
+    else a fallback to the main model. A configured selector resolves through
+    the same rules as {!resolve}, so a configured but unresolvable selector
+    surfaces its resolution error. *)
 
 (** {1:resolving Resolving user input} *)
 

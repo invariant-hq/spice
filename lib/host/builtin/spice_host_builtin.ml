@@ -597,29 +597,45 @@ let local =
 let ollama_adapter =
   Adapter.make
     ~build:(fun ~sw ~stdenv ?base_url credential ->
-      match credential with
-      | Some credential ->
-          Error
-            (Spice_host.Host.Error.Unsupported_credential
-               {
-                 provider = Spice_llm_ollama.provider;
-                 kind = Credential.kind credential;
-               })
-      | None -> (
-          match
-            match base_url with
-            | None -> Ok Spice_llm_ollama.Config.default
-            | Some base_url -> (
-                match Spice_llm_ollama.Config.make ~base_url () with
-                | config -> Ok config
-                | exception Invalid_argument message ->
-                    Error
-                      (Spice_host.Host.Error.Client
-                         { provider = Spice_llm_ollama.provider; message }))
-          with
-          | Error _ as error -> error
-          | Ok config -> Ok (Spice_llm_ollama.client ~sw ~env:stdenv ~config ())
-          ))
+      let config =
+        match base_url with
+        | None -> Ok Spice_llm_ollama.Config.default
+        | Some base_url -> (
+            match Spice_llm_ollama.Config.make ~base_url () with
+            | config -> Ok config
+            | exception Invalid_argument message ->
+                Error
+                  (Spice_host.Host.Error.Client
+                     { provider = Spice_llm_ollama.provider; message }))
+      in
+      (* Auth is optional (the declaration says so): no credential builds a
+         bare client for the default localhost daemon; a stored or env one
+         rides every request as a bearer header for key-protected
+         deployments. OAuth material has no Ollama meaning and is refused. *)
+      let credential =
+        match credential with
+        | None -> Ok None
+        | Some credential ->
+            Secret.expose
+              (Credential.secret credential)
+              ~api_key:(fun ~key ->
+                Ok (Some (Spice_llm_ollama.Credential.api_key key)))
+              ~bearer:(fun ~token ->
+                Ok (Some (Spice_llm_ollama.Credential.bearer token)))
+              ~oauth:(fun
+                  ~access_token:_ ~refresh_token:_ ~expires_at:_ ~account_id:_
+                ->
+                Error
+                  (Spice_host.Host.Error.Unsupported_credential
+                     {
+                       provider = Spice_llm_ollama.provider;
+                       kind = Secret.Kind.OAuth;
+                     }))
+      in
+      match (config, credential) with
+      | Error _ as error, _ | _, (Error _ as error) -> error
+      | Ok config, Ok credential ->
+          Ok (Spice_llm_ollama.client ~sw ~env:stdenv ~config ?credential ()))
     ()
 
 let ollama =

@@ -229,8 +229,12 @@ let local_contracts () =
 
 let ollama_contracts () =
   equal string ~msg:"provider id" "ollama" (provider_id Builtin.ollama);
-  equal (list string) ~msg:"Ollama env" []
+  equal (list string) ~msg:"Ollama env" [ "OLLAMA_API_KEY" ]
     (Builtin.ollama |> provider_auth |> Auth.env |> List.map Env.name);
+  is_true ~msg:"Ollama auth is optional"
+    (not (Auth.required (provider_auth Builtin.ollama)));
+  equal (list string) ~msg:"Ollama logins" [ "api-key" ]
+    (Builtin.ollama |> provider_auth |> Auth.logins |> List.map Auth.Login.id);
   equal int ~msg:"Ollama declares no static models" 0
     (Builtin.ollama |> Provider.models |> List.length);
   is_true ~msg:"Ollama has no default model"

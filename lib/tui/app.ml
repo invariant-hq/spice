@@ -1985,10 +1985,10 @@ let update msg t =
           match event with
           | Model_panel.Stay -> (stay, [])
           | Model_panel.Close -> (restore_model_return return t, [])
-          (* A pick closes the panel and persists host-side; the runtime replies
-             with the confirmation flash. Effective next turn — not a hot-swap of
-             the live attachment (the honest scope, mirroring old
-             [runtime.ml:241]). *)
+          (* A pick closes the panel; the runtime pins it as the session
+             selection (next turn's binding reads it), persists it as the
+             future-session default, and replies with the confirmation
+             flash. *)
           | Model_panel.Select { selector; effort } ->
               (restore_model_return return t, [ Switch_model { selector; effort } ])
           (* A locked provider's model needs a login: reroute to the login flow
