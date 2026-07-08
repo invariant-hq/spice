@@ -265,7 +265,16 @@ let abs_resolve_any_dispatches () =
     (Result.map Path.Abs.to_string (Path.Abs.resolve_any ~base ""));
   equal_result "malformed relative component is rejected"
     (Error (Path.Error.Malformed_component "a\000b"))
-    (Result.map Path.Abs.to_string (Path.Abs.resolve_any ~base "a\000b"))
+    (Result.map Path.Abs.to_string (Path.Abs.resolve_any ~base "a\000b"));
+  equal_result "backslash-rooted input is rejected as absolute-looking"
+    (Error Path.Error.Absolute)
+    (Result.map Path.Abs.to_string (Path.Abs.resolve_any ~base "\\etc"));
+  equal_result "drive-prefixed input is rejected as absolute-looking"
+    (Error Path.Error.Absolute)
+    (Result.map Path.Abs.to_string (Path.Abs.resolve_any ~base "C:etc"));
+  equal_result "drive slash input is rejected as absolute-looking"
+    (Error Path.Error.Absolute)
+    (Result.map Path.Abs.to_string (Path.Abs.resolve_any ~base "C:/etc"))
 
 let abs_compares_and_collects () =
   let normalized = abs "/workspace/./src/a.ml" in

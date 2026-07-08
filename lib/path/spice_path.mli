@@ -116,8 +116,9 @@ module Rel : sig
 
       The syntax is the same as {!of_string}, except [..] is resolved against
       [root]. Errors include {!Error.Empty} for [""], {!Error.Absolute} for
-      slash-rooted, backslash-rooted, or drive-prefixed input, and
-      {!Error.Escapes_root} if [..] would move above {!root}. *)
+      slash-rooted, backslash-rooted, or drive-prefixed input,
+      {!Error.Escapes_root} if [..] would move above {!root}, and
+      {!Error.Malformed_component} for malformed components. *)
 
   val parent : t -> t option
   (** [parent path] is [Some parent] if [path] is not {!root} and [None]
@@ -129,7 +130,7 @@ module Rel : sig
 
   val relativize : root:t -> t -> t option
   (** [relativize ~root path] is [Some suffix] iff [path] is [root] or below
-      [root] by normalized components. Equal paths return [Some root]. *)
+      [root] by normalized components. Equal paths return [Some {!root}]. *)
 
   val reach : from:t -> t -> string
   (** [reach ~from path] is relative syntax from [from] to [path].
@@ -218,16 +219,17 @@ module Abs : sig
   (** [resolve base path] parses [path] as relative syntax below [base].
 
       [..] moves to the parent of the accumulated path; resolving [..] at
-      {!root} stays at {!root}. Errors include {!Error.Empty} for [""] and
+      {!root} stays at {!root}. Errors include {!Error.Empty} for [""],
       {!Error.Absolute} for slash-rooted, backslash-rooted, or drive-prefixed
-      input. *)
+      input, and {!Error.Malformed_component} for malformed components. *)
 
   val resolve_any : base:t -> string -> (t, Error.t) result
-  (** [resolve_any ~base path] parses [path] as an absolute path: slash-rooted
-      [path] is normalized as-is; every other (relative) [path] is normalized
-      below [base]. Unlike {!resolve}, absolute input is accepted rather than
-      rejected. Errors are {!Error.Empty} for [""] and
-      {!Error.Malformed_component} for a malformed component. *)
+  (** [resolve_any ~base path] parses [path] as absolute-or-relative syntax:
+      slash-rooted [path] is normalized as-is; relative [path] is normalized
+      below [base]. Unlike {!resolve}, slash-rooted input is accepted rather
+      than rejected. Errors are {!Error.Empty} for [""], {!Error.Absolute} for
+      backslash-rooted or drive-prefixed input, and {!Error.Malformed_component}
+      for malformed components. *)
 
   val parent : t -> t option
   (** [parent path] is [Some parent] if [path] is not {!root} and [None]
