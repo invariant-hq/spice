@@ -615,6 +615,17 @@ let apply_reply_updates_grants_only_for_allow_session () =
   | Policy.Review.Rejected -> ()
   | Policy.Review.Proceed _ -> failf "deny should reject the reviewed access"
 
+let non_grantable_requests_do_not_persist_session_grants () =
+  let command = shell "make test" in
+  let request = Request.of_accesses ~grantable:false [ command ] in
+  let review =
+    expect_review "review-all policy reviews shell command"
+      (Policy.decide Policy.default request)
+  in
+  let grants = allow_session review Policy.Grants.empty in
+  is_true ~msg:"allow-session adds no grant for non-grantable requests"
+    (not (Policy.Grants.allows grants command))
+
 let review_of_accesses_uses_durable_request_subset () =
   let read = workspace_read "README.md" in
   let command = shell "make test" in
@@ -1203,6 +1214,8 @@ let () =
       test "grants allow reviewed accesses" grants_allow_reviewed_accesses;
       test "apply reply updates grants only for allow session"
         apply_reply_updates_grants_only_for_allow_session;
+      test "non-grantable requests do not persist session grants"
+        non_grantable_requests_do_not_persist_session_grants;
       test "review of accesses uses durable request subset"
         review_of_accesses_uses_durable_request_subset;
       test "review restore uses request subset"
