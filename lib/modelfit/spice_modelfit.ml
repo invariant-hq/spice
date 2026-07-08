@@ -205,11 +205,38 @@ module Gguf = struct
     value_length : int option;
   }
 
-  type error = Truncated | Malformed of string
+  module Error = struct
+    type t = Truncated | Malformed of string
 
-  let pp_error ppf = function
-    | Truncated -> Format.pp_print_string ppf "truncated GGUF header"
-    | Malformed reason -> Format.fprintf ppf "malformed GGUF header: %s" reason
+    let pp ppf = function
+      | Truncated -> Format.pp_print_string ppf "truncated GGUF header"
+      | Malformed reason ->
+          Format.fprintf ppf "malformed GGUF header: %s" reason
+  end
+
+  module Model_error = struct
+    type t =
+      | Missing_metadata of { key : string }
+      | Missing_any_metadata of { keys : string list }
+      | Invalid_metadata of { key : string }
+      | Invalid_head_dimensions of { architecture : string }
+
+    let pp_keys ppf = function
+      | [] -> ()
+      | [ key ] -> Format.pp_print_string ppf key
+      | keys ->
+          Format.pp_print_list
+            ~pp_sep:(fun ppf () -> Format.pp_print_string ppf " or ")
+            Format.pp_print_string ppf keys
+
+    let pp ppf = function
+      | Missing_metadata { key } -> Format.fprintf ppf "missing %s" key
+      | Missing_any_metadata { keys } ->
+          Format.fprintf ppf "missing %a" pp_keys keys
+      | Invalid_metadata { key } -> Format.fprintf ppf "invalid %s" key
+      | Invalid_head_dimensions { architecture } ->
+          Format.fprintf ppf "invalid %s head dimensions" architecture
+  end
 
   exception Truncated_exn
   exception Malformed_exn of string
@@ -453,7 +480,7 @@ module Gguf = struct
          done
        with Exit -> ());
       match s.arch with
-      | None -> Error (Malformed "missing general.architecture")
+      | None -> Error (Error.Malformed "missing general.architecture")
       | Some architecture ->
           Ok
             {
@@ -468,8 +495,8 @@ module Gguf = struct
               value_length = s.v_len;
             }
     with
-    | Truncated_exn -> Error Truncated
-    | Malformed_exn reason -> Error (Malformed reason)
+    | Truncated_exn -> Error Error.Truncated
+    | Malformed_exn reason -> Error (Error.Malformed reason)
 
   let architecture t = t.architecture
   let name t = t.name
@@ -477,12 +504,19 @@ module Gguf = struct
   let model ~weights_bytes t =
     if weights_bytes <= 0 then
       invalid_arg "Spice_modelfit.Gguf.model: weights_bytes must be positive";
+    let key suffix = t.architecture ^ "." ^ suffix in
     let missing suffix =
-      Error (Printf.sprintf "missing %s.%s" t.architecture suffix)
+      Error (Model_error.Missing_metadata { key = key suffix })
+    in
+    let missing_any suffixes =
+      Error (Model_error.Missing_any_metadata { keys = List.map key suffixes })
+    in
+    let invalid suffix =
+      Error (Model_error.Invalid_metadata { key = key suffix })
     in
     let positive suffix = function
       | Some value when value > 0 -> Ok value
-      | Some _ -> Error (Printf.sprintf "invalid %s.%s" t.architecture suffix)
+      | Some _ -> invalid suffix
       | None -> missing suffix
     in
     let open Result.Syntax in
@@ -499,21 +533,21 @@ module Gguf = struct
       match (t.key_length, t.value_length) with
       | Some k, Some v when k > 0 && v > 0 -> Ok ((k + v) / 2)
       | Some k, None when k > 0 -> Ok k
-      | Some _, _ ->
-          Error
-            (Printf.sprintf "invalid %s.attention.key_length" t.architecture)
+      | Some _, _ -> invalid "attention.key_length"
       | None, _ -> (
           match (t.embedding_length, t.head_count) with
           | Some embd, Some heads when embd > 0 && heads > 0 -> Ok (embd / heads)
           | Some _, Some _ ->
               Error
-                (Printf.sprintf "invalid %s.embedding_length or head_count"
-                   t.architecture)
-          | None, _ -> missing "attention.key_length or embedding_length"
+                (Model_error.Invalid_head_dimensions
+                   { architecture = t.architecture })
+          | None, _ ->
+              missing_any [ "attention.key_length"; "embedding_length" ]
           | _, None -> missing "attention.head_count")
     in
     if head_dim <= 0 then
-      Error (Printf.sprintf "invalid %s head dimensions" t.architecture)
+      Error
+        (Model_error.Invalid_head_dimensions { architecture = t.architecture })
     else
       Ok
         (Model.make ~weights_bytes ~n_layers ~n_kv_heads ~head_dim ~max_context)

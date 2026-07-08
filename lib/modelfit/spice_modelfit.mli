@@ -200,13 +200,20 @@ module Gguf : sig
   type t
   (** Fit-relevant metadata parsed from a GGUF header. *)
 
-  type error =
-    | Truncated
-        (** The prefix ended before the fit-relevant keys were found; retry with
-            a longer prefix. *)
-    | Malformed of string  (** Not a GGUF header, or a structural error. *)
+  module Error : sig
+    (** GGUF header parse errors. *)
 
-  val of_prefix : string -> (t, error) result
+    type t =
+      | Truncated
+          (** The prefix ended before the fit-relevant keys were found; retry
+              with a longer prefix. *)
+      | Malformed of string  (** Not a GGUF header, or a structural error. *)
+
+    val pp : Format.formatter -> t -> unit
+    (** [pp ppf e] formats [e] for diagnostics. *)
+  end
+
+  val of_prefix : string -> (t, Error.t) result
   (** [of_prefix bytes] parses the fit-relevant metadata from [bytes], a prefix
       of a GGUF file (versions 2 and 3, any size prefix). *)
 
@@ -216,13 +223,29 @@ module Gguf : sig
   val name : t -> string option
   (** [name t] is the model's display name, when recorded. *)
 
-  val model : weights_bytes:int -> t -> (Model.t, string) result
+  module Model_error : sig
+    (** GGUF-to-model derivation errors. *)
+
+    type t =
+      | Missing_metadata of { key : string }
+          (** Required GGUF metadata key [key] is absent. *)
+      | Missing_any_metadata of { keys : string list }
+          (** At least one of [keys] is required, and all are absent. *)
+      | Invalid_metadata of { key : string }
+          (** GGUF metadata key [key] is present but invalid for model-fit
+              derivation. *)
+      | Invalid_head_dimensions of { architecture : string }
+          (** The architecture's metadata does not describe a usable attention
+              head dimension. *)
+
+    val pp : Format.formatter -> t -> unit
+    (** [pp ppf e] formats [e] for diagnostics. *)
+  end
+
+  val model : weights_bytes:int -> t -> (Model.t, Model_error.t) result
   (** [model ~weights_bytes t] derives guard inputs from [t] and the full file's
-      size in bytes. [Error] names the metadata that was missing or
+      size in bytes. [Error e] reports the metadata that was missing or
       inconsistent; well-formed model files always carry it.
 
       Raises [Invalid_argument] if [weights_bytes] is not positive. *)
-
-  val pp_error : Format.formatter -> error -> unit
-  (** [pp_error ppf e] formats [e] for diagnostics. *)
 end

@@ -12,12 +12,37 @@ let gib = 1024 * mib
 let verdict = testable ~pp:Fit.Verdict.pp ~equal:Fit.Verdict.equal ()
 
 let gguf_error =
-  testable ~pp:Fit.Gguf.pp_error
+  testable ~pp:Fit.Gguf.Error.pp
     ~equal:(fun a b ->
       match (a, b) with
-      | Fit.Gguf.Truncated, Fit.Gguf.Truncated -> true
-      | Fit.Gguf.Malformed a, Fit.Gguf.Malformed b -> String.equal a b
-      | (Fit.Gguf.Truncated | Fit.Gguf.Malformed _), _ -> false)
+      | Fit.Gguf.Error.Truncated, Fit.Gguf.Error.Truncated -> true
+      | Fit.Gguf.Error.Malformed a, Fit.Gguf.Error.Malformed b ->
+          String.equal a b
+      | (Fit.Gguf.Error.Truncated | Fit.Gguf.Error.Malformed _), _ -> false)
+    ()
+
+let gguf_model_error =
+  testable ~pp:Fit.Gguf.Model_error.pp
+    ~equal:(fun a b ->
+      match (a, b) with
+      | Fit.Gguf.Model_error.Missing_metadata { key = a },
+        Fit.Gguf.Model_error.Missing_metadata { key = b } ->
+          String.equal a b
+      | Fit.Gguf.Model_error.Missing_any_metadata { keys = a },
+        Fit.Gguf.Model_error.Missing_any_metadata { keys = b } ->
+          List.equal String.equal a b
+      | Fit.Gguf.Model_error.Invalid_metadata { key = a },
+        Fit.Gguf.Model_error.Invalid_metadata { key = b } ->
+          String.equal a b
+      | Fit.Gguf.Model_error.Invalid_head_dimensions { architecture = a },
+        Fit.Gguf.Model_error.Invalid_head_dimensions { architecture = b } ->
+          String.equal a b
+      | ( Fit.Gguf.Model_error.Missing_metadata _
+        | Fit.Gguf.Model_error.Missing_any_metadata _
+        | Fit.Gguf.Model_error.Invalid_metadata _
+        | Fit.Gguf.Model_error.Invalid_head_dimensions _ ),
+        _ ->
+          false)
     ()
 
 (* A reference shape: 32 layers, 8 KV heads, head dim 128. At a 32768-token
@@ -185,12 +210,13 @@ let qwen_kvs =
 let expect_gguf data =
   match Fit.Gguf.of_prefix data with
   | Ok gguf -> gguf
-  | Error error -> failf "unexpected parse error: %a" Fit.Gguf.pp_error error
+  | Error error -> failf "unexpected parse error: %a" Fit.Gguf.Error.pp error
 
 let expect_model ~weights_bytes gguf =
   match Fit.Gguf.model ~weights_bytes gguf with
   | Ok model -> model
-  | Error message -> failf "unexpected model error: %s" message
+  | Error error ->
+      failf "unexpected model error: %a" Fit.Gguf.Model_error.pp error
 
 let gguf_parses_metadata () =
   let parsed = expect_gguf (gguf qwen_kvs) in
@@ -244,29 +270,31 @@ let gguf_truncation_and_malformed () =
   let whole = gguf qwen_kvs in
   equal
     (result (option string) gguf_error)
-    ~msg:"mid-metadata cut" (Error Fit.Gguf.Truncated)
+    ~msg:"mid-metadata cut" (Error Fit.Gguf.Error.Truncated)
     (Result.map Fit.Gguf.name
        (Fit.Gguf.of_prefix (String.sub whole 0 (String.length whole - 9))));
   equal
     (result (option string) gguf_error)
-    ~msg:"bad magic" (Error (Fit.Gguf.Malformed "bad magic"))
+    ~msg:"bad magic" (Error (Fit.Gguf.Error.Malformed "bad magic"))
     (Result.map Fit.Gguf.name (Fit.Gguf.of_prefix "GGML garbage"));
   equal
     (result (option string) gguf_error)
     ~msg:"unsupported version"
-    (Error (Fit.Gguf.Malformed "unsupported GGUF version 1"))
+    (Error (Fit.Gguf.Error.Malformed "unsupported GGUF version 1"))
     (Result.map Fit.Gguf.name (Fit.Gguf.of_prefix (gguf ~version:1 qwen_kvs)));
   equal
     (result (option string) gguf_error)
     ~msg:"missing architecture"
-    (Error (Fit.Gguf.Malformed "missing general.architecture"))
+    (Error (Fit.Gguf.Error.Malformed "missing general.architecture"))
     (Result.map Fit.Gguf.name
        (Fit.Gguf.of_prefix (gguf [ (fun b -> kv_u32 b "some.key" 1) ])))
 
 let gguf_missing_keys () =
   let no_layers = List.filteri (fun i _ -> i <> 2) qwen_kvs in
-  equal (result int string) ~msg:"missing block_count"
-    (Error "missing qwen3moe.block_count")
+  equal (result int gguf_model_error) ~msg:"missing block_count"
+    (Error
+       (Fit.Gguf.Model_error.Missing_metadata
+          { key = "qwen3moe.block_count" }))
     (Result.map Fit.Model.n_layers
        (Fit.Gguf.model ~weights_bytes:gib (expect_gguf (gguf no_layers))));
   expect_invalid_arg "weights must be positive" (fun () ->

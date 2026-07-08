@@ -281,15 +281,15 @@ let gguf_fit_of_path path =
                 | Ok fit -> Some fit
                 | Error reason ->
                     Log.debug (fun m ->
-                        m "gguf header of %s has no guard inputs: %s" path
-                          reason);
+                        m "gguf header of %s has no guard inputs: %a" path
+                          Spice_modelfit.Gguf.Model_error.pp reason);
                     None)
-            | Error Spice_modelfit.Gguf.Truncated
+            | Error Spice_modelfit.Gguf.Error.Truncated
               when length < max_prefix && length < st_size ->
                 attempt (length * 4)
             | Error error ->
                 Log.debug (fun m ->
-                    m "gguf header of %s: %a" path Spice_modelfit.Gguf.pp_error
+                    m "gguf header of %s: %a" path Spice_modelfit.Gguf.Error.pp
                       error);
                 None)
       in
