@@ -296,6 +296,48 @@ let pretty_printers_match_to_string () =
   equal string ~msg:"absolute pp" "/src/a.ml"
     (Format.asprintf "%a" Path.Abs.pp (abs "/src/a.ml"))
 
+let unusual_components_are_preserved () =
+  List.iter
+    (fun component ->
+      let msg = String.escaped component in
+      is_true ~msg:("component is valid: " ^ msg)
+        (Path.Rel.is_component component);
+      equal_result ("relative path preserves " ^ msg) (Ok component)
+        (rel_string component);
+      equal_result ("relative add_component preserves " ^ msg)
+        (Ok ("dir/" ^ component))
+        (Result.map Path.Rel.to_string
+           (Path.Rel.add_component (rel "dir") component));
+      equal_result ("absolute path preserves " ^ msg) (Ok ("/" ^ component))
+        (abs_string ("/" ^ component));
+      equal_result ("absolute add_component preserves " ^ msg)
+        (Ok ("/dir/" ^ component))
+        (Result.map Path.Abs.to_string
+           (Path.Abs.add_component (abs "/dir") component)))
+    [ "a-b"; "a.b"; "a b"; "1:a"; "file\nname" ]
+
+let relativize_and_reach_root_edges () =
+  let rel_target = rel "a/b" in
+  equal (option rel_path)
+    ~msg:"relative equal paths relativize to relative root"
+    (Some Path.Rel.root)
+    (Path.Rel.relativize ~root:rel_target rel_target);
+  equal string ~msg:"relative equal paths reach with dot" "."
+    (Path.Rel.reach ~from:rel_target rel_target);
+  equal (option rel_path) ~msg:"relative root relativizes every path"
+    (Some rel_target)
+    (Path.Rel.relativize ~root:Path.Rel.root rel_target);
+  let abs_target = abs "/a/b" in
+  equal (option rel_path)
+    ~msg:"absolute equal paths relativize to relative root"
+    (Some Path.Rel.root)
+    (Path.Abs.relativize ~root:abs_target abs_target);
+  equal string ~msg:"absolute equal paths reach with dot" "."
+    (Path.Abs.reach ~from:abs_target abs_target);
+  equal (option rel_path) ~msg:"absolute root relativizes every absolute path"
+    (Some (rel "a/b"))
+    (Path.Abs.relativize ~root:Path.Abs.root abs_target)
+
 let rel_round_trips path =
   equal (result rel_path error) ~msg:"to_string parses back to same path"
     (Ok path)
@@ -387,6 +429,28 @@ let raw_absolute_parse_preserves_invariants input =
             (Path.Rel.is_component component))
         (Path.Abs.components path)
 
+let check_absolute_invariants label input path =
+  equal (result abs_path error)
+    ~msg:(label ^ " re-parses: " ^ String.escaped input)
+    (Ok path)
+    (Path.Abs.of_string (Path.Abs.to_string path));
+  List.iter
+    (fun component ->
+      is_true
+        ~msg:(label ^ " component is valid: " ^ String.escaped component)
+        (Path.Rel.is_component component))
+    (Path.Abs.components path)
+
+let raw_absolute_resolve_preserves_invariants (base, input) =
+  match Path.Abs.resolve base input with
+  | Error _ -> ()
+  | Ok path -> check_absolute_invariants "resolved absolute path" input path
+
+let raw_absolute_resolve_any_preserves_invariants (base, input) =
+  match Path.Abs.resolve_any ~base input with
+  | Error _ -> ()
+  | Ok path -> check_absolute_invariants "resolve_any absolute path" input path
+
 let () =
   run "spice.path"
     [
@@ -426,7 +490,16 @@ let () =
             (pair abs_path rel_path) abs_resolve_any_agrees_with_resolve;
           prop' "raw parser inputs preserve invariants" raw_path_input
             raw_absolute_parse_preserves_invariants;
+          prop' "raw resolve inputs preserve invariants"
+            (pair abs_path raw_path_input)
+            raw_absolute_resolve_preserves_invariants;
+          prop' "raw resolve_any inputs preserve invariants"
+            (pair abs_path raw_path_input)
+            raw_absolute_resolve_any_preserves_invariants;
         ];
+      test "unusual valid components are preserved"
+        unusual_components_are_preserved;
+      test "relativize and reach root edges" relativize_and_reach_root_edges;
       test "error message names the malformed component"
         error_message_names_malformed_component;
       test "pretty printers match to_string" pretty_printers_match_to_string;
