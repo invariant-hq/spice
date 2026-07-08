@@ -163,6 +163,44 @@ let%expect_test "a shell command settles as a transcript block" =
     output line as summary: true
     shell mode exited after submit: true|}]
 
+(* /verbose flips the ctrl+o expand lens through the palette: honest flash on
+   the home stage (nothing to expand — ctrl+o is chat-gated for the same
+   reason), then in chat the echo plus the event record, toggling both ways.
+   The chat is entered via a shell command, so no provider runs. *)
+let%expect_test "verbose toggles the expand lens with a record" =
+  Project.with_temp "next-verbose" @@ fun project ->
+  run project ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
+  Term.wait t (Screen.has "dune:");
+  Term.send t "/verbose";
+  Term.wait t (fun s -> Screen.has "/verbose" s && Screen.lacks "/thinking" s);
+  Term.send t Keys.enter;
+  Term.wait t (Screen.has "no tool output to expand yet");
+  print_fact "home stage flashes honestly"
+    (Screen.has "no tool output to expand yet" (Term.screen t));
+  Term.send t "!echo drop-to-chat";
+  Term.wait t (Screen.has "echo drop-to-chat");
+  Term.send t Keys.enter;
+  Term.wait t (Screen.has "⎿  drop-to-chat");
+  Term.send t "/verbose";
+  Term.wait t (fun s -> Screen.has "/verbose" s && Screen.lacks "/thinking" s);
+  Term.send t Keys.enter;
+  Term.wait t (Screen.has "tool output expanded");
+  print_fact "echo recorded" (Screen.has "❯ /verbose" (Term.screen t));
+  print_fact "expanded event recorded"
+    (Screen.has "tool output expanded" (Term.screen t));
+  Term.send t "/verbose";
+  Term.wait t (fun s -> Screen.has "/verbose" s && Screen.lacks "/thinking" s);
+  Term.send t Keys.enter;
+  Term.wait t (Screen.has "tool output collapsed");
+  print_fact "collapse event recorded"
+    (Screen.has "tool output collapsed" (Term.screen t));
+  [%expect
+    {|
+    home stage flashes honestly: true
+    echo recorded: true
+    expanded event recorded: true
+    collapse event recorded: true|}]
+
 (* [--sandbox read-only] overrides the configured mode for the run
    (Startup sandbox → Sandbox.resolve ?flag): the home stage's warning line
    stays quiet (the harness config's danger-full-access is overridden), the

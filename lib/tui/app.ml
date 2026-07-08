@@ -957,6 +957,33 @@ let dispatch_command ?(argument = None) command t =
           ( { t with surface = Screen (Settings (Settings_screen.loading ~tab)) },
             [ Load_settings ] )
       | Command.Open_review -> open_review ?base_spec:argument t
+      | Command.Toggle_verbose -> (
+          (* Flip the ctrl+o expand lens — the same [chat.expanded] the key
+             flips, so the command and the key cannot drift — and record it:
+             the muted [❯ /verbose] echo, then the event-class outcome
+             (01-transcript.md §Notices). The lens is a property of the chat
+             document; on the home stage there is nothing to expand, so the
+             command flashes honestly instead (ctrl+o is gated to chat for the
+             same reason). *)
+          match t.phase with
+          | Chat chat ->
+              let expanded = not chat.expanded in
+              let outcome =
+                if expanded then "tool output expanded"
+                else "tool output collapsed"
+              in
+              let transcript =
+                List.fold_left Transcript.append chat.transcript
+                  [
+                    Transcript.Notice
+                      (Notice.Echo
+                         { command = Command.slash command; result = None });
+                    Transcript.Notice (Notice.Event outcome);
+                  ]
+              in
+              ({ t with phase = Chat { chat with expanded; transcript } }, [])
+          | Prelude ->
+              ({ t with flash = Some "no tool output to expand yet" }, []))
       | _ ->
           ( {
               t with

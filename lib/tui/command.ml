@@ -107,18 +107,16 @@ let equal a b = String.equal a.slash b.slash
    the palette never advertises a command that would do nothing — and hides
    nothing that works: the session quick-switch panel, the model panel, the
    settings screen, the review screen, provider login/logout, quit, the
-   /thinking reasoning toggle, and the /plan//build mode switches are wired
-   today. The match is EXHAUSTIVE by design (no [_] wildcard):
+   /thinking and /verbose toggles, and the /plan//build mode switches are
+   wired today. The match is EXHAUSTIVE by design (no [_] wildcard):
    a wildcard once let a wired command ship hidden, so every fate states its
    visibility and the compiler forces the next surface to decide. *)
 let implemented t =
   match t.fate with
   | Open_sessions | Open_model | Open_settings _ | Open_review | Open_login
-  | Open_logout | Quit | Toggle_thinking | Switch_mode _ ->
+  | Open_logout | Quit | Toggle_thinking | Toggle_verbose | Switch_mode _ ->
       true
-  | Clear_session | Fork_session | Compact_session | Rename_session
-  | Toggle_verbose ->
-      false
+  | Clear_session | Fork_session | Compact_session | Rename_session -> false
 
 let is_substring ~affix s =
   let la = String.length affix and ls = String.length s in
