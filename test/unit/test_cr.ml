@@ -415,6 +415,11 @@ let text_insertions () =
     "let x = 1\n(* CR: review this *)\n"
     (expect_ok "append missing trailing newline"
        (Cr.add_at_end ~syntax:Cr.Syntax.ocaml ~text:"let x = 1" cr));
+  equal string ~msg:"insert after final line uses no indentation"
+    "let f x =\n  x + 1\n(* CR: review this *)\n"
+    (expect_ok "after final line"
+       (Cr.add_after_line ~syntax:Cr.Syntax.ocaml
+          ~text:"let f x =\n  x + 1" ~line:2 cr));
   expect_error "line outside source" Cr.Error.Invalid_anchor
     (Cr.add_before_line ~syntax:Cr.Syntax.ocaml ~text:source ~line:99 cr);
   expect_error "line comments reject multi-line CRs" Cr.Error.Invalid_body
@@ -481,6 +486,30 @@ let replace_line_comment_preserves_crlf () =
     (expect_ok "replace CRLF line comment"
        (Cr.replace ~text occurrence resolved))
 
+let line_comment_boundaries () =
+  let syntax = expect_ok "line syntax" (Cr.Syntax.line ~prefix:"//") in
+  let final_line = "let x = 1\n// CR: final" in
+  let occurrence =
+    match Cr.scan ~syntax ~path:source_path ~text:final_line with
+    | [ occurrence ] -> occurrence
+    | occurrences ->
+        failf "expected one final-line occurrence, got %d"
+          (List.length occurrences)
+  in
+  equal string ~msg:"scanner includes final line without newline" "// CR: final"
+    (Cr.Occurrence.raw occurrence);
+  let crlf = "let x = 1\r\n  // CR: remove\r\nlet y = 2\r\n" in
+  let occurrence =
+    match Cr.scan ~syntax ~path:source_path ~text:crlf with
+    | [ occurrence ] -> occurrence
+    | occurrences ->
+        failf "expected one CRLF occurrence, got %d" (List.length occurrences)
+  in
+  equal string ~msg:"removing whole CRLF line preserves surrounding endings"
+    "let x = 1\r\nlet y = 2\r\n"
+    (expect_ok "remove CRLF line comment"
+       (Cr.remove ~text:crlf occurrence))
+
 let rendered_comments_parse_back (soon, recipient_text, body) =
   let priority = if soon then Cr.Priority.Soon else Cr.Priority.Now in
   let recipient = Option.map handle recipient_text in
@@ -538,5 +567,6 @@ let () =
           test "replaces and removes occurrences" replace_and_remove_occurrences;
           test "preserves CRLF line endings when replacing line comments"
             replace_line_comment_preserves_crlf;
+          test "handles line comment boundaries" line_comment_boundaries;
         ];
     ]

@@ -549,8 +549,11 @@ let inserted_comment text offset comment =
   let needs_leading_newline =
     offset > 0 && not (Char.equal text.[offset - 1] '\n')
   in
+  let indentation =
+    if offset = String.length text then "" else indentation_at text offset
+  in
   (if needs_leading_newline then "\n" else "")
-  ^ indentation_at text offset ^ comment ^ "\n"
+  ^ indentation ^ comment ^ "\n"
 
 let add_at_offset ~syntax ~text offset cr =
   match render ~syntax cr with
