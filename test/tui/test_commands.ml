@@ -19,21 +19,22 @@ let run ?env ?rows ?cols project f =
   Term.run ?env ?rows ?cols project f
 
 (* Typing "/" on the empty draft opens the palette; only the wired commands
-   show ([/thinking], [/sessions], [/quit] today), so nothing advertised is
-   dead. *)
+   show, so nothing advertised is dead. The five-slot window shows the first
+   wired rows ([/model], [/thinking], …) with the seam row counting the rest;
+   an unwired command ([/clear] until its wave lands) never appears. *)
 let%expect_test "slash opens the palette with only wired commands" =
   Project.with_temp "next-palette-open" @@ fun project ->
   run project ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
   Term.wait t (Screen.has "dune:");
   Term.send t "/";
-  Term.wait t (Screen.has "/sessions");
-  print_fact "sessions row" (Screen.has "/sessions" (Term.screen t));
-  print_fact "quit row" (Screen.has "/quit" (Term.screen t));
-  print_fact "unwired command hidden" (Screen.lacks "/review" (Term.screen t));
+  Term.wait t (Screen.has "/model");
+  print_fact "model row" (Screen.has "/model" (Term.screen t));
+  print_fact "thinking row" (Screen.has "/thinking" (Term.screen t));
+  print_fact "unwired command hidden" (Screen.lacks "/clear" (Term.screen t));
   [%expect
     {|
-    sessions row: true
-    quit row: true
+    model row: true
+    thinking row: true
     unwired command hidden: true|}]
 
 (* Each keystroke narrows the rows (the composer text IS the filter); a filter
@@ -44,19 +45,19 @@ let%expect_test "filtering narrows and backspace past the slash closes" =
   run project ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
   Term.wait t (Screen.has "dune:");
   Term.send t "/q";
-  Term.wait t (fun s -> Screen.has "/quit" s && Screen.lacks "/sessions" s);
-  print_fact "narrowed to quit" (Screen.lacks "/sessions" (Term.screen t));
+  Term.wait t (fun s -> Screen.has "/quit" s && Screen.lacks "/model" s);
+  print_fact "narrowed to quit" (Screen.lacks "/model" (Term.screen t));
   Term.send t "zz";
   Term.wait t (Screen.has "no matching commands");
   print_fact "empty filter notes" (Screen.has "no matching commands" (Term.screen t));
   Term.send t Keys.backspace;
   Term.send t Keys.backspace;
   Term.send t Keys.backspace;
-  Term.wait t (fun s -> Screen.has "/quit" s && Screen.has "/sessions" s);
+  Term.wait t (fun s -> Screen.has "/model" s && Screen.has "/thinking" s);
   Term.send t Keys.backspace;
   Term.send t Keys.backspace;
-  Term.wait t (Screen.lacks "/quit");
-  print_fact "closed once the slash is gone" (Screen.lacks "/quit" (Term.screen t));
+  Term.wait t (Screen.lacks "/model");
+  print_fact "closed once the slash is gone" (Screen.lacks "/model" (Term.screen t));
   [%expect
     {|
     narrowed to quit: true
@@ -94,19 +95,21 @@ let%expect_test "enter runs the selected command" =
   print_fact "panel opened" (Screen.has "▔▔▔▔" (Term.screen t));
   [%expect {| panel opened: true |}]
 
-(* A known-but-unwired command typed in full falls through the empty list to
-   the honest flash; it never starts a turn. *)
+(* A known-but-unwired command ([/clear] until its wave lands) never starts a
+   turn: typed, the no-match palette swallows the ↵ outright; pasted (the
+   draft never passes through a lone "/", so no palette opens), the submit
+   reaches dispatch and gets the honest flash. *)
 let%expect_test "unwired commands flash honestly" =
   Project.with_temp "next-palette-honest" @@ fun project ->
   run project ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
   Term.wait t (Screen.has "dune:");
-  Term.send t "/review";
-  Term.wait t (Screen.has "no matching commands");
+  Term.send t (Keys.bracketed_paste "/clear");
+  Term.wait t (Screen.has "/clear");
   Term.send t Keys.enter;
-  Term.wait t (Screen.has "/review lands in a later iteration");
-  print_fact "unwired command flashed"
-    (Screen.has "/review lands in a later iteration" (Term.screen t));
-  [%expect {| unwired command flashed: true |}]
+  Term.wait t (Screen.has "/clear lands in a later iteration");
+  print_fact "pasted unwired command flashed"
+    (Screen.has "/clear lands in a later iteration" (Term.screen t));
+  [%expect {| pasted unwired command flashed: true |}]
 
 (* /plan colors the composer frame with its chip and records nothing on the
    home stage (the chip is the record there); /build restores the wordless gray
