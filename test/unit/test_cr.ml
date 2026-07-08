@@ -101,6 +101,8 @@ let comment_construction_and_resolution () =
   let recipient = handle "spice" in
   let resolver = handle "agent" in
   let cr = make ~recipient "  tighten this  " in
+  equal string ~msg:"default priority is now" "now"
+    (Cr.Priority.to_string Cr.Priority.default);
   equal status_value ~msg:"default status is open now"
     (Cr.Status.Open Cr.Priority.Now) (Cr.status cr);
   equal (option handle_value) ~msg:"recipient is retained" (Some recipient)

@@ -103,6 +103,9 @@ module Priority : sig
     | Now  (** Immediate review priority. *)
     | Soon  (** Deferred review priority. *)
 
+  val default : t
+  (** [default] is the priority used by {!make} when [priority] is omitted. *)
+
   val to_string : t -> string
   (** [to_string t] is a stable descriptive string, not source syntax. *)
 end
@@ -171,8 +174,9 @@ val parse : string -> (t, Error.t) result
     bodies are validated like {!make}'s [body]. Successful parses render
     canonically with {!to_string}.
 
-    Errors with {!Error.Invalid_comment} if [s] does not match the CR grammar.
-    Errors with {!Error.Invalid_body} if the parsed body is invalid. *)
+    Errors with {!Error.Invalid_comment} if [s] does not match the CR grammar
+    or contains an invalid parsed handle token. Errors with
+    {!Error.Invalid_body} if the parsed body is invalid. *)
 
 (** {2:inspecting Inspecting} *)
 
@@ -300,7 +304,7 @@ module Occurrence : sig
 
   val equal : t -> t -> bool
   (** [equal a b] is [true] iff [a] and [b] have the same path, source location,
-      and raw text. *)
+      source comment syntax, and raw text. *)
 
   val pp : Format.formatter -> t -> unit
   (** [pp ppf t] formats [t] for diagnostics. *)
