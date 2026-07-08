@@ -153,6 +153,12 @@ let workspace_constructs_and_tracks_cwd () =
   let workspace = expect_ok "cwd" (Workspace.with_cwd workspace cwd) in
   equal string ~msg:"with_cwd updates cwd" "/workspace/vendor/src"
     (path_string (Workspace.cwd workspace));
+  equal path_value ~msg:"cwd_root_path returns current root"
+    (make_path root_b ".")
+    (Workspace.cwd_root_path workspace);
+  equal path_value ~msg:"path_at_cwd_root constructs below current root"
+    (make_path root_b "app/main.ml")
+    (Workspace.path_at_cwd_root workspace (rel "app/main.ml"));
   equal string ~msg:"single uses relative cwd" "/workspace/app"
     (path_string (Workspace.cwd (Workspace.single ~cwd:(rel "app") root_a)))
 

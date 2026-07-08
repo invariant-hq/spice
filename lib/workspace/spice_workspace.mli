@@ -74,6 +74,13 @@ val root_path : t -> Path.t
     This is independent of {!cwd}; it is the stable default root for operations
     that need a workspace-level directory rather than the current directory. *)
 
+val cwd_root_path : t -> Path.t
+(** [cwd_root_path workspace] is the root path at the root containing
+    {!cwd}. *)
+
+val path_at_cwd_root : t -> Spice_path.Rel.t -> Path.t
+(** [path_at_cwd_root workspace rel] is [rel] below {!cwd_root_path}. *)
+
 val with_cwd : t -> Path.t -> (t, Error.t) result
 (** [with_cwd workspace cwd] is [workspace] with current path [cwd].
 

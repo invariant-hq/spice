@@ -65,6 +65,9 @@ let root_path t =
   | root :: _ -> Path.make ~root Spice_path.Rel.root
   | [] -> invalid_arg "workspace has no roots"
 
+let cwd_root_path t = Path.make ~root:(Path.root t.cwd) Spice_path.Rel.root
+let path_at_cwd_root t rel = Path.make ~root:(Path.root t.cwd) rel
+
 let with_cwd t cwd =
   match canonical_path t cwd with
   | Some cwd -> Ok { t with cwd }

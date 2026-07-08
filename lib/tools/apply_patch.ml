@@ -268,15 +268,13 @@ let failed_plan = function
   | Edit error -> failed_edit error
   | Patch message -> Tool.Result.failed `Invalid_input message
 
-let root_path workspace rel =
-  Workspace.Path.make ~root:(Workspace.Path.root (Workspace.cwd workspace)) rel
-
 let duplicate_output operations workspace =
   let rec loop seen = function
     | [] -> None
     | operation :: operations ->
         let path =
-          root_path workspace (Patch.Operation.output_path operation)
+          Workspace.path_at_cwd_root workspace
+            (Patch.Operation.output_path operation)
         in
         if Workspace.Path.Set.mem path seen then Some path
         else loop (Workspace.Path.Set.add path seen) operations
@@ -291,8 +289,12 @@ let is_strict_ancestor ~parent path =
      || String.starts_with ~prefix:(parent ^ Filename.dir_sep) path)
 
 let operation_paths workspace operation =
-  let source = root_path workspace (Patch.Operation.path operation) in
-  let output = root_path workspace (Patch.Operation.output_path operation) in
+  let source =
+    Workspace.path_at_cwd_root workspace (Patch.Operation.path operation)
+  in
+  let output =
+    Workspace.path_at_cwd_root workspace (Patch.Operation.output_path operation)
+  in
   if Workspace.Path.equal source output then [ source ] else [ source; output ]
 
 let nested_path_conflict operations workspace =
@@ -428,12 +430,17 @@ let plan_update ~fs ~workspace ~max_bytes path move_to update =
 
 let plan_operation ~fs ~workspace ~max_bytes = function
   | Patch.Operation.Add { path; contents } ->
-      plan_add ~fs ~workspace ~max_bytes (root_path workspace path) contents
+      plan_add ~fs ~workspace ~max_bytes
+        (Workspace.path_at_cwd_root workspace path)
+        contents
   | Patch.Operation.Delete { path } ->
-      plan_delete ~fs ~workspace ~max_bytes (root_path workspace path)
+      plan_delete ~fs ~workspace ~max_bytes
+        (Workspace.path_at_cwd_root workspace path)
   | Patch.Operation.Update { path; move_to; update } ->
-      let path = root_path workspace path in
-      let move_to = Option.map (root_path workspace) move_to in
+      let path = Workspace.path_at_cwd_root workspace path in
+      let move_to =
+        Option.map (Workspace.path_at_cwd_root workspace) move_to
+      in
       plan_update ~fs ~workspace ~max_bytes path move_to update
 
 let plan ~fs ~workspace ~max_bytes input =
@@ -501,7 +508,7 @@ let evidence_of_operation ~path = function
    approval performs the precise stale-safe checks. *)
 let access_evidence_of_operation ~workspace operation =
   let access op rel =
-    let path = root_path workspace rel in
+    let path = Workspace.path_at_cwd_root workspace rel in
     (Permission.Access.path ~op path, path)
   in
   match operation with
@@ -510,7 +517,8 @@ let access_evidence_of_operation ~workspace operation =
       [ (access, evidence_of_operation ~path operation) ]
   | Patch.Operation.Delete { path } ->
       let access =
-        Permission.Access.path ~op:`Delete (root_path workspace path)
+        Permission.Access.path ~op:`Delete
+          (Workspace.path_at_cwd_root workspace path)
       in
       [ (access, None) ]
   | Patch.Operation.Update { path; move_to = None; _ } ->
@@ -518,7 +526,8 @@ let access_evidence_of_operation ~workspace operation =
       [ (access, evidence_of_operation ~path operation) ]
   | Patch.Operation.Update { path; move_to = Some destination; _ } ->
       let delete_access =
-        Permission.Access.path ~op:`Delete (root_path workspace path)
+        Permission.Access.path ~op:`Delete
+          (Workspace.path_at_cwd_root workspace path)
       in
       let create_access, destination = access `Create destination in
       [
