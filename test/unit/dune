@@ -329,6 +329,23 @@
   unix))
 
 (test
+ (name test_llm_deepseek)
+ (modules test_llm_deepseek)
+ (libraries
+  windtrap
+  test_support
+  cohttp
+  cohttp-eio
+  jsont
+  jsont.bytesrw
+  spice_llm
+  spice_llm_deepseek
+  eio
+  eio.unix
+  eio_main
+  unix))
+
+(test
  (name test_oauth2)
  (modules test_oauth2)
  (libraries windtrap test_support oauth2 jsont uri))
