@@ -20,13 +20,14 @@ let reduced_motion = [ ("SPICE_REDUCED_MOTION", "1") ]
 let print_fact = Util.print_fact
 
 (* A resumable session carrying one finished turn whose user prompt becomes the
-   replayed transcript's User block. Mirrors [test_sessions_screen]'s seed. *)
-let seed_prompt_session project id ~title ~prompt =
+   replayed transcript's User block. Mirrors [test_sessions_screen]'s seed.
+   [updated_at] orders sessions for the newest-session launch flags. *)
+let seed_prompt_session ?(updated_at = 2) project id ~title ~prompt =
   Project.write project
     (Filename.concat ".spice/sessions" (Filename.concat id "session.json"))
     (Printf.sprintf
-       {|{"version":1,"id":"%s","metadata":{"title":"%s","status":"active","cwd":"%s","created_at":1,"updated_at":2},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"%s"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}},{"type":"turn_finished","turn":"turn-1","outcome":{"type":"completed"}}]}|}
-       id title (Project.root project) prompt)
+       {|{"version":1,"id":"%s","metadata":{"title":"%s","status":"active","cwd":"%s","created_at":1,"updated_at":%d},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"%s"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}},{"type":"turn_finished","turn":"turn-1","outcome":{"type":"completed"}}]}|}
+       id title (Project.root project) updated_at prompt)
 
 (* Launching [spice resume <id>] opens on the replayed transcript, not the home
    prelude: the user prompt lands in the chat and the home welcome notice — a
@@ -91,6 +92,64 @@ let%expect_test "resume then resume shows only the second session" =
     {|
     second session's prompt on screen: true
     first session's prompt gone: true |}]
+
+(* The launch flags resolve their session target before the TUI starts
+   (bin/cli_tui.ml [run]): [-c]/[--continue] and [resume --last] pick the
+   newest session in the workspace by [updated_at], [--session] loads the named
+   one. Each must open on the replayed transcript, never the home stage. *)
+let%expect_test "spice -c resumes the newest session" =
+  Project.with_temp "resume-continue" @@ fun project ->
+  seed_prompt_session project "ses_older" ~title:"older session"
+    ~prompt:"the older prompt";
+  seed_prompt_session project "ses_newer" ~updated_at:9 ~title:"newer session"
+    ~prompt:"the newer prompt";
+  Term.run project ~env:reduced_motion ~rows:24 ~cols:80 ~command:[ "-c" ]
+  @@ fun t ->
+  Term.wait t (Screen.has "the newer prompt");
+  let s = Term.screen t in
+  print_fact "newest session replayed" (Screen.has "the newer prompt" s);
+  print_fact "older session not replayed" (Screen.lacks "the older prompt" s);
+  [%expect
+    {|
+    newest session replayed: true
+    older session not replayed: true |}]
+
+let%expect_test "spice --session opens the named session" =
+  Project.with_temp "resume-session-flag" @@ fun project ->
+  seed_prompt_session project "ses_older" ~title:"older session"
+    ~prompt:"the older prompt";
+  seed_prompt_session project "ses_newer" ~updated_at:9 ~title:"newer session"
+    ~prompt:"the newer prompt";
+  Term.run project ~env:reduced_motion ~rows:24 ~cols:80
+    ~command:[ "--session"; "ses_older" ]
+  @@ fun t ->
+  Term.wait t (Screen.has "the older prompt");
+  let s = Term.screen t in
+  print_fact "named session replayed" (Screen.has "the older prompt" s);
+  print_fact "newest session not replayed" (Screen.lacks "the newer prompt" s);
+  [%expect
+    {|
+    named session replayed: true
+    newest session not replayed: true |}]
+
+let%expect_test "spice resume --last resumes the newest session" =
+  Project.with_temp "resume-last" @@ fun project ->
+  seed_prompt_session project "ses_older" ~title:"older session"
+    ~prompt:"the older prompt";
+  seed_prompt_session project "ses_newer" ~updated_at:9 ~title:"newer session"
+    ~prompt:"the newer prompt";
+  Term.run project ~env:reduced_motion ~rows:24 ~cols:80
+    ~command:[ "resume"; "--last" ]
+  @@ fun t ->
+  Term.wait t (Screen.has "the newer prompt");
+  let s = Term.screen t in
+  print_fact "newest session replayed" (Screen.has "the newer prompt" s);
+  print_fact "not on the home prelude"
+    (Screen.lacks "welcome — and thanks for trying spice" s);
+  [%expect
+    {|
+    newest session replayed: true
+    not on the home prelude: true |}]
 
 (* Resume the seeded session, then submit a turn: the reply must land in the
    SAME transcript, below the replayed prompt. This exercises the consumer path

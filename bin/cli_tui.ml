@@ -33,7 +33,10 @@ let launch ~stdenv ?cwd ?mode ?session () =
       Success
   | Error error -> Runtime_error (Spice_tui.Error.message error)
 
-let run ?session cwd mode =
+(* [--continue] resolves the newest session before the TUI starts, over the
+   same host bootstrap the TUI performs afterwards; both loads see the same
+   raw [--cwd] value, so they resolve the same workspace. *)
+let run ?session cwd mode continue_ =
   Eio_main.run @@ fun stdenv ->
   status
     (let* cwd_abs =
@@ -50,6 +53,16 @@ let run ?session cwd mode =
                   `Usage
                     ("unknown mode: " ^ raw ^ " (expected build, plan, or review)"))
      in
+     let* session =
+       match (session, continue_) with
+       | Some _, true -> usage "choose only one of --continue or --session"
+       | Some session, false -> Ok (Some session)
+       | None, true ->
+           let* host = assembly (load_host ?cwd ~overrides:[] stdenv) in
+           let* id = newest_session_in_cwd ~surface:`Tui ~stdenv host in
+           Ok (Some id)
+       | None, false -> Ok None
+     in
      Ok (launch ~stdenv ?cwd:cwd_abs ?mode ?session ()))
 
 let cwd =
@@ -61,7 +74,24 @@ let mode =
   let doc = "Start in turn mode $(docv) (build, plan, or review)." in
   CArg.(value & opt (some string) None & info [ "mode" ] ~docv:"MODE" ~doc)
 
-let default_term = exit_term CTerm.(const (run ?session:None) $ cwd $ mode)
+let continue_ =
+  let doc =
+    "Resume the newest session in this working directory. Note the case: \
+     $(b,-c) continues a session, $(b,-C) sets the working directory."
+  in
+  CArg.(value & flag & info [ "c"; "continue" ] ~doc)
+
+let session =
+  let doc = "Open the TUI with session $(docv) loaded." in
+  CArg.(
+    value
+    & opt (some Cli_arg.session_id) None
+    & info [ "session" ] ~docv:"SESSION" ~doc)
+
+let default_run session cwd mode continue_ = run ?session cwd mode continue_
+
+let default_term =
+  exit_term CTerm.(const default_run $ session $ cwd $ mode $ continue_)
 
 let resume_session =
   Cli_arg.session_pos
@@ -71,7 +101,17 @@ let resume_session =
        working directory."
     ()
 
-let resume_run session cwd mode = run ?session cwd mode
+let last =
+  let doc =
+    "Resume the newest session in this working directory directly, skipping \
+     the home stage."
+  in
+  CArg.(value & flag & info [ "last" ] ~doc)
+
+let resume_run session cwd mode last =
+  if last && Option.is_some session then
+    status (usage "choose SESSION or --last, not both")
+  else run ?session cwd mode last
 
 let resume_command =
   let man =
@@ -81,15 +121,16 @@ let resume_command =
         "Opens the interactive TUI on a saved session's replayed transcript. \
          Without $(i,SESSION), opens the home stage, where $(b,enter) on an \
          empty composer resumes the newest session and $(b,/sessions) browses \
-         the rest. To resume a session headlessly, use $(b,spice run resume) \
-         instead.";
+         the rest; $(b,--last) resumes it directly. To resume a session \
+         headlessly, use $(b,spice run resume) instead.";
       `S CManpage.s_examples;
       `Pre "  spice resume";
       `Pre "  spice resume ses_123";
+      `Pre "  spice resume --last";
     ]
   in
   CCmd.v
     (CCmd.info "resume" ~doc:"Resume a saved session in the TUI."
        ~docs:s_run_commands ~man ~exits)
-    (exit_term CTerm.(const resume_run $ resume_session $ cwd $ mode))
+    (exit_term CTerm.(const resume_run $ resume_session $ cwd $ mode $ last))
 
