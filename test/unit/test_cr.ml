@@ -298,7 +298,15 @@ let scan_ocaml_nested_cr_inside_non_cr_comment () =
     (Cr.to_string (expect_comment "nested inner block" occurrence))
 
 let scan_ocaml_ignores_string_literals () =
-  let text = "let s = \"(* CR: not a comment *)\"\n" in
+  let text =
+    String.concat "\n"
+      [
+        "let ordinary = \"(* CR: not a comment *)\"";
+        "let quoted = {| (* CR: not a comment *) |}";
+        "let tagged = {fixture| (* CR: not a comment *) |fixture}";
+        "let unterminated = {| (* CR: not a comment *)";
+      ]
+  in
   let occurrences = Cr.scan ~syntax:Cr.Syntax.ocaml ~path:source_path ~text in
   equal int ~msg:"OCaml scanner ignores string literals" 0
     (List.length occurrences)

@@ -379,12 +379,39 @@ let string_literal_stop text start =
   in
   loop (start + 1)
 
+let is_quoted_string_id_char = function
+  | '_' | '\'' -> true
+  | c -> Char.Ascii.is_alphanum c
+
+let quoted_string_stop text start =
+  let text_len = String.length text in
+  match
+    String.find_first_index
+      (fun c -> Char.equal c '|' || not (is_quoted_string_id_char c))
+      ~start:(start + 1) text
+  with
+  | Some delimiter when Char.equal text.[delimiter] '|' ->
+      let id = slice text (start + 1) delimiter in
+      let payload_start = delimiter + 1 in
+      let close = "|" ^ id ^ "}" in
+      (match String.find_first ~sub:close ~start:payload_start text with
+      | None -> Some text_len
+      | Some close_start -> Some (close_start + String.length close))
+  | None -> None
+  | Some _ -> None
+
 let find_ocaml_block_open ~open_ text start =
   let text_len = String.length text in
   let rec loop i =
     if i >= text_len then None
     else if Char.equal text.[i] '"' then loop (string_literal_stop text i)
-    else if starts_with_at text ~prefix:open_ ~at:i then Some i
+    else if Char.equal text.[i] '{' then (
+      match quoted_string_stop text i with
+      | None -> try_open i
+      | Some stop -> loop stop)
+    else try_open i
+  and try_open i =
+    if starts_with_at text ~prefix:open_ ~at:i then Some i
     else loop (i + 1)
   in
   loop start
