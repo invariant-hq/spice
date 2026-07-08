@@ -31,10 +31,11 @@
 
     Operation, update, and chunk values are constructed only by {!parse}.
     Callers may inspect operations and chunks, but should keep update values as
-    the units passed to {!Update.apply}. Matching is exact and deterministic. No
-    fuzzy, whitespace, encoding, or line-ending normalization is performed
-    beyond dropping a trailing carriage return from each patch document line
-    during parsing. *)
+    the units passed to {!Update.apply}. Syntax marker and header lines are
+    trimmed as described by {!parse}. Update payload matching is exact and
+    deterministic: no fuzzy, whitespace, encoding, or line-ending normalization
+    is performed against file contents beyond dropping a trailing carriage
+    return from each patch document line during parsing. *)
 
 (** {1:errors Parse Errors} *)
 
@@ -124,9 +125,13 @@ module Update : sig
       [context], when present, is the single line after [@@ ] that must be found
       before the replacement or insertion. [old_lines] is the exact sequence to
       replace and [new_lines] is the replacement sequence. A patch line prefixed
-      with one space contributes its payload to both lists. If [old_lines] is
-      empty, [new_lines] are inserted. [end_of_file] is set by
-      [*** End of File].
+      with one space contributes its payload to both lists; a line prefixed with
+      [-] contributes its payload to [old_lines], and a line prefixed with [+]
+      contributes its payload to [new_lines]. The prefix byte is grammar and is
+      stripped. To encode a file line that itself begins with a grammar byte,
+      write that byte twice, for example [++literal plus], [--literal dash], or
+      [  literal leading space]. If [old_lines] is empty, [new_lines] are
+      inserted. [end_of_file] is set by [*** End of File].
 
       Chunks are produced only by {!parse}. A parsed update operation contains
       at least one chunk, and each chunk contains at least one old or new line.
@@ -203,11 +208,12 @@ val parse : string -> (Operation.t list, Error.t) result
     The result is the document's operations in order; it is non-empty. The
     document must start with [*** Begin Patch], end with [*** End Patch], and
     contain at least one operation. Leading and trailing whitespace around
-    document boundary markers, operation headers, move headers, and
-    [*** End of File] markers is ignored. A trailing [\r] at the end of each
-    parsed patch line is discarded. Paths are parsed as {!Spice_path.Rel.t};
-    absolute paths and paths that escape the root are rejected with
-    {!Error.Invalid_path}.
+    document boundary markers, operation headers, move headers, and unprefixed
+    [*** End of File] markers is ignored. A line inside an update chunk that
+    begins with space, [+], or [-] is always an update payload line, even if its
+    payload looks like a marker. A trailing [\r] at the end of each parsed patch
+    line is discarded. Paths are parsed as {!Spice_path.Rel.t}; absolute paths
+    and paths that escape the root are rejected with {!Error.Invalid_path}.
 
     [*** Add File: path] must be followed by one or more consecutive [+] lines.
     Add contents always end in [\n]; use [++] for a content line whose first
