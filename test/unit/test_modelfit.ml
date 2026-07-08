@@ -158,6 +158,7 @@ let verdict_boundaries () =
 
 let b_u32 buf v = Buffer.add_int32_le buf (Int32.of_int v)
 let b_u64 buf v = Buffer.add_int64_le buf (Int64.of_int v)
+let b_u64_raw buf v = Buffer.add_int64_le buf v
 
 let b_str buf s =
   b_u64 buf (String.length s);
@@ -289,6 +290,17 @@ let gguf_truncation_and_malformed () =
     (Result.map Fit.Gguf.name
        (Fit.Gguf.of_prefix (gguf [ (fun b -> kv_u32 b "some.key" 1) ])))
 
+let gguf_rejects_oversized_u64 () =
+  let buf = Buffer.create 32 in
+  Buffer.add_string buf "GGUF";
+  b_u32 buf 3;
+  b_u64 buf 0;
+  b_u64 buf 1;
+  b_u64_raw buf 0x4000000000000000L;
+  equal (result (option string) gguf_error) ~msg:"oversized key length"
+    (Error (Fit.Gguf.Error.Malformed "64-bit value out of range"))
+    (Result.map Fit.Gguf.name (Fit.Gguf.of_prefix (Buffer.contents buf)))
+
 let gguf_missing_keys () =
   let no_layers = List.filteri (fun i _ -> i <> 2) qwen_kvs in
   equal (result int gguf_model_error) ~msg:"missing block_count"
@@ -328,6 +340,7 @@ let () =
           test "stops at the tokenizer boundary" gguf_stops_before_tokenizer;
           test "reports truncated and malformed input"
             gguf_truncation_and_malformed;
+          test "rejects oversized u64 fields" gguf_rejects_oversized_u64;
           test "reports missing keys" gguf_missing_keys;
         ];
     ]

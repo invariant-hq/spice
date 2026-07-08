@@ -265,7 +265,9 @@ module Gguf = struct
     need cursor 8;
     let value = String.get_int64_le cursor.data cursor.pos in
     cursor.pos <- cursor.pos + 8;
-    if Int64.compare value 0L < 0 then malformed "64-bit value out of range";
+    if Int64.compare value 0L < 0
+       || Int64.compare value (Int64.of_int max_int) > 0
+    then malformed "64-bit value out of range";
     Int64.to_int value
 
   let signed cursor bytes =
