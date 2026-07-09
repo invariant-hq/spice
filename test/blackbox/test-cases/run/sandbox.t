@@ -86,6 +86,22 @@ command is never spawned.
 The refusal is machine-readable in the shell tool event itself, no text
 parsing required.
 
+Read-only runs advertise only read tools plus shell, and an unavailable
+backend refuses ordinary shell commands per call rather than spawning them
+unconfined.
+
+  $ cat > read-only-run.jsonl <<'JSONL'
+  > {"expect":{"body_contains":["read-only prompt","\"name\":\"read_file\"","\"name\":\"shell\""],"body_not_contains":["\"name\":\"write_file\"","\"name\":\"edit_file\"","\"name\":\"apply_patch\""]},"response":{"id":"resp-ro-1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-ro","call_id":"call-ro","name":"shell","arguments":"{\"command\":\"printf read-only-spawn-marker\"}"}]}}
+  > {"expect":{"body_contains":["function_call_output","call-ro","refused"],"body_not_contains":["read-only-spawn-marker\\nstderr","read-only-spawn-markerstderr"]},"response":{"id":"resp-ro-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"read-only final"}]}]}}
+  > JSONL
+  $ start_fake_openai read-only-run.jsonl read-only-capture read-only-port
+  $ _SPICE_TEST_SANDBOX_UNAVAILABLE=1 SPICE_SANDBOX_REQUIRE=off spice run --cwd "$PWD" --json --permission-mode bypass --sandbox read-only --id read-only-run "read-only prompt" | sed -n '/"type":"run.started"/p; s/.*\("sandbox":{"kind":"refused"\).*/\1/p; s/.*\("final_text":"read-only final"\).*/\1/p'
+  spice: session saved; resume with: spice resume 'read-only-run'
+  {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"read-only","origin":"flag","require":"off","network":"restricted","backend":"none","enforcement":"refused"}}
+  "sandbox":{"kind":"refused"
+  "final_text":"read-only final"
+  $ wait_fake_server
+
 Escalation is refused in read-only runs without spawning and without a
 permission flow: the mode's no-mutation promise has no approval-shaped
 exception.
