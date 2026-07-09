@@ -820,11 +820,17 @@ module Run = struct
     else
       let call_id = Llm.Tool.Result.call_id result in
       let name = Llm.Tool.Result.name result in
-      match pending_tool_call ~call_id ~name session with
-      | None -> Error (Error.Tool_call_not_pending { call_id; name })
-      | Some _ ->
-          normalize config session
-            [ Event.message_appended (Llm.Message.tool_result result) ]
+      match phase session with
+      | Phase.Waiting (Waiting.Host_tool current)
+        when Waiting.equal (Waiting.Host_tool waiting)
+               (Waiting.Host_tool current) -> (
+          match pending_tool_call ~call_id ~name session with
+          | None -> Error (Error.Tool_call_not_pending { call_id; name })
+          | Some _ ->
+              normalize config session
+                [ Event.message_appended (Llm.Message.tool_result result) ])
+      | Phase.Idle | Phase.Active | Phase.Waiting _ ->
+          Error (Error.Tool_call_not_pending { call_id; name })
 
   let answer_host_tool config ?(error = false) waiting ~text session =
     let call = waiting.Waiting.call in

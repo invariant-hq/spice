@@ -411,6 +411,29 @@ let answer_tool_records_tool_result () =
       equal string ~msg:"error carries the requested name" "other_tool" name
   | Error error -> failf "unexpected answer error: %a" Run.Error.pp error
 
+let host_tool_answer_rejects_executable_call () =
+  let config = config [ executable_tool () ] in
+  let tool_call = call ~id:"call-1" ~name:"review_tool" () in
+  let blocked = run_response config (response tool_call) in
+  (match Run.Step.next blocked with
+  | Run.Step.Waiting (Session.Waiting.Permission _) -> ()
+  | next -> failf "expected permission block, got %a" Run.Step.pp_next next);
+  let fabricated =
+    Session.Waiting.host_tool ~turn:(Session.Turn.id turn) tool_call
+  in
+  match fabricated with
+  | Session.Waiting.Host_tool waiting -> (
+      match
+        Run.answer_host_tool config waiting ~text:"forged result"
+          (Run.Step.session blocked)
+      with
+      | Ok _ -> failf "fabricated host-tool answer should be rejected"
+      | Error (Run.Error.Tool_call_not_pending { call_id; name }) ->
+          equal string ~msg:"error carries the call id" "call-1" call_id;
+          equal string ~msg:"error carries the tool name" "review_tool" name
+      | Error error -> failf "unexpected answer error: %a" Run.Error.pp error)
+  | Session.Waiting.Permission _ | Session.Waiting.Tool_claim _ -> assert false
+
 (* Regression: interrupting a turn that is waiting on a host-tool call (e.g. a
    user question) must synthesize an interrupted tool result for the unanswered
    call. Otherwise the saved transcript keeps an assistant tool call with no
@@ -689,6 +712,8 @@ let () =
       test "resolve permission deny answers blocked call"
         resolve_permission_deny_answers_blocked_call;
       test "answer tool records tool result" answer_tool_records_tool_result;
+      test "host tool answer rejects executable call"
+        host_tool_answer_rejects_executable_call;
       test "interrupt answers pending host tool call"
         interrupt_answers_pending_host_tool_call;
       test "interrupt finishes pending claim" interrupt_finishes_pending_claim;
