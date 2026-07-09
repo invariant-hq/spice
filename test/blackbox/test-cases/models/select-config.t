@@ -42,10 +42,11 @@ which stay readable by source flag even while the workspace is untrusted.
   $ cat .spice/config.local.json
   {"small_model":"openai/gpt-5.4-nano"}
 
-Untrusted project layers do not change the effective selection.
+Project layers participate in effective selection; unsafe members such as
+permission rules are stripped at load boundaries instead.
 
   $ spice config get model
-  openai/gpt-5.5
+  anthropic/claude-sonnet-4-6
 
 A rejected selection does not modify an existing config file either.
 

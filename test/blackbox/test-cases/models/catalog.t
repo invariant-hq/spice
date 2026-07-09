@@ -14,7 +14,7 @@ Provider filtering is explicit.
   $ spice models --provider openai | sed -n '1p'
   MODEL                 STATUS  CONTEXT  COST $/MTOK  FIT
 
-  $ spice models --provider openai | grep '^openai/gpt-5.5'
+  $ spice models --provider openai | grep '^openai/gpt-5.5 '
   openai/gpt-5.5 *      stable  1050000  5/30         -
 
 Hidden models stay out of default listings and appear with --all.
@@ -38,8 +38,8 @@ Model details expose catalog metadata for a selector.
   $ spice models show openai/gpt-5.5 --json | grep -o '"provider_default":true'
   "provider_default":true
 
-  $ spice models show openai/gpt-5.5 --json | grep -o '"capabilities":\["json_schema","reasoning","tools"\]'
-  "capabilities":["json_schema","reasoning","tools"]
+  $ spice models show openai/gpt-5.5 --json | grep -o '"capabilities":\["apply-patch","json_schema","reasoning","tools"\]'
+  "capabilities":["apply-patch","json_schema","reasoning","tools"]
 
   $ spice models show openai/gpt-5.5 --json | grep -o '"input_per_million":5'
   "input_per_million":5
