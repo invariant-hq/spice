@@ -45,7 +45,7 @@ val did_you_mean : string -> candidates:string list -> string list
     [s], in [candidates] order, as one ["did you mean …?"] hint; empty when none
     is close. Exact matches are never suggested.
 
-    Raises [Invalid_argument] if a selected candidate is empty. *)
+    Raises [Invalid_argument] if a candidate is empty or contains a newline. *)
 
 val suggest : string list -> string list
 (** [suggest candidates] renders [candidates] verbatim — the caller has already
@@ -53,7 +53,7 @@ val suggest : string list -> string list
     joined with [" or "], longer lists with commas before the final [" or "].
     Empty for [[]].
 
-    Raises [Invalid_argument] if a candidate is empty. *)
+    Raises [Invalid_argument] if a candidate is empty or contains a newline. *)
 
 (** {1:fmt Formatting} *)
 

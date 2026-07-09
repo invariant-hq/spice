@@ -23,8 +23,16 @@ let make_invariants () =
       Diagnostic.make ~hints:[ "first\rsecond" ] "unknown key");
   expect_invalid_arg "empty suggest candidate raises" (fun () ->
       Diagnostic.suggest [ "build"; "" ]);
-  expect_invalid_arg "close empty did-you-mean candidate raises" (fun () ->
-      Diagnostic.did_you_mean "x" ~candidates:[ "" ])
+  expect_invalid_arg "suggest candidate rejects LF" (fun () ->
+      Diagnostic.suggest [ "build\nplan" ]);
+  expect_invalid_arg "suggest candidate rejects CR" (fun () ->
+      Diagnostic.suggest [ "build\rplan" ]);
+  expect_invalid_arg "did-you-mean validates all candidates" (fun () ->
+      Diagnostic.did_you_mean "deploy" ~candidates:[ "" ]);
+  expect_invalid_arg "did-you-mean candidate rejects LF" (fun () ->
+      Diagnostic.did_you_mean "build" ~candidates:[ "build\nplan" ]);
+  expect_invalid_arg "did-you-mean candidate rejects CR" (fun () ->
+      Diagnostic.did_you_mean "build" ~candidates:[ "build\rplan" ])
 
 let rendering () =
   let plain = Diagnostic.make "unknown key" in
@@ -75,8 +83,14 @@ let did_you_mean () =
   equal (list string) ~msg:"several close matches share one hint"
     [ "did you mean bat or cat?" ]
     (Diagnostic.did_you_mean "hat" ~candidates:[ "bat"; "moon"; "cat" ]);
+  equal (list string) ~msg:"candidate order is preserved"
+    [ "did you mean abcde or abz?" ]
+    (Diagnostic.did_you_mean "abc" ~candidates:[ "abcde"; "abz" ]);
   equal (list string) ~msg:"no close match means no hint" []
     (Diagnostic.did_you_mean "deploy" ~candidates);
+  equal (list string) ~msg:"impossible length differences make no hint" []
+    (Diagnostic.did_you_mean "very-long-mode-name"
+       ~candidates:[ "go"; "run"; "ask" ]);
   equal (list string) ~msg:"exact match is never suggested" []
     (Diagnostic.did_you_mean "plan" ~candidates);
   equal (list string) ~msg:"empty candidates make no hint" []

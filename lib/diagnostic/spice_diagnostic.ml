@@ -12,6 +12,10 @@ let check_single_line fn what s =
   if String.exists (function '\n' | '\r' -> true | _ -> false) s then
     invalid fn (what ^ " must be a single line")
 
+let check_candidate fn candidate =
+  check_non_empty fn "candidate" candidate;
+  check_single_line fn "candidate" candidate
+
 (* Diagnostics *)
 
 type t = { message : string; context : string option; hints : string list }
@@ -70,17 +74,24 @@ let enumerate_or candidates =
 let suggest = function
   | [] -> []
   | candidates ->
-      List.iter (check_non_empty "suggest" "candidate") candidates;
+      List.iter (check_candidate "suggest") candidates;
       [ "did you mean " ^ enumerate_or candidates ^ "?" ]
 
 let closest s ~candidates =
+  let input_length = String.length s in
   let close candidate =
-    let distance = levenshtein_distance s candidate in
-    0 < distance && distance <= max_suggestion_distance
+    let candidate_length = String.length candidate in
+    if abs (input_length - candidate_length) > max_suggestion_distance then
+      false
+    else
+      let distance = levenshtein_distance s candidate in
+      0 < distance && distance <= max_suggestion_distance
   in
   List.filter close candidates
 
-let did_you_mean s ~candidates = suggest (closest s ~candidates)
+let did_you_mean s ~candidates =
+  List.iter (check_candidate "did_you_mean") candidates;
+  suggest (closest s ~candidates)
 
 (* Formatting *)
 
