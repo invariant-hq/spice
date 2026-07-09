@@ -26,9 +26,10 @@ type reply =
   | Stream_hold of { id : string; text : string; reasoning : string option }
       (** like {!Completion}, but the SSE deltas are flushed and the reply then
           holds on its [gate] BEFORE the terminal event: the streamed text (and
-          reasoning ticker) is on screen while the turn is still in flight, until
-          {!release}. The mid-stream frame is settled-modulo-gate, so it is
-          observable for exactly as long as the test needs. A gate is required. *)
+          reasoning ticker) is on screen while the turn is still in flight,
+          until {!release}. The mid-stream frame is settled-modulo-gate, so it
+          is observable for exactly as long as the test needs. A gate is
+          required. *)
   | Tool_call of {
       id : string;
       call_id : string;
@@ -40,6 +41,11 @@ type reply =
           dialog) and re-requests with the tool result, so serve the resume as
           the next script item. [arguments] is the tool's JSON argument object
           verbatim — it is escaped into the wire string. *)
+  | Tool_calls of { id : string; calls : (string * string * string) list }
+      (** a Responses turn that fans out to several tool calls in ONE terminal
+          event: each triple is [(call_id, name, arguments)]. The host runs all
+          of them — spawning several detached children in one parent step, say —
+          and each resumes as its own follow-up request. *)
   | Http of { status : int; body : string }
       (** a plain HTTP reply, for the non-Responses endpoints a scenario touches
           (a login's model-list check, say) *)
@@ -78,6 +84,14 @@ let tool_call ?(expect = []) ?gate ~id ~call_id ~name ~arguments () =
     expect;
     gate;
     reply = Tool_call { id; call_id; name; arguments };
+  }
+
+let tool_calls ?(expect = []) ?gate ~id ~calls () =
+  {
+    expect_line = "POST /v1/responses HTTP/1.1";
+    expect;
+    gate;
+    reply = Tool_calls { id; calls };
   }
 
 type t = {
@@ -181,19 +195,23 @@ let output_items ~text ~reasoning =
     reasoning_item text
 
 let completion_json ~id ~text ~reasoning =
-  Printf.sprintf {|{"id":%S,"status":"completed","model":"gpt-5.5","output":%s}|}
-    id (output_items ~text ~reasoning)
+  Printf.sprintf
+    {|{"id":%S,"status":"completed","model":"gpt-5.5","output":%s}|} id
+    (output_items ~text ~reasoning)
 
 (* A single SSE delta event; the [type] field mirrors the event name. *)
 let delta_event ~name ~delta =
-  Printf.sprintf "event: %s\ndata: {\"type\":%S,\"delta\":%S}\n\n" name name delta
+  Printf.sprintf "event: %s\ndata: {\"type\":%S,\"delta\":%S}\n\n" name name
+    delta
 
 (* The streamed deltas: reasoning summary fragments (display-only ticker), then
    the visible text fragments. The terminal response, not the deltas, is
    authoritative. *)
 let sse_deltas ~text ~reasoning =
   let stream name s =
-    chunk_text s |> List.map (fun c -> delta_event ~name ~delta:c) |> String.concat ""
+    chunk_text s
+    |> List.map (fun c -> delta_event ~name ~delta:c)
+    |> String.concat ""
   in
   let reasoning_deltas =
     match reasoning with
@@ -217,8 +235,28 @@ let sse_body ~id ~text ~reasoning =
 let tool_call_sse ~id ~call_id ~name ~arguments =
   Printf.sprintf
     "event: response.completed\n\
-     data: {\"type\":\"response.completed\",\"response\":{\"id\":%S,\"status\":\"completed\",\"model\":\"gpt-5.5\",\"output\":[{\"type\":\"function_call\",\"id\":%S,\"call_id\":%S,\"name\":%S,\"arguments\":%S}]}}\n\n"
+     data: \
+     {\"type\":\"response.completed\",\"response\":{\"id\":%S,\"status\":\"completed\",\"model\":\"gpt-5.5\",\"output\":[{\"type\":\"function_call\",\"id\":%S,\"call_id\":%S,\"name\":%S,\"arguments\":%S}]}}\n\n"
     id (id ^ "-fc") call_id name arguments
+
+(* Several [function_call] output items in one terminal event, so a single parent
+   step fans out to several tool calls (three detached children, say). *)
+let tool_calls_sse ~id ~calls =
+  let items =
+    List.mapi
+      (fun index (call_id, name, arguments) ->
+        Printf.sprintf
+          {|{"type":"function_call","id":%S,"call_id":%S,"name":%S,"arguments":%S}|}
+          (Printf.sprintf "%s-fc%d" id index)
+          call_id name arguments)
+      calls
+    |> String.concat ","
+  in
+  Printf.sprintf
+    "event: response.completed\n\
+     data: \
+     {\"type\":\"response.completed\",\"response\":{\"id\":%S,\"status\":\"completed\",\"model\":\"gpt-5.5\",\"output\":[%s]}}\n\n"
+    id items
 
 let status_reason = function
   | 200 -> "OK"
@@ -286,6 +324,46 @@ let check_expectation index item ~request_line ~body =
           fragment body)
     item.expect
 
+(* Write the item's reply to [flow], honoring its gate. A held gate stalls the
+   write (or, for {!Stream_hold}, stalls the terminal event after flushing the
+   deltas), so the mid-flight state stays observable until {!release}. Shared by
+   the ordered and unordered service paths. *)
+let respond t flow item =
+  let await_gate () =
+    match item.gate with
+    | None -> ()
+    | Some name -> Eio.Promise.await (fst (Hashtbl.find t.gates name))
+  in
+  match item.reply with
+  | Stream_hold { id; text; reasoning } ->
+      (* Flush the head + deltas, hold on the gate, then write the terminal:
+         the streamed text is on screen while the turn is in flight, until
+         {!release}. Content-Length spans head..terminal so the split is
+         invisible to the client. *)
+      let deltas = sse_deltas ~text ~reasoning in
+      let terminal = sse_terminal ~id ~text ~reasoning in
+      let content_length = String.length deltas + String.length terminal in
+      Eio.Flow.copy_string (http_head ~content_length () ^ deltas) flow;
+      await_gate ();
+      Eio.Flow.copy_string terminal flow
+  | reply ->
+      await_gate ();
+      let response =
+        match reply with
+        | Completion { id; text; reasoning } ->
+            http_response (sse_body ~id ~text ~reasoning)
+        | Tool_call { id; call_id; name; arguments } ->
+            http_response (tool_call_sse ~id ~call_id ~name ~arguments)
+        | Tool_calls { id; calls } -> http_response (tool_calls_sse ~id ~calls)
+        | Http { status; body } ->
+            http_response ~status ~content_type:"application/json" body
+        | Stream_hold _ -> assert false
+      in
+      Eio.Flow.copy_string response flow
+
+(* Ordered service: request N must satisfy script item N. One connection at a
+   time, so a held item blocks the next accept — every scenario that holds a
+   gate across a following request must use {!serve_unordered}. *)
 let serve t socket items =
   List.iteri
     (fun index item ->
@@ -298,40 +376,69 @@ let serve t socket items =
       Hashtbl.replace t.requests index body;
       Eio.Condition.broadcast t.arrived;
       check_expectation index item ~request_line ~body;
-      let await_gate () =
-        match item.gate with
-        | None -> ()
-        | Some name -> Eio.Promise.await (fst (Hashtbl.find t.gates name))
-      in
-      (match item.reply with
-      | Stream_hold { id; text; reasoning } ->
-          (* Flush the head + deltas, hold on the gate, then write the terminal:
-             the streamed text is on screen while the turn is in flight, until
-             {!release}. Content-Length spans head..terminal so the split is
-             invisible to the client. *)
-          let deltas = sse_deltas ~text ~reasoning in
-          let terminal = sse_terminal ~id ~text ~reasoning in
-          let content_length = String.length deltas + String.length terminal in
-          Eio.Flow.copy_string (http_head ~content_length () ^ deltas) flow;
-          await_gate ();
-          Eio.Flow.copy_string terminal flow
-      | reply ->
-          await_gate ();
-          let response =
-            match reply with
-            | Completion { id; text; reasoning } ->
-                http_response (sse_body ~id ~text ~reasoning)
-            | Tool_call { id; call_id; name; arguments } ->
-                http_response (tool_call_sse ~id ~call_id ~name ~arguments)
-            | Http { status; body } ->
-                http_response ~status ~content_type:"application/json" body
-            | Stream_hold _ -> assert false
-          in
-          Eio.Flow.copy_string response flow);
+      respond t flow item;
       t.served <- index)
     items
 
-let start ~sw ~net items =
+(* Non-fatal expectation test, for the unordered matcher: an item with no
+   [expect] matches any request. *)
+let item_matches item ~request_line ~body =
+  String.equal request_line item.expect_line
+  && List.for_all (fun fragment -> Util.contains body fragment) item.expect
+
+(* Unordered service: each arriving request consumes the FIRST still-pending item
+   whose expectation it satisfies, and each connection is handled in its own
+   fiber, so a request held on a gate never blocks a later one. Concurrent
+   callers — a parent turn and its detached children — arrive in nondeterministic
+   order; matching by content (not arrival position) keeps the script
+   deterministic. Captures are still numbered by arrival order.
+
+   The claim (match + mark consumed) runs between the request read completing and
+   the first fiber yield in {!respond}, so two concurrent requests never claim the
+   same item under Eio's cooperative single-domain scheduling. *)
+let serve_unordered t socket ~sw items =
+  let pending = Array.of_list (List.map Option.some items) in
+  let total = Array.length pending in
+  let claim ~request_line ~body =
+    let rec loop i =
+      if i >= total then None
+      else
+        match pending.(i) with
+        | Some item when item_matches item ~request_line ~body ->
+            pending.(i) <- None;
+            Some item
+        | Some _ | None -> loop (i + 1)
+    in
+    loop 0
+  in
+  let handle flow =
+    let buf = Eio.Buf_read.of_flow ~max_size:(1 lsl 22) flow in
+    let request_line, body = read_request buf in
+    let arrival = t.arrivals + 1 in
+    t.arrivals <- arrival;
+    Hashtbl.replace t.requests arrival body;
+    Eio.Condition.broadcast t.arrived;
+    match claim ~request_line ~body with
+    | None ->
+        Util.failf "provider: request %d (%s) matched no pending item:\n%s"
+          arrival request_line body
+    | Some item ->
+        respond t flow item;
+        t.served <- t.served + 1
+  in
+  (* One accept per item, each handler forked so held gates run concurrently.
+     The accept loop is sequential; a forked handler that parks on a gate does
+     not stall it. Handlers are daemons so a permanently-held one (a
+     force-interrupted turn) is cancelled cleanly at switch teardown. *)
+  for _ = 1 to total do
+    Eio.Fiber.fork_daemon ~sw (fun () ->
+        Eio.Switch.run (fun conn_sw ->
+            let flow, _addr = Eio.Net.accept ~sw:conn_sw socket in
+            handle flow);
+        `Stop_daemon)
+  done
+
+let start ~sw ~net ?(unordered = false) items =
   let socket =
     Eio.Net.listen ~sw ~backlog:8 ~reuse_addr:true net
       (`Tcp (Eio.Net.Ipaddr.V4.loopback, 0))
@@ -360,7 +467,9 @@ let start ~sw ~net items =
           Hashtbl.replace t.gates name (Eio.Promise.create ()))
         item.gate)
     items;
-  Eio.Fiber.fork_daemon ~sw (fun () ->
-      serve t socket items;
-      `Stop_daemon);
+  if unordered then serve_unordered t socket ~sw items
+  else
+    Eio.Fiber.fork_daemon ~sw (fun () ->
+        serve t socket items;
+        `Stop_daemon);
   t

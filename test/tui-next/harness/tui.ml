@@ -32,8 +32,7 @@ type t = {
   mutable stopping : bool;
   mutable finished : bool;
   mutable probe : Mosaic.Probe.t option;
-  mutable exit_result :
-    (Spice_tui.outcome, Spice_tui.Error.t) result option;
+  mutable exit_result : (Spice_tui.outcome, Spice_tui.Error.t) result option;
       (** the [Spice_tui.run] result, set once the loop fiber exits *)
   project : Project.t;
   provider : Provider.t option;
@@ -444,8 +443,8 @@ let outcome t =
       Util.failf "tui harness: %s" (Spice_tui.Error.message error)
   | None -> failwith "tui harness: the TUI has not exited (await_exit first)"
 
-let run ?(size = (80, 24)) ?(env = []) ?provider:script ?session ?draft ?submit
-    ?seed ~name f =
+let run ?(size = (80, 24)) ?(env = []) ?(unordered = false) ?provider:script
+    ?session ?launch ?draft ?submit ?seed ~name f =
   t0 := Unix.gettimeofday ();
   mark "run: start";
   Project.with_temp name @@ fun project ->
@@ -465,7 +464,10 @@ let run ?(size = (80, 24)) ?(env = []) ?provider:script ?session ?draft ?submit
   Eio.Fiber.with_binding (Eio.Stdenv.debug stdenv)#traceln silent @@ fun () ->
   Eio.Switch.run @@ fun sw ->
   let provider =
-    Option.map (Provider.start ~sw ~net:(Eio.Stdenv.net stdenv)) script
+    Option.map
+      (fun script ->
+        Provider.start ~sw ~net:(Eio.Stdenv.net stdenv) ~unordered script)
+      script
   in
   let overrides =
     Project.bindings
@@ -546,7 +548,7 @@ let run ?(size = (80, 24)) ?(env = []) ?provider:script ?session ?draft ?submit
     Spice_tui.Startup.make
       ~cwd:(Spice_path.Abs.of_string_exn (Project.root project))
       ?session:(Option.map Spice_session.Id.of_string session)
-      ~input ()
+      ?launch ~input ()
   in
   mark "run: launching";
   Eio.Fiber.both

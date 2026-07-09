@@ -98,6 +98,27 @@ let env_snapshot overrides =
 
 let apply overrides = List.iter (fun (k, v) -> Unix.putenv k v) overrides
 
+(* Run a git command in the project root, for review fixtures. Called from a
+   [~seed] callback, which runs before the Eio loop starts, so a blocking
+   [Sys.command] is fine. Pinned identity keeps commits deterministic. *)
+let git t args =
+  let command =
+    String.concat " "
+      ("git" :: "-C" :: Filename.quote t.root :: "-c" :: "user.name=Reviewer"
+     :: "-c" :: "user.email=reviewer@example.com"
+      :: List.map Filename.quote args)
+  in
+  match Sys.command (command ^ " >/dev/null 2>&1") with
+  | 0 -> ()
+  | code -> Util.failf "%s exited with %d" command code
+
+(* A committed baseline the review screen opens on: [git init], the seeded files
+   committed, so a caller's later [write] shows as the worktree diff. *)
+let git_baseline t =
+  git t [ "init"; "-q" ];
+  git t [ "add"; "-A" ];
+  git t [ "commit"; "-q"; "-m"; "baseline" ]
+
 let with_temp name f =
   let root = Filename.concat "/tmp" ("spice-tui-next-" ^ name) in
   Util.rm_rf root;
