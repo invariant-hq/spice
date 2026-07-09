@@ -8,6 +8,9 @@ conversation, the tool calls, and the workspace changes the agent made.
 Sessions persist per workspace under `.spice/` at the workspace root
 (`sessions/`, plus `subagents/` and `todos/`). The directory is created with
 `0700` permissions; add `.spice/` to your project's `.gitignore`.
+Session documents are stored under
+`.spice/sessions/<percent-escaped-session-id>/session.json`; use
+`spice session export` for the supported JSON form.
 
 Finished sessions get a best-effort auto-generated title using the small
 model. Set `SPICE_AUTO_TITLE=0` to disable.

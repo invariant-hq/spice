@@ -147,18 +147,20 @@ val create : t -> Spice_session.t -> (Document.t, Error.t) result
     replacing an existing document. Unlike {!save}, [create] preserves the
     timestamps already present in [session].
 
-    Returns {!Error.Already_exists} if a document for the same id already
-    exists. Returns {!Error.Corrupt} if [session] cannot be encoded, and
-    {!Error.Io} for filesystem failures. *)
+    Returns {!Error.Already_exists} if a regular document for the same id
+    already exists. Returns {!Error.Corrupt} if the target path exists but is
+    not a regular file or if [session] cannot be encoded, and {!Error.Io} for
+    filesystem failures. *)
 
 val load : t -> Spice_session.Id.t -> (Document.t, Error.t) result
 (** [load store id] loads session [id].
 
     The loaded document is decoded through {!Spice_session.jsont}, so semantic
     replay is validated before [Ok] is returned. Returns {!Error.Not_found} if
-    no document exists for [id]. Returns {!Error.Corrupt} if the file is not a
-    valid session document or if its embedded id differs from [id]. Returns
-    {!Error.Io} for filesystem failures. *)
+    no document exists for [id]. Returns {!Error.Corrupt} if the path exists
+    but is not a regular file, if the file is not a valid session document, or
+    if its embedded id differs from [id]. Returns {!Error.Io} for filesystem
+    failures. *)
 
 val save : t -> Document.t -> Spice_session.t -> (Document.t, Error.t) result
 (** [save store doc session] replaces the saved document if [doc]'s revision is
@@ -172,8 +174,9 @@ val save : t -> Document.t -> Spice_session.t -> (Document.t, Error.t) result
     Raises [Invalid_argument] if [session]'s id differs from [doc]'s session id.
     Returns {!Error.Not_found} if the document has been removed,
     {!Error.Conflict} if another writer has changed it, {!Error.Corrupt} if the
-    updated session cannot be encoded or timestamped, and {!Error.Io} for
-    filesystem failures. *)
+    document path exists but is not a regular file or if the updated session
+    cannot be encoded or timestamped, and {!Error.Io} for filesystem
+    failures. *)
 
 val append :
   t -> Document.t -> Spice_session.Event.t list -> (Document.t, Error.t) result
@@ -194,14 +197,17 @@ val list :
   (Document.t list * Corrupt.t list, Error.t) result
 (** [list store ()] lists saved session documents.
 
-    Missing store directories produce [Ok []]. Non-session entries and session
-    directories without a document are ignored. Existing documents are decoded
-    and validated as in {!load}; corrupt documents are returned as structured
-    facts and do not count against [limit].
+    Missing store directories produce [Ok ([], [])]. Non-session entries and
+    session directories without a document are ignored. Existing documents are
+    decoded through {!Spice_session.jsont}; when the store path decodes to a
+    session id, an embedded id mismatch is returned as a {!Corrupt.t}. Corrupt
+    documents are returned as structured facts and do not count against
+    [limit].
 
     Archived and deleted sessions are excluded by default. [filter], when
-    present, is applied after lifecycle filters and before [limit]. Results are
-    ordered by newest [updated_at] first, with session id as a deterministic
-    tie-breaker, then truncated to [limit].
+    present, is applied after lifecycle filters and before [limit]. Exceptions
+    raised by [filter] are propagated. Results are ordered by newest
+    [updated_at] first, with session id as a deterministic tie-breaker, then
+    truncated to [limit].
 
     Raises [Invalid_argument] if [limit] is present and not positive. *)
