@@ -128,21 +128,17 @@ module OAuth2_authorization_code : sig
   (** OAuth 2.0 authorization-code protocol primitives.
 
       Compose a browser login by calling {!start}, opening or displaying
-      [started.authorization_uri], collecting a local browser callback with
-      {!Local_callback.await_once} or another listener, and passing that
-      callback URI to {!complete_secret}. *)
+      {!authorization_uri}, collecting a local browser callback with
+      {!Local_callback.await_once} or another listener bound to {!redirect_uri},
+      and passing that callback URI to {!complete_secret}. *)
 
-  type started = {
-    authorization : Oauth2.Authorization.t;
-    authorization_uri : Uri.t;
-    redirect_uri : Uri.t;
-  }
+  type t
   (** Started authorization-code state.
 
-      Values contain state and optional PKCE material. Treat the whole value as
-      secret until completed or discarded. Callers may display
-      [authorization_uri] and must pass [redirect_uri] to the callback listener.
-  *)
+      Values contain the provider declaration, state, and optional PKCE
+      material. Treat the whole value as secret until completed or discarded.
+      Callers may display {!authorization_uri} and must pass {!redirect_uri} to
+      the callback listener. *)
 
   (** Post-exchange token interpretation selected by {!complete_secret}.
 
@@ -158,7 +154,7 @@ module OAuth2_authorization_code : sig
   val start :
     random:Oauth2.random ->
     Spice_provider.Auth.Login.Protocol.oauth2_authorization_code ->
-    (started, Error.t) result
+    (t, Error.t) result
   (** [start ~random spec] is a browser authorization request for [spec].
 
       The function performs no I/O. [spec.redirect_uri] must be present because
@@ -168,15 +164,22 @@ module OAuth2_authorization_code : sig
       cannot produce valid state or PKCE material, or [spec.extra] contains a
       reserved OAuth authorization parameter. *)
 
+  val authorization_uri : t -> Uri.t
+  (** [authorization_uri t] is the provider authorization URI to display or open
+      for the user. *)
+
+  val redirect_uri : t -> Uri.t
+  (** [redirect_uri t] is the local redirect URI that the callback listener must
+      bind. *)
+
   val complete :
     http:Cohttp_eio.Client.t ->
     sw:Eio.Switch.t ->
-    Spice_provider.Auth.Login.Protocol.oauth2_authorization_code ->
-    started ->
+    t ->
     callback:Uri.t ->
     (Oauth2.Token.t, Error.t) result
-  (** [complete ~http ~sw spec started ~callback] verifies [callback] against
-      [started] and exchanges the authorization code at [spec]'s token endpoint.
+  (** [complete ~http ~sw t ~callback] verifies [callback] against [t] and
+      exchanges the authorization code at [t]'s token endpoint.
 
       The function performs the token exchange HTTP request. It does not stop
       callback listeners, open browsers, sleep, or store credentials. OAuth
@@ -191,22 +194,20 @@ module OAuth2_authorization_code : sig
   val complete_secret :
     http:Cohttp_eio.Client.t ->
     sw:Eio.Switch.t ->
-    Spice_provider.Auth.Login.Protocol.oauth2_authorization_code ->
-    started ->
+    t ->
     callback:Uri.t ->
     now:Spice_account.timestamp ->
     profile:token_profile ->
     (Spice_account.Secret.t, Error.t) result
-  (** [complete_secret ~http ~sw spec started ~callback ~now ~profile] runs
-      {!complete} and normalizes the token response into a secret according to
-      [profile]: [Generic] copies the access and refresh tokens with a computed
-      expiry; [Openai_chatgpt] additionally extracts an account id from ID-token
-      or access-token JWT claims.
+  (** [complete_secret ~http ~sw t ~callback ~now ~profile] runs {!complete} and
+      normalizes the token response into a secret according to [profile]:
+      [Generic] copies the access and refresh tokens with a computed expiry;
+      [Openai_chatgpt] additionally extracts an account id from ID-token or
+      access-token JWT claims. Both profiles require a Bearer token response.
 
       The function performs the token exchange HTTP request and does not listen
       for callbacks, open browsers, sleep, or store credentials. Error behavior
-      is that of {!complete}, plus [Protocol] for invalid [Openai_chatgpt] token
-      material. *)
+      is that of {!complete}, plus [Protocol] for invalid token material. *)
 end
 
 (** {1:openai OpenAI} *)

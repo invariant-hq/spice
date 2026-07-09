@@ -47,20 +47,17 @@ let with_server env callback f =
       match !server_error with None -> () | Some exn -> raise exn)
     (fun () -> f ~sw ~base_uri)
 
-let expect_authorization msg = function
-  | Ok value -> value
-  | Error (`Reserved name) -> failf "%s: reserved parameter %S" msg name
+let query_one name uri =
+  match List.assoc_opt name (Uri.query uri) with
+  | Some [ value ] -> value
+  | Some [] -> failf "query parameter %S has no value" name
+  | Some (_ :: _ :: _) -> failf "query parameter %S has multiple values" name
+  | None -> failf "query parameter %S is missing" name
 
 let authorization_setup ~token_endpoint =
   let client = Oauth2.Client.make ~id:"client-id" () in
   let authorization_endpoint = Uri.of_string "https://provider.example/auth" in
   let redirect_uri = Uri.of_string "http://localhost/callback" in
-  let state = Oauth2.State.of_string "state-1" in
-  let authorization =
-    expect_authorization "authorization"
-      (Oauth2.Authorization.make ~client ~endpoint:authorization_endpoint
-         ~redirect_uri ~state ())
-  in
   let spec : Protocol.oauth2_authorization_code =
     {
       Protocol.authorization_client = client;
@@ -72,17 +69,16 @@ let authorization_setup ~token_endpoint =
       Protocol.pkce = false;
     }
   in
-  let started : Browser.started =
-    {
-      Browser.authorization;
-      Browser.authorization_uri = Oauth2.Authorization.uri authorization;
-      Browser.redirect_uri;
-    }
+  let started =
+    match Browser.start ~random:(fun n -> String.make n '\001') spec with
+    | Ok started -> started
+    | Error error -> failf "failed to start browser auth: %a" Auth.Error.pp error
   in
+  let state = query_one "state" (Browser.authorization_uri started) in
   let callback =
-    Uri.of_string "http://localhost/callback?code=code-1&state=state-1"
+    Uri.of_string ("http://localhost/callback?code=code-1&state=" ^ state)
   in
-  (spec, started, callback)
+  (started, callback)
 
 let complete_secret_response env ~profile ~response_body =
   let observed_body = ref None in
@@ -93,11 +89,11 @@ let complete_secret_response env ~profile ~response_body =
       respond_string ~status:`OK ~body:response_body ())
     (fun ~sw ~base_uri ->
       let token_endpoint = Uri.with_path base_uri "/token" in
-      let spec, started, callback = authorization_setup ~token_endpoint in
+      let started, callback = authorization_setup ~token_endpoint in
       let result =
         Auth.OAuth2_authorization_code.complete_secret
           ~http:(Oauth2_eio.make_client env#net)
-          ~sw spec started ~callback ~now:10L ~profile
+          ~sw started ~callback ~now:10L ~profile
       in
       (match !observed_body with
       | Some body ->

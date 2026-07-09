@@ -661,13 +661,16 @@ module Openai_chatgpt = struct
 end
 
 module OAuth2_authorization_code = struct
-  type started = {
+  type t = {
+    spec : Protocol.oauth2_authorization_code;
     authorization : Oauth2.Authorization.t;
     authorization_uri : Uri.t;
     redirect_uri : Uri.t;
   }
 
   type token_profile = Generic | Openai_chatgpt
+  let authorization_uri t = t.authorization_uri
+  let redirect_uri t = t.redirect_uri
 
   let start ~random (spec : Protocol.oauth2_authorization_code) =
     let redirect_uri =
@@ -711,14 +714,14 @@ module OAuth2_authorization_code = struct
                  (Uri.host spec.Protocol.authorization_endpoint)));
         Ok
           {
+            spec;
             authorization;
             authorization_uri = Oauth2.Authorization.uri authorization;
             redirect_uri = Oauth2.Authorization.redirect_uri authorization;
           }
 
-  let complete ~http ~sw (spec : Protocol.oauth2_authorization_code) started
-      ~callback =
-    match Oauth2.Authorization.callback started.authorization callback with
+  let complete ~http ~sw t ~callback =
+    match Oauth2.Authorization.callback t.authorization callback with
     | Error (`Oauth error) ->
         Error (Error.Rejected (Oauth2.Error.to_string error))
     | Error error ->
@@ -726,20 +729,20 @@ module OAuth2_authorization_code = struct
     | Ok code -> (
         let grant = Oauth2.Authorization.grant code in
         match
-          Oauth2.Grant.request ~client:spec.Protocol.authorization_client
-            ~endpoint:spec.Protocol.authorization_token_endpoint grant
+          Oauth2.Grant.request ~client:t.spec.Protocol.authorization_client
+            ~endpoint:t.spec.Protocol.authorization_token_endpoint grant
           |> Oauth2_eio.send http ~sw
         with
         | Ok token ->
             Log.info (fun m ->
                 m "authorization code exchanged endpoint_host=%s"
                   (Option.value ~default:"<none>"
-                     (Uri.host spec.Protocol.authorization_token_endpoint)));
+                     (Uri.host t.spec.Protocol.authorization_token_endpoint)));
             Ok token
         | Error error -> Error (Error.of_oauth2 error))
 
-  let complete_secret ~http ~sw spec started ~callback ~now ~profile =
-    let* token = complete ~http ~sw spec started ~callback in
+  let complete_secret ~http ~sw t ~callback ~now ~profile =
+    let* token = complete ~http ~sw t ~callback in
     match profile with
     | Generic -> Secret.oauth_token ~now token
     | Openai_chatgpt -> Openai_chatgpt.secret_of_oauth_token ~now token

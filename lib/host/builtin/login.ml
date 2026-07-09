@@ -125,10 +125,10 @@ let browser ~stdenv host ~provider ~method_id ?name ?cancel events =
       | Error error -> Failed (Auth.Error.message error)
       | Ok started -> (
           let authorization_uri =
-            started.Auth.OAuth2_authorization_code.authorization_uri
+            Auth.OAuth2_authorization_code.authorization_uri started
           in
           let redirect_uri =
-            started.Auth.OAuth2_authorization_code.redirect_uri
+            Auth.OAuth2_authorization_code.redirect_uri started
           in
           events (Browser_url authorization_uri);
           let awaited =
@@ -163,7 +163,7 @@ let browser ~stdenv host ~provider ~method_id ?name ?cancel events =
                       else Auth.OAuth2_authorization_code.Generic
                     in
                     Auth.OAuth2_authorization_code.complete_secret ~http ~sw
-                      spec started ~callback ~now:(timestamp stdenv) ~profile
+                      started ~callback ~now:(timestamp stdenv) ~profile
               in
               match secret with
               | Error error -> Failed (Auth.Error.message error)
