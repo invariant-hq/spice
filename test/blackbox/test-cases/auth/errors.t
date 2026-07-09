@@ -1,6 +1,8 @@
 Auth commands fail before mutating state when the provider, method, name, store,
 or credential material is invalid.
 
+  $ git init -q
+
 Unknown providers are usage errors for reads and writes.
 
   $ spice auth status nope

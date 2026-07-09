@@ -1,5 +1,7 @@
 Workspace config is scoped to preferences.
 
+  $ git init -q
+
 Capability-shaped keys are rejected when writing either workspace file.
 
   $ spice config set --project shell /bin/bash

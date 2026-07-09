@@ -1,5 +1,7 @@
 Credential resolution is deterministic.
 
+  $ git init -q
+
 Stored credentials are used when no process or environment credential is
 available.
 

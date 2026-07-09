@@ -2,6 +2,8 @@ Spice does not migrate, alias, or normalize legacy reference-agent config
 shapes. Unknown fields are preserved by non-strict edits and rejected loudly
 by strict validation.
 
+  $ git init -q
+
 Write a user config holding plausible legacy fields next to a supported one.
 
   $ mkdir -p "$XDG_CONFIG_HOME/spice"

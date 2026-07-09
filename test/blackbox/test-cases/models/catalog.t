@@ -1,5 +1,7 @@
 The model catalog is available without provider network calls.
 
+  $ git init -q
+
   $ spice models --json | sed -E 's/^\{"schema_version":([0-9]+),"type":"models","models":\[.*/schema_version=\1 type=models/'
   schema_version=1 type=models
 

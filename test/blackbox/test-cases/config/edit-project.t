@@ -1,5 +1,7 @@
 Spice config edits project and project-local files separately.
 
+  $ git init -q
+
 Shared project config is writable and applies immediately: workspace layers
 load unconditionally, reduced to the workspace-safe allowlist.
 

@@ -1,6 +1,8 @@
 Current-model resolution explains provenance and passive credential
 readiness for both roles, without provider network calls.
 
+  $ git init -q
+
 Without configuration, the main model is the first provider default and the
 small model is the cheapest same-provider small model.
 

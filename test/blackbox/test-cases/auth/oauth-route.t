@@ -3,6 +3,8 @@ shape, different backend, account id attached as a header. The provider
 base-URL override applies to whichever route the credential selects, which is
 what lets these tests point the route at a local fake.
 
+  $ git init -q
+
   $ export SPICE_MODEL=openai/gpt-5.5
   $ mkdir -p "$XDG_CONFIG_HOME/spice"
   $ printf '{"version":1,"credentials":{"openai":{"default":{"kind":"oauth","access_token":"oauth-access-9999","account_id":"acct-42"}}}}' > "$XDG_CONFIG_HOME/spice/auth.json"

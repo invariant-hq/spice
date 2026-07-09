@@ -4,6 +4,8 @@ not a save failure: the credential stays saved either way. (The TTY refusal
 for --api-key-stdin cannot be exercised here — cram tests have no PTY — so
 that path is review-only.)
 
+  $ git init -q
+
 A valid key logs in ready and names the next useful command.
 
   $ export SPICE_MODEL=openai/gpt-5.5

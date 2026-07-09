@@ -1,6 +1,8 @@
 Spice models select writes the exact typed config keys that spice config get
 reads, through the same config edit path.
 
+  $ git init -q
+
 A rejected selection does not create a config file.
 
   $ spice models select openai/no-such-model

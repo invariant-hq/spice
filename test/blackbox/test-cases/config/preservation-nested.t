@@ -1,5 +1,7 @@
 Spice config edits preserve unknown members nested inside known sections.
 
+  $ git init -q
+
 This pins the edge preservation.t does not cover: a known section object
 (here [skills]) carrying members the current schema does not declare. An
 edit that rewrites the file must carry them through untouched.

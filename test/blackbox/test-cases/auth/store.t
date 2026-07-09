@@ -1,6 +1,8 @@
 The local auth store persists API-key credentials without printing secret
 material.
 
+  $ git init -q
+
 API-key login is the primary lifecycle path. It reads secret material from
 stdin, stores it under the default name, validates it against the provider,
 and never prints it. The provider endpoint here points at a closed port, so

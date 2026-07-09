@@ -1,6 +1,8 @@
 Spice config output never prints credential material, even when credential
 environment variables are set in the invoking environment.
 
+  $ git init -q
+
   $ export OPENAI_API_KEY=sk-SECRET-SENTINEL
   $ export ANTHROPIC_API_KEY=sk-ant-SECRET-SENTINEL
 

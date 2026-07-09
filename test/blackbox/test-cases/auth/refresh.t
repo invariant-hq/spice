@@ -3,6 +3,8 @@ lock: reload first, refresh once, persist atomically. Rotated refresh tokens
 are never spent twice, and permanent rejections block later runs until the
 user logs in again.
 
+  $ git init -q
+
   $ export SPICE_MODEL=openai/gpt-5.5
   $ mkdir -p "$XDG_CONFIG_HOME/spice"
   $ expired_credential () {

@@ -1,5 +1,7 @@
 Spice config validate checks config file syntax and supported field types.
 
+  $ git init -q
+
 Valid files pass.
 
   $ spice config validate

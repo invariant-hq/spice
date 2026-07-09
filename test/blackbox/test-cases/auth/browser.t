@@ -5,6 +5,8 @@ auth base-URL override reroots the authorization and token endpoints onto the
 fake issuer, the provider base-URL override routes the post-save check there
 too, and the fake server binary's one-shot --get client plays the browser.
 
+  $ git init -q
+
   $ cat > script-browser.jsonl <<'JSONL'
   > {"expect":{"request_line":"POST /oauth/token HTTP/1.1","body_contains":["grant_type=authorization_code","code=browser-code-1"]},"http":{"status":200,"json":{"id_token":"e30.e30.e30","access_token":"oauth-access-browser","refresh_token":"refresh-browser-1","expires_in":3600,"token_type":"Bearer"}}}
   > {"expect":{"request_line":"GET /v1/models HTTP/1.1"},"http":{"status":200,"json":{"data":[{"id":"gpt-5.5"}]}}}

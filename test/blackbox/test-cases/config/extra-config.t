@@ -1,5 +1,7 @@
 Extra config files are loaded from [SPICE_CONFIG].
 
+  $ git init -q
+
 User config is lower precedence than the extra config file.
 
   $ spice config set model openai/gpt-5.5
