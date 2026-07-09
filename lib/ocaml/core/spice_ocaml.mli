@@ -361,7 +361,9 @@ module Project : sig
         workspace. Dependency names are direct OCaml module dependencies as
         reported by the backend.
 
-        Dependencies default to {!Deps.Unknown}. *)
+        Dependencies default to {!Deps.Unknown}. Raises [Invalid_argument] if a
+        known interface or implementation dependency list contains duplicate
+        module names. *)
 
     val name : t -> Module_name.t
     (** [name t] is [t]'s module name. *)
@@ -454,7 +456,8 @@ module Project : sig
         directory containing the library stanza, when known.
 
         [requires] defaults to {!Deps.Unknown}. Raises [Invalid_argument] if
-        [name] is empty or [requires] contains duplicate ids. *)
+        [name] is empty, [name] contains NUL, or [requires] contains duplicate
+        ids. *)
 
     val external_library :
       ?source_dir:Spice_workspace.Path.t ->
@@ -470,7 +473,7 @@ module Project : sig
         [source_dir] is present only when the producer can map the external
         library's source directory into the current workspace. [requires]
         defaults to {!Deps.Unknown}. Raises [Invalid_argument] if [name] is
-        empty or [requires] contains duplicate ids. *)
+        empty, [name] contains NUL, or [requires] contains duplicate ids. *)
 
     val executable :
       dir:Spice_workspace.Path.t ->
@@ -485,7 +488,8 @@ module Project : sig
         executable's stable component id.
 
         [requires] defaults to {!Deps.Unknown}. Raises [Invalid_argument] if
-        [name] is empty or [requires] contains duplicate ids. *)
+        [name] is empty, [name] contains NUL, or [requires] contains duplicate
+        ids. *)
 
     val with_requires : Id.t Deps.t -> t -> t
     (** [with_requires requires t] is [t] with [requires].

@@ -125,8 +125,9 @@ module Describe : sig
       [cwd], then returns the normalized project description.
 
       [env] defaults to the process manager's inherited environment. [cancelled]
-      defaults to a function that returns [false]. [timeout_s] defaults to a
-      conservative wall-clock limit for each describe command. *)
+      defaults to a function that returns [false] and is checked before the
+      first command starts. [timeout_s] defaults to a conservative wall-clock
+      limit applied independently to each describe command. *)
 end
 
 module Rpc : sig
@@ -407,6 +408,7 @@ module Rpc : sig
         primitive; if [sleep] is omitted, startup remains fire-and-check with no
         blocking wait. [startup_timeout] defaults to [3.0] seconds. [start] is
         not retried and is not used to restart an endpoint that exits later.
+        Raises [Invalid_argument] if [startup_timeout] is negative.
 
         The value owns registry polling and the latest diagnostic state for
         [workspace]. *)
@@ -586,7 +588,9 @@ module Project_source : sig
   (** [create ~refresh_status ~describe ()] is a project-shape source holding no
       snapshot until {!capture} runs. [refresh_status] is polled by {!get}
       before any describe. [describe] runs a one-shot [dune describe]. [now]
-      stamps snapshot capture times and defaults to {!Unix.gettimeofday}. *)
+      stamps snapshot capture times and defaults to {!Unix.gettimeofday}.
+      Cancellation is not owned by the source; callers pass it to {!get}, which
+      forwards it to [describe] only when a fresh describe is attempted. *)
 
   val capture : t -> (unit, Error.t) result
   (** [capture t] runs [describe] once and stores the result as the boot
@@ -618,5 +622,9 @@ module Project_source : sig
         lock-held describe error (dune's ["has locked the build directory"])
         serves the snapshot with {!Freshness.Snapshot} evidence naming no
         endpoint, or {!Blocked_by_watch} when there is no snapshot; any other
-        error is {!Describe_error}. *)
+        error is {!Describe_error}.
+
+      [cancelled] is forwarded to [describe] in the {!No_watch} path. It is not
+      consulted before [refresh_status] and is not used when a visible watch lets
+      [get] serve or reject from the snapshot alone. *)
 end
