@@ -527,7 +527,7 @@ module Run = struct
   let is_host_tool_name host_tools call =
     List.exists (String.equal (Llm.Tool.Call.name call)) host_tools
 
-  let permission_already_allows state call request =
+  let permission_already_allows state call request review =
     let same_call requested =
       Llm.Tool.Call.equal (Permission.Requested.tool_call requested) call
     in
@@ -535,6 +535,11 @@ module Run = struct
       Spice_permission.Request.equal
         (Permission.Requested.request requested)
         request
+    in
+    let same_reviewed_accesses requested =
+      Spice_permission.Access.Set.equal
+        (Permission.Requested.asked requested)
+        (Spice_permission.Policy.Review.access_set review)
     in
     let allows_reply resolved =
       match Permission.Resolved.decision resolved with
@@ -544,6 +549,7 @@ module Run = struct
     List.exists
       (fun (requested, resolved) ->
         same_call requested && same_request requested
+        && same_reviewed_accesses requested
         &&
         match resolved with
         | Some reply -> allows_reply reply
@@ -656,7 +662,7 @@ module Run = struct
           | Spice_permission.Policy.Decision.Denied (first, rest) ->
               Ok (`Denied (first, rest))
           | Spice_permission.Policy.Decision.Review review ->
-              if permission_already_allows state call request then
+              if permission_already_allows state call request review then
                 loop (request_index + 1) requests
               else Ok (`Review (request_index, review)))
     in

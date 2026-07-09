@@ -597,6 +597,55 @@ let current_policy_is_checked_after_permission_allow () =
           failf "expected model request after current policy denial, got %a"
             Run.Step.pp_next next)
 
+let permission_allow_requires_same_reviewed_accesses () =
+  let first_access =
+    Permission.Access.custom ~kind:`Write ~subject:"alpha" "review_tool"
+  in
+  let second_access =
+    Permission.Access.custom ~kind:`Write ~subject:"beta" "review_tool"
+  in
+  let tool =
+    let permissions () =
+      [ Permission.Request.of_accesses [ first_access; second_access ] ]
+    in
+    Tool.make ~name:"review_tool" ~description:"Reviewed test tool."
+      ~input:Tool.Input.empty ~output ~permissions
+      ~run:(fun _context () -> Tool.Result.completed ~output:() ())
+      ()
+  in
+  let blocked = run_response (config [ tool ]) (response (call ())) in
+  let first = permission_from_step blocked in
+  check "first review covers both accesses"
+    (Permission.Access.Set.equal
+       (Session.Permission.Requested.asked first)
+       (Permission.Access.Set.of_list [ first_access; second_access ]));
+  let narrowed_policy =
+    Permission.Policy.make
+      [
+        Permission.Policy.Rule.allow
+          (Permission.Policy.Match.exact first_access);
+      ]
+  in
+  let narrowed_config = config ~policy:narrowed_policy [ tool ] in
+  match
+    Run.resolve_permission narrowed_config
+      (Session.Permission.Requested.id first)
+      (Permission.Policy.Review.Allow Permission.Policy.Review.Once)
+      (Run.Step.session blocked)
+  with
+  | Error error ->
+      failf "allow under narrowed policy failed: %a" Run.Error.pp error
+  | Ok step -> (
+      match Run.Step.next step with
+      | Run.Step.Waiting (Session.Waiting.Permission second) ->
+          check "narrowed review covers only the still-reviewed access"
+            (Permission.Access.Set.equal
+               (Session.Permission.Requested.asked second)
+               (Permission.Access.Set.of_list [ second_access ]))
+      | next ->
+          failf "expected narrowed permission review, got %a" Run.Step.pp_next
+            next)
+
 let resolved_value =
   testable ~pp:Session.Permission.Resolved.pp
     ~equal:Session.Permission.Resolved.equal ()
@@ -721,6 +770,8 @@ let () =
         policy_denial_uses_configured_message;
       test "current policy is checked after permission allow"
         current_policy_is_checked_after_permission_allow;
+      test "permission allow requires same reviewed accesses"
+        permission_allow_requires_same_reviewed_accesses;
       test "unattended denials record provenance"
         unattended_denials_record_provenance;
       test "recomputed change keeps allowed permissions matching"
