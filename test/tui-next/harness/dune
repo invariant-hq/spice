@@ -13,4 +13,5 @@
   matrix.test
   spice_tui
   spice_host
-  spice_path))
+  spice_path
+  spice_session))

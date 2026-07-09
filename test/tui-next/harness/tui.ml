@@ -27,10 +27,14 @@ type t = {
   mutable parked : bool;
   mutable idles : int;
   mutable wakes : int;
+  mutable async_wakes : int;
   mutable last_timeout : float option;
   mutable stopping : bool;
   mutable finished : bool;
   mutable probe : Mosaic.Probe.t option;
+  mutable exit_result :
+    (Spice_tui.outcome, Spice_tui.Error.t) result option;
+      (** the [Spice_tui.run] result, set once the loop fiber exits *)
   project : Project.t;
   provider : Provider.t option;
 }
@@ -211,6 +215,98 @@ let settle t =
   settle_from t 0;
   mark "settle: end"
 
+(* The turn has left the working regime. While a turn runs, the working-line
+   spinner's [Sub.every] keeps the loop's park timeout at the spinner interval
+   (~0.1 s); a settled turn parks either with no timer or on the idle chat's slow
+   (~2 s) refresh. So a park with the timeout absent or well above the spinner
+   interval is the load-INDEPENDENT signal that the turn ended — unlike a fixed
+   breath count, which the deltas-to-completion gap can outrun under heavy
+   parallel load. *)
+let left_working_regime t =
+  t.parked && match t.last_timeout with None -> true | Some s -> s > 0.5
+
+(* Breaths of quiet required after the working regime ends before the frame is
+   taken as ready — a small render-settle confirm on top of the positive signal
+   above, not the wait itself. *)
+let release_confirm = 4
+
+(* Wait for an in-flight turn to settle: it has {!left_working_regime} and then
+   a few quiet breaths. The completion — a gate release's terminal event, or a
+   force-interrupt's synthesized settle — runs on the drain fiber past the probe,
+   so this positive, load-independent signal is what {!release} and {!settle_turn}
+   share instead of a fixed breath count. [what] labels the loud failure. *)
+let await_turn_settled t what =
+  let rec loop spent quiet =
+    if left_working_regime t && quiet >= release_confirm then ()
+    else if spent > settle_budget then
+      Util.failf "tui harness: %s but the turn never settled" what
+    else (
+      check_alive t;
+      let before = t.async_wakes in
+      breathe t;
+      let quiet =
+        if left_working_regime t && t.async_wakes = before then quiet + 1 else 0
+      in
+      loop (spent + 1) quiet)
+  in
+  loop 0 0
+
+(* Settle after a keystroke that ends an in-flight turn without a gate release —
+   a force-interrupt esc, say. Such a turn settles on the drain fiber past the
+   probe (its synthesized [Interrupted] result → session save → dispatch), and
+   the gate is still nominally held, so a plain {!settle} relaxes around the held
+   gate and can return on the pre-settle "Interrupting…" frame. Wait for the turn
+   to leave the working regime first, exactly as {!release} does for a gate
+   release, then settle the resulting frame. *)
+let settle_turn t =
+  await_turn_settled t "ended a turn";
+  settle t
+
+(* Wait for an in-flight turn to suspend into a dialog it opens off a tool call
+   (a permission prompt, an [ask_user] question). The dialog opens when the drain
+   reads the tool-call response — a socket read past the probe — but unlike a
+   completion the turn stays in flight (its working-line spinner sub stays live),
+   so {!left_working_regime} never fires; and unlike a completion there is no text
+   to stream (the response is a [function_call]), so the FIRST out-of-loop wake
+   after the request arrives IS the dialog opening. Call it right after the
+   {!await_request} for the tool-call request (which returns before the response
+   is even served, so the dialog cannot already be open): wait for that first
+   wake, then settle the suspended — hence stable — dialog frame. *)
+(* Breaths of quiet {!await_suspend} confirms before taking a dialog as open.
+   Wider than a completion's confirm because there is no positive signal to fall
+   back on: it is the whole wait, so it must outlast the tool-call-response poll
+   under load. Even so it is not a guarantee — see {!await_suspend}. *)
+let suspend_confirm = 30
+
+(* Wait for an in-flight turn to suspend into a dialog it opens off a tool call
+   (a permission prompt, an [ask_user] question). Unlike a completion this has NO
+   load-independent signal: the turn stays in flight (its working-line spinner sub
+   stays live, so {!left_working_regime} never fires), and the dialog opens when
+   the drain reads the (ungated) tool-call response — a socket read past the probe
+   whose delivery is gated on a real eio poll — after which the app is probe-quiet
+   in a state indistinguishable, to the harness, from the brief pre-read quiet.
+   Often the dialog is already open by the time this runs ({!await_request}'s own
+   settling drove the poll); under contention it is not, and the poll can outrun
+   settle's short quiet-drain. So settle, then confirm over a generous quiet
+   window, re-settling on any drain wake — a widened drain, not a positive wait.
+   Call it right after the {!await_request} for the tool-call request. *)
+let await_suspend t =
+  settle t;
+  let rec confirm spent quiet =
+    if quiet >= suspend_confirm then ()
+    else if spent > settle_budget then
+      Util.failf "tui harness: a dialog never stabilized"
+    else (
+      check_alive t;
+      let before = t.async_wakes in
+      breathe t;
+      if t.async_wakes = before then confirm (spent + 1) (quiet + 1)
+      else (
+        settle t;
+        confirm (spent + 1) 0))
+  in
+  confirm 0 0
+
 (* Move virtual time forward by [dt] seconds, relative to the current instant.
    Displayed counters move by exactly [dt]. The trailing settle is
    non-quantizing: a tick left queued at landing flushes one frame, and
@@ -264,7 +360,49 @@ let provider t =
   | Some provider -> provider
   | None -> failwith "tui harness: no provider script was given to run"
 
-let release t name = Provider.release (provider t) name
+(* Release a held provider gate and wait for the unblocked turn to settle, so a
+   following {!settle} observes the completion rather than racing it.
+
+   The turn's HTTP read and completion run on the {!Spice_host.Live} drain fiber,
+   forked off the Mosaic loop and NOT through [Cmd.perform] — the quiescence
+   probe never sees it. Between resolving the gate and the turn settling there is
+   a window with no probe-visible work and no gate held (the drain blocks in a
+   socket read, then in the completion's domain-blocking session-save [fsync]), so
+   a bare settle's short quiet-drain can declare quiescence too early — with the
+   working line still up (~3% of runs, worse under load).
+
+   Two phases, both driven by real-clock breaths (each lets eio poll the loopback
+   socket and run the drain fiber) with no virtual-time movement — so no elapsed
+   counter or spinner phase drifts:
+
+   - Phase 1 waits until the provider's [served] count passes this turn: the whole
+     (Content-Length-delimited) response is on the wire. It removes the dominant
+     flake — a settle that ran before the response was even written.
+   - Phase 2 waits until the app has {!left_working_regime} (the working-line
+     spinner is gone) and then a few quiet breaths. The regime check is the
+     load-independent signal that the turn actually settled: a fixed breath count
+     cannot bound the deltas-to-completion gap under heavy parallel load, but the
+     spinner disappearing is a fact about the app's state, not the wall clock.
+
+   (The old workaround, [advance] past the release, moved virtual time and — on
+   real tool-write turns — let a background workspace save race the turn save into
+   a session conflict; this moves no time.) *)
+let release t name =
+  let provider = provider t in
+  let served0 = Provider.served provider in
+  Provider.release provider name;
+  let rec await_served spent =
+    if Provider.served provider > served0 then ()
+    else if spent > settle_budget then
+      Util.failf "tui harness: released gate %S but its response was never sent"
+        name
+    else (
+      check_alive t;
+      breathe t;
+      await_served (spent + 1))
+  in
+  await_served 0;
+  await_turn_settled t (Printf.sprintf "released gate %S" name)
 
 (* Await the [index]th request while pumping the app: the turn pipeline
    interleaves host work with messages the shell must process (and small
@@ -289,7 +427,25 @@ let stop t =
   t.stopping <- true;
   Matrix_test.stop t.backend
 
-let run ?(size = (80, 24)) ?(env = []) ?provider:script ?startup ?seed ~name f =
+(* Block until the app quits on its own (a quit chord, /quit, or a review close),
+   i.e. the loop fiber's [Spice_tui.run] returned. Use before {!outcome}; do not
+   {!settle} after the app has exited (settle would fail loudly). *)
+let await_exit t =
+  while not t.finished do
+    Eio.Condition.await_no_mutex t.parked_cond
+  done
+
+(* The TUI's exit outcome, valid once the app has quit ({!await_exit}). Fails if
+   the run errored or the app has not exited yet. *)
+let outcome t =
+  match t.exit_result with
+  | Some (Ok outcome) -> outcome
+  | Some (Error error) ->
+      Util.failf "tui harness: %s" (Spice_tui.Error.message error)
+  | None -> failwith "tui harness: the TUI has not exited (await_exit first)"
+
+let run ?(size = (80, 24)) ?(env = []) ?provider:script ?session ?draft ?submit
+    ?seed ~name f =
   t0 := Unix.gettimeofday ();
   mark "run: start";
   Project.with_temp name @@ fun project ->
@@ -335,7 +491,13 @@ let run ?(size = (80, 24)) ?(env = []) ?provider:script ?startup ?seed ~name f =
     t.signaled <- false;
     t.parked <- false
   in
-  let on_wake () = Option.iter wake !cell in
+  let on_wake () =
+    Option.iter
+      (fun t ->
+        t.async_wakes <- t.async_wakes + 1;
+        wake t)
+      !cell
+  in
   (* 10 fps virtual cadence: every time-march round-trip renders one real
      frame, so the cadence sets the cost of advancing time (advance 1.0 =
      10 renders, not 60). The app's finest [Sub.every] is 0.1 s, so timer
@@ -356,24 +518,36 @@ let run ?(size = (80, 24)) ?(env = []) ?provider:script ?startup ?seed ~name f =
       parked = false;
       idles = 0;
       wakes = 0;
+      async_wakes = 0;
       last_timeout = None;
       stopping = false;
       finished = false;
       probe = None;
+      exit_result = None;
       project;
       provider;
     }
   in
   cell := Some t;
+  (* The temp project root is created inside {!run}, so the startup is built
+     here rather than passed in: [cwd] is always the project root, and the
+     launch inputs map to the same startup the CLI resolves before the TUI
+     boots — [session] resumes a seeded document ([spice resume]), [draft] seeds
+     the composer ([--draft]), [submit] runs the first prompt ([-p]). *)
   let startup =
-    match startup with
-    | Some startup -> startup
-    | None ->
-        Spice_tui.Startup.make
-          ~cwd:(Spice_path.Abs.of_string_exn (Project.root project))
-          ()
+    let input =
+      match (draft, submit) with
+      | None, None -> Spice_tui.Startup.Empty
+      | Some text, None -> Spice_tui.Startup.Draft text
+      | None, Some text -> Spice_tui.Startup.Submit text
+      | Some _, Some _ ->
+          failwith "tui harness: draft and submit are mutually exclusive"
+    in
+    Spice_tui.Startup.make
+      ~cwd:(Spice_path.Abs.of_string_exn (Project.root project))
+      ?session:(Option.map Spice_session.Id.of_string session)
+      ~input ()
   in
-  let result = ref None in
   mark "run: launching";
   Eio.Fiber.both
     (fun () ->
@@ -383,7 +557,7 @@ let run ?(size = (80, 24)) ?(env = []) ?provider:script ?startup ?seed ~name f =
           t.finished <- true;
           Eio.Condition.broadcast t.parked_cond)
         (fun () ->
-          result :=
+          t.exit_result <-
             Some
               (Spice_tui.run ~stdenv ~startup
                  ~clock:(clock :> float Eio.Time.clock_ty Eio.Std.r)
@@ -399,7 +573,7 @@ let run ?(size = (80, 24)) ?(env = []) ?provider:script ?startup ?seed ~name f =
           stop t)
         (fun () -> f t));
   mark "run: fibers joined";
-  match !result with
+  match t.exit_result with
   | Some (Ok (_ : Spice_tui.outcome)) -> ()
   | Some (Error error) ->
       Util.failf "tui harness: %s" (Spice_tui.Error.message error)
