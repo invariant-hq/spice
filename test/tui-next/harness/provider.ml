@@ -16,14 +16,30 @@
    sleeps anywhere. {!await_request} is the event-based synchronization for
    "the turn's request reached the provider". *)
 
+type reply =
+  | Completion of { id : string; text : string }
+      (** a Responses completion, streamed as deltas + the terminal event *)
+  | Http of { status : int; body : string }
+      (** a plain HTTP reply, for the non-Responses endpoints a scenario touches
+          (a login's model-list check, say) *)
+
 type item = {
+  expect_line : string;  (** the exact request line the item serves *)
   expect : string list;  (** substrings the request body must contain *)
   gate : string option;  (** hold the reply until [release] resolves it *)
-  id : string;
-  text : string;  (** the assistant message of the completion *)
+  reply : reply;
 }
 
-let message ?(expect = []) ?gate ~id text = { expect; gate; id; text }
+let message ?(expect = []) ?gate ~id text =
+  {
+    expect_line = "POST /v1/responses HTTP/1.1";
+    expect;
+    gate;
+    reply = Completion { id; text };
+  }
+
+let http ?(expect = []) ?gate ~line ~status body =
+  { expect_line = line; expect; gate; reply = Http { status; body } }
 
 type t = {
   base_url : string;
@@ -97,14 +113,14 @@ let chunk_text s =
 
 (* OCaml's [%S] escaping coincides with JSON for the ASCII test strings these
    scripts carry (as in the out-of-process server's builders). *)
-let completion_json item =
+let completion_json ~id ~text =
   Printf.sprintf
     {|{"id":%S,"status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":%S}]}]}|}
-    item.id item.text
+    id text
 
-let sse_body item =
+let sse_body ~id ~text =
   let deltas =
-    chunk_text item.text
+    chunk_text text
     |> List.map (fun chunk ->
         Printf.sprintf
           "event: response.output_text.delta\n\
@@ -116,19 +132,27 @@ let sse_body item =
     Printf.sprintf
       "event: response.completed\n\
        data: {\"type\":\"response.completed\",\"response\":%s}\n\n"
-      (completion_json item)
+      (completion_json ~id ~text)
   in
   deltas ^ terminal
 
-let http_response body =
+let status_reason = function
+  | 200 -> "OK"
+  | 401 -> "Unauthorized"
+  | 403 -> "Forbidden"
+  | 404 -> "Not Found"
+  | 429 -> "Too Many Requests"
+  | _ -> "Status"
+
+let http_response ?(status = 200) ?(content_type = "text/event-stream") body =
   Printf.sprintf
-    "HTTP/1.1 200 OK\r\n\
-     Content-Type: text/event-stream\r\n\
+    "HTTP/1.1 %d %s\r\n\
+     Content-Type: %s\r\n\
      Content-Length: %d\r\n\
      Connection: close\r\n\
      \r\n\
      %s"
-    (String.length body) body
+    status (status_reason status) content_type (String.length body) body
 
 (* {2 Serving} *)
 
@@ -161,9 +185,9 @@ let read_request buf =
   (request_line, body)
 
 let check_expectation index item ~request_line ~body =
-  if not (String.equal request_line "POST /v1/responses HTTP/1.1") then
-    Util.failf "provider: request %d line %S, expected POST /v1/responses" index
-      request_line;
+  if not (String.equal request_line item.expect_line) then
+    Util.failf "provider: request %d line %S, expected %S" index request_line
+      item.expect_line;
   List.iter
     (fun fragment ->
       if not (Util.contains body fragment) then
@@ -186,7 +210,13 @@ let serve t socket items =
       (match item.gate with
       | None -> ()
       | Some name -> Eio.Promise.await (fst (Hashtbl.find t.gates name)));
-      Eio.Flow.copy_string (http_response (sse_body item)) flow)
+      let response =
+        match item.reply with
+        | Completion { id; text } -> http_response (sse_body ~id ~text)
+        | Http { status; body } ->
+            http_response ~status ~content_type:"application/json" body
+      in
+      Eio.Flow.copy_string response flow)
     items
 
 let start ~sw ~net items =
