@@ -282,6 +282,38 @@ let test_send_decodes_success env () =
             (Some [ "repo"; "user" ])
             (Oauth2.Token.scope token))
 
+let test_send_forwards_basic_auth_header env () =
+  with_server env
+    (fun request body ->
+      equal string ~msg:"token path" "/token" (Http.Request.resource request);
+      equal (option string) ~msg:"authorization header"
+        (Some "Basic YmFzaWMtY2xpZW50OmJhc2ljLXNlY3JldA==")
+        (Http.Header.get (Http.Request.headers request) "authorization");
+      let body = read_body body in
+      is_false ~msg:"client id omitted from basic body"
+        (String.includes ~affix:"client_id" body);
+      is_false ~msg:"client secret omitted from basic body"
+        (String.includes ~affix:"client_secret" body);
+      equal string ~msg:"token body" "grant_type=client_credentials" body;
+      respond_string ~status:`OK
+        ~body:{|{"access_token":"access-123","token_type":"Bearer"}|} ())
+    (fun ~sw ~base_uri ->
+      let oauth_client =
+        Oauth2.Client.make ~id:"basic-client" ~auth:(`Secret_basic "basic-secret")
+          ()
+      in
+      let request =
+        Oauth2.Grant.client_credentials ()
+        |> Oauth2.Grant.request ~client:oauth_client
+             ~endpoint:(Uri.with_path base_uri "/token")
+      in
+      match Oauth2_eio.send (client env) ~sw request with
+      | Ok token ->
+          equal string ~msg:"access token" "access-123"
+            (Oauth2.Token.access_token token)
+      | Error error ->
+          failf "unexpected OAuth2_eio.send error: %s" (string_of_error error))
+
 let test_send_maps_oauth_error_before_http env () =
   with_server env
     (fun request body ->
@@ -404,6 +436,8 @@ let () =
         [
           test ~timeout:3.0 "decodes successful pure request"
             (with_eio test_send_decodes_success);
+          test ~timeout:3.0 "forwards request headers"
+            (with_eio test_send_forwards_basic_auth_header);
           test ~timeout:3.0 "maps OAuth JSON error before HTTP"
             (with_eio test_send_maps_oauth_error_before_http);
           test ~timeout:3.0 "maps malformed success JSON"

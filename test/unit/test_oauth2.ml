@@ -280,6 +280,18 @@ let pkce () =
     (O.Pkce.challenge generated);
   is_true ~msg:"generated verifier length"
     (String.length (O.Pkce.verifier generated) >= 43);
+  expect_invalid_arg ~expected:"OAuth2 random supplier returned the wrong number of bytes"
+    "pkce rejects short random output"
+    (fun () -> O.Pkce.generate ~random:(fun n -> String.make (n - 1) '\000'));
+  expect_invalid_arg ~expected:"OAuth2 random supplier returned the wrong number of bytes"
+    "state rejects long random output"
+    (fun () -> O.State.generate ~random:(fun n -> String.make (n + 1) '\000'));
+  let state = O.State.generate ~random:deterministic_random in
+  let state_wire = O.State.to_string state in
+  equal string ~msg:"state round trip" state_wire
+    (O.State.to_string (O.State.of_string state_wire));
+  is_false ~msg:"state is unpadded base64url"
+    (String.includes ~affix:"=" state_wire);
   (match O.Pkce.of_verifier "short" with
   | Error (`Invalid_verifier reason) ->
       is_true ~msg:"short verifier reason"
@@ -1001,6 +1013,34 @@ let grants_and_revocation () =
        (O.Grant.request
           ~client:(client "grant-client" None)
           ~endpoint client_credentials));
+  let device =
+    expect_ok "device grant parse"
+      (O.Device.parse
+         (json_object
+            [
+              ("device_code", Json.string "device-secret");
+              ("user_code", Json.string "USER-CODE");
+              ("verification_uri", Json.string "https://provider.example/device");
+              ("expires_in", Json.int 600);
+            ]))
+  in
+  let device_request =
+    O.Grant.device_code device
+    |> O.Grant.request ~client:(client "grant-client" None) ~endpoint
+  in
+  check_params "device-code grant params"
+    [
+      ("grant_type", "urn:ietf:params:oauth:grant-type:device_code");
+      ("device_code", "device-secret");
+    ]
+    (grant_params device_request);
+  let decoded_device_token =
+    expect_ok "device grant decode"
+      (O.Request.decode device_request
+         (response {|{"access_token":"access-secret","token_type":"Bearer"}|}))
+  in
+  equal string ~msg:"device grant decoded token" "access-secret"
+    (O.Token.access_token decoded_device_token);
   expect_reserved "revocation reserved token" "token"
     (O.Revocation.make ~token:"token-secret" ()
     |> O.Revocation.with_extra [ ("token", "bad") ]);
