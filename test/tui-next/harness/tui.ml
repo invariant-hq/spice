@@ -443,8 +443,8 @@ let outcome t =
       Util.failf "tui harness: %s" (Spice_tui.Error.message error)
   | None -> failwith "tui harness: the TUI has not exited (await_exit first)"
 
-let run ?(size = (80, 24)) ?(env = []) ?(unordered = false) ?provider:script
-    ?session ?launch ?draft ?submit ?seed ~name f =
+let run ?(size = (80, 24)) ?(env = []) ?(unordered = false) ?(review = false)
+    ?provider:script ?session ?draft ?submit ?seed ~name f =
   t0 := Unix.gettimeofday ();
   mark "run: start";
   Project.with_temp name @@ fun project ->
@@ -544,6 +544,13 @@ let run ?(size = (80, 24)) ?(env = []) ?(unordered = false) ?provider:script
       | None, Some text -> Spice_tui.Startup.Submit text
       | Some _, Some _ ->
           failwith "tui harness: draft and submit are mutually exclusive"
+    in
+    (* [~review] boots straight onto the /review screen, the [spice review]
+       subcommand's [Launch_review] path (base = HEAD); the default is the chat
+       launch. Kept as a bool so tests need no [Spice_tui] dependency. *)
+    let launch =
+      if review then Some (Spice_tui.Startup.Launch_review { base_spec = None })
+      else None
     in
     Spice_tui.Startup.make
       ~cwd:(Spice_path.Abs.of_string_exn (Project.root project))
