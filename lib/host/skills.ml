@@ -691,6 +691,12 @@ let skill_payload content =
       ^ "\n\nResources (load with the skill tool's resource field):\n"
       ^ String.concat "\n" (List.map (fun name -> "- " ^ name) resources)
 
+let resource_error_message = function
+  | Spice_workspace_fs.Error.Workspace
+      (Spice_workspace.Resolve_error.Outside_workspace _) ->
+      "path escapes root"
+  | error -> Spice_workspace_fs.Error.message error
+
 let read_resource ~stdenv (skill : Skill.t) resource =
   match skill.Skill.dir with
   | None ->
@@ -704,13 +710,13 @@ let read_resource ~stdenv (skill : Skill.t) resource =
       let root = Spice_workspace.Root.make dir_abs in
       let workspace = Spice_workspace.single root in
       match Spice_workspace_fs.resolve ~workspace resource with
-      | Error error -> Error (Spice_workspace_fs.Error.message error)
+      | Error error -> Error (resource_error_message error)
       | Ok path -> (
           match
             Spice_workspace_fs.load_regular ~fs ~workspace ~follow_symlink:true
               path
           with
-          | Error error -> Error (Spice_workspace_fs.Error.message error)
+          | Error error -> Error (resource_error_message error)
           | Ok text ->
               if String.length text <= max_resource_bytes then Ok text
               else
