@@ -69,7 +69,14 @@ let run ?session cwd sandbox mode continue_ draft prompt =
      let* session =
        match (session, continue_) with
        | Some _, true -> usage "choose only one of --continue or --session"
-       | Some session, false -> Ok (Some session)
+       | Some session, false ->
+           let* host = assembly (load_host ?cwd ~overrides:[] stdenv) in
+           let store = Spice_host.Session.store ~stdenv host in
+           let* document = locate_session ~store session in
+           Ok
+             (Some
+                (Spice_session.id
+                   (Spice_session_store.Document.session document)))
        | None, true ->
            let* host = assembly (load_host ?cwd ~overrides:[] stdenv) in
            let* id = newest_session_in_cwd ~surface:`Tui ~stdenv host in
