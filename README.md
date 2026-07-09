@@ -189,6 +189,7 @@ undo agent changes. Configuration is layered JSON; `spice config show
 from.
 
 The [manual](doc/manual/README.md) covers the details:
+[interactive TUI workflows](doc/manual/interactive.md),
 [configuration](doc/manual/configuration.md),
 [security](doc/manual/security.md),
 [sessions](doc/manual/sessions.md), and

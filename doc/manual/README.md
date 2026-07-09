@@ -3,6 +3,8 @@
 User-facing documentation for the `spice` binary. For design documents and
 internal notes, see the rest of [`doc/`](../).
 
+- [Interactive TUI](interactive.md) — starting and resuming, composer
+  workflows, modes, decisions, and worktree review.
 - [Configuration](configuration.md) — config files, precedence, workspace
   filtering, and the `spice config` commands.
 - [Security](security.md) — permissions, command sandboxing, workspace trust,

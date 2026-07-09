@@ -6,6 +6,8 @@ overview when changing how the libraries compose.
 
 ## User manual
 
+- [Interactive TUI](manual/interactive.md) — starting and resuming, composer
+  workflows, modes, decisions, and worktree review.
 - [Configuration](manual/configuration.md) — config files, precedence,
   workspace-safe project config, and the `spice config` commands.
 - [Security](manual/security.md) — permissions, command sandboxing, workspace
