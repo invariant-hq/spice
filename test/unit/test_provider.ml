@@ -364,7 +364,10 @@ let cost_contracts () =
      higher tier's rate applies: 3M / 1e6 * 10. *)
   equal (option float_value)
     ~msg:"the input side selects the context price tier" (Some 30.)
-    (Model.cost tiered (Usage.make ~input:3_000_000 ~output:0 ()))
+    (Model.cost tiered (Usage.make ~input:3_000_000 ~output:0 ()));
+  let large_usage = Usage.make ~input:max_int ~cache_read:1 ~output:0 () in
+  is_true ~msg:"overflowing input total does not prevent cost reporting"
+    (Option.is_some (Model.cost model large_usage))
 
 let model_contracts () =
   let released_on = Date.make ~year:2026 ~month:1 ~day:15 in

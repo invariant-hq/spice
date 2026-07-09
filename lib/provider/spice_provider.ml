@@ -588,14 +588,17 @@ module Model = struct
 
   let pricing t = t.pricing
 
+  let cost_context_tokens usage =
+    match Spice_llm.Usage.input_total usage with
+    | tokens -> tokens
+    | exception Invalid_argument _ -> max_int
+
   let cost t usage =
     match t.pricing with
     | None -> None
     | Some pricing ->
         let price =
-          price_for
-            ~context_tokens:(Spice_llm.Usage.input_total usage)
-            pricing
+          price_for ~context_tokens:(cost_context_tokens usage) pricing
         in
         (* Each disjoint usage lane billed against its rate in [price]. A lane
            that spent nothing costs nothing whatever its rate; a spent lane with
@@ -613,14 +616,15 @@ module Model = struct
           (fun acc (tokens, rate) ->
             match acc with
             | None -> None
-            | Some total ->
+            | Some total -> (
                 if tokens = 0 then Some total
                 else
                   match rate with
                   | None -> None
                   | Some per_million ->
                       Some
-                        (total +. (float_of_int tokens /. 1_000_000. *. per_million)))
+                        (total
+                        +. (float_of_int tokens /. 1_000_000. *. per_million))))
           (Some 0.) lanes
 
   let status t = t.status

@@ -594,15 +594,16 @@ module Model : sig
       spent has no rate (an unknown rate is not billed as free).
 
       The price tier is chosen with {!price_for} for a context of
-      [Spice_llm.Usage.input_total usage] (the request's input side: fresh
-      input plus cache reads and writes). Lanes bill against that tier as:
+      [Spice_llm.Usage.input_total usage] (the request's input side: fresh input
+      plus cache reads and writes), or [max_int] if that total overflows. Lanes
+      bill against that tier as:
 
       - [input] at [input_per_million];
       - [cache_read] at [cached_input_per_million];
       - [cache_write] at [cache_write_5m_per_million] (the default 5-minute
         cache-write tier; the usage record does not distinguish TTLs);
-      - [output] and [reasoning] at [output_per_million] (reasoning tokens
-        bill as output).
+      - [output] and [reasoning] at [output_per_million] (reasoning tokens bill
+        as output).
 
       Each lane contributes [tokens / 1e6 *. rate]; a lane with zero tokens
       never forces [None] even if its rate is unknown. *)
