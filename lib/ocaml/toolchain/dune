@@ -1,0 +1,3 @@
+(library
+ (name spice_ocaml_toolchain)
+ (libraries unix))

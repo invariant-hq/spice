@@ -722,21 +722,41 @@ module Describe = struct
 
   let run_describe ~process_mgr ~clock ?env cwd ~timeout_s argv =
     let stderr = Buffer.create 256 in
-    try
-      let run () =
-        Eio.Process.parse_out process_mgr Eio.Buf_read.take_all
-          ~stderr:(Eio.Flow.buffer_sink stderr)
-          ?cwd:(Some cwd) ?env argv
-      in
-      let output = Eio.Time.with_timeout_exn clock timeout_s run in
-      Log.debug (fun m ->
-          m "dune describe finished command=%s bytes=%d" (Error.argv_text argv)
-            (String.length output));
-      Ok output
-    with
-    | Eio.Time.Timeout ->
-        command_timed_out argv cwd ~stderr:(Buffer.contents stderr) timeout_s
-    | exn -> command_failed argv cwd ~stderr:(Buffer.contents stderr) exn
+    (* Eio resolves a bare [dune] against the process [PATH], not [env], so pin an
+       absolute executable recovered from the switch the inherited env points at;
+       [env] keeps the same directory for dune's own subprocesses. *)
+    let base = match env with Some env -> env | None -> Unix.environment () in
+    let env, executable =
+      Spice_ocaml_toolchain.locate base ~program:"dune"
+    in
+    match executable with
+    | None ->
+        (* [dune] resolves nowhere on the child PATH, even after recovery: report
+           the toolchain cause rather than a bare Eio not-found exception. *)
+        Error
+          (Error.Command_failed
+             {
+               argv;
+               cwd = cwd_text cwd;
+               status = None;
+               stderr = Spice_ocaml_toolchain.unreachable_hint ~program:"dune";
+             })
+    | Some _ -> (
+        try
+          let run () =
+            Eio.Process.parse_out process_mgr Eio.Buf_read.take_all
+              ~stderr:(Eio.Flow.buffer_sink stderr)
+              ?cwd:(Some cwd) ~env ?executable argv
+          in
+          let output = Eio.Time.with_timeout_exn clock timeout_s run in
+          Log.debug (fun m ->
+              m "dune describe finished command=%s bytes=%d"
+                (Error.argv_text argv) (String.length output));
+          Ok output
+        with
+        | Eio.Time.Timeout ->
+            command_timed_out argv cwd ~stderr:(Buffer.contents stderr) timeout_s
+        | exn -> command_failed argv cwd ~stderr:(Buffer.contents stderr) exn)
 
   let describe_project ~process_mgr ~clock ~cwd ~workspace ?env
       ?(cancelled = fun () -> false) ?(timeout_s = default_describe_timeout_s)
@@ -1434,6 +1454,11 @@ module Rpc = struct
         in
         let run () =
           let root = Eio.Path.native_exn cwd in
+          (* The inner shell resolves [dune] against this env's [PATH], so recover
+             the switch bin when the inherited [PATH] does not already carry it. *)
+          let env =
+            Spice_ocaml_toolchain.augment (Unix.environment ()) ~program:"dune"
+          in
           let command =
             [
               "/bin/sh";
@@ -1447,7 +1472,7 @@ module Rpc = struct
             let process =
               Eio.Process.spawn ~sw process_mgr ~cwd
                 ~stdin:(Eio.Flow.string_source "")
-                command
+                ~env command
             in
             process_ref := Some process;
             Eio.Switch.on_release sw stop;

@@ -67,6 +67,7 @@
   spice_sandbox
   spice_tool
   spice_ocaml
+  spice_ocaml_toolchain
   spice_ocaml_dune
   spice_ocaml_grep
   spice_workspace

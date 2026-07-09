@@ -30,6 +30,11 @@
  (libraries windtrap spice_ocaml spice_workspace spice_path))
 
 (test
+ (name test_ocaml_toolchain)
+ (modules test_ocaml_toolchain)
+ (libraries windtrap spice_ocaml_toolchain unix))
+
+(test
  (name test_ocaml_grep)
  (modules test_ocaml_grep)
  (libraries

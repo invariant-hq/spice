@@ -3,6 +3,7 @@
  (modules spice_ocaml_dune)
  (libraries
   spice_ocaml
+  spice_ocaml_toolchain
   spice_workspace
   spice_path
   csexp

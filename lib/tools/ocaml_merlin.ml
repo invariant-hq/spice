@@ -168,6 +168,16 @@ let find_dev_tool_binary ~cwd ~tool =
    Warming engages the dune engine and so is the last resort, reached only when
    no already-built binary was found on disk. *)
 let warm_dev_tool ~cwd ~env ~timeout_ms ~tool ~configured =
+  (* [run_shell]'s [execvp] resolves a bare [dune] against the process [PATH],
+     not [env]; pin the absolute path recovered from the switch [env] points at. *)
+  let configured =
+    match configured with
+    | dune :: rest -> (
+        match snd (Spice_ocaml_toolchain.locate env ~program:dune) with
+        | Some dune -> dune :: rest
+        | None -> configured)
+    | [] -> configured
+  in
   let warm =
     Process.run_shell ~cwd ~env ~timeout_ms
       ~max_output_bytes:default_max_output_bytes
@@ -195,6 +205,10 @@ let resolve_program ~cwd ?(env = Unix.environment ())
       invalid_arg
         "Ocaml_merlin.resolve_program: configured prefix must not be empty"
   | _ -> (
+      (* Recover the switch bin when the inherited [PATH] does not already carry
+         the toolchain, so [on_path], warming, and the pinned absolute below all
+         see the same directory a correctly-launched session would. *)
+      let env = Spice_ocaml_toolchain.augment env ~program:"dune" in
       match dune_tools_exec_tool configured with
       | Some tool -> (
           (* An explicit [dune tools exec] prefix. Prefer an already-built
@@ -209,14 +223,18 @@ let resolve_program ~cwd ?(env = Unix.environment ())
              as given, with one exception: a bare program name that [PATH]
              cannot resolve. In a dune-managed project the matching binary is
              dune's already-built dev tool, so fall back to it directly — again
-             a pure filesystem lookup, no warming. Otherwise pass the prefix
-             through unchanged and let the query report [Unavailable] honestly. *)
+             a pure filesystem lookup, no warming. Otherwise pin the absolute
+             path so {!run}'s [execvp] does not re-search the process [PATH]. *)
           match bare_program configured with
           | Some tool when not (on_path ~env tool) -> (
               match find_dev_tool_binary ~cwd ~tool with
               | Some bin -> Ok [ bin ]
               | None -> Ok configured)
-          | Some _ | None -> Ok configured))
+          | Some tool -> (
+              match snd (Spice_ocaml_toolchain.locate env ~program:tool) with
+              | Some bin -> Ok [ bin ]
+              | None -> Ok configured)
+          | None -> Ok configured))
 
 type error =
   | Cancelled
@@ -289,6 +307,16 @@ let run ~program ~cwd ?(env = Unix.environment ())
     ?(timeout_ms = default_timeout_ms)
     ?(max_output_bytes = default_max_output_bytes) ~command ~args ~source
     ~cancelled () =
+  (* [program] is usually already an absolute path from {!resolve_program}; pin
+     it here too so a direct bare call still bypasses the process-[PATH] search. *)
+  let env, program =
+    match program with
+    | head :: rest -> (
+        match Spice_ocaml_toolchain.locate env ~program:head with
+        | env, Some exe -> (env, exe :: rest)
+        | env, None -> (env, program))
+    | [] -> (env, program)
+  in
   let command_argv = argv ~program ~command ~args in
   let env = with_non_interactive_env env in
   let result =

@@ -152,21 +152,6 @@ let split_env binding =
   | None -> (binding, Some "")
   | Some (name, value) -> (name, Some value)
 
-let path_separator = if String.equal Sys.os_type "Win32" then ';' else ':'
-
-let compiler_bin_from_dune_env () =
-  match Sys.getenv_opt "DUNE_OCAML_STDLIB" with
-  | None -> None
-  | Some stdlib when String.equal stdlib "" -> None
-  | Some stdlib ->
-      let target = Filename.dirname (Filename.dirname stdlib) in
-      Some (Filename.concat target "bin")
-
-let prepend_path dir path =
-  match path with
-  | "" -> dir
-  | path -> dir ^ String.make 1 path_separator ^ path
-
 let apply_env_overlay env overlay =
   List.fold_left
     (fun env -> function
@@ -195,23 +180,21 @@ let process_environment config =
         | name, Some value -> String_map.add name value env)
       String_map.empty (Unix.environment ())
   in
-  let with_compiler =
-    match compiler_bin_from_dune_env () with
-    | None -> inherited
-    | Some bin ->
-        let path =
-          String_map.find_opt "PATH" inherited
-          |> Option.value ~default:"" |> prepend_path bin
-        in
-        String_map.add "PATH" path inherited
-  in
-  let with_defaults = apply_env_overlay with_compiler deterministic_overlay in
+  let with_defaults = apply_env_overlay inherited deterministic_overlay in
   let with_config =
     apply_env_overlay with_defaults (Config.environment config)
   in
   with_config |> String_map.bindings
   |> List.map (fun (name, value) -> name ^ "=" ^ value)
   |> Array.of_list
+  |> Spice_ocaml_toolchain.augment ~program:"ocaml"
+
+(* [run_shell]'s [execvp] resolves a bare program against the process [PATH], not
+   [env], so pin the absolute path recovered from the switch [env] points at. *)
+let program_path env name =
+  match snd (Spice_ocaml_toolchain.locate env ~program:name) with
+  | Some abs -> abs
+  | None -> name
 
 let resolve_dir ~fs ~workspace input =
   let resolved =
@@ -498,7 +481,7 @@ let run ~fs ~workspace ~config ?watch ?(cancelled = default_cancelled) input =
                 let dune_result =
                   Process.run_shell ~cwd ~env ~timeout_ms ~max_output_bytes
                     ~cancelled
-                    [ Config.dune config; "ocaml"; "top"; "." ]
+                    [ program_path env (Config.dune config); "ocaml"; "top"; "." ]
                 in
                 let dune_output =
                   output_of_process ~input ~dir ~stage:Output.Dune_top ~started
@@ -536,7 +519,11 @@ let run ~fs ~workspace ~config ?watch ?(cancelled = default_cancelled) input =
                                   (init_text ~directives
                                      ~code:(Input.code input))
                                 ~cancelled
-                                [ Config.ocaml config; "-stdin"; "-noinit" ]
+                                [
+                                  program_path env (Config.ocaml config);
+                                  "-stdin";
+                                  "-noinit";
+                                ]
                             in
                             output_of_process ~input ~dir ~stage:Output.Eval
                               ~started ~timeout_ms ~max_output_bytes eval_result
