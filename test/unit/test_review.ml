@@ -395,6 +395,44 @@ let navigation_order () =
       failf "expected to stay at the CR, got %a" Review.Cursor.pp
         (Review.cursor review)
 
+let navigation_jumps_and_wraps () =
+  let a =
+    file ~path:"lib/a.ml" ~before:(Some "let a = 1\n")
+      ~after:(Some "let a = 2\n") ()
+  in
+  let b =
+    file ~path:"lib/b.ml" ~before:(Some "let b = 1\n")
+      ~after:(Some "let b = 2\n") ()
+  in
+  let crs = scan_crs ~path:"notes.ml" "(* CR: outside changed files *)\n" in
+  let review = Review.v ~feature:(feature [ b; a ]) ~crs in
+  let expect_cursor msg expected review =
+    is_true ~msg (Review.Cursor.equal expected (Review.cursor review))
+  in
+  let file_a = Review.Cursor.Scope (Review.Scope.File (rel "lib/a.ml")) in
+  let file_b = Review.Cursor.Scope (Review.Scope.File (rel "lib/b.ml")) in
+  let outside_cr = Review.Cursor.Cr 0 in
+  let review = Review.move_cursor review Review.Cursor.Next_file in
+  expect_cursor "Next_file lands on the first file" file_a review;
+  let review = Review.move_cursor review Review.Cursor.Next_file in
+  expect_cursor "Next_file skips to the next file" file_b review;
+  let review = Review.move_cursor review Review.Cursor.Previous_file in
+  expect_cursor "Previous_file returns to the previous file" file_a review;
+  let review = Review.move_cursor review Review.Cursor.First in
+  expect_cursor "First returns to feature" Review.Cursor.feature review;
+  let review = Review.move_cursor review Review.Cursor.Next_cr in
+  expect_cursor "Next_cr reaches CRs outside changed files" outside_cr review;
+  let review = Review.move_cursor review Review.Cursor.Previous_cr in
+  expect_cursor "Previous_cr without wrap stays on the first CR" outside_cr
+    review;
+  let review = Review.move_cursor review Review.Cursor.Last in
+  expect_cursor "Last reaches the final stop" outside_cr review;
+  let review = Review.move_cursor ~wrap:true review Review.Cursor.Next in
+  expect_cursor "Next wraps from the final stop to feature" Review.Cursor.feature
+    review;
+  let review = Review.move_cursor ~wrap:true review Review.Cursor.Previous in
+  expect_cursor "Previous wraps from feature to the final stop" outside_cr review
+
 (* Live protocol *)
 
 let live_debounce_and_load () =
@@ -630,7 +668,11 @@ let () =
           test "drops ambiguous hunks" refresh_drops_ambiguous_hunks;
           test "re-anchors CR cursors" refresh_reanchors_cr_cursor;
         ];
-      group "navigation" [ test "canonical order" navigation_order ];
+      group "navigation"
+        [
+          test "canonical order" navigation_order;
+          test "jumps and wrapping" navigation_jumps_and_wraps;
+        ];
       group "live"
         [
           test "debounce and load" live_debounce_and_load;
