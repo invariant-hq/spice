@@ -390,26 +390,37 @@ mark box cleared: true|}]
 let%expect_test "approving then editing stales the verdict" =
   Project.with_git_fixture "review-stale" @@ fun project ->
   Project.write project "lib/code.ml" sample_code;
-  run project @@ fun t ->
-  open_review t;
-  Term.wait t (fun screen ->
-      Screen.has "0/1 reviewed" screen && Screen.has "let alpha" screen);
-  Term.send t " ";
-  Term.wait t (Screen.has "1/1 reviewed");
-  Term.send t "a";
-  Term.wait t (Screen.has "approved");
-  print_fact "fresh approval is not stale"
-    (Screen.lacks "stale" (Term.screen t));
-  (* Change the approved content behind the screen; the watcher refreshes and
-     the verdict — bound to the old feature content — goes visibly stale, never
-     silently fresh (11-review §Verdict and staleness). *)
-  Project.write project "lib/code.ml"
-    "let alpha = 1\nlet beta = 2\nlet gamma = 33\nlet delta = 44\n";
-  Term.wait t ~deadline:15.0 (Screen.has "stale");
-  print_fact "verdict staled after edit"
-    (Screen.has "approved · stale" (Term.screen t));
+  ( run project @@ fun t ->
+    open_review t;
+    Term.wait t (fun screen ->
+        Screen.has "0/1 reviewed" screen && Screen.has "let alpha" screen);
+    Term.send t " ";
+    Term.wait t (Screen.has "1/1 reviewed");
+    Term.send t "a";
+    Term.wait t (Screen.has "approved");
+    print_fact "fresh approval is not stale"
+      (Screen.lacks "stale" (Term.screen t));
+    (* Change the approved content behind the screen; the watcher refreshes and
+       the verdict — bound to the old feature content — goes visibly stale,
+       never silently fresh (11-review §Verdict and staleness). *)
+    Project.write project "lib/code.ml"
+      "let alpha = 1\nlet beta = 2\nlet gamma = 33\nlet delta = 44\n";
+    Term.wait t ~deadline:15.0 (Screen.has "stale");
+    print_fact "verdict staled after edit"
+      (Screen.has "approved · stale" (Term.screen t));
+    Term.send t "a";
+    Term.wait t (Screen.has "0/1 reviewed · approved");
+    print_fact "stale approval toggles to fresh approval"
+      (Screen.has "0/1 reviewed · approved" (Term.screen t)) );
+  ( run project @@ fun t ->
+    open_review t;
+    Term.wait t (Screen.has "0/1 reviewed · approved");
+    print_fact "fresh reapproval persisted"
+      (Screen.has "0/1 reviewed · approved" (Term.screen t)) );
   [%expect {|fresh approval is not stale: true
-verdict staled after edit: true|}]
+verdict staled after edit: true
+stale approval toggles to fresh approval: true
+fresh reapproval persisted: true|}]
 
 let%expect_test "the key table toggles with ?" =
   Project.with_git_fixture "review-help" @@ fun project ->
