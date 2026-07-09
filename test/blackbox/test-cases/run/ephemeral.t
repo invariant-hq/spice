@@ -22,5 +22,5 @@ Ephemeral cannot resume an existing session.
 
   $ spice run resume some-session --cwd "$PWD" --ephemeral "more"
   Usage: spice run resume [--help] [OPTION]… [SESSION_OR_PROMPT] [PROMPT]
-  spice: unknown option --ephemeral
+  spice: unknown option '--ephemeral'
   [124]

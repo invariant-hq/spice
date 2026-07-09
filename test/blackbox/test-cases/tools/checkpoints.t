@@ -30,8 +30,8 @@ checkpoint when the turn finishes because shell ran.
   • tool shell running
   ✓ tool shell "echo drift > unattributed.txt" exited 0 in $TIME
   changed 1 file (+1 -1)
-  diff: spice session diff mixed-run --latest
-  revert: spice session revert mixed-run --latest
+  diff: spice session diff --latest 'mixed-run'
+  revert: spice session revert --latest 'mixed-run'
   mixed done
   $ grep "session saved" mixed.err
   spice: session saved; resume with: spice resume 'mixed-run'
@@ -60,7 +60,7 @@ unattributed shell file.
   $ spice session revert --cwd "$PWD/repo" mixed-run --latest
   would revert 1 file:
   M note.txt
-  apply: spice session revert mixed-run --latest --apply
+  apply: spice session revert --latest --apply 'mixed-run'
 
 A run without shell in the same workspace gets no unattributed section and
 no degraded note.
@@ -75,8 +75,8 @@ no degraded note.
   • tool edit_file running
   ✓ tool edit_file note.txt completed: M note.txt
   changed 1 file (+1 -1)
-  diff: spice session diff edit-only --latest
-  revert: spice session revert edit-only --latest
+  diff: spice session diff --latest 'edit-only'
+  revert: spice session revert --latest 'edit-only'
   edited again
   $ wait_fake_server
 

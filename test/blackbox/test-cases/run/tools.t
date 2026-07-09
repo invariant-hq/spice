@@ -392,7 +392,7 @@ the apply_patch family.
   proceed with the obvious next step, and do not use this to approve a
   plan: in plan mode, propose_plan is the approval mechanism.
   
-  Input schema: {"type":"object","properties":{"question":{"type":"string"}},"required":["question"],"additionalProperties":false}
+  Input schema: {"type":"object","properties":{"header":{"type":"string"},"question":{"type":"string"},"options":{"type":"array","items":{"type":"object","properties":{"label":{"type":"string"},"description":{"type":"string"}},"required":["label"],"additionalProperties":false}},"multi":{"type":"boolean"}},"required":["question"],"additionalProperties":false}
   
   ## todo_write
   

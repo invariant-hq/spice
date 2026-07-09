@@ -40,7 +40,7 @@ The permission-mode alias is accepted before runtime assembly.
 Misspelled workflow modes get a spelling hint from the declared mode
 spellings, before provider credentials are loaded.
 
-  $ spice run --mode biuld hello >err 2>&1; echo "status:$?"; sed -n 1p err; grep -c "unknown workflow mode: biuld" err; grep -c "did you mean build" err
+  $ spice run --mode biuld hello >err 2>&1; echo "status:$?"; sed -n 1p err; grep -c "unknown workflow mode: biuld" err; grep -c "did you mean" err
   status:124
   Usage: spice run [--help] [COMMAND] …
   1

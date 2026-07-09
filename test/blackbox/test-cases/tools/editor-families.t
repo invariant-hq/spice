@@ -24,8 +24,8 @@ family), and a scripted apply_patch edit applies for real.
   • tool apply_patch running
   ✓ tool apply_patch note.txt completed: M note.txt
   changed 1 file (+1 -1)
-  diff: spice session diff patch-run --latest
-  revert: spice session revert patch-run --latest
+  diff: spice session diff --latest 'patch-run'
+  revert: spice session revert --latest 'patch-run'
   patched
   spice: session saved; resume with: spice resume 'patch-run'
   $ wait_fake_server

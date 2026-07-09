@@ -34,7 +34,7 @@ Goal verbs are artifact operations: pause needs no model or credentials.
 
   $ spice run reply goal-life --pause-goal 2>&1 | sed -E 's/goal_[-0-9_]+/goal_$ID/g'
   spice: goal goal_$ID: paused — Ship it
-  spice: resume the goal with: spice run reply goal-life --resume-goal
+  spice: resume the goal with: spice run reply --resume-goal 'goal-life'
 
 Verbs the status does not admit fail without mutation.
 
