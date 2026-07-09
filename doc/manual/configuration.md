@@ -88,6 +88,41 @@ deterministic, process-free session. The `SPICE_WORKSPACE_TOOLING` environment
 variable overrides the configured value with the same `auto`, `on`, and `off`
 spellings.
 
+## OCaml toolchain resolution
+
+The OCaml tools — the `dune describe` project capture, the `dune build
+--watch` instance, Merlin, and the eval tool — spawn `dune` (and friends)
+from the environment Spice inherited at launch. Spice never runs
+`opam env` itself; it resolves each program by walking a fixed ladder,
+first match wins:
+
+1. **`SPICE_DUNE`** — an explicit executable override (generally
+   `SPICE_<PROGRAM>`: the program name uppercased, with non-alphanumeric
+   runs as `_`, so Merlin's is `SPICE_OCAMLMERLIN`). An override that is
+   set but not an executable file fails the resolution outright; it never
+   falls through to the rungs below.
+2. **`PATH`** — the inherited search path. This is the normal case: launch
+   Spice from a shell where `command -v dune` prints a real path and
+   nothing else engages.
+3. **`$OPAM_SWITCH_PREFIX/bin`** — the variable `eval $(opam env)` exports
+   for the active switch. This recovers sessions launched from a context
+   that had the switch active but lost `PATH` (editor terminals, desktop
+   launchers).
+4. **`<workspace root>/_opam/bin`** — an opam local switch at the
+   workspace root.
+
+If your shell shows `dune` but Spice reports it missing, the usual cause is
+that the shell exposes it only through an alias or an interactive-only hook
+that child processes do not inherit. Relaunch from a shell where
+`command -v dune` prints a real path, or set `SPICE_DUNE`.
+
+Two surfaces show the resolution without starting a session: `spice doctor`
+carries an `ocaml toolchain` check, and `spice sandbox explain` a
+`toolchain=` line. Both print where `dune` resolves from — or, when it does
+not, every rung that was checked. The sandbox is never the cause of a
+missing toolchain: the confined mount keeps the whole host filesystem
+readable (`readable=/` in `spice sandbox explain`); only writes are scoped.
+
 ## Filesystem Notices
 
 `notices.fswatch=true` publishes "Workspace files changed" notices while a run
