@@ -720,6 +720,14 @@ module Authorization = struct
     then Error `Redirect_uri_mismatch
     else
       let params = params_of_uri uri in
+      let reject_error_metadata_without_error params =
+        match Params.get_unique "error_description" params with
+        | Error (`Duplicate name) -> Error (`Duplicate name)
+        | Ok _ -> (
+            match Params.get_unique "error_uri" params with
+            | Error (`Duplicate name) -> Error (`Duplicate name)
+            | Ok _ -> Ok ())
+      in
       match Params.get_unique "state" params with
       | Error (`Duplicate name) -> Error (`Duplicate name)
       | Ok None -> Error (`Missing "state")
@@ -731,16 +739,19 @@ module Authorization = struct
             | Error (`Duplicate name) -> Error (`Duplicate name)
             | Ok (Some error) -> Error (`Oauth error)
             | Ok None -> (
-                match Params.get_unique "code" params with
+                match reject_error_metadata_without_error params with
                 | Error (`Duplicate name) -> Error (`Duplicate name)
-                | Ok None -> Error (`Missing "code")
-                | Ok (Some code) ->
-                    Ok
-                      {
-                        value = code;
-                        code_redirect_uri = t.redirect_uri;
-                        code_pkce = t.pkce;
-                      }))
+                | Ok () -> (
+                    match Params.get_unique "code" params with
+                    | Error (`Duplicate name) -> Error (`Duplicate name)
+                    | Ok None -> Error (`Missing "code")
+                    | Ok (Some code) ->
+                        Ok
+                          {
+                            value = code;
+                            code_redirect_uri = t.redirect_uri;
+                            code_pkce = t.pkce;
+                          })))
 
   let code t = t.value
 

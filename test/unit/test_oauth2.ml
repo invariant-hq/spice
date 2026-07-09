@@ -547,6 +547,21 @@ let callback () =
         "http://localhost/callback?error=access_denied&error_uri=https://provider.example/one&error_uri=https://provider.example/two&state=state-1"
       );
     ];
+  List.iter
+    (fun (field, uri) ->
+      match O.Authorization.callback authorization (Uri.of_string uri) with
+      | Error (`Duplicate actual) ->
+          equal string ~msg:("callback duplicate success " ^ field) field actual
+      | Ok _ | Error _ ->
+          failf "callback duplicate success %s: expected duplicate field" field)
+    [
+      ( "error_description",
+        "http://localhost/callback?code=code-1&state=state-1&error_description=one&error_description=two"
+      );
+      ( "error_uri",
+        "http://localhost/callback?code=code-1&state=state-1&error_uri=https://provider.example/one&error_uri=https://provider.example/two"
+      );
+    ];
   (match
      O.Authorization.callback authorization
        (Uri.of_string "http://localhost/callback?state=state-1")
