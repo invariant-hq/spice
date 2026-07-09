@@ -188,6 +188,19 @@ type command =
       (** Resolve a blocked permission dialog: the runtime submits
           {!Spice_protocol.Command.Reply} to the attached session. Emitted when
           a permission dialog is allowed or denied. *)
+  | Always_allow of {
+      permission : Spice_session.Permission.Id.t;
+      rules : Spice_permission.Policy.Rule.t list;
+      scope : Permission_dialog.scope;
+    }
+      (** Resolve a blocked permission dialog by always-allowing its family: the
+          runtime installs [rules] into the run posture
+          ({!Spice_host.Run.add_session_rule}), rebuilds and swaps the live
+          runner so the next tool call decides under them, persists them to the
+          [scope]'s config file when [scope] is not {!Permission_dialog.Session}
+          ({!Spice_host.Config.Config_file.add_permission_rule}), and submits a
+          session {!Spice_protocol.Command.Reply} so the blocked call proceeds.
+      *)
   | Answer_tool of {
       turn : Spice_session.Turn.Id.t;
       call_id : string;

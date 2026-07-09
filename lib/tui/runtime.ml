@@ -2014,6 +2014,59 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                         (Spice_protocol.Command.Reply
                            { permission; answer; via = None; message })
                   | None -> ())
+          | App.Always_allow { permission; rules; scope } ->
+              (* Install the family rules into the run posture and swap the
+                 runner before submitting the grant, so the continuing turn
+                 decides the next matching call under them with no further
+                 prompt. The durable write is best-effort: the in-session grant
+                 already holds, so a failed write is logged, not surfaced. *)
+              perform (fun () ->
+                  match !attachment with
+                  | Some (live, run) ->
+                      List.iter (Spice_host.Run.add_session_rule run) rules;
+                      let durable_kind =
+                        match scope with
+                        | Permission_dialog.Session -> None
+                        | Permission_dialog.Project ->
+                            Some Spice_host.Config.Config_file.Project_local
+                        | Permission_dialog.User ->
+                            Some Spice_host.Config.Config_file.User
+                      in
+                      (match durable_kind with
+                      | None -> ()
+                      | Some kind ->
+                          let files =
+                            Spice_host.Config.files (Spice_host.Host.config host)
+                          in
+                          List.iter
+                            (fun rule ->
+                              match
+                                Spice_host.Config.Config_file
+                                .add_permission_rule ~stdenv files kind rule
+                              with
+                              | Ok () -> ()
+                              | Error error ->
+                                  Log.err (fun m ->
+                                      m "always-allow persist failed: %s"
+                                        (Spice_host.Config.Error.message error)))
+                            rules);
+                      (match bind_runner run with
+                      | Ok (runner, _model, _effort) ->
+                          Spice_host.Live.set_runner live runner
+                      | Error message ->
+                          Log.err (fun m ->
+                              m "always-allow runner rebind failed: %s" message));
+                      Spice_host.Live.submit live
+                        (Spice_protocol.Command.Reply
+                           {
+                             permission;
+                             answer =
+                               Spice_permission.Policy.Review.Allow
+                                 Spice_permission.Policy.Review.Session;
+                             via = None;
+                             message = None;
+                           })
+                  | None -> ())
           | App.Answer_tool { turn; call_id; answer } ->
               perform (fun () ->
                   match !attachment with

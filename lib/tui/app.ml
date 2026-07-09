@@ -403,6 +403,11 @@ type command =
       answer : Spice_permission.Policy.Review.answer;
       message : string option;
     }
+  | Always_allow of {
+      permission : Spice_session.Permission.Id.t;
+      rules : Spice_permission.Policy.Rule.t list;
+      scope : Permission_dialog.scope;
+    }
   | Answer_tool of {
       turn : Spice_session.Turn.Id.t;
       call_id : string;
@@ -1208,6 +1213,15 @@ let command_of_resolution boundary (resolution : Dialog.resolution) =
              answer;
              message;
            })
+  | ( Dialog.Reply_always { rules; scope },
+      Spice_protocol.Pending.Permission request ) ->
+      Some
+        (Always_allow
+           {
+             permission = Spice_session.Permission.Requested.id request;
+             rules;
+             scope;
+           })
   | ( Dialog.Answer { text },
       ( Spice_protocol.Pending.Question { turn; call_id; _ }
       | Spice_protocol.Pending.Host_tool { turn; call_id; _ } ) ) ->
@@ -1228,7 +1242,9 @@ let resolve_dialog ~resolution ~echo dialog t =
     match resolution with
     | Dialog.Resolve_plan { accept_edits = true; _ } ->
         { t with posture = Footer.Accept_edits }
-    | Dialog.Reply _ | Dialog.Answer _ | Dialog.Resolve_plan _ -> t
+    | Dialog.Reply _ | Dialog.Reply_always _ | Dialog.Answer _
+    | Dialog.Resolve_plan _ ->
+        t
   in
   let t =
     match t.phase with

@@ -395,10 +395,10 @@ let%expect_test "a shell permission prompt gates the call and records it" =
 09 | ❯ 1. Yes, run it once
 10 |   2. Yes, don't ask again for this command this session
 11 |   3. No, and tell Spice what to do differently
-12 |
-13 |   1/2/3 choose · enter confirm · esc deny with feedback
+12 |   4. Yes, always allow echo
+13 |      saves for this session — press s to change
 14 |
-15 |
+15 |   1-4 choose · enter confirm · s scope · esc deny with feedback
 16 |
 17 |
 18 |

@@ -167,10 +167,10 @@ let%expect_test "the permission dialog renders and an approve runs the command"
 09 | ❯ 1. Yes, run it once
 10 |   2. Yes, don't ask again for this command this session
 11 |   3. No, and tell Spice what to do differently
-12 |
-13 |   1/2/3 choose · enter confirm · esc deny with feedback
+12 |   4. Yes, always allow echo
+13 |      saves for this session — press s to change
 14 |
-15 |
+15 |   1-4 choose · enter confirm · s scope · esc deny with feedback
 16 |
 17 |
 18 |
@@ -223,10 +223,10 @@ let%expect_test "the permission dialog denies and resumes without running" =
 09 |   1. Yes, run it once
 10 |   2. Yes, don't ask again for this command this session
 11 | ❯ 3. No, and tell Spice what to do differently
-12 |
-13 |   1/2/3 choose · enter confirm · esc deny with feedback
+12 |   4. Yes, always allow echo
+13 |      saves for this session — press s to change
 14 |
-15 |
+15 |   1-4 choose · enter confirm · s scope · esc deny with feedback
 16 |
 17 |
 18 |
@@ -276,3 +276,71 @@ let%expect_test "the permission dialog denies and resumes without running" =
   ignore (Tui.await_request t 2 : string);
   Tui.release t "fin";
   Tui.settle t
+
+(* Always allow: a shell call whose argv has a command family ("git commit")
+   offers a fourth option that saves a durable rule over that family. The scope
+   line defaults to this session and [s] cycles it. Picking it at project scope
+   grants the blocked call for the session AND installs the family rule, so a
+   later DISTINCT [git commit] runs with no prompt (the turn reaches its resume
+   without a second dialog), and the rule text lands in the gitignored
+   project-local config. *)
+let%expect_test "always allow saves a family rule and silences the family" =
+  let script =
+    [
+      Provider.tool_call ~expect:[ "always test" ] ~id:"resp-aa-1"
+        ~call_id:"call-aa1" ~name:"shell"
+        ~arguments:{|{"command":"git commit -m first"}|} ();
+      Provider.tool_call
+        ~expect:[ "function_call_output"; "call-aa1" ]
+        ~id:"resp-aa-2" ~call_id:"call-aa2" ~name:"shell"
+        ~arguments:{|{"command":"git commit -m second"}|} ();
+      resume
+        ~expect:[ "function_call_output"; "call-aa2" ]
+        ~id:"resp-aa-3" "Both commits attempted.";
+    ]
+  in
+  Tui.run ~name:"dialog-perm-always" ~provider:script @@ fun t ->
+  open_dialog t "always test";
+  Tui.print t;
+  [%expect
+    {|01 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+02 |    permission
+03 |
+04 |   Run a shell command?
+05 |
+06 |   $ 'git' 'commit' '-m' 'first'
+07 |   in $PROJECT/.
+08 |
+09 | ❯ 1. Yes, run it once
+10 |   2. Yes, don't ask again for this command this session
+11 |   3. No, and tell Spice what to do differently
+12 |   4. Yes, always allow git commit
+13 |      saves for this session — press s to change
+14 |
+15 |   1-4 choose · enter confirm · s scope · esc deny with feedback
+16 |
+17 |
+18 |
+19 |
+20 |
+21 |
+22 |
+23 |
+24 ||}];
+  (* Cycle the always-allow scope to the project-local file, then always-allow
+     with [4]. The grant proceeds the first commit; the SECOND distinct commit is
+     decided under the installed family rule with no prompt, so the turn reaches
+     its resume request without a second dialog opening. *)
+  Tui.keys t "s";
+  Tui.settle t;
+  Tui.keys t "4";
+  ignore (Tui.await_request t 3 : string);
+  Tui.release t "fin";
+  Tui.settle t;
+  let local = Project.path (Tui.project t) ".spice/config.local.json" in
+  let contents = Util.read_file local in
+  print_string
+    (if Util.contains contents "argv-prefix" && Util.contains contents "commit"
+     then "rule saved to project-local config"
+     else "MISSING RULE >>>" ^ contents ^ "<<<");
+  [%expect {| rule saved to project-local config |}]

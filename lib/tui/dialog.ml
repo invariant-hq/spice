@@ -43,6 +43,10 @@ type resolution =
       answer : Spice_permission.Policy.Review.answer;
       message : string option;
     }
+  | Reply_always of {
+      rules : Spice_permission.Policy.Rule.t list;
+      scope : Permission_dialog.scope;
+    }
   | Answer of { text : string }
   | Resolve_plan of {
       decision : Spice_protocol.Plan.Decision.t;
@@ -86,6 +90,19 @@ let key ev t =
                     };
                 echo;
               } )
+      | Permission_dialog.Always { rules; scope } ->
+          let where =
+            match (scope : Permission_dialog.scope) with
+            | Permission_dialog.Session -> "this session"
+            | Permission_dialog.Project -> "this project"
+            | Permission_dialog.User -> "all projects"
+          in
+          ( t,
+            Resolve
+              {
+                resolution = Reply_always { rules; scope };
+                echo = "always allowed · saved for " ^ where;
+              } )
       | Permission_dialog.Deny ->
           ( { t with feedback = Some Deny },
             Borrow { placeholder = deny_placeholder } ))
@@ -120,8 +137,7 @@ let key ev t =
                 resolution =
                   Resolve_plan
                     {
-                      decision =
-                        Spice_protocol.Plan.Decision.reject;
+                      decision = Spice_protocol.Plan.Decision.reject;
                       accept_edits = false;
                     };
                 echo = "kept planning";
