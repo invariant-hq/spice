@@ -140,7 +140,23 @@ let drain t command =
             Fun.protect
               ~finally:(fun () -> t.drain_cancel <- None)
               (fun () -> Runner.execute t.runner t.document command) )
-      with Force_interrupt | Eio.Cancel.Cancelled Force_interrupt -> `Forced
+      with
+      | Force_interrupt | Eio.Cancel.Cancelled Force_interrupt -> `Forced
+      | Eio.Cancel.Cancelled _ as exn ->
+          (* A genuine teardown cancellation from the attachment switch: let it
+             unwind the drain fiber rather than reporting a spurious failure. *)
+          raise exn
+      | exn ->
+          (* An unexpected fault in turn execution must not tear the whole
+             session down: log it with its backtrace and settle the turn as an
+             internal failure, which the shell renders as a failure notice while
+             the drain loop keeps running. *)
+          let backtrace = Printexc.get_raw_backtrace () in
+          Log.err (fun m ->
+              m "turn execution raised, recovered as internal failure: %s@.%s"
+                (Printexc.to_string exn)
+                (Printexc.raw_backtrace_to_string backtrace));
+          `Settled (Error (Spice_protocol.Error.Internal (Printexc.to_string exn)))
     in
     match settled with
     | `Forced ->

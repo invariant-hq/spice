@@ -8,6 +8,11 @@ module Fsw = Spice_fswatch
 module Dune = Spice_ocaml_dune
 module Ocaml = Spice_ocaml
 
+let log_src =
+  Logs.Src.create "spice.host.watchers" ~doc:"Run notice watchers"
+
+module Log = (val Logs.src_log log_src : Logs.LOG)
+
 let enqueue inbox ~source ~severity ~title ~body ~key =
   Notice_queue.publish inbox
     (Notice.make ~source ~severity ~title ~body ~key ())
@@ -502,6 +507,14 @@ module Dune_diagnostics = struct
       match Eio.Time.with_timeout_exn clock timeout_s f with
       | () -> ()
       | exception Eio.Time.Timeout -> ()
+      | exception (Eio.Cancel.Cancelled _ as exn) -> raise exn
+      | exception exn ->
+          (* This runs before every model request ([before_request]) and on the
+             poll fibers; a probe fault must degrade the footer, never escape to
+             fail the run's switch. *)
+          Log.warn (fun m ->
+              m "dune diagnostics probe raised, ignored: %s"
+                (Printexc.to_string exn))
     in
     if t.diagnostics || t.build then
       Eio.Fiber.fork_daemon ~sw (fun () ->
