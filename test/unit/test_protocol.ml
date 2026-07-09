@@ -1420,6 +1420,40 @@ module Event_tests = struct
            | _ -> false)
          events)
 
+  let host_tool_recognition_is_turn_local () =
+    let extension_call =
+      call ~id:"call-extension" ~name:"extension_call" ~input:(obj [])
+    in
+    let events =
+      [
+        Session.Event.turn_started
+          (turn ~id:"turn-1" ~host_tools:[ "extension_call" ] ());
+        Session.Event.turn_finished ~turn:(turn_id "turn-1")
+          Session.Turn.Outcome.completed;
+        Session.Event.turn_started (turn ~id:"turn-2" ~host_tools:[] ());
+        Session.Event.response_appended
+          (response (assistant_call extension_call));
+      ]
+    in
+    let session =
+      Session.create
+        ~id:(Session.Id.of_string "session-turn-local")
+        ~cwd ~created_at:(time 1) ()
+    in
+    let session =
+      List.fold_left
+        (fun session event ->
+          match Session.Log.append event session with
+          | Ok session -> session
+          | Error error ->
+              failf "turn-local event append failed: %a" Session.Error.pp error)
+        session events
+    in
+    equal
+      (list (pair string bool))
+      ~msg:"a prior turn's host tools do not classify a later turn's calls" []
+      (host_calls (Event.of_session session))
+
   let live_only_events_are_not_durable () =
     let request =
       match
@@ -1447,6 +1481,8 @@ module Event_tests = struct
       [
         test "of_session projection" of_session_projection;
         test "host call kind is classified" host_call_kind_is_classified;
+        test "host tool recognition is turn-local"
+          host_tool_recognition_is_turn_local;
         test "live-only events are not durable" live_only_events_are_not_durable;
       ]
 end

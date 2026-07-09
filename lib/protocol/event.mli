@@ -169,7 +169,9 @@ val is_durable : t -> bool
 val of_session : Spice_session.t -> t list
 (** [of_session session] is the durable projection of [session]: the durable
     events above, in transcript order, with host calls classified and final turn
-    text computed. Live-only events are never produced.
+    text computed. Host-call recognition uses the catalog recorded on each
+    call's own turn; a tool offered by an earlier turn does not carry into a
+    later turn. Live-only events are never produced.
 
     {b Host_call cardinality.} An event stream cannot mutate a past fact, so a
     live run emits {!Host_call} twice for one call: once with [result = None]

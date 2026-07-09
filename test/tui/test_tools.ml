@@ -459,6 +459,61 @@ let%expect_test "an answered question records the question and answer" =
     the result records the answer: true
     the answer is quoted: true|}]
 
+(* A continuation command creates a fresh live event projector. It must seed
+   host-tool recognition from the active turn so an auto-handled call in the
+   resumed model step emits both its pending and settled events. *)
+let%expect_test "a host tool after a question settles in the transcript" =
+  Project.with_temp "next-tools-question-then-todo" @@ fun project ->
+  let question =
+    question_line ~id:"r-qt-question" ~call_id:"c-qt-question"
+      ~body_contains:[ "help me sequence" ] ~question:"What should come first?"
+  in
+  let todo =
+    tool_call_line ~id:"r-qt-todo" ~call_id:"c-qt-todo" ~name:"todo_write"
+      ~arguments:board_early
+      ~body_contains:[ "function_call_output"; "c-qt-question"; "inspect" ]
+  in
+  let final = answer_line ~id:"r-qt-final" ~answer:"Sequenced the work." in
+  Provider.with_responses project [ question; todo; final ] @@ fun provider ->
+  run project ~provider ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
+  Term.wait t (Screen.has "dune:");
+  Term.send t "help me sequence the work";
+  Term.send t Keys.enter;
+  Term.wait t (Screen.has "What should come first?");
+  Term.send t Keys.enter;
+  Term.wait t (Screen.has "type your answer");
+  Term.send t "inspect";
+  Term.send t Keys.enter;
+  Term.wait t (fun s ->
+      Screen.has "Sequenced the work." s && Screen.has "? for shortcuts" s);
+  Screen.print ~project (Term.screen t);
+  [%expect
+    {|
+     01 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+     02 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+     03 |        sandbox: danger-full-access (config)
+     04 |
+     05 | ❯ help me sequence the work
+     06 |
+     07 |   answered
+     08 |
+     09 | ⏺ Question(What should come first?)
+     10 |   ⎿  answered · "inspect"
+     11 |
+     12 | ⏺ Todo(2 tasks · 0 done · 1 running)
+     13 |       ◼ scaffold the module
+     14 |       ◻ write the tests
+     15 |
+     16 | ⏺ Sequenced the work.
+     17 | ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+     18 |   ◻ 2 tasks · 0 done · 1 running
+     19 |   ◼ scaffold the module
+     20 |   ◻ write the tests
+     21 | ────────────────────────────────────────────────────────────────────────────────
+     22 | ❯ message spice
+     23 | ────────────────────────────────────────────────────────────────────────────────
+     24 |   …i-next-tools-question-then-todo · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
+
 (* OCaml structural search (02-tools.md §OCaml tools, Navigation and
    evaluation): [ocaml_search_expressions] shares the [Search] verb and reports
    [Found N matches across M files] off its own count shape. Unlike the

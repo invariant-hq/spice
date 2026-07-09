@@ -106,6 +106,11 @@ let reconstruct_result finished =
 module String_set = Set.Make (String)
 module String_map = Map.Make (String)
 
+let string_set names =
+  List.fold_left
+    (fun set name -> String_set.add name set)
+    String_set.empty names
+
 (* The replay fold. Durable events are emitted in transcript order. Host calls
    are correlated across the transcript: a call appears in an assistant
    response and is answered by a later tool-result message. Each answered call
@@ -128,11 +133,8 @@ let of_session session =
     (fun event ->
       match (event : Session.Event.t) with
       | Session.Event.Turn_started turn ->
-          host_tool_names :=
-            List.fold_left
-              (fun set name -> String_set.add name set)
-              !host_tool_names
-              (Session.Turn.host_tools turn);
+          host_tool_names := string_set (Session.Turn.host_tools turn);
+          pending_calls := String_map.empty;
           emit (Turn_started turn)
       | Session.Event.Response_appended response ->
           emit (Assistant response);

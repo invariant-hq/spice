@@ -242,15 +242,29 @@ let require_active_turn session : (unit, Spice_protocol.Error.t) result =
 module String_set = Set.Make (String)
 module String_map = Map.Make (String)
 
+let string_set names =
+  List.fold_left
+    (fun set name -> String_set.add name set)
+    String_set.empty names
+
 type projector = {
   mutable host_tool_names : String_set.t;
   mutable pending_calls : Spice_llm.Tool.Call.t String_map.t;
   mutable steps : int;
 }
 
-let new_projector () =
+let active_host_tool_names session =
+  let state = Spice_session.state session in
+  match Spice_session.State.active_turn state with
+  | None -> String_set.empty
+  | Some id -> (
+      match Spice_session.State.turn id state with
+      | None -> String_set.empty
+      | Some turn -> string_set (Spice_session.Turn.host_tools turn))
+
+let new_projector session =
   {
-    host_tool_names = String_set.empty;
+    host_tool_names = active_host_tool_names session;
     pending_calls = String_map.empty;
     steps = 0;
   }
@@ -265,10 +279,8 @@ let emit_saved projector observe events =
       match (event : Spice_session.Event.t) with
       | Spice_session.Event.Turn_started turn ->
           projector.host_tool_names <-
-            List.fold_left
-              (fun set name -> String_set.add name set)
-              projector.host_tool_names
-              (Spice_session.Turn.host_tools turn);
+            string_set (Spice_session.Turn.host_tools turn);
+          projector.pending_calls <- String_map.empty;
           observe (Spice_protocol.Event.Turn_started turn)
       | Spice_session.Event.Response_appended response ->
           observe (Spice_protocol.Event.Assistant response);
@@ -609,7 +621,8 @@ type plan_resolver =
 
 let execute ~store ~client ~host_tool ~resolve_plan ~run ?compaction ~hooks
     document (command : Spice_protocol.Command.t) =
-  let projector = new_projector () in
+  let session = Spice_session_store.Document.session document in
+  let projector = new_projector session in
   let model ~on_event ~cancelled request =
     Spice_llm.Client.response ~on_event ~cancelled client request
   in
@@ -618,7 +631,6 @@ let execute ~store ~client ~host_tool ~resolve_plan ~run ?compaction ~hooks
       ~overflow_compacted:false ~model ~host_tool hooks ?compaction run document
       step
   in
-  let session = Spice_session_store.Document.session document in
   let session_id = document_id document in
   let started = Unix.gettimeofday () in
   (match command with
