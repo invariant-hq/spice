@@ -32,15 +32,13 @@ type env = (string * bound) list ref
 
 (* Metavariables are __ followed by one or more digits: __1, __23, ... *)
 let is_metavar str =
-  String.length str > 2
-  && str.[0] = '_'
-  && str.[1] = '_'
-  &&
-  let all_digits = ref true in
-  for i = 2 to String.length str - 1 do
-    match str.[i] with '0' .. '9' -> () | _ -> all_digits := false
-  done;
-  !all_digits
+  let len = String.length str in
+  let rec digits i =
+    i = len
+    ||
+    match str.[i] with '0' .. '9' -> digits (i + 1) | _ -> false
+  in
+  len > 2 && str.[0] = '_' && str.[1] = '_' && digits 2
 
 (* Structural comparison of bound fragments must ignore where and how the
    code was written, so bindings are stored location- and attribute-free. *)
