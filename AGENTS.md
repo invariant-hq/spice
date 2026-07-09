@@ -16,6 +16,31 @@ spice is the ocaml coding-agent.
   treat warnings as errors that need a real fix.
 - do not use opam, we use dune package management. invoke dune directly to build and test.
 
+## commit guidelines
+
+- before staging, inspect the worktree and prove which changes belong to the
+  current task. Never infer ownership from thematic similarity; concurrent and
+  pre-existing changes remain unstaged.
+- stage only task-owned paths and hunks. Use partial staging when a file mixes
+  current-task changes with other work, then review the complete staged diff
+  and run `git diff --cached --check` before committing.
+- follow the repository's conventional subject style:
+  `<type>(<scope>): <Imperative subject>` (omit the scope only when the change
+  genuinely spans the repository).
+- give every non-trivial commit a self-contained body, normally two to four
+  paragraphs: the prior behavior and why it mattered; the new behavior and
+  where the invariant or ownership now lives; then the evidence and any honest
+  limitation.
+- lead with causality, not a change inventory or test count. Use bullets only
+  for independent semantic changes, never as a file list. For test-only
+  commits, name the observable contract and justify any harness-only seam or
+  non-visual assertion.
+- write for future readers: do not depend on temporary plans or ledgers,
+  unexplained local jargon, or chronology that is not needed to understand the
+  resulting code.
+- never amend, rewrite, squash, or push commits unless the user explicitly
+  requests it.
+
 ## api design rules
 
 - prefer solving API design problems with composition and small combinators
