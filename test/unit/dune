@@ -259,7 +259,14 @@
 (test
  (name test_provider)
  (modules test_provider)
- (libraries windtrap test_support spice_account spice_llm spice_provider uri))
+ (libraries
+  windtrap
+  test_support
+  oauth2
+  spice_account
+  spice_llm
+  spice_provider
+  uri))
 
 (test
  (name test_provider_builtin)
@@ -274,7 +281,8 @@
   spice_llm_ollama
   spice_llm_openai
   spice_provider
-  spice_provider_builtin))
+  spice_provider_builtin
+  uri))
 
 (test
  (name test_auth)

@@ -41,6 +41,39 @@ let openai_contracts () =
     [ "browser"; "device-code"; "api-key" ]
     (Builtin.openai |> provider_auth |> Auth.logins |> List.map Login.id);
   begin match
+    Auth.login_by_id (Builtin.openai |> provider_auth) "browser"
+    |> Option.map Login.protocol
+  with
+  | Some (Login.Protocol.OAuth2_authorization_code spec) ->
+      equal string ~msg:"OpenAI browser authorization endpoint"
+        "https://auth.openai.com/oauth/authorize"
+        (Uri.to_string spec.Login.Protocol.authorization_endpoint);
+      equal string ~msg:"OpenAI browser token endpoint"
+        "https://auth.openai.com/oauth/token"
+        (Uri.to_string spec.Login.Protocol.authorization_token_endpoint);
+      equal (option string) ~msg:"OpenAI browser redirect"
+        (Some "http://localhost:1455/auth/callback")
+        (Option.map
+           (fun uri -> Uri.to_string uri)
+           spec.Login.Protocol.redirect_uri);
+      equal (list string) ~msg:"OpenAI browser scopes"
+        [ "openid"; "profile"; "email"; "offline_access" ]
+        spec.Login.Protocol.authorization_scope;
+      equal (list (pair string string)) ~msg:"OpenAI browser extras"
+        [
+          ("id_token_add_organizations", "true");
+          ("codex_cli_simplified_flow", "true");
+          ("originator", "opencode");
+        ]
+        spec.Login.Protocol.authorization_extra;
+      is_true ~msg:"OpenAI browser uses PKCE" spec.Login.Protocol.pkce
+  | Some
+      ( Login.Protocol.Api_key | Login.Protocol.OAuth2_device_code _
+      | Login.Protocol.Provider_device_code _ | Login.Protocol.External _ )
+  | None ->
+      failf "expected OpenAI browser login"
+  end;
+  begin match
     Auth.login_by_id (Builtin.openai |> provider_auth) "device-code"
     |> Option.map Login.protocol
   with
@@ -167,6 +200,23 @@ let google_contracts () =
     (input_modality_strings flash);
   equal (list string) ~msg:"capabilities" [ "reasoning"; "tools" ]
     (capability_strings flash);
+  begin match Model.status flash with
+  | Model.Preview -> ()
+  | Model.Stable | Model.Deprecated | Model.Unavailable _ ->
+      failf "expected Gemini 3 Flash Preview to be preview"
+  end;
+  is_true ~msg:"Gemini 3 Flash Preview is selectable" (Model.selectable flash);
+  let pro =
+    lookup Builtin.google (Spice_llm_google.model "gemini-3-pro-preview")
+  in
+  begin match Model.status pro with
+  | Model.Deprecated -> ()
+  | Model.Stable | Model.Preview | Model.Unavailable _ ->
+      failf "expected Gemini 3 Pro Preview to be deprecated"
+  end;
+  is_true ~msg:"Gemini 3 Pro Preview remains visible" (Model.visible pro);
+  is_false ~msg:"Gemini 3 Pro Preview is not selectable"
+    (Model.selectable pro);
   equal (list string) ~msg:"Google reasoning efforts"
     [ "minimal"; "low"; "medium"; "high" ]
     (Model.supported_reasoning flash

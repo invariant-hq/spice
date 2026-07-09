@@ -205,6 +205,68 @@ let login_contracts () =
   | Login.Protocol.OAuth2_authorization_code _ | Login.Protocol.External _ ->
       failf "expected provider device-code protocol"
   end;
+  let client = Oauth2.Client.make ~id:"client-id" () in
+  let device_endpoint = Uri.of_string "https://auth.example/device" in
+  let token_endpoint = Uri.of_string "https://auth.example/token" in
+  let oauth_device =
+    Login.oauth2_device_code ~id:"oauth-device" ~label:"OAuth device"
+      ~client ~device_endpoint ~token_endpoint
+      ~scope:[ "openid"; "profile" ]
+      ~extra:[ ("audience", "spice") ]
+      ()
+  in
+  begin match Login.protocol oauth_device with
+  | Login.Protocol.OAuth2_device_code spec ->
+      equal string ~msg:"OAuth device endpoint"
+        "https://auth.example/device"
+        (Uri.to_string spec.Login.Protocol.device_endpoint);
+      equal string ~msg:"OAuth device token endpoint"
+        "https://auth.example/token"
+        (Uri.to_string spec.Login.Protocol.device_token_endpoint);
+      equal (list string) ~msg:"OAuth device scopes" [ "openid"; "profile" ]
+        spec.Login.Protocol.device_scope;
+      equal (list (pair string string)) ~msg:"OAuth device extras"
+        [ ("audience", "spice") ]
+        spec.Login.Protocol.device_extra
+  | Login.Protocol.Api_key | Login.Protocol.OAuth2_authorization_code _
+  | Login.Protocol.Provider_device_code _ | Login.Protocol.External _ ->
+      failf "expected OAuth device-code protocol"
+  end;
+  let authorization_endpoint = Uri.of_string "https://auth.example/authorize" in
+  let redirect_uri = Uri.of_string "http://localhost:1455/auth/callback" in
+  let oauth_browser =
+    Login.oauth2_authorization_code ~id:"oauth-browser" ~label:"OAuth browser"
+      ~client ~authorization_endpoint ~token_endpoint ~redirect_uri
+      ~pkce:false
+      ~scope:[ "email"; "offline_access" ]
+      ~extra:[ ("prompt", "consent") ]
+      ()
+  in
+  begin match Login.protocol oauth_browser with
+  | Login.Protocol.OAuth2_authorization_code spec ->
+      equal string ~msg:"OAuth browser authorization endpoint"
+        "https://auth.example/authorize"
+        (Uri.to_string spec.Login.Protocol.authorization_endpoint);
+      equal string ~msg:"OAuth browser token endpoint"
+        "https://auth.example/token"
+        (Uri.to_string spec.Login.Protocol.authorization_token_endpoint);
+      equal (option string) ~msg:"OAuth browser redirect"
+        (Some "http://localhost:1455/auth/callback")
+        (Option.map
+           (fun uri -> Uri.to_string uri)
+           spec.Login.Protocol.redirect_uri);
+      equal (list string) ~msg:"OAuth browser scopes"
+        [ "email"; "offline_access" ]
+        spec.Login.Protocol.authorization_scope;
+      equal (list (pair string string)) ~msg:"OAuth browser extras"
+        [ ("prompt", "consent") ]
+        spec.Login.Protocol.authorization_extra;
+      is_false ~msg:"OAuth browser PKCE can be disabled"
+        spec.Login.Protocol.pkce
+  | Login.Protocol.Api_key | Login.Protocol.OAuth2_device_code _
+  | Login.Protocol.Provider_device_code _ | Login.Protocol.External _ ->
+      failf "expected OAuth authorization-code protocol"
+  end;
   expect_invalid_arg "login id cannot be empty" (fun () ->
       Login.make ~id:"" ~label:"Empty" Login.Protocol.Api_key);
   expect_invalid_arg "login id rejects uppercase" (fun () ->
