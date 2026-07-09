@@ -8,6 +8,11 @@ let invalid fn message = invalid_arg ("Spice_tool.Output." ^ fn ^ ": " ^ message
 let reject_empty fn field value =
   if String.is_empty value then invalid fn (field ^ " must not be empty")
 
+let decode_invalid_arg f =
+  match f () with
+  | value -> value
+  | exception Invalid_argument message -> Jsont.Error.msg Jsont.Meta.none message
+
 type value = Value : 'a Type.Id.t * 'a -> value
 
 type t = {
@@ -30,7 +35,9 @@ let json t = t.json
 let truncated t = t.truncated
 
 let jsont =
-  let make text json truncated = make ~text ?json ~truncated () in
+  let make text json truncated =
+    decode_invalid_arg (fun () -> make ~text ?json ~truncated ())
+  in
   Jsont.Object.map ~kind:"tool output" make
   |> Jsont.Object.mem "text" Jsont.string ~enc:text
   |> Jsont.Object.opt_mem "json" Jsont.json ~enc:json

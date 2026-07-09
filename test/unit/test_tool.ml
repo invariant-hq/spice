@@ -143,10 +143,11 @@ let output_json_projection () =
   equal bool ~msg:"decoded truncated" true (Tool.Output.truncated decoded);
   equal (option int) ~msg:"retained value is not serialized" None
     (Tool.Output.value int_id decoded);
-  expect_invalid_arg "decoded projection rejects empty text" (fun () ->
-      Json.decode Tool.Output.jsont
-        (json_object
-           [ ("text", Json.string ""); ("truncated", Json.bool false) ]))
+  is_true ~msg:"decoded projection rejects empty text"
+    (Result.is_error
+       (Json.decode Tool.Output.jsont
+          (json_object
+             [ ("text", Json.string ""); ("truncated", Json.bool false) ])))
 
 let result_contracts () =
   let completed = Tool.Result.completed ~output:"ok" () in
