@@ -353,6 +353,17 @@ let decode call =
 
 module Decision = struct
   type t = Approve | Reject of { reason : string option }
+  type error = Empty_reason
+
+  let approve = Approve
+  let reject = Reject { reason = None }
+
+  let reject_with_reason reason =
+    if String.is_empty reason then Error Empty_reason
+    else Ok (Reject { reason = Some reason })
+
+  let pp_error ppf Empty_reason =
+    Format.pp_print_string ppf "plan rejection reason must not be empty"
 
   let equal a b = a = b
 

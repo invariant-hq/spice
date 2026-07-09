@@ -573,15 +573,17 @@ module Artifacts_tests = struct
 
   let plan_decision () =
     is_true ~msg:"decisions compare structurally"
-      (Plan.Decision.equal Plan.Decision.Approve Plan.Decision.Approve
-      && not
-           (Plan.Decision.equal Plan.Decision.Approve
-              (Plan.Decision.Reject { reason = None })));
+      (Plan.Decision.equal Plan.Decision.approve Plan.Decision.approve
+      && not (Plan.Decision.equal Plan.Decision.approve Plan.Decision.reject));
+    is_error "empty rejection reason"
+      (Plan.Decision.reject_with_reason "");
     is_true ~msg:"decision pp is non-empty"
       (not
          (String.is_empty
             (Format.asprintf "%a" Plan.Decision.pp
-               (Plan.Decision.Reject { reason = Some "nope" }))))
+               (match Plan.Decision.reject_with_reason "nope" with
+               | Ok decision -> decision
+               | Error _ -> failwith "valid rejection reason"))))
 
   (* Todo *)
 

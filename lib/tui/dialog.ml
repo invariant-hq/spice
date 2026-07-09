@@ -105,7 +105,7 @@ let key ev t =
                 resolution =
                   Resolve_plan
                     {
-                      decision = Spice_protocol.Plan.Decision.Approve;
+                      decision = Spice_protocol.Plan.Decision.approve;
                       accept_edits;
                     };
                 echo;
@@ -121,7 +121,7 @@ let key ev t =
                   Resolve_plan
                     {
                       decision =
-                        Spice_protocol.Plan.Decision.Reject { reason = None };
+                        Spice_protocol.Plan.Decision.reject;
                       accept_edits = false;
                     };
                 echo = "kept planning";
@@ -163,7 +163,7 @@ let resolve_borrow ~text t =
         Ok
           ( Resolve_plan
               {
-                decision = Spice_protocol.Plan.Decision.Reject { reason = None };
+                decision = Spice_protocol.Plan.Decision.reject;
                 accept_edits = false;
               },
             "kept planning" )
@@ -172,7 +172,14 @@ let resolve_borrow ~text t =
           ( Resolve_plan
               {
                 decision =
-                  Spice_protocol.Plan.Decision.Reject { reason = Some text };
+                  (match
+                     Spice_protocol.Plan.Decision.reject_with_reason text
+                   with
+                  | Ok decision -> decision
+                  | Error error ->
+                      invalid_arg
+                        (Format.asprintf "%a"
+                           Spice_protocol.Plan.Decision.pp_error error));
                 accept_edits = false;
               },
             "plan rejected · " ^ quote text )

@@ -265,9 +265,25 @@ module Decision : sig
       the user chose, leaving the load-transition-save orchestration to the
       engine. *)
 
-  type t =
+  type t = private
     | Approve
     | Reject of { reason : string option }  (** The type for a plan decision. *)
+
+  type error = Empty_reason
+  (** The type for an invalid decision. *)
+
+  val approve : t
+  (** [approve] accepts the proposed plan. *)
+
+  val reject : t
+  (** [reject] rejects the proposed plan without a reason. *)
+
+  val reject_with_reason : string -> (t, error) result
+  (** [reject_with_reason reason] rejects the plan with [reason]. Returns
+      {!Empty_reason} when [reason] is empty. *)
+
+  val pp_error : Format.formatter -> error -> unit
+  (** [pp_error] formats a decision construction error. *)
 
   val equal : t -> t -> bool
   (** [equal a b] is [true] iff [a] and [b] are the same decision. *)

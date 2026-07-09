@@ -1673,10 +1673,17 @@ let continuation approve_plan reject_plan allow allow_session deny deny_message
   let* plan_decision =
     match (approve_plan, reject_plan) with
     | true, true -> usage "choose only one of --approve-plan or --reject-plan"
-    | true, false -> Ok (Some Spice_protocol.Plan.Decision.Approve)
-    | false, true ->
-        Ok
-          (Some (Spice_protocol.Plan.Decision.Reject { reason = deny_message }))
+    | true, false -> Ok (Some Spice_protocol.Plan.Decision.approve)
+    | false, true -> (
+        match deny_message with
+        | None -> Ok (Some Spice_protocol.Plan.Decision.reject)
+        | Some reason -> (
+            match Spice_protocol.Plan.Decision.reject_with_reason reason with
+            | Ok decision -> Ok (Some decision)
+            | Error error ->
+                usage
+                  (Format.asprintf "%a"
+                     Spice_protocol.Plan.Decision.pp_error error)))
     | false, false -> Ok None
   in
   let tool_continuation =
