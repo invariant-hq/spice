@@ -119,6 +119,35 @@ let output_retained_values () =
   equal (option string) ~msg:"witness of a different type" None
     (Tool.Output.value string_id packed)
 
+let output_json_projection () =
+  let int_id : int Type.Id.t = Type.Id.make () in
+  let structured_json = json_object [ ("ok", Json.bool true) ] in
+  let output =
+    Tool.Output.make ~text:"done" ~json:structured_json ~truncated:true
+      ~value:(Tool.Output.pack int_id 42) ()
+  in
+  let projected = encode Tool.Output.jsont output in
+  equal bool ~msg:"encoded projection has durable fields" true
+    (Json.equal
+       (json_object
+          [
+            ("text", Json.string "done");
+            ("json", structured_json);
+            ("truncated", Json.bool true);
+          ])
+       projected);
+  let decoded = decode Tool.Output.jsont projected in
+  equal string ~msg:"decoded text" "done" (Tool.Output.text decoded);
+  equal (option bool) ~msg:"decoded json" (Some true)
+    (Option.map (Json.equal structured_json) (Tool.Output.json decoded));
+  equal bool ~msg:"decoded truncated" true (Tool.Output.truncated decoded);
+  equal (option int) ~msg:"retained value is not serialized" None
+    (Tool.Output.value int_id decoded);
+  expect_invalid_arg "decoded projection rejects empty text" (fun () ->
+      Json.decode Tool.Output.jsont
+        (json_object
+           [ ("text", Json.string ""); ("truncated", Json.bool false) ]))
+
 let result_contracts () =
   let completed = Tool.Result.completed ~output:"ok" () in
   equal (option string) ~msg:"completed output" (Some "ok")
@@ -336,6 +365,7 @@ let () =
       test "input contracts" input_contracts;
       test "output contracts" output_contracts;
       test "output retained values" output_retained_values;
+      test "output json projection" output_json_projection;
       test "result contracts" result_contracts;
       test "tool definition contracts" tool_definition_contracts;
       test "call decode errors" call_decode_errors;
