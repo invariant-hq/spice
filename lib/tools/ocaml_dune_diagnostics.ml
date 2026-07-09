@@ -161,12 +161,13 @@ module Output = struct
 end
 
 let output ~endpoint diagnostics =
-  Output.make ~endpoint ~diagnostics:(Dune.Rpc.Diagnostic.Store.to_list diagnostics)
+  Output.make ~endpoint
+    ~diagnostics:(Dune.Rpc.Diagnostic.Store.to_list diagnostics)
 
 let run ~clock ~dune ctx () =
   if Tool.Context.cancelled ctx then
     Tool.Result.interrupted ~reason:"tool call cancelled" ~cancelled:true ()
-  else (
+  else
     match Dune.Rpc.Instance.refresh dune with
     | Error error -> Tool.Result.failed `Unavailable (Dune.Error.message error)
     | Ok None ->
@@ -184,7 +185,7 @@ let run ~clock ~dune ctx () =
               ~output:(output ~endpoint (Dune.Rpc.Instance.diagnostics dune))
               ()
         | Error error ->
-            Tool.Result.failed `Unavailable (Dune.Error.message error)))
+            Tool.Result.failed `Unavailable (Dune.Error.message error))
 
 let tool ~clock ~dune () =
   let workspace = Dune.Rpc.Instance.workspace dune in

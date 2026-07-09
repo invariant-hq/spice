@@ -72,5 +72,5 @@ val tool :
   dune:Spice_ocaml_dune.Rpc.Instance.t ->
   unit ->
   Spice_tool.t
-(** [tool ~clock ~dune ()] is the erased model-facing diagnostics tool backed
-    by [dune]. *)
+(** [tool ~clock ~dune ()] is the erased model-facing diagnostics tool backed by
+    [dune]. *)
