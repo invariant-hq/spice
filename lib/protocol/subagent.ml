@@ -105,7 +105,12 @@ let json_obj fields =
        fields)
 
 let json_list values = Jsont.Json.list values
-let string_schema = json_obj [ ("type", Jsont.Json.string "string") ]
+
+let non_empty_string_schema =
+  json_obj
+    [
+      ("type", Jsont.Json.string "string"); ("minLength", Jsont.Json.int 1);
+    ]
 
 let decode_for expected jsont call =
   let actual = Spice_llm.Tool.Call.name call in
@@ -149,7 +154,9 @@ module Wait = struct
               ( "runs",
                 json_obj
                   [
-                    ("type", Jsont.Json.string "array"); ("items", string_schema);
+                    ("type", Jsont.Json.string "array");
+                    ("items", non_empty_string_schema);
+                    ("minItems", Jsont.Json.int 1);
                   ] );
             ] );
         ("required", json_list [ Jsont.Json.string "runs" ]);
@@ -186,7 +193,7 @@ module Cancel = struct
     json_obj
       [
         ("type", Jsont.Json.string "object");
-        ("properties", json_obj [ ("run", string_schema) ]);
+        ("properties", json_obj [ ("run", non_empty_string_schema) ]);
         ("required", json_list [ Jsont.Json.string "run" ]);
         ("additionalProperties", Jsont.Json.bool false);
       ]
@@ -229,7 +236,11 @@ module Message = struct
       [
         ("type", Jsont.Json.string "object");
         ( "properties",
-          json_obj [ ("run", string_schema); ("message", string_schema) ] );
+          json_obj
+            [
+              ("run", non_empty_string_schema);
+              ("message", non_empty_string_schema);
+            ] );
         ( "required",
           json_list [ Jsont.Json.string "run"; Jsont.Json.string "message" ] );
         ("additionalProperties", Jsont.Json.bool false);
@@ -267,7 +278,7 @@ module Message_parent = struct
     json_obj
       [
         ("type", Jsont.Json.string "object");
-        ("properties", json_obj [ ("message", string_schema) ]);
+        ("properties", json_obj [ ("message", non_empty_string_schema) ]);
         ("required", json_list [ Jsont.Json.string "message" ]);
         ("additionalProperties", Jsont.Json.bool false);
       ]
@@ -300,15 +311,15 @@ let tool_schema =
                         Jsont.Json.string "verify";
                       ] );
                 ] );
-            ("task", json_obj [ ("type", Jsont.Json.string "string") ]);
+            ("task", non_empty_string_schema);
             ( "scope",
               json_obj
                 [
                   ("type", Jsont.Json.string "array");
-                  ("items", json_obj [ ("type", Jsont.Json.string "string") ]);
+                  ("items", non_empty_string_schema);
                 ] );
             ( "expected_output",
-              json_obj [ ("type", Jsont.Json.string "string") ] );
+              non_empty_string_schema );
           ] );
       ( "required",
         json_list [ Jsont.Json.string "role"; Jsont.Json.string "task" ] );

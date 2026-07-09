@@ -213,6 +213,32 @@ module Call_tests = struct
       (Result.is_error
          (Call.answer_text (classified "propose_plan" plan_input) "yes"))
 
+  let tool_schemas_require_checked_strings () =
+    let member name = function
+      | Jsont.Object (members, _) ->
+          Option.map snd (Jsont.Json.find_mem name members)
+      | Jsont.Null _ | Jsont.Bool _ | Jsont.Number _ | Jsont.String _
+      | Jsont.Array _ ->
+          None
+    in
+    let property tool name =
+      Spice_llm.Tool.input_schema tool |> member "properties"
+      |> fun properties -> Option.bind properties (member name)
+    in
+    let expected =
+      obj [ ("type", str "string"); ("minLength", Jsont.Json.int 1) ]
+    in
+    let check message tool name =
+      is_true ~msg:message
+        (Option.exists (Jsont.Json.equal expected) (property tool name))
+    in
+    check "question schema rejects empty questions" Spice_protocol.Question.tool
+      "question";
+    check "plan schema rejects empty bodies" Spice_protocol.Plan.tool "body";
+    check "spawn schema rejects empty tasks" Spice_protocol.Subagent.tool "task";
+    check "message schema rejects empty messages"
+      Spice_protocol.Subagent.Message.tool "message"
+
   let suite =
     group "call"
       [
@@ -226,6 +252,8 @@ module Call_tests = struct
         test "answerable_question folds valid and invalid"
           answerable_question_folds_valid_and_invalid;
         test "answer text is call-specific" answer_text_is_call_specific;
+        test "tool schemas require checked strings"
+          tool_schemas_require_checked_strings;
         test "plan_proposal rejects Invalid" plan_proposal_rejects_invalid;
       ]
 end

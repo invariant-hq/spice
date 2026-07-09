@@ -11,6 +11,12 @@ let json_obj fields =
 
 let json_list values = Jsont.Json.list values
 
+let non_empty_string_schema =
+  json_obj
+    [
+      ("type", Jsont.Json.string "string"); ("minLength", Jsont.Json.int 1);
+    ]
+
 module Option = struct
   type t = { label : string; description : string option }
 
@@ -103,8 +109,8 @@ let tool_schema =
       ( "properties",
         json_obj
           [
-            ("header", json_obj [ ("type", Jsont.Json.string "string") ]);
-            ("question", json_obj [ ("type", Jsont.Json.string "string") ]);
+            ("header", non_empty_string_schema);
+            ("question", non_empty_string_schema);
             ( "options",
               json_obj
                 [
@@ -117,11 +123,9 @@ let tool_schema =
                           json_obj
                             [
                               ( "label",
-                                json_obj
-                                  [ ("type", Jsont.Json.string "string") ] );
+                                non_empty_string_schema );
                               ( "description",
-                                json_obj
-                                  [ ("type", Jsont.Json.string "string") ] );
+                                non_empty_string_schema );
                             ] );
                         ("required", json_list [ Jsont.Json.string "label" ]);
                         ("additionalProperties", Jsont.Json.bool false);

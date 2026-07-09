@@ -314,6 +314,13 @@ let json_obj fields =
        fields)
 
 let json_list values = Jsont.Json.list values
+
+let non_empty_string_schema =
+  json_obj
+    [
+      ("type", Jsont.Json.string "string"); ("minLength", Jsont.Json.int 1);
+    ]
+
 let name = "propose_plan"
 
 let tool_schema =
@@ -323,9 +330,9 @@ let tool_schema =
       ( "properties",
         json_obj
           [
-            ("id", json_obj [ ("type", Jsont.Json.string "string") ]);
-            ("title", json_obj [ ("type", Jsont.Json.string "string") ]);
-            ("body", json_obj [ ("type", Jsont.Json.string "string") ]);
+            ("id", non_empty_string_schema);
+            ("title", non_empty_string_schema);
+            ("body", non_empty_string_schema);
           ] );
       ( "required",
         json_list [ Jsont.Json.string "id"; Jsont.Json.string "body" ] );
