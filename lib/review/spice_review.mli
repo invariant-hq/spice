@@ -28,12 +28,24 @@
 module Error : sig
   (** Review errors. *)
 
+  (** The type for stable, matchable review error classes.
+
+      Human-readable messages are diagnostics only; use [kind] values for
+      control flow and tests. *)
   type kind =
     | Invalid_scope
+        (** A scope cannot be realized against the current feature. *)
     | Invalid_cursor
+        (** A cursor target does not exist in the current review. *)
     | Invalid_file
+        (** A feature file cannot be constructed from the supplied sides or
+            diff parameters. *)
     | Busy
-    | Stale_snapshot  (** The type for error classes. *)
+        (** A live source mutation cannot start because another mutation is
+            running. *)
+    | Stale_snapshot
+        (** A source mutation was requested against content that is no longer
+            the loaded snapshot. *)
 
   type t
   (** The type for review errors. *)
@@ -199,13 +211,13 @@ module Scope : sig
   *)
 
   val path : t -> Spice_path.Rel.t option
-  (** [path scope] is the path [scope] addresses. [None] for {!val-feature}. *)
+  (** [path scope] is the path [scope] addresses. [None] for [Feature]. *)
 
   val contains : t -> t -> bool
   (** [contains outer inner] is [true] iff [inner] falls within [outer]:
-      {!val-feature} contains every scope, a file contains every scope with its
-      path, a hunk contains itself and the line scopes within its side ranges,
-      and a line contains itself. *)
+      [Feature] contains every scope, a file contains every scope with its path,
+      a hunk contains itself and the line scopes within its side ranges, and a
+      line contains itself. *)
 
   val equal : t -> t -> bool
   (** [equal a b] is [true] iff [a] and [b] are the same scope. *)
@@ -406,8 +418,8 @@ val is_complete : t -> bool
 val mark_reviewed : t -> Scope.t -> (t, Error.t) result
 (** [mark_reviewed review scope] marks [scope] reviewed with evidence computed
     from current content. Errors with {!Error.Invalid_scope} if [scope] does not
-    exist in the feature. Marks strictly inside [scope] are replaced by the new
-    covering mark. *)
+    exist in the feature. Any existing mark on [scope] and marks inside [scope]
+    are replaced by the new covering mark. *)
 
 val mark_unreviewed : t -> Scope.t -> (t, Error.t) result
 (** [mark_unreviewed review scope] marks [scope] unreviewed. Errors and covering
@@ -452,11 +464,18 @@ module Op : sig
 
   type t =
     | Add of { path : Spice_path.Rel.t; line : int; cr : Spice_cr.t }
-        (** Insert [cr] anchored before [line] of [path]. *)
+        (** Request {!Spice_cr.add_before_line} for [cr] before one-based
+            [line] of [path]. Performers may fail when [path] has no
+            conventional comment syntax, [line] is outside the current file, or
+            [cr] cannot be rendered in that syntax. *)
     | Replace of { occurrence : Spice_cr.Occurrence.t; cr : Spice_cr.t }
-        (** Rewrite [occurrence] in place with [cr] (edit or resolve). *)
+        (** Request {!Spice_cr.replace}: rewrite [occurrence] in place with
+            [cr] using the occurrence's scanned syntax and stale-source check.
+        *)
     | Remove of { occurrence : Spice_cr.Occurrence.t }
-        (** Delete [occurrence] from its source file. *)
+        (** Request {!Spice_cr.remove}: delete [occurrence] from its source
+            file, removing whole comment lines when the occurrence is alone on
+            them and only the raw occurrence span otherwise. *)
 
   val path : t -> Spice_path.Rel.t
   (** [path op] is the worktree-relative file [op] edits. *)
@@ -606,6 +625,6 @@ module Persist : sig
       written against a different base label restore nothing. *)
 
   val jsont : t Jsont.t
-  (** [jsont] is the JSON codec for records. The encoding is versioned; decoding
-      a future major version fails rather than misreads. *)
+  (** [jsont] is the JSON codec for records. The encoding is versioned;
+      decoding an unsupported version fails rather than misreads. *)
 end

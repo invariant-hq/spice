@@ -11,11 +11,17 @@
 
 type t =
   | Add of { path : Spice_path.Rel.t; line : int; cr : Spice_cr.t }
-      (** Insert [cr] anchored before [line] of [path]. *)
+      (** Request {!Spice_cr.add_before_line} for [cr] before one-based [line]
+          of [path]. Performers may fail when [path] has no conventional
+          comment syntax, [line] is outside the current file, or [cr] cannot be
+          rendered in that syntax. *)
   | Replace of { occurrence : Spice_cr.Occurrence.t; cr : Spice_cr.t }
-      (** Rewrite [occurrence] in place with [cr] (edit or resolve). *)
+      (** Request {!Spice_cr.replace}: rewrite [occurrence] in place with [cr]
+          using the occurrence's scanned syntax and stale-source check. *)
   | Remove of { occurrence : Spice_cr.Occurrence.t }
-      (** Delete [occurrence] from its source file. *)
+      (** Request {!Spice_cr.remove}: delete [occurrence] from its source file,
+          removing whole comment lines when the occurrence is alone on them and
+          only the raw occurrence span otherwise. *)
 
 val path : t -> Spice_path.Rel.t
 (** [path op] is the worktree-relative file [op] edits. *)
