@@ -100,10 +100,14 @@ module Error = struct
     | error -> Spice_diagnostic.make (message error)
 end
 
+let io_exception path = function
+  | Eio.Cancel.Cancelled _ as exn -> raise exn
+  | exn -> Error (Error.Io { path; message = Printexc.to_string exn })
+
 let io path f =
   match f () with
   | value -> Ok value
-  | exception exn -> Error (Error.Io { path; message = Printexc.to_string exn })
+  | exception exn -> io_exception path exn
 
 let fs_path t path = Eio.Path.( / ) t.fs path
 let native_path t path = Eio.Path.native_exn (fs_path t path)
@@ -144,7 +148,7 @@ let path_kind store path =
   | `Regular_file -> Ok `File
   | `Directory -> Ok `Directory
   | _ -> Ok `Other
-  | exception exn -> Error (Error.Io { path; message = Printexc.to_string exn })
+  | exception exn -> io_exception path exn
 
 let non_file_document path =
   Error (Error.Corrupt { path; message = "is not a regular file" })
@@ -212,7 +216,7 @@ let with_sessions_lock store f =
   let* () = mkdir_p store dir in
   let path = lock_path store in
   match native_path store path with
-  | exception exn -> Error (Error.Io { path; message = Printexc.to_string exn })
+  | exception exn -> io_exception path exn
   | native -> (
       (* [dir] exists after [mkdir_p], so canonicalizing it cannot fail under
          normal operation; fall back to the raw path so a same-spelling handle
@@ -226,8 +230,7 @@ let with_sessions_lock store f =
         Eio.Mutex.use_ro mutex (fun () -> with_lock_path store.sleep native f)
       with
       | result -> result
-      | exception exn ->
-          Error (Error.Io { path; message = Printexc.to_string exn }))
+      | exception exn -> io_exception path exn)
 
 let tmp_counter = ref 0
 
@@ -298,7 +301,7 @@ let load store id =
 
 let fsync_path store path =
   match native_path store path with
-  | exception exn -> Error (Error.Io { path; message = Printexc.to_string exn })
+  | exception exn -> io_exception path exn
   | native -> (
       match Unix.openfile native [ Unix.O_RDONLY; Unix.O_CLOEXEC ] 0 with
       | exception Unix.Unix_error (error, _, _) ->
@@ -319,7 +322,7 @@ let write_document store path text =
   let* () = mkdir_p store dir in
   let tmp = tmp_path store path in
   match Eio.Path.save ~create:(`Exclusive 0o600) (fs_path store tmp) text with
-  | exception exn -> Error (Error.Io { path; message = Printexc.to_string exn })
+  | exception exn -> io_exception path exn
   | () -> (
       match fsync_path store tmp with
       | Error _ as error ->
@@ -330,7 +333,7 @@ let write_document store path text =
           | () -> fsync_path store dir
           | exception exn ->
               cleanup_tmp store tmp;
-              Error (Error.Io { path; message = Printexc.to_string exn })))
+              io_exception path exn))
 
 let create store session =
   with_sessions_lock store (fun () ->
