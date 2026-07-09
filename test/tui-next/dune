@@ -4,8 +4,14 @@
 ; the suite in parallel.
 
 (executables
- (names test_home test_turn test_composer test_history test_mention test_auth)
- (modules test_home test_turn test_composer test_history test_mention test_auth)
+ (names test_home test_turn test_composer test_history test_mention test_auth
+   test_geometry test_dialogs test_tools test_turn_errors test_input
+   test_session test_states test_commands test_model_panel test_settings
+   test_transcript)
+ (modules test_home test_turn test_composer test_history test_mention test_auth
+   test_geometry test_dialogs test_tools test_turn_errors test_input
+   test_session test_states test_commands test_model_panel test_settings
+   test_transcript)
  (libraries unix windtrap tui_next_harness)
  (preprocess
   (pps ppx_windtrap)))
@@ -57,3 +63,91 @@
   (progn
    (run ./test_auth.exe)
    (diff? test_auth.ml test_auth.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_geometry.exe)
+ (action
+  (progn
+   (run ./test_geometry.exe)
+   (diff? test_geometry.ml test_geometry.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_dialogs.exe)
+ (action
+  (progn
+   (run ./test_dialogs.exe)
+   (diff? test_dialogs.ml test_dialogs.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_tools.exe)
+ (action
+  (progn
+   (run ./test_tools.exe)
+   (diff? test_tools.ml test_tools.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_turn_errors.exe)
+ (action
+  (progn
+   (run ./test_turn_errors.exe)
+   (diff? test_turn_errors.ml test_turn_errors.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_input.exe)
+ (action
+  (progn
+   (run ./test_input.exe)
+   (diff? test_input.ml test_input.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_states.exe)
+ (action
+  (progn
+   (run ./test_states.exe)
+   (diff? test_states.ml test_states.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_session.exe)
+ (action
+  (progn
+   (run ./test_session.exe)
+   (diff? test_session.ml test_session.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_commands.exe)
+ (action
+  (progn
+   (run ./test_commands.exe)
+   (diff? test_commands.ml test_commands.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_model_panel.exe)
+ (action
+  (progn
+   (run ./test_model_panel.exe)
+   (diff? test_model_panel.ml test_model_panel.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_settings.exe)
+ (action
+  (progn
+   (run ./test_settings.exe)
+   (diff? test_settings.ml test_settings.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_transcript.exe)
+ (action
+  (progn
+   (run ./test_transcript.exe)
+   (diff? test_transcript.ml test_transcript.ml.corrected))))
