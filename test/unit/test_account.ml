@@ -134,6 +134,11 @@ let account_json ?(version = 1) ?(extra = []) fields =
     ([ ("version", Json.int version); ("provider", Json.string "openai") ]
     @ fields @ extra)
 
+let availability_string = function
+  | `Available -> "available"
+  | `Unavailable -> "unavailable"
+  | `Unknown -> "unknown"
+
 let source_and_name_contracts () =
   equal source_value ~msg:"process source" Source.process Source.process;
   equal source_value ~msg:"env source" env (Source.env "OPENAI_API_KEY");
@@ -360,6 +365,20 @@ let store_json_contracts () =
   expect_decode_error_contains "store rejects duplicate provider field"
     "duplicate field openai" Store.jsont
     (store_json [ ("openai", json_object []); ("openai", json_object []) ]);
+  expect_decode_error_contains "store rejects invalid provider ids"
+    "id must start with a lowercase ASCII letter" Store.jsont
+    (store_json [ ("OpenAI", json_object []) ]);
+  expect_decode_error_contains "store rejects invalid credential names"
+    "name is invalid" Store.jsont
+    (store_json
+       [
+         ( "openai",
+           json_object
+             [
+               ( "bad/name",
+                 secret_json "api_key" [ ("api_key", Json.string "sk") ] );
+             ] );
+       ]);
   expect_decode_error_contains "store rejects unknown credential kind"
     "unknown credential kind" Store.jsont
     (store_json
@@ -513,6 +532,33 @@ let account_status_contracts () =
   expect_invalid_arg "checked timestamp cannot be negative" (fun () ->
       Account.checked credential ~at:(-1L) ())
 
+let account_model_contracts () =
+  let credential =
+    Credential.make ~provider:openai ~source:env (Secret.api_key "sk-test-f234")
+  in
+  let missing = Account.missing ~provider:openai in
+  let present = Account.present credential in
+  equal (option (list string)) ~msg:"missing has unknown model set" None
+    (Account.models missing);
+  equal (option (list string)) ~msg:"present has unknown model set" None
+    (Account.models present);
+  equal string ~msg:"missing model availability is unknown" "unknown"
+    (availability_string (Account.model_available missing "gpt-a"));
+  let checked =
+    Account.checked credential ~models:[ "gpt-b"; "gpt-a"; "gpt-b" ] ()
+  in
+  equal phase_value ~msg:"model availability does not affect phase" `Ready
+    (Account.phase checked);
+  equal (option (list string)) ~msg:"models are sorted and deduplicated"
+    (Some [ "gpt-a"; "gpt-b" ])
+    (Account.models checked);
+  equal string ~msg:"listed model is available" "available"
+    (availability_string (Account.model_available checked "gpt-a"));
+  equal string ~msg:"unlisted model is unavailable" "unavailable"
+    (availability_string (Account.model_available checked "gpt-c"));
+  equal account_value ~msg:"model JSON roundtrip" checked
+    (checked |> encode Account.jsont |> decode Account.jsont)
+
 let account_json_contracts () =
   let missing = Account.missing ~provider:openai in
   equal account_value ~msg:"missing JSON roundtrip" missing
@@ -546,6 +592,9 @@ let account_json_contracts () =
   expect_decode_error_contains "account rejects unknown version"
     "unsupported account version" Account.jsont
     (account_json ~version:2 [ ("state", Json.string "missing") ]);
+  expect_decode_error_contains "account rejects unknown state"
+    "unknown account state: stale" Account.jsont
+    (account_json [ ("state", Json.string "stale") ]);
   expect_decode_error_contains "account rejects old state shape"
     "account field state must be a string" Account.jsont
     (json_object
@@ -560,12 +609,28 @@ let account_json_contracts () =
        [
          ("state", Json.string "missing"); ("source", source_json "process" []);
        ]);
+  expect_decode_error_contains "missing rejects model facts"
+    "field models is not allowed" Account.jsont
+    (account_json
+       [
+         ("state", Json.string "missing");
+         ("models", json_array [ Json.string "gpt-a" ]);
+       ]);
   expect_decode_error_contains "present requires source"
     "requires object field source" Account.jsont
     (account_json
        [
          ("state", Json.string "present");
          ("credential_kind", Json.string "api_key");
+       ]);
+  expect_decode_error_contains "present rejects model facts"
+    "field models is not allowed" Account.jsont
+    (account_json
+       [
+         ("state", Json.string "present");
+         ("source", source_json "process" []);
+         ("credential_kind", Json.string "api_key");
+         ("models", json_array [ Json.string "gpt-a" ]);
        ]);
   expect_decode_error_contains "checked requires problems"
     "requires array field problems" Account.jsont
@@ -593,6 +658,56 @@ let account_json_contracts () =
          ("source", source_json "process" []);
          ("credential_kind", Json.string "api_key");
          ("problems", json_array [ Json.string "Bad-Label" ]);
+       ]);
+  expect_decode_error_contains "checked rejects empty profile"
+    "at least one field is required" Account.jsont
+    (account_json
+       [
+         ("state", Json.string "checked");
+         ("source", source_json "process" []);
+         ("credential_kind", Json.string "api_key");
+         ("problems", json_array []);
+         ("profile", json_object []);
+       ]);
+  expect_decode_error_contains "checked profile must be object"
+    "field profile must be an object" Account.jsont
+    (account_json
+       [
+         ("state", Json.string "checked");
+         ("source", source_json "process" []);
+         ("credential_kind", Json.string "api_key");
+         ("problems", json_array []);
+         ("profile", Json.string "acct");
+       ]);
+  expect_decode_error_contains "checked org requires id"
+    "requires string field id" Account.jsont
+    (account_json
+       [
+         ("state", Json.string "checked");
+         ("source", source_json "process" []);
+         ("credential_kind", Json.string "api_key");
+         ("problems", json_array []);
+         ("org", json_object []);
+       ]);
+  expect_decode_error_contains "checked models must be array"
+    "field models must be an array" Account.jsont
+    (account_json
+       [
+         ("state", Json.string "checked");
+         ("source", source_json "process" []);
+         ("credential_kind", Json.string "api_key");
+         ("problems", json_array []);
+         ("models", Json.string "gpt-a");
+       ]);
+  expect_decode_error_contains "checked models must contain strings"
+    "field models must be an array of strings" Account.jsont
+    (account_json
+       [
+         ("state", Json.string "checked");
+         ("source", source_json "process" []);
+         ("credential_kind", Json.string "api_key");
+         ("problems", json_array []);
+         ("models", json_array [ Json.int 1 ]);
        ]);
   expect_decode_error_contains "source rejects old store label field"
     "unknown field label" Account.jsont
@@ -725,5 +840,6 @@ let () =
       test "profile org problem contracts" profile_org_problem_contracts;
       test "phase contracts" phase_contracts;
       test "account status contracts" account_status_contracts;
+      test "account model contracts" account_model_contracts;
       test "account JSON contracts" account_json_contracts;
     ]
