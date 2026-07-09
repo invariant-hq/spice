@@ -8,14 +8,23 @@ let invalid fn message = invalid_arg ("Spice_diagnostic." ^ fn ^ ": " ^ message)
 let check_non_empty fn what s =
   if String.length s = 0 then invalid fn (what ^ " is empty")
 
+let check_single_line fn what s =
+  if String.exists (function '\n' | '\r' -> true | _ -> false) s then
+    invalid fn (what ^ " must be a single line")
+
 (* Diagnostics *)
 
 type t = { message : string; context : string option; hints : string list }
 
 let make ?context ?(hints = []) message =
   check_non_empty "make" "message" message;
+  check_single_line "make" "message" message;
   Option.iter (check_non_empty "make" "context") context;
-  List.iter (check_non_empty "make" "hint") hints;
+  List.iter
+    (fun hint ->
+      check_non_empty "make" "hint" hint;
+      check_single_line "make" "hint" hint)
+    hints;
   { message; context; hints }
 
 (* Hints *)

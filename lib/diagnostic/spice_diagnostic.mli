@@ -16,21 +16,23 @@
 type t
 (** The type for diagnostics.
 
-    Invariant: [message] is non-empty and single-line, every hint is non-empty,
-    and [context] is non-empty when present. The hint list itself may be empty.
-*)
+    Invariant: [message] is non-empty and single-line, every hint is non-empty
+    and single-line, and [context] is non-empty when present. The hint list
+    itself may be empty. *)
 
 val make : ?context:string -> ?hints:string list -> string -> t
 (** [make ?context ?hints message] is a diagnostic with primary description
     [message]. [message] must be a single line: renderers may style it as a head
     line and the rest as secondary detail. Put multi-line prose in [context].
 
-    [context], when present, is secondary detail printed after the message.
-    [hints] defaults to [[]]; each hint is one actionable suggestion, rendered
-    as a ["Hint: …"] line by {!to_string}.
+    [context], when present, is secondary detail printed verbatim after the
+    message. It may contain multiple lines. [hints] defaults to [[]]; each hint
+    is one actionable suggestion, rendered as a ["Hint: …"] line by
+    {!to_string}.
 
-    Raises [Invalid_argument] if [message] is empty, if any hint is empty, or if
-    [context] is empty when present. *)
+    Raises [Invalid_argument] if [message] is empty or contains a newline, if
+    any hint is empty or contains a newline, or if [context] is empty when
+    present. *)
 
 (** {1:hints Hints}
 

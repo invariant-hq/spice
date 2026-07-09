@@ -9,10 +9,18 @@ module Diagnostic = Spice_diagnostic
 
 let make_invariants () =
   expect_invalid_arg "empty message raises" (fun () -> Diagnostic.make "");
+  expect_invalid_arg "message rejects LF" (fun () ->
+      Diagnostic.make "unknown\nkey");
+  expect_invalid_arg "message rejects CR" (fun () ->
+      Diagnostic.make "unknown\rkey");
   expect_invalid_arg "empty context raises" (fun () ->
       Diagnostic.make ~context:"" "unknown key");
   expect_invalid_arg "empty hint raises" (fun () ->
       Diagnostic.make ~hints:[ "first"; "" ] "unknown key");
+  expect_invalid_arg "hint rejects LF" (fun () ->
+      Diagnostic.make ~hints:[ "first\nsecond" ] "unknown key");
+  expect_invalid_arg "hint rejects CR" (fun () ->
+      Diagnostic.make ~hints:[ "first\rsecond" ] "unknown key");
   expect_invalid_arg "empty suggest candidate raises" (fun () ->
       Diagnostic.suggest [ "build"; "" ]);
   expect_invalid_arg "close empty did-you-mean candidate raises" (fun () ->
