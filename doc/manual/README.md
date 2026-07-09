@@ -5,6 +5,8 @@ internal notes, see the rest of [`doc/`](../).
 
 - [Interactive TUI](interactive.md) — starting and resuming, composer
   workflows, modes, decisions, and worktree review.
+- [Providers and accounts](providers.md) — authentication, credential
+  precedence, readiness, model selection, and compatible local servers.
 - [Configuration](configuration.md) — config files, precedence, workspace
   filtering, and the `spice config` commands.
 - [Security](security.md) — permissions, command sandboxing, workspace trust,

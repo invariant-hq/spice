@@ -8,6 +8,8 @@ overview when changing how the libraries compose.
 
 - [Interactive TUI](manual/interactive.md) — starting and resuming, composer
   workflows, modes, decisions, and worktree review.
+- [Providers and accounts](manual/providers.md) — authentication, credential
+  precedence, readiness, model selection, and compatible local servers.
 - [Configuration](manual/configuration.md) — config files, precedence,
   workspace-safe project config, and the `spice config` commands.
 - [Security](manual/security.md) — permissions, command sandboxing, workspace
