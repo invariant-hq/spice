@@ -3236,6 +3236,19 @@ let wheel_to_transcript t =
               Some (Transcript_wheeled (`Down, delta))
           | _ -> None)
 
+(* The terminal window title (OSC): the workspace root's leaf, [✳] idle and an
+   alternating braille tick while a turn streams — the tab names the workspace
+   and telegraphs work at a glance, as the old TUI's title did. The spinner
+   counter (the ~1s turn tick) drives the alternation. *)
+let terminal_title t =
+  let leaf =
+    Filename.basename (Spice_path.Abs.to_string t.snapshot.Snapshot.cwd)
+  in
+  match t.phase with
+  | Chat chat when Turn.in_flight chat.turn ->
+      (if chat.spinner mod 2 = 0 then "⠂ " else "⠐ ") ^ leaf
+  | Chat _ | Prelude -> "✳ " ^ leaf
+
 let view t =
   let children =
     match t.surface with

@@ -2290,6 +2290,19 @@ let run ~stdenv ~(startup : App.startup) () =
                               (apply_review_cr_op ~root ~base ~expected op)))))
         in
         let interpret commands = Mosaic.Cmd.batch (List.map command commands) in
+        (* The terminal window title is a pure projection of the model
+           ({!App.terminal_title}); each init/update diffs it against the last
+           emission so the OSC write happens only on change — idle↔working
+           flips and the working tick, not every keystroke. *)
+        let last_title = ref None in
+        let sync_title model commands =
+          let title = App.terminal_title model in
+          if !last_title = Some title then interpret commands
+          else begin
+            last_title := Some title;
+            Mosaic.Cmd.batch [ interpret commands; Mosaic.Cmd.set_title title ]
+          end
+        in
         let app =
           {
             Mosaic.init =
@@ -2303,11 +2316,11 @@ let run ~stdenv ~(startup : App.startup) () =
                   App.init ~startup ~snapshot
                     ~reduced_motion:(reduced_motion ())
                 in
-                (model, interpret commands));
+                (model, sync_title model commands));
             update =
               (fun msg model ->
                 let model, commands = App.update msg model in
-                (model, interpret commands));
+                (model, sync_title model commands));
             view = App.view;
             subscriptions = App.subscriptions;
           }

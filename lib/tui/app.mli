@@ -530,6 +530,12 @@ val view : t -> msg Mosaic.t
     composer hidden in the prelude, the draft preserved), bottom-anchored under
     the same region everywhere. *)
 
+val terminal_title : t -> string
+(** [terminal_title t] is the terminal window title for [t]: the workspace
+    root's leaf, marked [✳] idle and by the alternating tick while a turn
+    streams (the turn tick drives the alternation). The runtime emits it
+    whenever it changes. *)
+
 val subscriptions : t -> msg Mosaic.Sub.t
 (** [subscriptions t] are [t]'s event interests: keys (Ctrl+C, esc, ctrl+o),
     terminal resize, the 2s brief tick and the lockup frame timer while the
