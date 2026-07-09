@@ -566,10 +566,7 @@ let spinner_frame i =
   let f = Theme.spinner_frames in
   f.(i mod Array.length f)
 
-let rec take_last n = function
-  | [] -> []
-  | l when List.length l <= n -> l
-  | _ :: tl -> take_last n tl
+let take_last n l = List.drop (List.length l - n) l
 
 (* Display width in columns: one per UTF-8 scalar value (a continuation byte
    begins [0b10……]). *)
@@ -579,17 +576,69 @@ let display_width s =
   !n
 
 (* Greedy word wrap to [width] columns; never splits a word, so an over-long
-   word overflows its line. *)
+   word overflows its line. Linear in the text: the running line is a reversed
+   word list carried with its column count, so no per-word candidate string is
+   built and no width is rescanned — the tail wraps its buffers every frame,
+   so a quadratic wrap here is a frame-budget bug, not a style choice. *)
 let word_wrap ~width text =
-  let flush acc cur = if cur = "" then acc else cur :: acc in
-  let rec go acc cur = function
-    | [] -> List.rev (flush acc cur)
-    | word :: rest ->
-        let candidate = if cur = "" then word else cur ^ " " ^ word in
-        if display_width candidate <= width || cur = "" then go acc candidate rest
-        else go (cur :: acc) word rest
+  let line words = String.concat " " (List.rev words) in
+  let flush acc words =
+    match words with [] -> acc | words -> line words :: acc
   in
-  go [] "" (String.split_on_char ' ' text)
+  let rec go acc words cols = function
+    | [] -> List.rev (flush acc words)
+    | "" :: rest when words = [] -> go acc [] 0 rest
+    | word :: rest ->
+        let word_cols = display_width word in
+        if words = [] then go acc [ word ] word_cols rest
+        else if cols + 1 + word_cols <= width then
+          go acc (word :: words) (cols + 1 + word_cols) rest
+        else go (flush acc words) [ word ] word_cols rest
+  in
+  go [] [] 0 (String.split_on_char ' ' text)
+
+(* The last [n] wrapped rows of [buffer], wrapping only the physical-line
+   suffix that yields them. The collapsed ticker and the shell tail show a
+   constant-height window, so wrapping their whole buffer every frame would
+   cost the full accumulated stream per frame — quadratic over a long response
+   and the dominant term of the streamed-reasoning freeze. Whitespace-only
+   lines are dropped, as the callers' windows always did. *)
+let last_wrapped_rows ~width n buffer =
+  let rec go acc count stop =
+    if count >= n || stop <= 0 then acc
+    else
+      let start =
+        match String.rindex_from_opt buffer (stop - 1) '\n' with
+        | Some i -> i + 1
+        | None -> 0
+      in
+      let line = String.sub buffer start (stop - start) in
+      let rows =
+        if String.trim line = "" then [] else word_wrap ~width line
+      in
+      go (rows @ acc) (count + List.length rows) (start - 1)
+  in
+  take_last n (go [] 0 (String.length buffer))
+
+(* The expanded ticker's whole-buffer wrap, memoized on the buffer's physical
+   identity and the wrap width. Renders run at the frame rate between
+   reasoning deltas while the buffer value is untouched, so identity keys
+   freshness exactly: each delta rebuilds the buffer string, missing the cache;
+   every frame in between hits it. One slot suffices — at most one turn tail
+   renders per frame. *)
+let expanded_wrap_cache : (string * int * string list) ref = ref ("", 0, [])
+
+let expanded_wrapped_rows ~width buffer =
+  let key_buffer, key_width, rows = !expanded_wrap_cache in
+  if key_buffer == buffer && key_width = width then rows
+  else
+    let rows =
+      String.split_on_char '\n' buffer
+      |> List.concat_map (fun l ->
+             if String.trim l = "" then [] else word_wrap ~width l)
+    in
+    expanded_wrap_cache := (buffer, width, rows);
+    rows
 
 (* The reasoning ticker: a [∴ Thinking] header over a constant-height 3-line
    rolling window on the reasoning buffer, the oldest visible row faint as it
@@ -600,19 +649,14 @@ let word_wrap ~width text =
    stale head instead of the newest text. *)
 let ticker ~width ~expanded reasoning =
   let content = max 1 (width - 2) in
-  let lines =
-    String.split_on_char '\n' reasoning
-    |> List.concat_map (fun l ->
-           if String.trim l = "" then [] else word_wrap ~width:content l)
-  in
   (* ctrl+o pins the ticker open on the whole wrapped buffer (01-transcript.md
      §Reasoning); otherwise the constant-height 3-line rolling window, its
      oldest visible row faint as it exits. An expanded ticker has no exiting
      row, so every line reads at full thinking weight. *)
   let rows, exit_row =
-    if expanded then (lines, -1)
+    if expanded then (expanded_wrapped_rows ~width:content reasoning, -1)
     else
-      let window = take_last 3 lines in
+      let window = last_wrapped_rows ~width:content 3 reasoning in
       let pad = List.init (3 - List.length window) (fun _ -> "") in
       (pad @ window, 0)
   in
@@ -663,12 +707,7 @@ let assistant_tail ~width t =
    short buffers padded so the block never changes height as output arrives. *)
 let shell_running_tail ~width output =
   let content = max 1 (width - 6) in
-  let lines =
-    String.split_on_char '\n' output
-    |> List.concat_map (fun l ->
-           if String.trim l = "" then [] else word_wrap ~width:content l)
-  in
-  let window = take_last 3 lines in
+  let window = last_wrapped_rows ~width:content 3 output in
   let pad = List.init (3 - List.length window) (fun _ -> "") in
   let row l =
     box ~flex_direction:Flex_direction.Row

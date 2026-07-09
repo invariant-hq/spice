@@ -165,17 +165,6 @@ let result ?(disclosable = false) ~summary ~facts () =
 
 (* ── The shared truncation law (02-tools.md §Truncation) ──────────────────── *)
 
-let take_first n l =
-  let rec go n acc = function
-    | x :: tl when n > 0 -> go (n - 1) (x :: acc) tl
-    | _ -> List.rev acc
-  in
-  go n [] l
-
-let take_last n l =
-  let len = List.length l in
-  if len <= n then l else take_first n (List.filteri (fun i _ -> i >= len - n) l)
-
 let preview ~take ~cap lines =
   let total = List.length lines in
   if total <= cap then Preview { lines; overflow = 0 }
@@ -186,8 +175,8 @@ let preview ~take ~cap lines =
     let shown = if total = cap + 1 then cap + 1 else cap in
     let lines =
       match take with
-      | `First -> take_first shown lines
-      | `Last -> take_last shown lines
+      | `First -> List.take shown lines
+      | `Last -> List.drop (total - shown) lines
     in
     Preview { lines; overflow = total - shown }
 
