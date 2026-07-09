@@ -131,9 +131,11 @@ let restore t =
         }
 
 let delete t =
-  match require_no_active_turn t with
-  | Error _ as error -> error
-  | Ok () ->
+  if Metadata.is_deleted t.metadata then Ok t
+  else
+    match require_no_active_turn t with
+    | Error _ as error -> error
+    | Ok () ->
       Ok
         {
           t with

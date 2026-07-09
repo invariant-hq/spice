@@ -935,6 +935,29 @@ let archived_and_deleted_sessions_reject_appends () =
   expect_session_error "deleted restore" Session.Error.Deleted
     (Session.restore deleted)
 
+let delete_is_idempotent_for_active_tombstone () =
+  let id = Session.Id.of_string "active-tombstone" in
+  let metadata =
+    Session.Metadata.make ~status:Session.Metadata.Status.Deleted ~cwd
+      ~created_at:(time 1) ~updated_at:(time 1) ()
+  in
+  let active =
+    match
+      Session.make ~id ~metadata
+        ~events:[ Session.Event.turn_started (turn ()) ]
+    with
+    | Ok session -> session
+    | Error error ->
+        failf "session reconstruction failed: %a" Session.Error.pp error
+  in
+  match Session.delete active with
+  | Error error ->
+      failf "deleting an already-deleted tombstone failed: %a" Session.Error.pp
+        error
+  | Ok deleted ->
+      is_true ~msg:"session remains deleted"
+        (Session.Metadata.is_deleted (Session.metadata deleted))
+
 let archive_rejects_active_turn () =
   let turn = turn () in
   let session =
@@ -1305,6 +1328,8 @@ let () =
         finished_tool_claim_json_requires_output;
       test "archived and deleted sessions reject appends"
         archived_and_deleted_sessions_reject_appends;
+      test "delete is idempotent for active tombstones"
+        delete_is_idempotent_for_active_tombstone;
       test "archive rejects active turn" archive_rejects_active_turn;
       test "fork records parent lineage" fork_records_parent_lineage;
       test "fork rejects active turn" fork_rejects_active_turn;
