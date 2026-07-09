@@ -18,19 +18,19 @@ type t = {
 let hunk_evidence hunk =
   let buffer = Buffer.create 256 in
   Buffer.add_string buffer "hunk";
+  let add_changed marker line =
+    Buffer.add_char buffer '\x00';
+    Buffer.add_char buffer marker;
+    Buffer.add_char buffer
+      (if Spice_diff.Hunk.Line.newline line then 'n' else 'x');
+    Feature.add_frame buffer (Spice_diff.Hunk.Line.text line)
+  in
   List.iter
     (fun line ->
       match Spice_diff.Hunk.Line.kind line with
       | Spice_diff.Hunk.Line.Context -> ()
-      | Spice_diff.Hunk.Line.Added | Spice_diff.Hunk.Line.Removed ->
-          Buffer.add_char buffer '\x00';
-          Buffer.add_char buffer
-            (match Spice_diff.Hunk.Line.kind line with
-            | Spice_diff.Hunk.Line.Added -> '+'
-            | _ -> '-');
-          Buffer.add_char buffer
-            (if Spice_diff.Hunk.Line.newline line then 'n' else 'x');
-          Feature.add_frame buffer (Spice_diff.Hunk.Line.text line))
+      | Spice_diff.Hunk.Line.Added -> add_changed '+' line
+      | Spice_diff.Hunk.Line.Removed -> add_changed '-' line)
     (Spice_diff.Hunk.lines hunk);
   Spice_digest.Identity.of_contents (Buffer.contents buffer)
 
