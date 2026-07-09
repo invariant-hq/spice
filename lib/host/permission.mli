@@ -126,6 +126,21 @@ val rule_id : Spice_permission.Policy.Rule.t -> string
     schema. Rules whose matchers avoid machine-derived data (the relative path
     scopes) have machine-independent ids. *)
 
+(** {1:web_docs Read-only documentation allowlist} *)
+
+val web_docs_allowlist : string list
+(** [web_docs_allowlist] is the curated set of documentation hosts a [web_fetch]
+    may read without review. These are well-known read-only reference sites, so
+    fetching them is low risk and the constant re-prompting a fresh posture
+    would otherwise force adds friction without safety.
+
+    The allowlist is a {e permission} credit only:
+    {!Run.with_web_docs_allowlist} turns it into allow rules for the effective
+    policy, so a durable [deny] rule still overrides it and every other host
+    still prompts. It never widens the sandbox network policy — a shell command
+    reaching one of these hosts is a command access the sandbox still confines,
+    not a matched network access. *)
+
 (** {1:run Run permission posture} *)
 
 module Run : sig
@@ -189,6 +204,18 @@ module Run : sig
       read them as preset rows; since "always allow" only installs allow rules,
       they never decide a denial. Rules already present by content (equal
       {!rule_id}) are skipped, so re-installing the same rule is idempotent. *)
+
+  val with_web_docs_allowlist : 'src t -> 'src t
+  (** [with_web_docs_allowlist t] is [t] extended with an allow row per
+      {!web_docs_allowlist} host, appended after every existing row so a durable
+      [deny] of one of those hosts still decides first.
+
+      Run assembly applies it to every posture: reading documentation is
+      read-only regardless of the edit/command posture, so the credit does not
+      depend on the sandbox or the preset. The rows carry the preset's
+      provenance and match only network accesses, so they auto-allow an
+      in-process [web_fetch] to a listed host while leaving shell commands —
+      which the sandbox confines — untouched. *)
 
   val preset : 'src t -> Preset.t
   (** [preset t] is the selected permission preset. *)

@@ -154,6 +154,11 @@ let plan ~workspace ~sandbox ~permission () =
           ~sandbox_backed:(Sandbox.enforces_workspace_write sandbox)
           permission
       in
+      (* Reading curated documentation is read-only regardless of the sandbox or
+         preset, so the docs allowlist credits the posture on every run — a
+         web_fetch to a listed host does not prompt, while a shell command to it
+         stays a command the sandbox confines. *)
+      let permission = Permission.Run.with_web_docs_allowlist permission in
       Ok { Plan.workspace; sandbox; permission }
 
 (* The run *)

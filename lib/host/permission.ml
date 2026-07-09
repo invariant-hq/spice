@@ -111,6 +111,24 @@ let rule_id rule =
   Spice_digest.key ~length:12 ~domain:"spice.permission.rule.v1"
     [ Spice_permission.Policy.Rule.stable_text rule ]
 
+(* Curated read-only documentation hosts. Kept conservative and canonical: each
+   is a well-known reference site served over GET, so auto-allowing a web_fetch
+   to it credits the sandbox nothing it does not already enforce and spares the
+   user a prompt per lookup. Extending the list is a deliberate product edit,
+   documented in the manual. *)
+let web_docs_allowlist =
+  [
+    "docs.rs";
+    "doc.rust-lang.org";
+    "developer.mozilla.org";
+    "pkg.go.dev";
+    "docs.python.org";
+    "ocaml.org";
+    "v2.ocaml.org";
+    "man7.org";
+    "www.gnu.org";
+  ]
+
 module Run = struct
   type 'src row = {
     id : string;
@@ -175,6 +193,20 @@ module Run = struct
     in
     let existing = List.map (fun row -> row.id) t.rows in
     { t with rows = add existing [] rules @ t.rows }
+
+  (* The docs allowlist rows append after every existing row, so a durable
+     [deny] of a listed host decides first; they are network-host allows, which
+     no command access matches, so they never widen the sandbox. *)
+  let with_web_docs_allowlist t =
+    let rows =
+      List.map
+        (fun host ->
+          annotate t.preset_source
+            (Spice_permission.Policy.Rule.allow
+               (Spice_permission.Policy.Match.network_host ~host ())))
+        web_docs_allowlist
+    in
+    { t with rows = t.rows @ rows }
 
   let preset t = t.preset
   let rows t = t.rows
