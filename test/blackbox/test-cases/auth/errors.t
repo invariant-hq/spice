@@ -86,9 +86,16 @@ Unsupported auth store versions fail loudly.
   spice: $TESTCASE_ROOT/xdg-config/spice/auth.json: unsupported account store version: 2
   [1]
 
-No failing command created stored credentials.
+Non-file auth store paths fail loudly.
 
   $ rm "$XDG_CONFIG_HOME/spice/auth.json"
+  $ mkdir "$XDG_CONFIG_HOME/spice/auth.json"
+  $ spice auth status openai --json
+  spice: $TESTCASE_ROOT/xdg-config/spice/auth.json: is a directory
+  [1]
+  $ rmdir "$XDG_CONFIG_HOME/spice/auth.json"
+
+No failing command created stored credentials.
 
   $ spice auth status openai --json
   {"schema_version":3,"type":"auth_status","storage_backend":"file","auth_store_path":"$TESTCASE_ROOT/xdg-config/spice/auth.json","providers":[{"provider":"openai","route":null,"source":null,"source_name":null,"fingerprint":null,"env":["OPENAI_API_KEY"],"store_names":[],"phase":"missing","checked_at":null,"problems":[],"transient":false,"repair":"spice auth login openai","selected_model":{"selector":"openai/gpt-5.5","available":null}}]}

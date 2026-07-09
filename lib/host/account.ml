@@ -53,6 +53,7 @@ let provider_id host id =
 let store_error message = Error (Error.Store message)
 let fs_path stdenv path = Eio.Path.( / ) (Eio.Stdenv.fs stdenv) path
 let file_exists stdenv path = Eio.Path.is_file (fs_path stdenv path)
+let dir_exists stdenv path = Eio.Path.is_directory (fs_path stdenv path)
 
 let mkdir_p stdenv dir =
   if String.is_empty dir || String.equal dir "." then Ok ()
@@ -102,14 +103,15 @@ let with_store_lock ~stdenv config f =
 module Store_file = struct
   let load ~stdenv config =
     let path = Config.auth_store_path config |> Spice_path.Abs.to_string in
-    if not (file_exists stdenv path) then Ok Spice_account.Store.empty
-    else
+    if file_exists stdenv path then
       match Eio.Path.load (fs_path stdenv path) with
       | exception exn -> store_error (path ^ ": " ^ Printexc.to_string exn)
       | text -> (
           match Jsont_bytesrw.decode_string Spice_account.Store.jsont text with
           | Ok store -> Ok store
           | Error message -> store_error (path ^ ": " ^ message))
+    else if dir_exists stdenv path then store_error (path ^ ": is a directory")
+    else Ok Spice_account.Store.empty
 
   let save ~stdenv config store =
     let path = Config.auth_store_path config |> Spice_path.Abs.to_string in
