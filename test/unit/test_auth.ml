@@ -364,6 +364,43 @@ let standard_device_poll_authorizes_bearer_tokens env () =
       | Device.Pending _ | Device.Expired _ | Device.Rejected _ ->
           failf "expected authorized device poll")
 
+(* OpenAI's device flow may omit [expires_in] and [interval] and spell the
+   user code [usercode]; the config fallbacks and the alternate spelling must
+   carry the challenge. *)
+let openai_device_start_uses_config_fallbacks env () =
+  with_server env
+    (fun request body ->
+      equal string ~msg:"usercode path" "/api/accounts/deviceauth/usercode"
+        (Http.Request.resource request);
+      ignore (read_body body);
+      respond_string ~status:`OK
+        ~body:{|{"device_auth_id":"dev-9","usercode":"CODE-FALL"}|} ())
+    (fun ~sw ~base_uri ->
+      let config =
+        match
+          Auth.Openai_chatgpt.Config.make ~issuer:base_uri ~expires_in:42
+            ~poll_interval:7 ()
+        with
+        | Ok config -> config
+        | Error error -> failf "config: %a" Auth.Error.pp error
+      in
+      match
+        Device.start_openai_chatgpt
+          ~http:(Oauth2_eio.make_client env#net)
+          ~sw ~now:100L config
+      with
+      | Error error -> failf "expected device start, got %a" Auth.Error.pp error
+      | Ok device ->
+          let challenge = Device.challenge device in
+          equal string ~msg:"alternate user-code spelling accepted" "CODE-FALL"
+            challenge.Device.user_code;
+          is_true ~msg:"no pre-filled verification uri"
+            (Option.is_none challenge.Device.verification_uri_complete);
+          equal int ~msg:"expiry falls back to config" 42
+            (Device.expires_in device);
+          equal int ~msg:"poll interval falls back to config" 7
+            (Device.next_poll_delay_s ~now:100L device))
+
 let with_eio test () = Eio_main.run @@ fun env -> test env ()
 
 let () =
@@ -403,5 +440,7 @@ let () =
             (with_eio standard_device_poll_reports_provider_expiry);
           test ~timeout:3.0 "authorizes Bearer token responses"
             (with_eio standard_device_poll_authorizes_bearer_tokens);
+          test ~timeout:3.0 "OpenAI device start falls back to config"
+            (with_eio openai_device_start_uses_config_fallbacks);
         ];
     ]

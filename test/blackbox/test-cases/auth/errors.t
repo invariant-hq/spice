@@ -94,6 +94,17 @@ OAuth secret must not ride as a bearer token that nothing refreshes.
   [1]
   $ rm "$XDG_CONFIG_HOME/spice/auth.json"
 
+A malformed auth store fails loudly, naming the file, rather than reading as
+empty and quietly losing every stored credential.
+
+  $ printf '{"version":' > "$XDG_CONFIG_HOME/spice/auth.json"
+  $ spice auth status openai --json
+  spice: $TESTCASE_ROOT/xdg-config/spice/auth.json: Expected JSON value but found end of text
+  File "-", line 1, characters 11-12:
+  File "-": in member version of
+  File "-", line 1, characters 0-12: object
+  [1]
+
 Unsupported auth store versions fail loudly.
 
   $ mkdir -p "$XDG_CONFIG_HOME/spice"
