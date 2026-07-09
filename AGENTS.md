@@ -27,10 +27,9 @@ spice is the ocaml coding-agent.
 - follow the repository's conventional subject style:
   `<type>(<scope>): <Imperative subject>` (omit the scope only when the change
   genuinely spans the repository).
-- give every non-trivial commit a self-contained body, normally two to four
-  paragraphs: the prior behavior and why it mattered; the new behavior and
-  where the invariant or ownership now lives; then the evidence and any honest
-  limitation.
+- give every non-trivial commit a self-contained body, the prior behavior and
+  why it mattered; the new behavior and where the invariant or ownership now
+  lives; then the evidence and any honest limitation.
 - lead with causality, not a change inventory or test count. Use bullets only
   for independent semantic changes, never as a file list. For test-only
   commits, name the observable contract and justify any harness-only seam or
