@@ -101,6 +101,17 @@ let openai_models =
              ]
            ())
       ();
+    Model.make (llm "gpt-5.5-pro") ~display_name:"GPT-5.5 Pro"
+      ~family:"gpt-pro" ~released_on:(date "2026-04-23")
+      ~context_window:1_050_000 ~max_output_tokens:128_000
+      ~input_modalities:text_image_pdf ~capabilities:gpt_coding_capabilities
+      ~default_reasoning:Options.Reasoning_effort.Medium
+      ~supported_reasoning:gpt5_efforts
+      ~pricing:
+        (pricing ~input:30. ~output:180.
+           ~tiers:[ tier ~context_over:272_000 ~input:60. ~output:270. () ]
+           ())
+      ();
     Model.make (llm "gpt-5.4") ~display_name:"GPT-5.4" ~family:"gpt"
       ~released_on:(date "2026-03-05") ~context_window:1_050_000
       ~max_output_tokens:128_000 ~input_modalities:text_image_pdf
@@ -114,6 +125,17 @@ let openai_models =
                tier ~context_over:272_000 ~input:5. ~output:22.5 ~cache_read:0.5
                  ();
              ]
+           ())
+      ();
+    Model.make (llm "gpt-5.4-pro") ~display_name:"GPT-5.4 Pro"
+      ~family:"gpt-pro" ~released_on:(date "2026-03-05")
+      ~context_window:1_050_000 ~max_output_tokens:128_000
+      ~input_modalities:text_image ~capabilities:gpt_coding_capabilities
+      ~default_reasoning:Options.Reasoning_effort.Medium
+      ~supported_reasoning:gpt5_efforts
+      ~pricing:
+        (pricing ~input:30. ~output:180.
+           ~tiers:[ tier ~context_over:272_000 ~input:60. ~output:270. () ]
            ())
       ();
     Model.make (llm "gpt-5.4-mini") ~display_name:"GPT-5.4 mini"
@@ -162,6 +184,22 @@ let openai_models =
 let anthropic_models =
   let llm = Spice_llm_anthropic.model in
   [
+    Model.make (llm "claude-sonnet-5") ~display_name:"Claude Sonnet 5"
+      ~family:"claude-sonnet" ~released_on:(date "2026-06-29")
+      ~context_window:1_000_000 ~max_output_tokens:128_000
+      ~input_modalities:text_image_pdf ~capabilities:tools_reasoning
+      ~supported_reasoning:claude_46_efforts
+      ~pricing:
+        (pricing ~input:2. ~output:10. ~cache_read:0.2 ~cache_write:2.5 ())
+      ();
+    Model.make (llm "claude-fable-5") ~display_name:"Claude Fable 5"
+      ~family:"claude-fable" ~released_on:(date "2026-06-07")
+      ~context_window:1_000_000 ~max_output_tokens:128_000
+      ~input_modalities:text_image_pdf ~capabilities:tools_reasoning
+      ~supported_reasoning:claude_46_efforts
+      ~pricing:
+        (pricing ~input:10. ~output:50. ~cache_read:1. ~cache_write:12.5 ())
+      ();
     Model.make (llm "claude-opus-4-8") ~display_name:"Claude Opus 4.8"
       ~family:"claude-opus" ~released_on:(date "2026-05-28")
       ~context_window:1_000_000 ~max_output_tokens:128_000
@@ -207,6 +245,35 @@ let anthropic_models =
 let google_models =
   let llm = Spice_llm_google.model in
   [
+    Model.make (llm "gemini-3.5-flash") ~display_name:"Gemini 3.5 Flash"
+      ~family:"gemini-flash" ~released_on:(date "2026-05-19")
+      ~context_window:1_048_576 ~max_output_tokens:65_536
+      ~input_modalities:text_image_audio_video_pdf
+      ~capabilities:tools_reasoning ~supported_reasoning:gemini_3_flash_efforts
+      ~pricing:(pricing ~input:1.5 ~output:9. ~cache_read:0.15 ())
+      ();
+    Model.make (llm "gemini-3.1-pro-preview")
+      ~display_name:"Gemini 3.1 Pro Preview" ~family:"gemini-pro"
+      ~released_on:(date "2026-02-19") ~context_window:1_048_576
+      ~max_output_tokens:65_536 ~input_modalities:text_image_audio_video_pdf
+      ~capabilities:tools_reasoning ~supported_reasoning:gemini_3_pro_efforts
+      ~status:Model.Preview
+      ~pricing:
+        (pricing ~input:2. ~output:12. ~cache_read:0.2
+           ~tiers:
+             [
+               tier ~context_over:200_000 ~input:4. ~output:18. ~cache_read:0.4
+                 ();
+             ]
+           ())
+      ();
+    Model.make (llm "gemini-3.1-flash-lite")
+      ~display_name:"Gemini 3.1 Flash Lite" ~family:"gemini-flash-lite"
+      ~released_on:(date "2026-05-07") ~context_window:1_048_576
+      ~max_output_tokens:65_536 ~input_modalities:text_image_audio_video_pdf
+      ~capabilities:tools_reasoning ~supported_reasoning:gemini_3_flash_efforts
+      ~pricing:(pricing ~input:0.25 ~output:1.5 ~cache_read:0.025 ())
+      ();
     Model.make
       (llm "gemini-3-pro-preview")
       ~display_name:"Gemini 3 Pro Preview" ~family:"gemini-pro"
@@ -359,7 +426,12 @@ let anthropic_auth =
 
 let google_auth =
   Auth.make
-    ~env:[ Env.api_key "GOOGLE_GENERATIVE_AI_API_KEY" ]
+    ~env:
+      [
+        Env.api_key "GOOGLE_API_KEY";
+        Env.api_key "GOOGLE_GENERATIVE_AI_API_KEY";
+        Env.api_key "GEMINI_API_KEY";
+      ]
     ~login:[ Auth.Login.api_key () ]
     ()
 
@@ -370,12 +442,12 @@ let openai =
 
 let anthropic =
   Provider.make Spice_llm_anthropic.provider ~display_name:"Anthropic"
-    ~default_model:(Spice_llm_anthropic.model "claude-sonnet-4-6")
+    ~default_model:(Spice_llm_anthropic.model "claude-sonnet-5")
     ~auth:anthropic_auth anthropic_models
 
 let google =
   Provider.make Spice_llm_google.provider ~display_name:"Google"
-    ~default_model:(Spice_llm_google.model "gemini-3-flash-preview")
+    ~default_model:(Spice_llm_google.model "gemini-3.5-flash")
     ~auth:google_auth google_models
 
 (* Local-weights providers interpret undeclared [.gguf] ids as explicit

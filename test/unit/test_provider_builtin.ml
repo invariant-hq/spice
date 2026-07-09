@@ -88,7 +88,7 @@ let openai_contracts () =
   | None ->
       failf "expected OpenAI ChatGPT device-code login"
   end;
-  equal int ~msg:"OpenAI catalog is curated" 8
+  equal int ~msg:"OpenAI catalog is curated" 10
     (Builtin.openai |> Provider.models |> List.length);
   equal (option string) ~msg:"OpenAI default model" (Some "gpt-5.5")
     (Builtin.openai |> Provider.default_model |> Option.map model_id);
@@ -106,6 +106,11 @@ let openai_contracts () =
     (capability_strings gpt_55);
   is_true ~msg:"gpt-5.5 is an apply-patch coding model"
     (Model.has_capability (Capability.extension "apply-patch") gpt_55);
+  let gpt_55_pro =
+    lookup Builtin.openai (Spice_llm_openai.model "gpt-5.5-pro")
+  in
+  equal (option string) ~msg:"GPT-5.5 Pro family" (Some "gpt-pro")
+    (Model.family gpt_55_pro);
   let image = lookup Builtin.openai (Spice_llm_openai.model "gpt-image-1.5") in
   is_true ~msg:"gpt-image is not an apply-patch coding model"
     (not (Model.has_capability (Capability.extension "apply-patch") image));
@@ -138,11 +143,18 @@ let anthropic_contracts () =
     (Builtin.anthropic |> provider_auth |> Auth.env |> List.map Env.name);
   equal (list string) ~msg:"Anthropic login methods" [ "api-key" ]
     (Builtin.anthropic |> provider_auth |> Auth.logins |> List.map Login.id);
-  equal int ~msg:"Anthropic catalog is curated" 5
+  equal int ~msg:"Anthropic catalog is curated" 7
     (Builtin.anthropic |> Provider.models |> List.length);
   equal (option string) ~msg:"Anthropic default model"
-    (Some "claude-sonnet-4-6")
+    (Some "claude-sonnet-5")
     (Builtin.anthropic |> Provider.default_model |> Option.map model_id);
+  let sonnet_5 =
+    lookup Builtin.anthropic (Spice_llm_anthropic.model "claude-sonnet-5")
+  in
+  equal (option string) ~msg:"sonnet 5 display name" (Some "Claude Sonnet 5")
+    (Model.display_name sonnet_5);
+  equal (option int) ~msg:"sonnet 5 output limit" (Some 128_000)
+    (Model.max_output_tokens sonnet_5);
   let opus_48 =
     lookup Builtin.anthropic (Spice_llm_anthropic.model "claude-opus-4-8")
   in
@@ -179,19 +191,19 @@ let anthropic_contracts () =
 let google_contracts () =
   equal string ~msg:"provider id" "google" (provider_id Builtin.google);
   equal (list string) ~msg:"Google env"
-    [ "GOOGLE_GENERATIVE_AI_API_KEY" ]
+    [ "GOOGLE_API_KEY"; "GOOGLE_GENERATIVE_AI_API_KEY"; "GEMINI_API_KEY" ]
     (Builtin.google |> provider_auth |> Auth.env |> List.map Env.name);
   equal (list string) ~msg:"Google login methods" [ "api-key" ]
     (Builtin.google |> provider_auth |> Auth.logins |> List.map Login.id);
-  equal int ~msg:"Google catalog is curated" 4
+  equal int ~msg:"Google catalog is curated" 7
     (Builtin.google |> Provider.models |> List.length);
   equal (option string) ~msg:"Google default model"
-    (Some "gemini-3-flash-preview")
+    (Some "gemini-3.5-flash")
     (Builtin.google |> Provider.default_model |> Option.map model_id);
   let flash =
-    lookup Builtin.google (Spice_llm_google.model "gemini-3-flash-preview")
+    lookup Builtin.google (Spice_llm_google.model "gemini-3.5-flash")
   in
-  equal (option string) ~msg:"display name" (Some "Gemini 3 Flash Preview")
+  equal (option string) ~msg:"display name" (Some "Gemini 3.5 Flash")
     (Model.display_name flash);
   equal (option int) ~msg:"context window" (Some 1_048_576)
     (Model.context_window flash);
@@ -201,11 +213,21 @@ let google_contracts () =
   equal (list string) ~msg:"capabilities" [ "reasoning"; "tools" ]
     (capability_strings flash);
   begin match Model.status flash with
+  | Model.Stable -> ()
+  | Model.Preview | Model.Deprecated | Model.Unavailable _ ->
+      failf "expected Gemini 3.5 Flash to be stable"
+  end;
+  is_true ~msg:"Gemini 3.5 Flash is selectable" (Model.selectable flash);
+  let flash_preview =
+    lookup Builtin.google (Spice_llm_google.model "gemini-3-flash-preview")
+  in
+  begin match Model.status flash_preview with
   | Model.Preview -> ()
   | Model.Stable | Model.Deprecated | Model.Unavailable _ ->
       failf "expected Gemini 3 Flash Preview to be preview"
   end;
-  is_true ~msg:"Gemini 3 Flash Preview is selectable" (Model.selectable flash);
+  is_true ~msg:"Gemini 3 Flash Preview is selectable"
+    (Model.selectable flash_preview);
   let pro =
     lookup Builtin.google (Spice_llm_google.model "gemini-3-pro-preview")
   in

@@ -51,7 +51,7 @@ val anthropic : Spice_provider.t
 
     Its provider id is [anthropic]. Model identities are Anthropic request
     identities from {!Spice_llm_anthropic}, and the declared default model is
-    [claude-sonnet-4-6]. Auth declares [ANTHROPIC_API_KEY] and an API-key login
+    [claude-sonnet-5]. Auth declares [ANTHROPIC_API_KEY] and an API-key login
     method. *)
 
 val google : Spice_provider.t
@@ -59,8 +59,9 @@ val google : Spice_provider.t
 
     Its provider id is [google]. Model identities are Google request identities
     from {!Spice_llm_google}, and the declared default model is
-    [gemini-3-flash-preview]. Auth declares [GOOGLE_GENERATIVE_AI_API_KEY] and
-    an API-key login method. *)
+    [gemini-3.5-flash]. Auth declares [GOOGLE_API_KEY],
+    [GOOGLE_GENERATIVE_AI_API_KEY], [GEMINI_API_KEY], and an API-key login
+    method. *)
 
 val deepseek : Spice_provider.t
 (** [deepseek] is the built-in local DeepSeek provider declaration.
