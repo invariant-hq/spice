@@ -157,6 +157,10 @@ slept retries), and the dune health poll (forked, in-flight-guarded).
 
 ## The test-suite cost model
 
+The determinism contract behind this harness — how virtual time stays under the
+test's control, and the invariants that keep the suite from hanging or flaking —
+is `tui-testing.md`. This section is only its cost model.
+
 A `Tui.run` boot in `test/tui-next` costs ~60 ms wall: ~2 ms host boot,
 ~10 ms to the first frame, the rest launch-background settle and teardown. A
 full turn against the in-process provider is ~215 ms with workspace tooling
