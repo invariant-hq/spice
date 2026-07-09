@@ -219,13 +219,13 @@ let stored_credential sources ~provider ?name () =
 let credential t ?name provider_id =
   let* provider_decl = provider t.host provider_id in
   let sources = t.sources in
-  let* env = env_credentials sources provider_decl in
-  let store =
-    match stored_credential sources ~provider:provider_id ?name () with
-    | None -> []
-    | Some credential -> [ credential ]
-  in
-  Ok (Spice_account.resolve (sources.Sources.process @ env @ store) provider_id)
+  match Spice_account.resolve sources.Sources.process provider_id with
+  | Some credential -> Ok (Some credential)
+  | None -> (
+      let* env = env_credentials sources provider_decl in
+      match Spice_account.resolve env provider_id with
+      | Some credential -> Ok (Some credential)
+      | None -> Ok (stored_credential sources ~provider:provider_id ?name ()))
 
 let status t ?name provider =
   match credential t ?name provider with

@@ -245,6 +245,18 @@
  (libraries windtrap test_support jsont spice_account spice_llm))
 
 (test
+ (name test_host_account)
+ (modules test_host_account)
+ (libraries
+  windtrap
+  test_support
+  spice_account
+  spice_host
+  spice_llm
+  spice_provider
+  eio_main))
+
+(test
  (name test_provider)
  (modules test_provider)
  (libraries windtrap test_support spice_account spice_llm spice_provider uri))
