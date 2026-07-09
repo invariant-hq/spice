@@ -377,6 +377,108 @@ let command_accesses ~cwd command =
         segments
   | { confidence = `Fallback; _ } -> [ Permission.Access.shell ?cwd command ]
 
+(* A command is destructive when it can irreversibly delete or overwrite data
+   the model never named, or escalate out of the confinement. The workspace
+   sandbox bounds where such a command writes but not whether the loss is
+   recoverable, so a destructive command stays reviewable even when the sandbox
+   otherwise backs commands (see
+   {!Spice_host.Permission.Preset.sandbox_backed_rules}). The scan is
+   deliberately lenient: it splits on the operators that sequence separate
+   programs, then inspects each program and its flags after stripping quotes,
+   leading environment assignments, and argument-forwarding wrappers, so it
+   over-flags rather than miss a destructive form hidden by a redirect or
+   substitution that {!parse_shell} would abandon. *)
+let destructive_access_name = "shell.destructive"
+
+let unquote token =
+  let len = String.length token in
+  if len >= 2 then
+    match (token.[0], token.[len - 1]) with
+    | '\'', '\'' | '"', '"' -> String.sub token 1 (len - 2)
+    | _ -> token
+  else token
+
+let scan_words sub =
+  String.map (function '\t' | '\n' | '\r' -> ' ' | c -> c) sub
+  |> String.split_on_char ' '
+  |> List.filter_map (fun raw ->
+         match unquote raw with "" -> None | word -> Some word)
+
+let scan_subcommands command =
+  let buf = Buffer.create (String.length command) in
+  let acc = ref [] in
+  let flush () =
+    acc := Buffer.contents buf :: !acc;
+    Buffer.clear buf
+  in
+  String.iter
+    (function ';' | '|' | '&' | '\n' -> flush () | c -> Buffer.add_char buf c)
+    command;
+  flush ();
+  List.rev !acc
+
+let is_env_assignment token =
+  match String.index_opt token '=' with
+  | None | Some 0 -> false
+  | Some equals ->
+      let name_char c =
+        c = '_'
+        || (c >= 'A' && c <= 'Z')
+        || (c >= 'a' && c <= 'z')
+        || (c >= '0' && c <= '9')
+      in
+      let ok = ref true in
+      String.iteri (fun i c -> if i < equals && not (name_char c) then ok := false) token;
+      !ok
+
+let pass_through_wrapper = function
+  | "env" | "xargs" | "nohup" | "stdbuf" -> true
+  | _ -> false
+
+let rec program_and_args = function
+  | token :: rest when is_env_assignment token -> program_and_args rest
+  | token :: rest when pass_through_wrapper (Filename.basename token) ->
+      program_and_args rest
+  | token :: rest -> Some (Filename.basename token, rest)
+  | [] -> None
+
+let short_flag has_char token =
+  String.length token >= 2
+  && token.[0] = '-'
+  && token.[1] <> '-'
+  && String.exists (Char.equal has_char) token
+
+let has_flag ~long ~short args =
+  List.exists (fun t -> List.mem t long || short_flag short t) args
+
+let git_is_destructive args =
+  match List.find_opt (fun t -> not (String.length t > 0 && t.[0] = '-')) args with
+  | Some "push" ->
+      has_flag ~long:[ "--force"; "--force-with-lease" ] ~short:'f' args
+  | Some "reset" -> List.mem "--hard" args
+  | Some "clean" -> has_flag ~long:[ "--force" ] ~short:'f' args
+  | _ -> false
+
+let program_is_destructive program args =
+  match program with
+  | "sudo" | "doas" -> true
+  | "dd" | "shred" | "mkfs" -> true
+  | "rm" ->
+      has_flag ~long:[ "--force"; "--recursive" ] ~short:'f' args
+      || List.exists (short_flag 'r') args
+      || List.exists (short_flag 'R') args
+  | "git" -> git_is_destructive args
+  | _ ->
+      String.length program > 5 && String.equal (String.sub program 0 5) "mkfs."
+
+let destructive_command command =
+  List.exists
+    (fun sub ->
+      match program_and_args (scan_words sub) with
+      | Some (program, args) -> program_is_destructive program args
+      | None -> false)
+    (scan_subcommands command)
+
 let escalation_access_name = "shell.escalate"
 
 (* The escalation fact is emitted only when escalation means something: the
@@ -394,6 +496,19 @@ let escalation_access ~config input =
         ]
     | Spice_sandbox.Denied _ | Spice_sandbox.Ignored -> []
 
+(* Emitted alongside the command accesses so a destructive command is reviewed
+   even under a sandbox that backs ordinary commands: the fact is a [`Custom]
+   access no command allow matches, so it falls through to review exactly like
+   the escalation fact. It carries no sandbox condition — a destructive command
+   is worth a look whether or not the sandbox confines it. *)
+let destructive_access input =
+  if destructive_command (Input.command input) then
+    [
+      Permission.Access.custom ~kind:`Custom ~subject:(Input.command input)
+        destructive_access_name;
+    ]
+  else []
+
 let permissions ~workspace ~config input =
   let resolved =
     match Input.workdir input with
@@ -406,7 +521,8 @@ let permissions ~workspace ~config input =
       [
         Permission.Request.of_accesses ~source:name
           (command_accesses ~cwd (Input.command input)
-          @ escalation_access ~config input);
+          @ escalation_access ~config input
+          @ destructive_access input);
       ]
 
 module Output = struct

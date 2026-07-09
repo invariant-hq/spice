@@ -33,6 +33,24 @@ Both effects landed and no permission was requested.
   $ spice session export backed-run | grep -o '"type":"permission_requested"' || echo no-permission-requested
   no-permission-requested
 
+A destructive command stays reviewable even though the sandbox would confine
+it: the sandbox bounds where it writes, not whether the deletion is
+recoverable. The run parks on review, the review names the destructive fact,
+and the file survives.
+
+  $ echo keep > victim.txt
+  $ cat > destructive.jsonl <<'JSONL'
+  > {"expect":{"body_contains":["destructive prompt","\"name\":\"shell\""]},"response":{"id":"resp-destructive-1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-d1","call_id":"call-d1","name":"shell","arguments":"{\"command\":\"rm -rf victim.txt\"}"}]}}
+  > JSONL
+  $ start_fake_openai destructive.jsonl destructive-capture destructive-port
+  $ spice run --cwd "$PWD" --id destructive-run "destructive prompt" >destructive.out 2>&1; echo exit:$?
+  exit:3
+  $ grep -o 'shell.destructive' destructive.out
+  shell.destructive
+  $ wait_fake_server
+  $ cat victim.txt
+  keep
+
 Without an enforcing sandbox the credit does not apply: the same default preset
 still reviews a command, because nothing bounds its blast radius. The run parks
 on the review and exits blocked before the command executes.
