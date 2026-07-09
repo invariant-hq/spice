@@ -9,6 +9,7 @@ module Ocaml = Spice_ocaml
 
 let name = "ocaml_dune_diagnostics"
 let description = Spice_prompts.Tools.ocaml_dune_diagnostics
+let request_timeout_s = 1.0
 
 let json_obj fields =
   Json.object'
@@ -159,21 +160,34 @@ module Output = struct
   let of_tool_output output = Tool.Output.value type_id output
 end
 
-let run ~dune ctx () =
+let output ~endpoint diagnostics =
+  Output.make ~endpoint ~diagnostics:(Dune.Rpc.Diagnostic.Store.to_list diagnostics)
+
+let run ~clock ~dune ctx () =
   if Tool.Context.cancelled ctx then
     Tool.Result.interrupted ~reason:"tool call cancelled" ~cancelled:true ()
-  else
-    match Dune.Rpc.Instance.request_visible_diagnostics dune with
-    | Ok (endpoint, diagnostics) ->
-        Tool.Result.completed
-          ~output:
-            (Output.make ~endpoint
-               ~diagnostics:(Dune.Rpc.Diagnostic.Store.to_list diagnostics))
-          ()
+  else (
+    match Dune.Rpc.Instance.refresh dune with
     | Error error -> Tool.Result.failed `Unavailable (Dune.Error.message error)
+    | Ok None ->
+        Tool.Result.failed `Unavailable
+          "no running Dune RPC instance was found for this workspace"
+    | Ok (Some endpoint) -> (
+        match
+          Eio.Time.with_timeout_exn clock request_timeout_s (fun () ->
+              Dune.Rpc.Instance.request_visible_diagnostics dune)
+        with
+        | Ok (endpoint, diagnostics) ->
+            Tool.Result.completed ~output:(output ~endpoint diagnostics) ()
+        | exception Eio.Time.Timeout ->
+            Tool.Result.completed
+              ~output:(output ~endpoint (Dune.Rpc.Instance.diagnostics dune))
+              ()
+        | Error error ->
+            Tool.Result.failed `Unavailable (Dune.Error.message error)))
 
-let tool ~dune () =
+let tool ~clock ~dune () =
   let workspace = Dune.Rpc.Instance.workspace dune in
   Tool.make ~name ~description ~input:Tool.Input.empty ~output:Output.encode
     ~permissions:(fun () -> permissions workspace)
-    ~run:(run ~dune) ()
+    ~run:(run ~clock ~dune) ()

@@ -51,19 +51,26 @@ val permissions : Spice_workspace.t -> Spice_permission.Request.t list
     {!Spice_ocaml_dune.Rpc.Instance.t}. *)
 
 val run :
+  clock:_ Eio.Time.clock ->
   dune:Spice_ocaml_dune.Rpc.Instance.t ->
   Spice_tool.Context.t ->
   unit ->
   Output.t Spice_tool.Result.t
-(** [run ~dune ctx ()] requests the current diagnostic set through [dune].
+(** [run ~clock ~dune ctx ()] requests the current diagnostic set through
+    [dune].
 
     The result is completed with {!Output.t} when registry polling finds a
-    matching Dune RPC endpoint and the diagnostics request succeeds. The request
-    updates [dune]'s latest-known diagnostic store. The result is interrupted if
-    [ctx] is cancelled before work starts, and failed as [`Unavailable] if no
+    matching Dune RPC endpoint. The current-diagnostics request is bounded; if
+    Dune does not answer before the timeout, the result completes with [dune]'s
+    latest-known diagnostic store for that endpoint. The result is interrupted
+    if [ctx] is cancelled before work starts, and failed as [`Unavailable] if no
     endpoint is visible, registry polling fails, connection fails, or the RPC
-    request fails. *)
+    request fails before the timeout. *)
 
-val tool : dune:Spice_ocaml_dune.Rpc.Instance.t -> unit -> Spice_tool.t
-(** [tool ~dune ()] is the erased model-facing diagnostics tool backed by
-    [dune]. *)
+val tool :
+  clock:_ Eio.Time.clock ->
+  dune:Spice_ocaml_dune.Rpc.Instance.t ->
+  unit ->
+  Spice_tool.t
+(** [tool ~clock ~dune ()] is the erased model-facing diagnostics tool backed
+    by [dune]. *)

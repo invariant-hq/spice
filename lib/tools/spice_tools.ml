@@ -288,7 +288,7 @@ let ocaml ?(mutating = true) ?project_source ?merlin_program ?watch ~fs
       [
         Ocaml_dune_describe.tool ~process_mgr ~clock ~cwd ~workspace
           ?project_source ();
-        Ocaml_dune_diagnostics.tool ~dune ();
+        Ocaml_dune_diagnostics.tool ~clock ~dune ();
         Ocaml_docs.tool ?program:merlin_program ?project_source ~process_mgr
           ~clock ~fs ~cwd ~workspace ();
         Ocaml_find_definitions.tool ?program:merlin_program ~fs ~workspace ();
