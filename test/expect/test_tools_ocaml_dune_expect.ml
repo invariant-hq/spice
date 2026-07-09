@@ -452,9 +452,10 @@ let%expect_test
     ok build_context=shape freshness=snapshot captured_at=1000 drifted=false endpoint=dune-rpc:1 |}]
 
 let%expect_test "project_source capture failure leaves no snapshot" =
+  let status = ref Project_source.No_watch in
   let source =
     make_source
-      ~status:(fun () -> Project_source.No_watch)
+      ~status:(fun () -> !status)
       ~describe:(fun ~cancelled:_ -> Error genuine_error)
       ()
   in
@@ -463,13 +464,8 @@ let%expect_test "project_source capture failure leaves no snapshot" =
   | Error error ->
       Printf.printf "capture: error %s\n" (Dune.Error.message error));
   (* A later Watch_endpoint with no snapshot must block. *)
-  Project_source.get
-    (make_source
-       ~status:(fun () -> Project_source.Watch_endpoint "dune-rpc:2")
-       ~describe:(fun ~cancelled:_ -> Error genuine_error)
-       ())
-    ()
-  |> print_get;
+  status := Project_source.Watch_endpoint "dune-rpc:2";
+  Project_source.get source () |> print_get;
   [%expect
     {|
     capture: error command dune describe workspace in . exited 1: Error: No dune-project file found in this directory.
