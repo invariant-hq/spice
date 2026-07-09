@@ -215,9 +215,9 @@ let bubblewrap_wrap policy = function
 
 let bubblewrap_policy =
   Confinement.read_only
-  |> Confinement.writable [ abs "/work"; abs "/private/tmp" ]
+  |> Confinement.writable [ abs "/usr"; abs "/tmp" ]
   |> Confinement.protect_meta [ ".git"; ".spice" ]
-  |> Confinement.protect [ abs "/work/.spice/store" ]
+  |> Confinement.protect [ abs "/usr/.spice/store" ]
 
 let has_sequence sequence values =
   let rec starts_with sequence values =
@@ -262,32 +262,42 @@ let bubblewrap_read_only_wrap_shape () =
 let bubblewrap_workspace_write_wrap_shape () =
   let argv = bubblewrap_wrap bubblewrap_policy [ "true" ] in
   is_true ~msg:"workspace root is writable"
-    (has_sequence [ "--bind"; "/work"; "/work" ] argv);
+    (has_sequence [ "--bind"; "/usr"; "/usr" ] argv);
   is_true ~msg:"temp root is writable"
-    (has_sequence [ "--bind"; "/private/tmp"; "/private/tmp" ] argv);
+    (has_sequence [ "--bind"; "/tmp"; "/tmp" ] argv);
   is_true ~msg:"protected metadata is restored read-only"
-    (has_sequence [ "--ro-bind-try"; "/work/.git"; "/work/.git" ] argv);
+    (has_sequence [ "--ro-bind-try"; "/usr/.git"; "/usr/.git" ] argv);
   is_true ~msg:"protected store path is restored read-only"
-    (has_sequence
-       [ "--ro-bind-try"; "/work/.spice/store"; "/work/.spice/store" ]
+    (has_sequence [ "--ro-bind-try"; "/usr/.spice/store"; "/usr/.spice/store" ]
        argv)
+
+let bubblewrap_skips_missing_writable_roots () =
+  let missing = Filename.temp_file "spice-sandbox-missing-" "-root" in
+  Sys.remove missing;
+  let policy =
+    Confinement.read_only
+    |> Confinement.writable [ abs "/tmp"; abs missing ]
+  in
+  let argv = bubblewrap_wrap policy [ "true" ] in
+  is_true ~msg:"existing root is bound"
+    (has_sequence [ "--bind"; "/tmp"; "/tmp" ] argv);
+  is_false ~msg:"missing root is not passed to bubblewrap"
+    (has_sequence [ "--bind"; missing; missing ] argv)
 
 let bubblewrap_nested_roots_share_carveouts () =
   let policy =
     Confinement.read_only
-    |> Confinement.writable [ abs "/private/tmp"; abs "/private/tmp/ws" ]
+    |> Confinement.writable [ abs "/tmp"; abs "/tmp/ws" ]
     |> Confinement.protect_meta [ ".git" ]
   in
   let argv = bubblewrap_wrap policy [ "true" ] in
   is_true ~msg:"enclosing root carves out nested metadata"
-    (has_sequence
-       [ "--ro-bind-try"; "/private/tmp/ws/.git"; "/private/tmp/ws/.git" ]
-       argv)
+    (has_sequence [ "--ro-bind-try"; "/tmp/ws/.git"; "/tmp/ws/.git" ] argv)
 
 let bubblewrap_ignores_protected_paths_outside_writable_roots () =
   let policy =
     Confinement.read_only
-    |> Confinement.writable [ abs "/work" ]
+    |> Confinement.writable [ abs "/tmp" ]
     |> Confinement.protect [ abs "/outside/.spice" ]
   in
   let argv = bubblewrap_wrap policy [ "true" ] in
@@ -302,7 +312,7 @@ let bubblewrap_carveouts_follow_writable_binds () =
     | value :: rest ->
         if String.equal value needle then Some i else index needle (i + 1) rest
   in
-  match (index "--bind" 0 argv, index "/work/.git" 0 argv) with
+  match (index "--bind" 0 argv, index "/usr/.git" 0 argv) with
   | Some bind, Some carveout ->
       is_true ~msg:"protected overlays come after writable binds"
         (bind < carveout)
@@ -323,9 +333,9 @@ let bubblewrap_hash_is_stable () =
     profile_hash
       (bubblewrap_prepared
          (Confinement.read_only
-         |> Confinement.protect [ abs "/work/.spice/store" ]
+         |> Confinement.protect [ abs "/usr/.spice/store" ]
          |> Confinement.protect_meta [ ".spice"; ".git" ]
-         |> Confinement.writable [ abs "/private/tmp"; abs "/work" ]))
+         |> Confinement.writable [ abs "/tmp"; abs "/usr" ]))
   in
   equal string ~msg:"equal policies hash equally" hash_a hash_b;
   is_false ~msg:"different policies hash differently"
@@ -658,6 +668,8 @@ let () =
       test "bubblewrap read-only argv shape" bubblewrap_read_only_wrap_shape;
       test "bubblewrap workspace-write argv shape"
         bubblewrap_workspace_write_wrap_shape;
+      test "bubblewrap skips missing writable roots"
+        bubblewrap_skips_missing_writable_roots;
       test "bubblewrap nested roots share carveouts"
         bubblewrap_nested_roots_share_carveouts;
       test "bubblewrap ignores protected paths outside writable roots"

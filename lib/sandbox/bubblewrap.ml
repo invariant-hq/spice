@@ -109,8 +109,10 @@ let path path = Spice_path.Abs.to_string path
 let bind_read_only root = [ "--ro-bind-try"; path root; path root ]
 let bind_writable root = [ "--bind"; path root; path root ]
 
+let existing root = Sys.file_exists (path root)
+
 let filesystem_args policy =
-  let roots = Confinement.writable_roots policy in
+  let roots = List.filter existing (Confinement.writable_roots policy) in
   let carveouts = Confinement.write_carveouts policy in
   [ "--ro-bind"; "/"; "/"; "--dev"; "/dev" ]
   @ List.concat_map bind_writable roots

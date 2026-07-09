@@ -268,7 +268,7 @@ let config_writable_roots ~env spellings =
 (* The dune cache root, in dune's own precedence: an explicit [$DUNE_CACHE_ROOT],
    else [$XDG_CACHE_HOME/dune], else [~/.cache/dune] (XDG on macOS too — dune
    does not use [~/Library/Caches]). Directory existence is not required here;
-   the seal step and backend tolerate an absent root, and the run creates it. *)
+   the seal step and backends tolerate an absent root. *)
 let dune_cache_root ~env =
   let of_string s = Result.to_option (Spice_path.Abs.of_string s) in
   match env "DUNE_CACHE_ROOT" with
