@@ -91,8 +91,6 @@ saves nothing.
   spice: device-code authorization expired at TS
   [1]
   $ wait_fake_server
-  $ spice auth names openai --json
-  Usage: spice auth [--help] COMMAND …
-  spice: unknown command names. Must be one of login, logout, remove, save or
-         status
-  [124]
+  $ spice auth status openai --json
+  {"schema_version":3,"type":"auth_status","storage_backend":"file","auth_store_path":"$TESTCASE_ROOT/xdg-config/spice/auth.json","providers":[{"provider":"openai","route":null,"source":null,"source_name":null,"fingerprint":null,"env":["OPENAI_API_KEY"],"store_names":[],"phase":"missing","checked_at":null,"problems":[],"transient":false,"repair":"spice auth login openai","selected_model":{"selector":"openai/gpt-5.5","available":null}}]}
+  [1]

@@ -13,23 +13,8 @@ machine — the credential is saved either way.
   Saved:   default (file store $AUTH)
   Checked: degraded (network)
   Next:    spice auth status openai --refresh
-  $ spice auth names openai
-  Usage: spice auth [--help] COMMAND …
-  spice: unknown command names. Must be one of login, logout, remove, save or
-         status
-  [124]
-  $ spice auth names openai --json
-  Usage: spice auth [--help] COMMAND …
-  spice: unknown command names. Must be one of login, logout, remove, save or
-         status
-  [124]
   $ spice auth status openai --json
   {"schema_version":3,"type":"auth_status","storage_backend":"file","auth_store_path":"$TESTCASE_ROOT/xdg-config/spice/auth.json","providers":[{"provider":"openai","route":"openai/api-key","source":"store","source_name":"default","fingerprint":"-key","env":["OPENAI_API_KEY"],"store_names":["default"],"phase":"unchecked","checked_at":null,"problems":[],"transient":false,"repair":"spice auth status openai --refresh","selected_model":{"selector":"openai/gpt-5.5","available":null}}]}
-  $ spice auth where --provider openai --json | sed -E 's#"auth_store_path":"[^"]+"#"auth_store_path":"$AUTH"#'
-  Usage: spice auth [--help] COMMAND …
-  spice: unknown command where. Must be one of login, logout, remove, save or
-         status
-  [124]
   $ spice auth status openai --json | grep login-key || echo redacted
   redacted
 
@@ -37,11 +22,6 @@ Logout removes the default credential.
 
   $ spice auth logout openai
   Removed openai credential default
-  $ spice auth names openai --json
-  Usage: spice auth [--help] COMMAND …
-  spice: unknown command names. Must be one of login, logout, remove, save or
-         status
-  [124]
   $ spice auth status openai --json
   {"schema_version":3,"type":"auth_status","storage_backend":"file","auth_store_path":"$TESTCASE_ROOT/xdg-config/spice/auth.json","providers":[{"provider":"openai","route":null,"source":null,"source_name":null,"fingerprint":null,"env":["OPENAI_API_KEY"],"store_names":[],"phase":"missing","checked_at":null,"problems":[],"transient":false,"repair":"spice auth login openai","selected_model":{"selector":"openai/gpt-5.5","available":null}}]}
   [1]
@@ -60,16 +40,12 @@ callers.
   $ spice auth remove anthropic
   Removed anthropic credential default
 
-Named credentials are explicit. A named credential appears in names, does not
-satisfy the default lookup, and does satisfy a lookup with the same name.
+Named credentials are explicit. A named credential appears in status
+[store_names], does not satisfy the default lookup, and does satisfy a lookup
+with the same name.
 
   $ printf work-key | spice auth save openai --name work --api-key-stdin
   Saved openai credential work
-  $ spice auth names openai
-  Usage: spice auth [--help] COMMAND …
-  spice: unknown command names. Must be one of login, logout, remove, save or
-         status
-  [124]
   $ spice auth status openai --json
   {"schema_version":3,"type":"auth_status","storage_backend":"file","auth_store_path":"$TESTCASE_ROOT/xdg-config/spice/auth.json","providers":[{"provider":"openai","route":null,"source":null,"source_name":null,"fingerprint":null,"env":["OPENAI_API_KEY"],"store_names":["work"],"phase":"missing","checked_at":null,"problems":[],"transient":false,"repair":"spice auth login openai","selected_model":{"selector":"openai/gpt-5.5","available":null}}]}
   [1]

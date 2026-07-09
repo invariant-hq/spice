@@ -19,11 +19,9 @@ Successful revocation prefers the refresh token and removes locally.
   Revoked openai credential
   Removed openai credential default
   $ wait_fake_server
-  $ spice auth names openai --json
-  Usage: spice auth [--help] COMMAND …
-  spice: unknown command names. Must be one of login, logout, remove, save or
-         status
-  [124]
+  $ spice auth status openai --json | grep -o '"store_names":\[[^]]*\]'
+  "store_names":[]
+  [1]
 
 Transient revocation failure still removes the local credential and says so.
 The endpoint here is a closed port.
@@ -36,11 +34,9 @@ The endpoint here is a closed port.
   1
   $ grep -c "removing the local credential anyway" revoke-warning.txt
   1
-  $ spice auth names openai --json
-  Usage: spice auth [--help] COMMAND …
-  spice: unknown command names. Must be one of login, logout, remove, save or
-         status
-  [124]
+  $ spice auth status openai --json | grep -o '"store_names":\[[^]]*\]'
+  "store_names":[]
+  [1]
 
 API-key credentials do not support provider revocation; --revoke says so and
 removes locally without any provider request.

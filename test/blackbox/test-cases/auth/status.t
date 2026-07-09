@@ -62,18 +62,18 @@ Non-OpenAI API-key providers use the same passive status shape.
   $ GOOGLE_GENERATIVE_AI_API_KEY=google-secret spice auth status google --json
   {"schema_version":3,"type":"auth_status","storage_backend":"file","auth_store_path":"$TESTCASE_ROOT/xdg-config/spice/auth.json","providers":[{"provider":"google","route":"google/api-key","source":"env","source_name":"GOOGLE_GENERATIVE_AI_API_KEY","fingerprint":"cret","env":["GOOGLE_GENERATIVE_AI_API_KEY"],"store_names":[],"phase":"unchecked","checked_at":null,"problems":[],"transient":false,"repair":"spice auth status google --refresh","selected_model":{"selector":"google/gemini-3-flash-preview","available":null}}]}
 
-The where command also has a text form for local inspection.
+Removed auth subcommands report the supported command set.
 
   $ spice auth where openai | sed -E 's#auth_store_path: .*/xdg-config/#auth_store_path: $XDG_CONFIG_HOME/#'
   Usage: spice auth [--help] COMMAND …
-  spice: unknown command where. Must be one of login, logout, remove, save or
-         status
+  spice: unknown command 'where'. Must be one of 'login', 'logout', 'remove',
+         'save' or 'status'
   [124]
 
-Auth where exposes the store path and credential source details.
+The JSON spelling is rejected by the same command parser.
 
   $ spice auth where openai --json | sed -E 's#"auth_store_path":"[^"]+"#"auth_store_path":"$AUTH"#'
   Usage: spice auth [--help] COMMAND …
-  spice: unknown command where. Must be one of login, logout, remove, save or
-         status
+  spice: unknown command 'where'. Must be one of 'login', 'logout', 'remove',
+         'save' or 'status'
   [124]

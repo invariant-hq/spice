@@ -40,11 +40,6 @@ with a good key is the repair, not re-entering a lost one.
   Next:    spice auth status openai
   [1]
   $ wait_fake_server
-  $ spice auth names openai
-  Usage: spice auth [--help] COMMAND …
-  spice: unknown command names. Must be one of login, logout, remove, save or
-         status
-  [124]
   $ spice auth status openai --json | grep -o '"source":"store"'
   "source":"store"
 
