@@ -493,6 +493,37 @@ let string_list_codec =
     values = None;
   }
 
+let validate_sandbox_writable_roots label values =
+  let valid spelling =
+    String.equal spelling "~"
+    || (String.length spelling >= 2 && String.sub spelling 0 2 = "~/")
+    || Result.is_ok (Spice_path.Abs.of_string spelling)
+  in
+  let rec loop index = function
+    | [] -> Ok values
+    | spelling :: rest ->
+        if valid spelling then loop (index + 1) rest
+        else
+          error
+            (Printf.sprintf
+               "%s[%d] must be absolute, \"~\", or start with \"~/\"" label
+               index)
+  in
+  loop 0 values
+
+let sandbox_writable_roots_codec =
+  {
+    string_list_codec with
+    parse_text =
+      (fun ~label raw ->
+        let* values = parse_string_list label raw in
+        validate_sandbox_writable_roots label values);
+    decode_json =
+      (fun ~label leaf ->
+        let* values = decode_string_list_leaf label leaf in
+        validate_sandbox_writable_roots label values);
+  }
+
 let merlin_codec =
   {
     string_list_codec with
@@ -995,7 +1026,7 @@ let field_spec : type a. a Field.t -> a spec =
         ~default:(builtin field Sandbox.Require.Enforced)
         ~env:("SPICE_SANDBOX_REQUIRE", sandbox_require_of_string)
   | Field.Sandbox_writable_roots ->
-      make_spec string_list_codec ~default:(builtin field [])
+      make_spec sandbox_writable_roots_codec ~default:(builtin field [])
   | Field.Sandbox_network ->
       make_spec sandbox_network_codec
         ~default:(builtin field Sandbox.Network.Restricted)

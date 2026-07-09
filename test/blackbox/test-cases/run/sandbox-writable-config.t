@@ -13,6 +13,14 @@ A configured absolute writable root joins the writable set.
   $ spice sandbox explain --cwd "$PWD" | grep -o '/opt/spice-cache'
   /opt/spice-cache
 
+A relative root is rejected and does not replace the previous valid value.
+
+  $ spice config set sandbox.writable_roots '["relative-cache"]'
+  spice: sandbox.writable_roots[0] must be absolute, "~", or start with "~/"
+  [2]
+  $ spice sandbox explain --cwd "$PWD" | grep -o '/opt/spice-cache'
+  /opt/spice-cache
+
 A tilde-prefixed root expands against $HOME (here inside the workspace, so it
 renders workspace-relative).
 

@@ -717,7 +717,7 @@ module Sandbox : sig
 
   val writable_roots : t -> string list
   (** [writable_roots t] are the configured extra writable roots for
-      workspace-write, as raw path spellings (absolute or [~]-prefixed). The
+      workspace-write, as raw path spellings: absolute, [~], or [~/...]. The
       host sandbox resolver tilde-expands and canonicalizes them. *)
 
   val network : t -> Sandbox.Network.t
