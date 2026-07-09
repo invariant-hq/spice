@@ -13,17 +13,25 @@ let check_non_empty message = function
 module Usage = struct
   type t = { prompt_tokens : int; completion_tokens : int; tool_uses : int }
 
-  let check_count label count =
-    if count < 0 then
-      Error
-        ("subagent usage " ^ label ^ " must not be negative, got "
-       ^ string_of_int count)
-    else Ok ()
+  type field = Prompt_tokens | Completion_tokens | Tool_uses
+  type error = Negative_count of { field : field; value : int }
+
+  let field_name = function
+    | Prompt_tokens -> "prompt_tokens"
+    | Completion_tokens -> "completion_tokens"
+    | Tool_uses -> "tool_uses"
+
+  let pp_error ppf (Negative_count { field; value }) =
+    Format.fprintf ppf "subagent usage %s must not be negative, got %d"
+      (field_name field) value
+
+  let check_count field value =
+    if value < 0 then Error (Negative_count { field; value }) else Ok ()
 
   let make ~prompt_tokens ~completion_tokens ~tool_uses =
-    let* () = check_count "prompt_tokens" prompt_tokens in
-    let* () = check_count "completion_tokens" completion_tokens in
-    let* () = check_count "tool_uses" tool_uses in
+    let* () = check_count Prompt_tokens prompt_tokens in
+    let* () = check_count Completion_tokens completion_tokens in
+    let* () = check_count Tool_uses tool_uses in
     Ok { prompt_tokens; completion_tokens; tool_uses }
 
   let equal a b = a = b
@@ -36,7 +44,9 @@ module Usage = struct
   let jsont =
     Jsont.Object.map ~kind:"subagent usage"
       (fun prompt_tokens completion_tokens tool_uses ->
-        Decode.or_error (make ~prompt_tokens ~completion_tokens ~tool_uses))
+        make ~prompt_tokens ~completion_tokens ~tool_uses
+        |> Result.map_error (Format.asprintf "%a" pp_error)
+        |> Decode.or_error)
     |> Jsont.Object.mem "prompt_tokens" Jsont.int ~enc:(fun t ->
         t.prompt_tokens)
     |> Jsont.Object.mem "completion_tokens" Jsont.int ~enc:(fun t ->

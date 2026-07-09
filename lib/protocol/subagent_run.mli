@@ -19,13 +19,32 @@
 module Usage : sig
   (** Child run outcome facts, recorded at the terminal transition.
 
-      Facts of a run spice owns — ledger state, not a derived cache
-      (doc/plans/subagent-tui.md §8.2). Absent on runs recorded before the facts
-      existed. *)
+      These are ledger facts of a run Spice owns, not a derived cache. Usage is
+      absent on runs recorded before the facts existed. *)
 
-  type t = { prompt_tokens : int; completion_tokens : int; tool_uses : int }
-  (** The type for child run usage. All counts are non-negative; decoding
-      rejects negatives. *)
+  type t = private {
+    prompt_tokens : int;
+    completion_tokens : int;
+    tool_uses : int;
+  }
+  (** The type for child run usage. All counts are non-negative. *)
+
+  type field = Prompt_tokens | Completion_tokens | Tool_uses
+  (** The type for a usage count field. *)
+
+  type error = Negative_count of { field : field; value : int }
+  (** The type for usage construction errors. *)
+
+  val make :
+    prompt_tokens:int ->
+    completion_tokens:int ->
+    tool_uses:int ->
+    (t, error) result
+  (** [make ~prompt_tokens ~completion_tokens ~tool_uses] is checked child usage.
+      Returns {!Negative_count} naming the first negative field. *)
+
+  val pp_error : Format.formatter -> error -> unit
+  (** [pp_error] formats a usage construction error for diagnostics. *)
 
   val equal : t -> t -> bool
   (** [equal a b] is [true] iff [a] and [b] carry the same counts. *)
@@ -34,8 +53,7 @@ module Usage : sig
   (** [pp] formats [t] for diagnostics. *)
 
   val jsont : t Jsont.t
-  (** [jsont] maps usage to a JSON object; negative counts are a decode error.
-  *)
+  (** [jsont] maps usage to a JSON object through {!make}. *)
 end
 
 module Status : sig

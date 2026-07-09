@@ -146,14 +146,13 @@ let blocker_text (waiting : Spice_session.Waiting.t) =
    usage and the finished executable tool-call count. *)
 let usage_of session =
   let metrics = Spice_session.Metrics.of_session session in
-  Some
-    {
-      Spice_protocol.Subagent_run.Usage.prompt_tokens =
-        metrics.Spice_session.Metrics.usage.Spice_llm.Usage.input;
-      completion_tokens =
-        metrics.Spice_session.Metrics.usage.Spice_llm.Usage.output;
-      tool_uses = metrics.Spice_session.Metrics.tool_calls;
-    }
+  Spice_protocol.Subagent_run.Usage.make
+    ~prompt_tokens:metrics.Spice_session.Metrics.usage.Spice_llm.Usage.input
+    ~completion_tokens:metrics.Spice_session.Metrics.usage.Spice_llm.Usage.output
+    ~tool_uses:metrics.Spice_session.Metrics.tool_calls
+  |> Result.map_error (fun error ->
+      Format.asprintf "invalid child session usage: %a"
+        Spice_protocol.Subagent_run.Usage.pp_error error)
 
 let exchange_cap_blocker =
   "message exchange limit reached (run.subagent_max_exchanges); waiting for \
@@ -192,7 +191,6 @@ let settle t entry ~parent ~child result =
           Failed_with message )
     | Ok (document, Spice_protocol.Outcome.Finished { outcome; _ }) -> (
         let session = Spice_session_store.Document.session document in
-        let usage = usage_of session in
         let summary =
           match
             Spice_session.State.final_text (Spice_session.state session)
@@ -200,23 +198,30 @@ let settle t entry ~parent ~child result =
           | Some text when not (String.equal text "") -> text
           | Some _ | None -> "Child session completed without visible text."
         in
-        match outcome with
-        | Spice_session.Turn.Outcome.Completed
-        | Spice_session.Turn.Outcome.Step_limit ->
-            ( update_run t ~parent ~child ~f:(fun run ->
-                  Spice_protocol.Subagent_run.complete ~completed_at:settled_at
-                    ~summary ?usage run),
-              Summary summary )
-        | Spice_session.Turn.Outcome.Interrupted { reason; cancelled } ->
-            ( update_run t ~parent ~child ~f:(fun run ->
-                  Spice_protocol.Subagent_run.cancel ~cancelled_at:settled_at
-                    ?usage run),
-              Interrupted { reason; cancelled } )
-        | Spice_session.Turn.Outcome.Failed { message } ->
+        match usage_of session with
+        | Error message ->
             ( update_run t ~parent ~child ~f:(fun run ->
                   Spice_protocol.Subagent_run.fail ~failed_at:settled_at
-                    ~message ?usage run),
-              Failed_with message ))
+                    ~message run),
+              Failed_with message )
+        | Ok usage -> (
+            match outcome with
+            | Spice_session.Turn.Outcome.Completed
+            | Spice_session.Turn.Outcome.Step_limit ->
+                ( update_run t ~parent ~child ~f:(fun run ->
+                      Spice_protocol.Subagent_run.complete
+                        ~completed_at:settled_at ~summary ~usage run),
+                  Summary summary )
+            | Spice_session.Turn.Outcome.Interrupted { reason; cancelled } ->
+                ( update_run t ~parent ~child ~f:(fun run ->
+                      Spice_protocol.Subagent_run.cancel
+                        ~cancelled_at:settled_at ~usage run),
+                  Interrupted { reason; cancelled } )
+            | Spice_session.Turn.Outcome.Failed { message } ->
+                ( update_run t ~parent ~child ~f:(fun run ->
+                      Spice_protocol.Subagent_run.fail ~failed_at:settled_at
+                        ~message ~usage run),
+                  Failed_with message )))
     | Ok (_document, Spice_protocol.Outcome.Waiting { waiting; _ }) ->
         parked := Some waiting;
         let ask = ask_of waiting in

@@ -710,11 +710,13 @@ module Artifacts_tests = struct
 
   let run_usage_round_trips () =
     let usage =
-      {
-        Subagent_run.Usage.prompt_tokens = 1200;
-        completion_tokens = 3400;
-        tool_uses = 14;
-      }
+      match
+        Subagent_run.Usage.make ~prompt_tokens:1200 ~completion_tokens:3400
+          ~tool_uses:14
+      with
+      | Ok usage -> usage
+      | Error error ->
+          failf "valid usage was rejected: %a" Subagent_run.Usage.pp_error error
     in
     let started =
       ok "start" (Subagent_run.start ~started_at:(time 20) (a_run ()))
@@ -737,6 +739,20 @@ module Artifacts_tests = struct
         is_true ~msg:"usage accessor returns the record"
           (Subagent_run.Usage.equal usage recorded)
     | None -> failf "usage accessor lost the record"
+
+  let run_usage_rejections () =
+    match
+      Subagent_run.Usage.make ~prompt_tokens:(-1) ~completion_tokens:0
+        ~tool_uses:0
+    with
+    | Error
+        (Subagent_run.Usage.Negative_count
+          { field = Subagent_run.Usage.Prompt_tokens; value = -1 }) ->
+        ()
+    | Error error ->
+        failf "negative usage returned the wrong error: %a"
+          Subagent_run.Usage.pp_error error
+    | Ok _ -> failf "negative usage should be rejected"
 
   (* A run file written before usage/cancelled existed decodes with
      [usage = None] — additive optional members keep old ledgers readable. *)
@@ -1002,6 +1018,7 @@ module Artifacts_tests = struct
         test "subagent run round-trips" run_round_trips;
         test "subagent run cancel" run_cancel;
         test "subagent run usage round-trips" run_usage_round_trips;
+        test "subagent run usage rejects negative counts" run_usage_rejections;
         test "subagent run legacy decode" run_legacy_decode;
         test "goal rejections" goal_rejections;
         test "goal transitions" goal_transitions;
