@@ -23,11 +23,6 @@ end
 
 (* Resolving user input. *)
 
-(* Undeclared model ids consult the provider's declared dynamic-model policy:
-   providers whose model set is owned by an external system (local weight
-   files, a model daemon) synthesize metadata for ids they will interpret at
-   request time. A synthesized model under the wrong namespace is a
-   declaration bug and is ignored rather than resolved. *)
 let resolve_input ?field catalog input =
   match Spice_provider.Catalog.resolve catalog input with
   | Ok model -> Ok model
@@ -37,19 +32,10 @@ let resolve_input ?field catalog input =
       Error (Host.Error.Unknown_provider { provider; field; known })
   | Error
       (Spice_provider.Catalog.Lookup_error.Unknown_model
-         { provider; model; known }) -> (
-      match
-        Option.bind (Spice_provider.Catalog.provider catalog provider)
-          (fun declaration -> Spice_provider.dynamic_model declaration model)
-      with
-      | Some synthesized
-        when Spice_llm.Provider.equal provider
-               (Spice_provider.Model.provider synthesized) ->
-          Ok synthesized
-      | Some _ | None ->
-          Error
-            (Host.Error.Unknown_model
-               { provider; model; field; known; base_url = None }))
+         { provider; model; known }) ->
+      Error
+        (Host.Error.Unknown_model
+           { provider; model; field; known; base_url = None })
   | Error
       (Spice_provider.Catalog.Lookup_error.Invalid_selector
          { input; message; candidates }) ->

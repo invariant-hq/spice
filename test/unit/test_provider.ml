@@ -626,6 +626,10 @@ let catalog_contracts () =
   in
   let provider =
     Provider.make openai
+      ~dynamic_model:(fun id ->
+        if String.ends_with ~suffix:".gguf" id then
+          Some (Model.make (llm id) ())
+        else None)
       [ Model.make gpt_5_mini (); hidden; Model.make gpt_5 () ]
   in
   let claude = llm ~provider:anthropic ~api:messages "claude-3" in
@@ -674,6 +678,11 @@ let catalog_contracts () =
     ~msg:"catalog resolves hidden selector"
     (Ok (llm "gpt-4"))
     (Catalog.resolve catalog "openai/gpt-4" |> Result.map Model.llm);
+  equal
+    (result llm_model_value catalog_error_value)
+    ~msg:"catalog resolves dynamic selector"
+    (Ok (llm "weights.gguf"))
+    (Catalog.resolve catalog "openai/weights.gguf" |> Result.map Model.llm);
   equal
     (result llm_model_value catalog_error_value)
     ~msg:"catalog reports invalid selector"

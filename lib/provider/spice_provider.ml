@@ -837,14 +837,17 @@ module Catalog = struct
         let model_id = Selector.id selector in
         begin match model_by_id provider.models model_id with
         | Some model -> Ok model
-        | None ->
-            Error
-              (Lookup_error.Unknown_model
-                 {
-                   provider = provider_id;
-                   model = model_id;
-                   known = known_models provider;
-                 })
+        | None -> (
+            match dynamic_model provider model_id with
+            | Some model -> Ok model
+            | None ->
+                Error
+                  (Lookup_error.Unknown_model
+                     {
+                       provider = provider_id;
+                       model = model_id;
+                       known = known_models provider;
+                     }))
         end
 
   let resolve t input =

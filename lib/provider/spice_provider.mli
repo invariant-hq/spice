@@ -736,8 +736,8 @@ module Catalog : sig
           model : string;
           known : string list;
         }
-          (** [model] is not declared by [provider]. [known] contains known
-              provider-local model ids for [provider]. *)
+          (** [model] does not resolve for [provider]. [known] contains known
+              declared provider-local model ids for [provider]. *)
 
     val message : t -> string
     (** [message e] is a human-readable diagnostic. *)
@@ -784,10 +784,12 @@ module Catalog : sig
   (** [resolve t input] parses [input] as [provider/model] and resolves it
       against [t].
 
-      It resolves {e declared} models only. A provider whose model set is owned
-      by an external system (see {!val:dynamic_model}) declares such ids
-      nowhere, so [resolve] reports [Lookup_error.Unknown_model] for them; the
-      host recovers them through the provider's dynamic-model fallthrough. *)
+      Resolution first checks declared models, including hidden or unselectable
+      metadata, then consults the provider's {!dynamic_model} policy for
+      undeclared ids. Resolution is not eligibility: callers that persist or run
+      a model must still check {!Model.selectable}. Errors with
+      [Lookup_error.Unknown_model] if neither declared nor dynamic metadata
+      resolves the provider-local id. *)
 end
 
 val pp : Format.formatter -> t -> unit
