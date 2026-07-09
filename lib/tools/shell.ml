@@ -652,6 +652,35 @@ let environment_array bindings =
   |> List.map (fun (name, value) -> name ^ "=" ^ value)
   |> Array.of_list
 
+(* The inner [/bin/sh] resolves a bare program against this environment's
+   [PATH]. Recover the OCaml toolchain the way every direct OCaml spawn does —
+   a no-op when [dune] already resolves — so a session launched without the
+   switch on [PATH] still runs [dune] from the shell tool. The adjustment
+   precedes the sandbox partition, which never strips [PATH]; the search space
+   is also what the exit-127 note consults. *)
+let with_toolchain ~workspace bindings =
+  let env = environment_array bindings in
+  let toolchain =
+    Spice_ocaml_toolchain.discover ~env
+      ~workspace_root:
+        (Some
+           (Spice_path.Abs.to_string
+              (Workspace.Path.abs (Workspace.root_path workspace))))
+  in
+  let adjusted = Spice_ocaml_toolchain.env toolchain ~program:"dune" in
+  let bindings =
+    if adjusted == env then bindings
+    else
+      Array.to_list adjusted
+      |> List.map (fun binding ->
+          match String.index_opt binding '=' with
+          | Some i ->
+              ( String.sub binding 0 i,
+                String.sub binding (i + 1) (String.length binding - i - 1) )
+          | None -> (binding, ""))
+  in
+  (toolchain, bindings)
+
 let status_of_process : Process.shell_status -> Output.status = function
   | Process.Shell_exited code -> Output.Exited code
   | Process.Shell_signaled signal -> Output.Signaled signal
@@ -725,7 +754,9 @@ let network_denial_signatures =
 
 let looks_like_network_denial output =
   let lowered = String.lowercase_ascii output in
-  List.exists (fun affix -> contains_affix ~affix lowered) network_denial_signatures
+  List.exists
+    (fun affix -> contains_affix ~affix lowered)
+    network_denial_signatures
 
 let confined_enforcement = function
   | Spice_sandbox.Evidence.Enforced _ -> true
@@ -734,12 +765,13 @@ let confined_enforcement = function
       false
 
 let network_denial_diagnosis =
-  "\n\nThis command ran inside a sandbox with network access restricted, and \
-   its output looks like a blocked network request. That is a policy \
-   restriction, not a transient error: re-running the command unchanged will \
-   fail the same way. If the command genuinely needs the network, re-run this \
-   exact command with escalate:true to ask the user to approve running it \
-   outside the sandbox, or ask the user to allow network access for this run."
+  "\n\n\
+   This command ran inside a sandbox with network access restricted, and its \
+   output looks like a blocked network request. That is a policy restriction, \
+   not a transient error: re-running the command unchanged will fail the same \
+   way. If the command genuinely needs the network, re-run this exact command \
+   with escalate:true to ask the user to approve running it outside the \
+   sandbox, or ask the user to allow network access for this run."
 
 let network_denial_note ~network_restricted output =
   if
@@ -752,8 +784,55 @@ let network_denial_note ~network_restricted output =
   then network_denial_diagnosis
   else ""
 
-let result_of_output ~network_restricted output =
-  let note = network_denial_note ~network_restricted output in
+(* Exit 127 is the shell's command-not-found. When the command names a known
+   OCaml tool that the toolchain search space cannot resolve either, the launch
+   context lost the switch; name that cause instead of leaving the bare shell
+   error. Word extraction keeps [-_.] so a program like [my-ocaml-helper] never
+   matches the plain [ocaml] name. *)
+let ocaml_tool_names =
+  [
+    "dune";
+    "opam";
+    "ocaml";
+    "ocamlc";
+    "ocamlopt";
+    "ocamlfind";
+    "ocamlmerlin";
+    "ocamllsp";
+    "ocamlformat";
+    "utop";
+  ]
+
+let command_words command =
+  String.map
+    (fun c ->
+      match c with
+      | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '-' | '.' -> c
+      | _ -> ' ')
+    command
+  |> String.split_on_char ' '
+  |> List.filter (fun word -> not (String.equal word ""))
+
+let toolchain_note ~toolchain ~command output =
+  match Output.status output with
+  | Output.Exited 127 -> (
+      let missing word =
+        List.mem word ocaml_tool_names
+        && Option.is_none (Spice_ocaml_toolchain.find toolchain word)
+      in
+      match List.find_opt missing (command_words command) with
+      | Some program ->
+          "\n\n" ^ Spice_ocaml_toolchain.unreachable_hint toolchain ~program
+      | None -> "")
+  | Output.Exited _ | Output.Signaled _ | Output.Timed_out _ | Output.Cancelled
+  | Output.Failed_to_start _ ->
+      ""
+
+let result_of_output ~network_restricted ~toolchain ~command output =
+  let note =
+    network_denial_note ~network_restricted output
+    ^ toolchain_note ~toolchain ~command output
+  in
   match Output.status output with
   | Output.Exited 0 -> Tool.Result.completed ~output ()
   | Output.Exited code ->
@@ -787,6 +866,9 @@ let run ~fs ~workspace ~config ?(cancelled = default_cancelled) input =
             let argv =
               shell_command (Config.shell config) (Input.command input)
             in
+            let toolchain, base_env =
+              with_toolchain ~workspace (process_environment config)
+            in
             let run_spawn ~argv ~env ~enforcement =
               let result =
                 Process.run_shell
@@ -801,7 +883,7 @@ let run ~fs ~workspace ~config ?(cancelled = default_cancelled) input =
               in
               result_of_output
                 ~network_restricted:(Config.network_restricted config)
-                output
+                ~toolchain ~command:(Input.command input) output
             in
             let escalation = Spice_sandbox.escalation (Config.sandbox config) in
             match (Input.escalate input, escalation) with
@@ -817,15 +899,13 @@ let run ~fs ~workspace ~config ?(cancelled = default_cancelled) input =
                    run outside the sandbox still must not inherit secrets or
                    loader-injection variables. Only danger-full-access
                    (Unconfined) passes the environment verbatim, deliberately. *)
-                let env, _stripped =
-                  Spice_sandbox.Env.partition (process_environment config)
-                in
+                let env, _stripped = Spice_sandbox.Env.partition base_env in
                 run_spawn ~argv ~env
                   ~enforcement:Spice_sandbox.Evidence.not_requested
             | true, Spice_sandbox.Ignored | false, _ -> (
                 match
                   Spice_sandbox.spawn (Config.sandbox config) ~argv
-                    ~env:(process_environment config)
+                    ~env:base_env
                 with
                 | Error error ->
                     let message = Spice_sandbox.Error.message error in

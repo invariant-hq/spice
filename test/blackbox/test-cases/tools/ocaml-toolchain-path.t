@@ -89,3 +89,33 @@ dune is on this PATH.
   $ wait_fake_server
   $ grep -oE "SPICE_DUNE is set to /no/such/dune" cap-e/request-2.json | head -1
   SPICE_DUNE is set to /no/such/dune
+
+The shell tool walks the same ladder: its inner shell resolves dune from the
+recovered switch bin.
+
+  $ mkdir -p swshell/bin
+  $ cat > swshell/bin/dune <<'EOF'
+  > #!/bin/sh
+  > echo dune-from-swshell
+  > EOF
+  $ chmod +x swshell/bin/dune
+
+  $ cat > shell.jsonl <<'JSONL'
+  > {"expect":{"body_contains":["go","\"name\":\"shell\""]},"response":{"id":"s1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"is1","call_id":"call-s1","name":"shell","arguments":"{\"command\":\"dune build\"}"}]}}
+  > {"expect":{"body_contains":["function_call_output","call-s1"]},"response":{"id":"s2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}]}}
+  > JSONL
+
+  $ start_fake_openai shell.jsonl cap-f port-f
+  $ PATH=/usr/bin:/bin OPAM_SWITCH_PREFIX="$PWD/swshell" "$SPICE" run --cwd fixture --permission-mode bypass --sandbox danger-full-access --id shell-recovered "go" >/dev/null 2>&1
+  $ wait_fake_server
+  $ grep -oE "dune-from-swshell" cap-f/request-2.json | head -1
+  dune-from-swshell
+
+A dune the shell cannot resolve exits 127 and the failure carries the
+toolchain hint, not just the bare shell error.
+
+  $ start_fake_openai shell.jsonl cap-g port-g
+  $ PATH=/usr/bin:/bin "$SPICE" run --cwd fixture --permission-mode bypass --sandbox danger-full-access --id shell-unreachable "go" >/dev/null 2>&1
+  $ wait_fake_server
+  $ grep -oE "dune is not on Spice's PATH" cap-g/request-2.json | head -1
+  dune is not on Spice's PATH
