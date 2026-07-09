@@ -183,22 +183,22 @@ val updated_at : t -> Spice_session.Time.t
 
 val approve : approved_at:Spice_session.Time.t -> t -> (t, string) result
 (** [approve ~approved_at t] approves proposed plan [t]. Errors unless [t] is
-    proposed, or when [approved_at] is before {!created_at} [t]. *)
+    proposed, or when [approved_at] is before {!updated_at} [t]. *)
 
 val reject :
   rejected_at:Spice_session.Time.t -> ?reason:string -> t -> (t, string) result
-(** [reject ~rejected_at ?reason t] rejects proposed plan [t]. Errors on an
-    empty present [reason], unless [t] is proposed, or when [rejected_at] is
-    before {!created_at} [t]. *)
+(** [reject ~rejected_at ?reason t] rejects proposed plan [t]. Errors unless
+    [t] is proposed, when a present [reason] is empty, or when [rejected_at] is
+    before {!updated_at} [t]. *)
 
 val supersede :
   superseded_at:Spice_session.Time.t -> by:Id.t -> t -> (t, string) result
 (** [supersede ~superseded_at ~by t] marks [t] superseded by plan [by].
 
     Proposed, approved, and rejected plans may be superseded; an already
-    superseded plan, [by] equal to {!id} [t], or a time before {!created_at} [t]
-    error. This is what a re-proposal calls when the session already holds a
-    proposed or approved plan. *)
+    superseded plan, [by] equal to {!id} [t], or [superseded_at] before
+    {!updated_at} [t] error. This is what a re-proposal calls when the session
+    already holds a proposed or approved plan. *)
 
 val equal : t -> t -> bool
 (** [equal a b] is [true] iff [a] and [b] are the same plan. *)

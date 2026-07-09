@@ -483,6 +483,8 @@ module Artifacts_tests = struct
     is_error "empty reject reason"
       (Plan.reject ~rejected_at:(time 20) ~reason:"" plan);
     let by = ok "by id" (Plan.Id.of_string "plan-2") in
+    is_error "cannot supersede before the previous transition"
+      (Plan.supersede ~superseded_at:(time 15) ~by approved);
     is_true ~msg:"approved plan may be superseded"
       (Result.is_ok (Plan.supersede ~superseded_at:(time 25) ~by approved));
     let superseded =
@@ -650,6 +652,8 @@ module Artifacts_tests = struct
     let started = ok "start" (Subagent_run.start ~started_at:(time 20) run) in
     is_error "cannot start twice"
       (Subagent_run.start ~started_at:(time 30) started);
+    is_error "cannot complete before the previous transition"
+      (Subagent_run.complete ~completed_at:(time 15) ~summary:"done" started);
     let blocked =
       ok "block"
         (Subagent_run.block ~blocked_at:(time 25) ~blocker:"waiting" started)
@@ -781,6 +785,8 @@ module Artifacts_tests = struct
       (Goal.is_active goal && Goal.is_unfinished goal && Goal.may_update goal);
     let paused = ok "pause" (Goal.pause ~paused_at:(time 20) goal) in
     is_true ~msg:"paused goal may not update" (not (Goal.may_update paused));
+    is_error "cannot resume before the previous transition"
+      (Goal.resume ~resumed_at:(time 15) paused);
     is_error "cannot pause a paused goal"
       (Goal.pause ~paused_at:(time 30) paused);
     is_error "cannot pause before creation"

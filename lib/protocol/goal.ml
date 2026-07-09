@@ -176,7 +176,7 @@ let check_budget_status ~status ~token_budget ~tokens_used =
       (Some _ | None) ) ->
       Ok ()
 
-let check_updated_at ~created_at updated_at =
+let check_snapshot_updated_at ~created_at updated_at =
   if Time.compare updated_at created_at < 0 then
     Error "goal update time must not be before goal creation time"
   else Ok ()
@@ -191,7 +191,7 @@ let make ~id ~session ~objective ~status ?token_budget ~tokens_used
   let* () = check_counter "time used" time_used_ms in
   let* () = check_counter "continuation turns" continuation_turns in
   let* () = check_budget_status ~status ~token_budget ~tokens_used in
-  let* () = check_updated_at ~created_at updated_at in
+  let* () = check_snapshot_updated_at ~created_at updated_at in
   Ok
     {
       id;
@@ -240,7 +240,11 @@ let invalid_transition action t =
    ^ Status.to_string t.status)
 
 let transition ~at status t =
-  let* () = check_updated_at ~created_at:t.created_at at in
+  let* () =
+    Status_lifecycle.check_transition_time ~updated_at:t.updated_at
+      ~transition_at:at
+      ~error:"goal update time must not be before its previous update"
+  in
   Ok { t with status; updated_at = at }
 
 let pause ~paused_at t =

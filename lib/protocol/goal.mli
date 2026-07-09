@@ -172,7 +172,7 @@ val may_update : t -> bool
 
     All transitions error with a diagnostic when the current status does not
     admit them, and stamp {!updated_at} with their time, which must be at or
-    after {!created_at}. *)
+    after its current value. Equal times are valid. *)
 
 val pause : paused_at:Spice_session.Time.t -> t -> (t, string) result
 (** [pause ~paused_at t] pauses an {!Status.Active} goal. *)

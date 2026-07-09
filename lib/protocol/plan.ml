@@ -178,7 +178,7 @@ let check_body = function
   | _ -> Ok ()
 
 let check_status_time ~created_at status =
-  Status_lifecycle.check_time ~created_at
+  Status_lifecycle.check_snapshot_time ~created_at
     ~transition_time:Status.transition_time
     ~error:(fun status ->
       "plan " ^ Status.to_string status
@@ -221,11 +221,21 @@ let invalid_transition action t =
     ("cannot " ^ action ^ " plan " ^ Id.to_string t.id ^ " while it is "
    ^ Status.to_string t.status)
 
+let check_transition_time t status =
+  match Status.transition_time status with
+  | None -> Error "plan transition status has no timestamp"
+  | Some transition_at ->
+      Status_lifecycle.check_transition_time ~updated_at:(updated_at t)
+        ~transition_at
+        ~error:
+          ("plan " ^ Status.to_string status
+         ^ " time must not be before its previous transition")
+
 let approve ~approved_at t =
   match t.status with
   | Status.Proposed ->
       let status = Status.approved ~approved_at in
-      let* () = check_status_time ~created_at:t.created_at status in
+      let* () = check_transition_time t status in
       Ok { t with status }
   | Status.Approved _ | Status.Rejected _ | Status.Superseded _ ->
       invalid_transition "approve" t
@@ -234,7 +244,7 @@ let reject ~rejected_at ?reason t =
   match t.status with
   | Status.Proposed ->
       let* status = Status.rejected ~rejected_at ?reason () in
-      let* () = check_status_time ~created_at:t.created_at status in
+      let* () = check_transition_time t status in
       Ok { t with status }
   | Status.Approved _ | Status.Rejected _ | Status.Superseded _ ->
       invalid_transition "reject" t
@@ -245,7 +255,7 @@ let supersede ~superseded_at ~by t =
   | Status.Superseded _ -> invalid_transition "supersede" t
   | Status.Proposed | Status.Approved _ | Status.Rejected _ ->
       let status = Status.superseded ~superseded_at ~by in
-      let* () = check_status_time ~created_at:t.created_at status in
+      let* () = check_transition_time t status in
       Ok { t with status }
 
 let equal a b = a = b

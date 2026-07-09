@@ -173,13 +173,13 @@ val updated_at : t -> Spice_session.Time.t
 
 val start : started_at:Spice_session.Time.t -> t -> (t, string) result
 (** [start ~started_at t] marks queued run [t] running. Errors unless [t] is
-    queued, or when [started_at] is before {!created_at} [t]. *)
+    queued, or when [started_at] is before {!updated_at} [t]. *)
 
 val block :
   blocked_at:Spice_session.Time.t -> blocker:string -> t -> (t, string) result
 (** [block ~blocked_at ~blocker t] marks a running or blocked run blocked.
     Errors on empty [blocker], a queued or terminal [t], or a time before
-    {!created_at} [t]. *)
+    {!updated_at} [t]. *)
 
 val complete :
   completed_at:Spice_session.Time.t ->
@@ -189,7 +189,7 @@ val complete :
   (t, string) result
 (** [complete ~completed_at ~summary ?usage t] marks a running or blocked run
     completed. Errors on empty [summary], a queued or terminal [t], or a time
-    before {!created_at} [t]. *)
+    before {!updated_at} [t]. *)
 
 val fail :
   failed_at:Spice_session.Time.t ->
@@ -199,12 +199,12 @@ val fail :
   (t, string) result
 (** [fail ~failed_at ~message ?usage t] marks a queued, running, or blocked run
     failed. Errors on empty [message], a terminal [t], or a time before
-    {!created_at} [t]. *)
+    {!updated_at} [t]. *)
 
 val cancel :
   cancelled_at:Spice_session.Time.t -> ?usage:Usage.t -> t -> (t, string) result
 (** [cancel ~cancelled_at ?usage t] marks a queued, running, or blocked run
-    cancelled. Errors on a terminal [t] or a time before {!created_at} [t]. *)
+    cancelled. Errors on a terminal [t] or a time before {!updated_at} [t]. *)
 
 val resume : resumed_at:Spice_session.Time.t -> t -> (t, string) result
 (** [resume ~resumed_at t] marks a blocked or terminal run running again: a
@@ -212,7 +212,7 @@ val resume : resumed_at:Spice_session.Time.t -> t -> (t, string) result
     The one deliberate backward edge in the otherwise forward-only lifecycle;
     the run keeps its identity because the run key is the child session, and the
     next terminal transition re-records usage over the whole session. Errors on
-    a queued or running [t], or a time before {!created_at} [t]. *)
+    a queued or running [t], or a time before {!updated_at} [t]. *)
 
 val usage : t -> Usage.t option
 (** [usage t] is the terminal usage record, when [t] settled with one. *)

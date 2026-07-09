@@ -225,7 +225,7 @@ let check_depth depth =
   else Ok ()
 
 let check_status_time ~created_at status =
-  Status_lifecycle.check_time ~created_at
+  Status_lifecycle.check_snapshot_time ~created_at
     ~transition_time:Status.transition_time
     ~error:(fun status ->
       "subagent " ^ Status.to_string status
@@ -277,8 +277,18 @@ let invalid_transition action t =
     ^ Spice_session.Id.to_string t.child
     ^ " while it is " ^ Status.to_string t.status)
 
+let check_transition_time t status =
+  match Status.transition_time status with
+  | None -> Error "subagent transition status has no timestamp"
+  | Some transition_at ->
+      Status_lifecycle.check_transition_time ~updated_at:(updated_at t)
+        ~transition_at
+        ~error:
+          ("subagent " ^ Status.to_string status
+         ^ " time must not be before its previous transition")
+
 let set_status action status t =
-  let* () = check_status_time ~created_at:t.created_at status in
+  let* () = check_transition_time t status in
   match (t.status, status) with
   | Status.Queued, Status.Running _ -> Ok { t with status }
   | (Status.Running _ | Status.Blocked _), Status.Blocked _ ->
@@ -317,7 +327,7 @@ let cancel ~cancelled_at ?usage t =
    lattice is forward-only by design. *)
 let resume ~resumed_at t =
   let status = Status.running ~started_at:resumed_at in
-  let* () = check_status_time ~created_at:t.created_at status in
+  let* () = check_transition_time t status in
   match t.status with
   | Status.Queued | Status.Running _ -> invalid_transition "resume" t
   | Status.Blocked _ | Status.Completed _ | Status.Failed _ | Status.Cancelled _
