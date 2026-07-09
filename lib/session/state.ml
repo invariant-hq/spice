@@ -147,6 +147,7 @@ type turn_record = {
   turn : Turn.t;
   outcome : Turn.Outcome.t option;
   response_count : int;
+  final_text : string option;
 }
 
 type permission_record = {
@@ -193,14 +194,18 @@ let empty =
 
 let transcript t = t.transcript
 
+let assistant_text assistant =
+  Spice_llm.Message.Assistant.texts assistant
+  |> String.concat "\n" |> String.trim
+
+let response_text response =
+  String.trim (Spice_llm.Response.text ~sep:"\n" response)
+
 let final_text t =
   let rec loop = function
     | [] -> None
     | Spice_llm.Message.Assistant assistant :: rest ->
-        let text =
-          Spice_llm.Message.Assistant.texts assistant
-          |> String.concat "\n" |> String.trim
-        in
+        let text = assistant_text assistant in
         if String.is_empty text then loop rest else Some text
     | ( Spice_llm.Message.System _ | Spice_llm.Message.Developer _
       | Spice_llm.Message.User _ | Spice_llm.Message.Tool_result _ )
@@ -208,6 +213,11 @@ let final_text t =
         loop rest
   in
   loop (List.rev (Transcript.messages t.transcript))
+
+let turn_final_text id t =
+  match Turn_map.find_opt id t.turns with
+  | None -> None
+  | Some record -> record.final_text
 
 let replay_usage t =
   Option.map
@@ -388,7 +398,12 @@ let apply_turn_started turn t =
                 turn_order_rev = id :: t.turn_order_rev;
                 turns =
                   Turn_map.add id
-                    { turn; outcome = None; response_count = 0 }
+                    {
+                      turn;
+                      outcome = None;
+                      response_count = 0;
+                      final_text = None;
+                    }
                     t.turns;
                 active_turn = Some id;
               })
@@ -423,7 +438,17 @@ let apply_response_appended response t =
         match add_response response t with
         | Error _ as error -> error
         | Ok t ->
-            let turn = { turn with response_count = turn.response_count + 1 } in
+            let text = response_text response in
+            let final_text =
+              if String.is_empty text then turn.final_text else Some text
+            in
+            let turn =
+              {
+                turn with
+                response_count = turn.response_count + 1;
+                final_text;
+              }
+            in
             let replay_usage =
               match Spice_llm.Response.usage response with
               | None -> t.replay_usage

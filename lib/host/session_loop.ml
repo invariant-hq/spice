@@ -421,7 +421,7 @@ let rec handle_step ~store ~projector ~pressure_compacted ~overflow_compacted
       Ok (document, outcome)
   | Spice_session.Run.Step.Finished { turn; outcome = turn_outcome } ->
       let final_text =
-        Spice_session.State.final_text
+        Spice_session.State.turn_final_text turn
           (Spice_session.state (Spice_session_store.Document.session document))
       in
       hooks.observe

@@ -556,13 +556,8 @@ let pending_plan_call document =
         (Spice_protocol.Error.Tool_call_not_pending
            { call_id = ""; name = Spice_protocol.Plan.name })
 
-(* The last assistant text of the latest turn: the run's rendered final
-   output. *)
-let final_text session =
-  Session.State.transcript (Session.state session)
-  |> Spice_llm.Transcript.last_assistant
-  |> Option.map (fun a ->
-      String.concat "\n" (Spice_llm.Message.Assistant.texts a))
+let turn_final_text session turn =
+  Session.State.turn_final_text turn (Session.state session)
   |> Option.value ~default:""
 
 (* Sandbox posture facts shown at run start: human lines on stderr, one
@@ -735,7 +730,7 @@ let result_jsonl ~permission_of ~duration_ms (document, outcome) =
         ([
            ("turn_id", Jsont.Json.string (Session.Turn.Id.to_string turn));
            ("outcome", Jsont.Json.string (outcome_string outcome));
-           ("final_text", Jsont.Json.string (final_text session));
+           ("final_text", Jsont.Json.string (turn_final_text session turn));
          ]
         @ final_fields)
 
@@ -917,8 +912,8 @@ let print_result ?(saved_hint = true) ~json ~permission_of ~duration_ms
         (* A turn that failed before a normal terminal point is not a success:
            exit non-zero and surface why, rather than folding into [Success]. *)
         Runtime_error message
-    | Spice_protocol.Outcome.Finished _ ->
-        let text = final_text session in
+    | Spice_protocol.Outcome.Finished { turn; _ } ->
+        let text = turn_final_text session turn in
         if not (String.is_empty text) then stdout_printf "%s\n" text;
         if saved_hint then print_saved_hint session;
         Success

@@ -147,6 +147,8 @@ let final_text_projects_latest_assistant () =
   in
   equal (option string) ~msg:"single assistant text" (Some "Done.")
     (State.final_text single);
+  equal (option string) ~msg:"single turn final text" (Some "Done.")
+    (State.turn_final_text (turn_id "turn-1") single);
   let multi_block =
     state
       [
@@ -165,6 +167,9 @@ let final_text_projects_latest_assistant () =
   equal (option string) ~msg:"text blocks joined with newline"
     (Some "line 1\nline 2")
     (State.final_text multi_block);
+  equal (option string) ~msg:"multi-block turn final text"
+    (Some "line 1\nline 2")
+    (State.turn_final_text (turn_id "turn-1") multi_block);
   let two_turns =
     state
       [
@@ -180,7 +185,30 @@ let final_text_projects_latest_assistant () =
       ]
   in
   equal (option string) ~msg:"most recent assistant text wins" (Some "second")
-    (State.final_text two_turns)
+    (State.final_text two_turns);
+  equal (option string) ~msg:"first turn keeps its final text" (Some "first")
+    (State.turn_final_text (turn_id "turn-1") two_turns);
+  equal (option string) ~msg:"second turn keeps its final text" (Some "second")
+    (State.turn_final_text (turn_id "turn-2") two_turns);
+  let whitespace_turn =
+    state
+      [
+        Session.Event.turn_started (turn ());
+        Session.Event.response_appended (response (assistant_text "first"));
+        Session.Event.turn_finished ~turn:(turn_id "turn-1")
+          Session.Turn.Outcome.completed;
+        Session.Event.turn_started
+          (turn ~id:"turn-2" ~input:Session.Turn.Input.continue ());
+        Session.Event.response_appended (response (assistant_text "   "));
+        Session.Event.turn_finished ~turn:(turn_id "turn-2")
+          Session.Turn.Outcome.completed;
+      ]
+  in
+  equal (option string) ~msg:"latest prose skips whitespace-only response"
+    (Some "first") (State.final_text whitespace_turn);
+  equal (option string) ~msg:"turn final text does not borrow from earlier turn"
+    None
+    (State.turn_final_text (turn_id "turn-2") whitespace_turn)
 
 let compaction_replaces_transcript () =
   let turn = turn () in

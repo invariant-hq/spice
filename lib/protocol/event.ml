@@ -114,11 +114,11 @@ module String_map = Map.Make (String)
    [Host_call] with [result = None]. *)
 let of_session session =
   let events = Session.events session in
+  let state = Session.state session in
   let host_tool_names = ref String_set.empty in
   let started = ref String_map.empty in
   (* call_id -> the original host-tool call, awaiting its answer. *)
   let pending_calls = ref String_map.empty in
-  let last_text = ref None in
   let rev = ref [] in
   let emit event = rev := event :: !rev in
   let is_host_call call =
@@ -135,11 +135,6 @@ let of_session session =
               (Session.Turn.host_tools turn);
           emit (Turn_started turn)
       | Session.Event.Response_appended response ->
-          (* Match {!Spice_session.State.final_text}: trim and skip a
-             whitespace-only response so the live and replayed [Turn_finished]
-             carry the identical final text. *)
-          let text = String.trim (Spice_llm.Response.text ~sep:"\n" response) in
-          if not (String.is_empty text) then last_text := Some text;
           emit (Assistant response);
           List.iter
             (fun call ->
@@ -183,7 +178,13 @@ let of_session session =
       | Session.Event.Compaction_installed compaction ->
           emit (Compaction compaction)
       | Session.Event.Turn_finished { turn; outcome } ->
-          emit (Turn_finished { turn; outcome; final_text = !last_text }))
+          emit
+            (Turn_finished
+               {
+                 turn;
+                 outcome;
+                 final_text = Session.State.turn_final_text turn state;
+               }))
     events;
   (* The single still-pending host-tool call is the current unanswered
      boundary; emit it once with [result = None]. *)

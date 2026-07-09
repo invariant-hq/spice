@@ -234,6 +234,12 @@ val turn_response_count : Turn.Id.t -> t -> int option
     turn [id], if [id] is known. The active turn's count increases on
     {!Event.Response_appended} only. *)
 
+val turn_final_text : Turn.Id.t -> t -> string option
+(** [turn_final_text id t] is the latest non-empty assistant text appended
+    during turn [id], if [id] is known and has produced model-authored prose.
+    Multiple text blocks are joined with a newline and trimmed. Tool-only and
+    whitespace-only responses do not replace an earlier text for the same turn. *)
+
 val latest_model : t -> Spice_llm.Model.t option
 (** [latest_model t] is the active turn's model, or the most recently started
     turn's model when no turn is active. This is the model the session would
