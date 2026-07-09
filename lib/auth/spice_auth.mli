@@ -102,24 +102,31 @@ module Local_callback : sig
   val await_once :
     stdenv:Eio_unix.Stdenv.base ->
     ?on_ready:(unit -> unit) ->
+    ?accept:(Uri.t -> bool) ->
     redirect_uri:Uri.t ->
     timeout_s:float ->
     unit ->
     (Uri.t, Error.t) result
   (** [await_once ~stdenv ~redirect_uri ~timeout_s ()] binds the loopback
       address or addresses and port described by [redirect_uri], waits for the
-      first request whose path equals [Uri.path redirect_uri], responds with
-      fixed HTML, and returns the absolute callback URI.
+      first accepted request whose path equals [Uri.path redirect_uri], responds
+      with fixed HTML, and returns the absolute callback URI.
 
       [redirect_uri] must have an explicit host and port. Supported hosts are
       [localhost], [127.0.0.1], and [::1]. The optional [on_ready] callback runs
       after at least one socket is listening. Requests with other paths receive
-      [404] and do not complete the wait. A second matching request before the
-      listener stops receives [400].
+      [404] and do not complete the wait. [accept], defaulting to accepting
+      every matching request, filters path-matching callbacks: a request for
+      which [accept] returns [false] receives [400] and does not complete the
+      wait, so a stray or forged callback cannot consume the one-shot listener
+      (see {!OAuth2_authorization_code.accepts_callback}). A second accepted
+      request before the listener stops receives [400].
 
       Errors with [Invalid_request] for unsupported redirect URIs, [Timeout] if
-      no matching request arrives before [timeout_s], and [Network] for socket
-      or server failures. *)
+      no accepted request arrives before [timeout_s], and [Network] for socket
+      or server failures. Fiber cancellation is re-raised, never converted to an
+      error, so callers racing the wait against a cancel signal observe the
+      cancellation. *)
 end
 
 (** {1:oauth2 OAuth 2.0 Authorization Code} *)
@@ -171,6 +178,17 @@ module OAuth2_authorization_code : sig
   val redirect_uri : t -> Uri.t
   (** [redirect_uri t] is the local redirect URI that the callback listener must
       bind. *)
+
+  val accepts_callback : t -> Uri.t -> bool
+  (** [accepts_callback t callback] is [true] iff [callback] belongs to [t]'s
+      authorization request: its state and shape validate, or it is a
+      state-matched provider denial. Callback listeners use it — typically as
+      {!Local_callback.await_once}'s [accept] — to ignore stray or forged
+      callbacks without completing the wait.
+
+      The function is pure and validates only; an accepted callback must still
+      be passed to {!complete} or {!complete_secret}, which repeats the
+      validation before the token exchange. *)
 
   val complete :
     http:Cohttp_eio.Client.t ->

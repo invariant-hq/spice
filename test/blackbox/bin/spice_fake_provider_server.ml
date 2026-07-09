@@ -498,6 +498,53 @@ let serve_unordered options socket items =
             handle_client options client item ~arrival request)
   done
 
+(* One-shot loopback HTTP GET, printing the response status code: the
+   "browser" of OAuth browser-login fixtures, which must hit the CLI's local
+   callback listener without depending on curl. *)
+let run_get url =
+  let rest =
+    match String.split_first ~sep:"://" url with
+    | Some ("http", rest) -> rest
+    | Some (scheme, _) -> fail ("--get supports http URLs only, got " ^ scheme)
+    | None -> fail "--get URL must be an absolute http:// URL"
+  in
+  let authority, target =
+    match String.split_first ~sep:"/" rest with
+    | None -> (rest, "/")
+    | Some (authority, path) -> (authority, "/" ^ path)
+  in
+  let host, port =
+    match String.split_first ~sep:":" authority with
+    | None -> (authority, 80)
+    | Some (host, port) -> (
+        match int_of_string_opt port with
+        | Some port -> (host, port)
+        | None -> fail ("invalid port in " ^ url))
+  in
+  (match host with
+  | "localhost" | "127.0.0.1" -> ()
+  | host -> fail ("--get supports loopback hosts only, got " ^ host));
+  let socket = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+  Fun.protect
+    ~finally:(fun () -> Unix.close socket)
+    (fun () ->
+      Unix.connect socket (Unix.ADDR_INET (Unix.inet_addr_loopback, port));
+      write_all socket
+        (Printf.sprintf
+           "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n" target
+           authority);
+      let input = Unix.in_channel_of_descr socket in
+      let status_line = input_line input |> strip_cr in
+      (* Drain to EOF so the server finishes writing before the close. *)
+      (try
+         while true do
+           ignore (input_line input)
+         done
+       with End_of_file -> ());
+      match String.split_on_char ' ' status_line with
+      | _ :: code :: _ -> print_endline code
+      | [ _ ] | [] -> fail ("unexpected status line: " ^ status_line))
+
 let serve options items =
   mkdir_p options.capture;
   let socket = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
@@ -513,12 +560,16 @@ let serve options items =
 
 let usage =
   "Usage: spice_fake_provider_server --script FILE --capture DIR --port-file \
-   FILE"
+   FILE\n\
+  \       spice_fake_provider_server --get URL"
+
+type mode = Serve of options | Get of string
 
 let parse_args () =
   let script = ref None in
   let capture = ref None in
   let port_file = ref None in
+  let get = ref None in
   let accept_timeout_s = ref 10. in
   let unordered = ref false in
   let set option value slot =
@@ -540,6 +591,9 @@ let parse_args () =
     | "--port-file" :: value :: rest ->
         set "--port-file" value port_file;
         loop rest
+    | "--get" :: value :: rest ->
+        set "--get" value get;
+        loop rest
     | "--unordered" :: rest ->
         unordered := true;
         loop rest
@@ -558,18 +612,23 @@ let parse_args () =
   in
   let argv = Array.to_list Sys.argv |> List.tl in
   loop argv;
-  match (!script, !capture, !port_file) with
-  | Some script, Some capture, Some port_file ->
-      {
-        script;
-        capture;
-        port_file;
-        accept_timeout_s = !accept_timeout_s;
-        unordered = !unordered;
-      }
-  | _ -> fail usage
+  match (!get, !script, !capture, !port_file) with
+  | Some url, None, None, None -> Get url
+  | Some _, _, _, _ -> fail "--get cannot be combined with server options"
+  | None, Some script, Some capture, Some port_file ->
+      Serve
+        {
+          script;
+          capture;
+          port_file;
+          accept_timeout_s = !accept_timeout_s;
+          unordered = !unordered;
+        }
+  | None, _, _, _ -> fail usage
 
 let () =
-  let options = parse_args () in
-  let items = load_script options.script in
-  serve options items
+  match parse_args () with
+  | Get url -> run_get url
+  | Serve options ->
+      let items = load_script options.script in
+      serve options items

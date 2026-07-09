@@ -179,8 +179,8 @@ module Local_callback = struct
     in
     loop [] None hosts
 
-  let await_once ~stdenv ?(on_ready = fun () -> ()) ~redirect_uri ~timeout_s ()
-      =
+  let await_once ~stdenv ?(on_ready = fun () -> ()) ?(accept = fun _ -> true)
+      ~redirect_uri ~timeout_s () =
     let* hosts = callback_hosts redirect_uri in
     let* port = callback_port redirect_uri in
     try
@@ -195,7 +195,11 @@ module Local_callback = struct
             let request_uri = Cohttp.Request.uri request in
             if String.equal (Uri.path request_uri) (Uri.path redirect_uri) then
               let callback = callback_absolute_uri ~redirect_uri request_uri in
-              if Eio.Promise.try_resolve result_resolver (Ok callback) then (
+              if not (accept callback) then (
+                Log.info (fun m ->
+                    m "unaccepted authorization callback ignored");
+                respond_html ~status:`Bad_request html_error)
+              else if Eio.Promise.try_resolve result_resolver (Ok callback) then (
                 Log.info (fun m -> m "authorization callback received");
                 respond_html ~status:`OK html_success)
               else respond_html ~status:`Bad_request html_error
@@ -221,6 +225,9 @@ module Local_callback = struct
     with
     | Eio.Time.Timeout ->
         Error (Error.Timeout "browser authorization timed out")
+    (* Cancellation must escape: converting it to [Network] would let a
+       cancelled wait masquerade as a failed one in a caller's race. *)
+    | Eio.Cancel.Cancelled _ as exn -> raise exn
     | exn -> Error (Error.Network (Printexc.to_string exn))
 end
 
@@ -282,6 +289,7 @@ module Openai_chatgpt = struct
         expires_in = default_expires_in;
         poll_interval = default_poll_interval;
       }
+
     let client_id t = t.client_id
     let expires_in t = t.expires_in
     let poll_interval t = t.poll_interval
@@ -677,6 +685,7 @@ module OAuth2_authorization_code = struct
   }
 
   type token_profile = Generic | Openai_chatgpt
+
   let authorization_uri t = t.authorization_uri
   let redirect_uri t = t.redirect_uri
 
@@ -727,6 +736,18 @@ module OAuth2_authorization_code = struct
             authorization_uri = Oauth2.Authorization.uri authorization;
             redirect_uri = Oauth2.Authorization.redirect_uri authorization;
           }
+
+  (* State is validated before OAuth errors surface (oauth2.ml), so an
+     [`Oauth] result can only come from a state-matched — genuine — callback:
+     the provider denied it, and the flow must see that denial rather than
+     keep waiting. Everything else is a stray or forged request. *)
+  let accepts_callback t callback =
+    match Oauth2.Authorization.callback t.authorization callback with
+    | Ok _ | Error (`Oauth _) -> true
+    | Error
+        (`Missing _ | `Duplicate _ | `State_mismatch | `Redirect_uri_mismatch)
+      ->
+        false
 
   let complete ~http ~sw t ~callback =
     match Oauth2.Authorization.callback t.authorization callback with

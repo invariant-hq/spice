@@ -73,7 +73,8 @@ let authorization_setup ~token_endpoint =
   let started =
     match Browser.start ~random:(fun n -> String.make n '\001') spec with
     | Ok started -> started
-    | Error error -> failf "failed to start browser auth: %a" Auth.Error.pp error
+    | Error error ->
+        failf "failed to start browser auth: %a" Auth.Error.pp error
   in
   let state = query_one "state" (Browser.authorization_uri started) in
   let callback =
@@ -163,9 +164,103 @@ let rejects_empty_generic_refresh_token env () =
   | Error error -> failf "expected protocol error, got %a" Auth.Error.pp error
   | Ok _ -> failf "expected empty refresh token rejection"
 
+let free_port env =
+  Eio.Switch.run @@ fun sw ->
+  let socket =
+    Eio.Net.listen env#net ~sw ~backlog:1 ~reuse_addr:true
+      (`Tcp (Eio.Net.Ipaddr.V4.loopback, 0))
+  in
+  match Eio.Net.listening_addr socket with
+  | `Tcp (_, port) -> port
+  | `Unix path -> failf "expected TCP listening socket, got Unix path %S" path
+
+let http_get env ~sw uri =
+  let client = Cohttp_eio.Client.make ~https:None env#net in
+  let response, body = Cohttp_eio.Client.call client ~sw `GET uri in
+  ignore (read_body body);
+  Http.Status.to_int (Http.Response.status response)
+
+let accepts_only_matching_callbacks () =
+  let token_endpoint = Uri.of_string "https://provider.example/token" in
+  let started, callback = authorization_setup ~token_endpoint in
+  let state = query_one "state" (Browser.authorization_uri started) in
+  is_true ~msg:"state-matched code callback is accepted"
+    (Browser.accepts_callback started callback);
+  is_false ~msg:"forged state is rejected"
+    (Browser.accepts_callback started
+       (Uri.of_string "http://localhost/callback?code=code-1&state=forged"));
+  is_false ~msg:"missing state is rejected"
+    (Browser.accepts_callback started
+       (Uri.of_string "http://localhost/callback?code=code-1"));
+  is_true ~msg:"state-matched provider denial is accepted"
+    (Browser.accepts_callback started
+       (Uri.of_string
+          ("http://localhost/callback?error=access_denied&state=" ^ state)))
+
+let listener_ignores_unaccepted_callbacks env () =
+  let port = free_port env in
+  let redirect_uri =
+    Uri.of_string (Printf.sprintf "http://127.0.0.1:%d/callback" port)
+  in
+  Eio.Switch.run @@ fun sw ->
+  let ready, ready_resolver = Eio.Promise.create () in
+  let listener =
+    Eio.Fiber.fork_promise ~sw (fun () ->
+        Auth.Local_callback.await_once ~stdenv:env
+          ~on_ready:(fun () -> Eio.Promise.resolve ready_resolver ())
+          ~accept:(fun callback ->
+            match List.assoc_opt "state" (Uri.query callback) with
+            | Some [ "good" ] -> true
+            | Some _ | None -> false)
+          ~redirect_uri ~timeout_s:5.0 ())
+  in
+  Eio.Promise.await ready;
+  let get state =
+    http_get env ~sw
+      (Uri.of_string
+         (Printf.sprintf "http://127.0.0.1:%d/callback?code=c&state=%s" port
+            state))
+  in
+  equal int ~msg:"forged callback is answered with 400" 400 (get "forged");
+  equal int ~msg:"accepted callback is answered with 200" 200 (get "good");
+  match Eio.Promise.await_exn listener with
+  | Ok callback ->
+      equal string ~msg:"the accepted callback completes the wait" "good"
+        (query_one "state" callback)
+  | Error error ->
+      failf "expected accepted callback, got %a" Auth.Error.pp error
+
+let listener_reraises_cancellation env () =
+  let port = free_port env in
+  let redirect_uri =
+    Uri.of_string (Printf.sprintf "http://127.0.0.1:%d/callback" port)
+  in
+  Eio.Switch.run @@ fun sw ->
+  let ready, ready_resolver = Eio.Promise.create () in
+  let cancel_context, cancel_context_resolver = Eio.Promise.create () in
+  let result =
+    Eio.Fiber.fork_promise ~sw (fun () ->
+        Eio.Cancel.sub @@ fun context ->
+        Eio.Promise.resolve cancel_context_resolver context;
+        Auth.Local_callback.await_once ~stdenv:env
+          ~on_ready:(fun () -> Eio.Promise.resolve ready_resolver ())
+          ~redirect_uri ~timeout_s:10.0 ())
+  in
+  Eio.Promise.await ready;
+  Eio.Cancel.cancel
+    (Eio.Promise.await cancel_context)
+    (Failure "test cancellation");
+  match Eio.Promise.await_exn result with
+  | exception Eio.Cancel.Cancelled _ -> ()
+  | Ok _ -> failf "expected cancellation, got a callback"
+  | Error error ->
+      failf "cancellation was wrapped as auth error: %a" Auth.Error.pp error
+
 let rejects_invalid_openai_auth_issuer () =
   match
-    Auth.Openai_chatgpt.Config.make ~issuer:(Uri.of_string "file:///tmp/auth") ()
+    Auth.Openai_chatgpt.Config.make
+      ~issuer:(Uri.of_string "file:///tmp/auth")
+      ()
   with
   | Error (Auth.Error.Invalid_request message) ->
       is_true ~msg:"invalid issuer is reported"
@@ -206,7 +301,9 @@ let with_oauth_device_server env token_responses f =
 
 let start_oauth_device ~sw ~base_uri env =
   match
-    Device.start_oauth2 ~http:(Oauth2_eio.make_client env#net) ~sw ~now:10L
+    Device.start_oauth2
+      ~http:(Oauth2_eio.make_client env#net)
+      ~sw ~now:10L
       (oauth_device_spec ~base_uri)
   with
   | Ok device -> device
@@ -289,6 +386,14 @@ let () =
             (with_eio rejects_empty_generic_access_token);
           test ~timeout:3.0 "rejects empty generic refresh tokens"
             (with_eio rejects_empty_generic_refresh_token);
+        ];
+      group "browser"
+        [
+          test "accepts only matching callbacks" accepts_only_matching_callbacks;
+          test ~timeout:5.0 "listener ignores unaccepted callbacks"
+            (with_eio listener_ignores_unaccepted_callbacks);
+          test ~timeout:5.0 "listener re-raises cancellation"
+            (with_eio listener_reraises_cancellation);
         ];
       group "device"
         [

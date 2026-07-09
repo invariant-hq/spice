@@ -72,6 +72,31 @@ wait_for_file () {
   return 1
 }
 
+wait_for_output () {
+  local pattern="$1"
+  local path="$2"
+  local tries="${3:-200}"
+
+  while [ "$tries" -gt 0 ]
+  do
+    if grep -q "$pattern" "$path" 2>/dev/null
+    then
+      return 0
+    fi
+    tries=$((tries - 1))
+    sleep 0.05
+  done
+
+  echo "timed out waiting for $pattern in $path"
+  return 1
+}
+
+# One-shot loopback HTTP GET printing the status code: the "browser" of OAuth
+# browser-login fixtures, hitting the CLI's local callback listener.
+fake_browser_get () {
+  "$(find_up bin/spice_fake_provider_server.exe)" --get "$1"
+}
+
 cleanup_fake_server () {
   if [ -n "${SPICE_FAKE_PROVIDER_PID:-}" ]
   then

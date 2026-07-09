@@ -134,8 +134,11 @@ let browser ~stdenv host ~provider ~method_id ?name ?cancel events =
           let awaited =
             race ?cancel (fun () ->
                 let on_ready () = events (Listening { redirect_uri }) in
+                let accept =
+                  Auth.OAuth2_authorization_code.accepts_callback started
+                in
                 `Callback
-                  (Auth.Local_callback.await_once ~stdenv ~on_ready
+                  (Auth.Local_callback.await_once ~stdenv ~on_ready ~accept
                      ~redirect_uri ~timeout_s:callback_timeout_s ()))
           in
           match awaited with

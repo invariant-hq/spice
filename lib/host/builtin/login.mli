@@ -86,8 +86,10 @@ val browser :
     OAuth2 authorization-code flow: it emits {!Browser_url}, binds the local
     callback and emits {!Listening}, awaits the redirect for up to 300 seconds,
     exchanges the callback for a secret (using the provider's token profile),
-    and settles through the {!save} policy. [method_id] must name an
-    authorization-code login. *)
+    and settles through the {!save} policy. Callbacks that do not belong to the
+    started authorization — a mismatched state, a malformed shape — are answered
+    with an error page and the wait continues, so a stray local request cannot
+    consume the attempt. [method_id] must name an authorization-code login. *)
 
 val device :
   stdenv:Eio_unix.Stdenv.base ->
