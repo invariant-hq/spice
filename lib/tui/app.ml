@@ -247,7 +247,7 @@ type t = {
 type settled =
   | Finished
   | Waiting of Spice_protocol.Pending.t option
-  | Failed of { message : string }
+  | Failed of { message : string; login_needed : bool }
 
 type msg =
   | Composer_msg of Composer.msg
@@ -1848,7 +1848,7 @@ let update msg t =
               with
               | Some dialog -> ({ t with surface = Panel (Dialog dialog) }, [])
               | None -> (t, []))
-          | Failed { message } ->
+          | Failed { message; login_needed } ->
               (* A transport failure that never produced a Turn_finished: the
                  turn is still active, so reset the tail and record the failure
                  with an honest next step. Queued prompts are discarded — they
@@ -1875,14 +1875,24 @@ let update msg t =
                 if t.queued = [] then t.flash
                 else Some "queued prompts discarded after the failure"
               in
-              ( {
+              let t =
+                {
                   t with
                   phase = Chat chat;
                   queued = [];
                   flash;
                   armed = disarm_interrupt t.armed;
-                },
-                [] )))
+                }
+              in
+              (* A missing-credential failure strands the user at exactly the
+                 moment they need /login, so open the flow for them (09-auth
+                 §9); the failure notice above stays the transcript record. A
+                 surface already up keeps the keyboard. *)
+              if login_needed then
+                match t.surface with
+                | Conversing -> open_auth ~mode:Auth_panel.Login t
+                | Panel _ | Screen _ -> (t, [])
+              else (t, [])))
   | Turn_tick -> (
       match t.phase with
       | Chat chat ->
@@ -2399,8 +2409,9 @@ let update msg t =
      muted event notice — the honest degrade of 09-auth §8's two-line ⏺/⎿ record,
      since Notice.t carries no colored two-line tool-record form and Tool_block
      is off-limits to this workstream (reported to the lead, Q2). On the home
-     stage there is no transcript to echo into (Q3): close silently and let the
-     footer's account segment flip on the refresh. *)
+     stage there is no transcript to echo into (Q3): the record takes over the
+     standing notice slot instead — the welcome has done its job by the time a
+     login settles — so the outcome is confirmed, not silent. *)
   | Auth_settled { request; record } -> (
       match t.surface with
       | Panel (Auth panel) when Auth_panel.active_request panel = Some request
@@ -2421,7 +2432,7 @@ let update msg t =
                                (Notice.Event (auth_settled_line record)));
                       };
                 }
-            | Prelude -> t
+            | Prelude -> { t with notice = [ auth_settled_line record ] }
           in
           (t, [ Reload_brief ])
       | Conversing

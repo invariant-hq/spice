@@ -290,10 +290,13 @@ type settled =
           static [⋯ Waiting for your answer]; the typed boundary, when present,
           opens the matching decision dialog ([None] for a boundary with no
           user-facing form). *)
-  | Failed of { message : string }
+  | Failed of { message : string; login_needed : bool }
       (** The drain failed without producing a terminal turn — a transport error
           that never reached the event stream. The shell appends a failure
-          notice; this is the only failure source outside the turn reducer. *)
+          notice; this is the only failure source outside the turn reducer.
+          [login_needed] marks the missing-credential class — nothing connected
+          on a derived model choice — whose repair is a login: the shell also
+          opens the login flow (09-auth §9). *)
 
 val brief_loaded : Home.Brief.t -> msg
 (** [brief_loaded brief] is the message the runtime dispatches when a

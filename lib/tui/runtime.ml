@@ -1031,7 +1031,18 @@ let settled_of_result = function
       (* Forward the typed pending boundary so the shell opens the matching
          dialog; [None] for a wait with no user-facing form. *)
       App.Waiting (Spice_protocol.Pending.of_outcome outcome)
-  | Error error -> App.Failed { message = failure_message error }
+  | Error error ->
+      App.Failed { message = failure_message error; login_needed = false }
+
+(* The one missing-credential failure whose repair is a login. The binding and
+   attachment pipelines compose over string errors, so the class rides the
+   message itself: [failed_settle] recognizes this exact string and marks the
+   settle, and the shell opens the login flow on it (09-auth §9). *)
+let not_logged_in_message = "not logged in — run /login to connect a provider"
+
+let failed_settle message =
+  App.Failed
+    { message; login_needed = String.equal message not_logged_in_message }
 
 (* {2 Auth ("09-auth.md")}
 
@@ -1301,7 +1312,7 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
             match Spice_host.client ~sw ~stdenv host model with
             | Error (Spice_host.Host.Error.Missing_credential _)
               when Option.is_none !current_selection ->
-                Error "not logged in — run /login to connect a provider"
+                Error not_logged_in_message
             | result -> Result.map_error host_error result
           in
           Ok (model, effort, client)
@@ -1637,7 +1648,7 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                       Eio.Promise.resolve resolve (Error message);
                       deliver
                         (App.settled ~now:(Eio.Time.now clock)
-                           (App.Failed { message })))
+                           (failed_settle message)))
         in
         (* The live attachment for [id], when [id] is the currently attached
            session — so a rename or delete of the active session serializes with
@@ -1950,7 +1961,7 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                   | Error message ->
                       deliver
                         (App.settled ~now:(Eio.Time.now clock)
-                           (App.Failed { message }))
+                           (failed_settle message))
                   | Ok (live, run) -> (
                       (* Every turn re-binds its contract — selection, fresh
                          credential store, current mode — and swaps the runner
@@ -1960,7 +1971,7 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                       | Error message ->
                           deliver
                             (App.settled ~now:(Eio.Time.now clock)
-                               (App.Failed { message }))
+                               (failed_settle message))
                       | Ok (runner, model, effort) ->
                           Spice_host.Live.set_runner live runner;
                           refresh_snapshot ();
@@ -2208,7 +2219,7 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                       | Error message ->
                           deliver
                             (App.settled ~now:(Eio.Time.now clock)
-                               (App.Failed { message })))
+                               (failed_settle message)))
                   | None -> ())
           | App.Run_shell command ->
               shell_cancelled := false;
