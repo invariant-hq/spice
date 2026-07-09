@@ -1138,10 +1138,15 @@ let run ~stdenv ~(startup : App.startup) () =
           make_brief_loader ?sandbox_flag ~stdenv ~clock ~host ~cwd ()
         in
         let load_health = make_health_loader ~stdenv ~clock ~cwd in
+        (* [start_idle]: the render cadence runs only while something animates
+           (mosaic requests it for tick subscriptions). Without it the loop is
+           [`Explicit_started] — permanently live — and re-renders the whole
+           mounted transcript at 30fps forever, CPU proportional to session
+           length even when nothing on screen changes. *)
         let matrix =
           Matrix_eio.create ~mode:`Alt ~sw ~clock ~stdin:stdenv#stdin
             ~stdout:stdenv#stdout ~target_fps:(Some 30.) ~cursor_visible:true
-            ~mouse_enabled:true ~exit_on_ctrl_c:false ()
+            ~mouse_enabled:true ~exit_on_ctrl_c:false ~start_idle:true ()
         in
         let process_perform thunk =
           Eio.Fiber.fork_daemon ~sw (fun () ->
