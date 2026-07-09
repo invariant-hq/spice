@@ -73,7 +73,9 @@ val jsont : t Jsont.t
 (** [jsont] maps erased outputs to durable JSON.
 
     The mapping preserves {!text}, {!json}, and {!truncated}. Retained typed
-    values are in-memory evidence and are not serialized. *)
+    values are in-memory evidence and are not serialized. This is the session
+    and audit-log shape; hosts that need replayable UI or audit data must place
+    that data in {!text} or {!json} before the output is written. *)
 
 type 'a encoder = 'a -> t
 (** The type for typed output encoders from ['a] to erased {!type:t}.
