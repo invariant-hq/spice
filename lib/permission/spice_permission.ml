@@ -6,3 +6,4 @@
 module Access = Access
 module Request = Request
 module Policy = Policy
+module Suggest = Suggest

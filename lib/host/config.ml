@@ -2005,6 +2005,13 @@ module Config_file = struct
   let set_permission_rules = Layer.set_permission_rules
   let edit = Files.edit
   let ensure = Files.ensure
+
+  let add_permission_rule ~stdenv paths kind rule =
+    Files.edit ~stdenv paths kind ~f:(fun doc ->
+        let rules = Layer.permission_rules doc in
+        if List.exists (Spice_permission.Policy.Rule.equal rule) rules then
+          Ok doc
+        else Ok (Layer.set_permission_rules (rules @ [ rule ]) doc))
 end
 
 module Patch = struct

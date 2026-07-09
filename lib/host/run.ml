@@ -170,6 +170,7 @@ type t = {
     model:Spice_provider.Model.t ->
     client:Spice_llm.Client.t ->
     (Runner.t, Host.Error.t) result;
+  add_session_rule : Spice_permission.Policy.Rule.t -> unit;
 }
 
 let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
@@ -178,6 +179,12 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
   let workspace = Plan.workspace plan in
   let sandbox = Plan.sandbox plan in
   let permission = Plan.permission plan in
+  (* Reviewer "always allow" grants for this run. They live here, not in the
+     session document, so a session-scoped grant is deliberately per-run: a
+     later [resume] is a fresh process that re-reads only the durable config.
+     [runner_for] folds the current list into the posture on every turn
+     derivation, so a grant added mid-turn decides the next tool call. *)
+  let session_rules = ref [] in
   let* context = Context.load ~stdenv config in
   let skills =
     match preloaded_skills with
@@ -378,6 +385,9 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
      workspace, so a frontend re-binding at each turn pays only pure assembly
      and no producer restart. *)
   let runner_for ~mode ~model ~client =
+    let permission =
+      Permission.Run.with_session_rules !session_rules permission
+    in
     let* prelude =
       Context.extend_prelude context (Spice_protocol.Mode.prelude_messages mode)
       |> Result.map_error (fun error -> Host.Error.Instructions error)
@@ -492,9 +502,8 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
                   | Ok child_config ->
                       Ok
                         (Runner.make ~store ~client
-                           ~model:(Spice_provider.Model.llm model) ~mode:None
-                           ~run:child_config
-                           ~host_tool:Handler.child
+                           ~model:(Spice_provider.Model.llm model)
+                           ~mode:None ~run:child_config ~host_tool:Handler.child
                            ~hooks:
                              (Session.with_notices
                                 ~before_request:(fun () -> ())
@@ -522,7 +531,8 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
         ~message:message_run
     in
     Ok
-      (Runner.make ~store ~client ~model:(Spice_provider.Model.llm model)
+      (Runner.make ~store ~client
+         ~model:(Spice_provider.Model.llm model)
          ~mode:(Some mode) ~run:run_config ~host_tool:handler ~resolve_plan
          ?compaction ~hooks ())
   in
@@ -535,11 +545,14 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
       producers;
       jobs;
       runner_for;
+      add_session_rule =
+        (fun rule -> session_rules := !session_rules @ [ rule ]);
     }
 
 let stop t = Producers.stop t.producers
 let jobs t = t.jobs
 let runner t ~mode ~model ~client = t.runner_for ~mode ~model ~client
+let add_session_rule t rule = t.add_session_rule rule
 let workspace t = t.workspace
 let cwd t = t.cwd
 let context t = t.context

@@ -175,6 +175,21 @@ module Run : sig
       only for an enforcing workspace-write sandbox: a run with no confinement
       never allows commands without review. *)
 
+  val with_session_rules :
+    Spice_permission.Policy.Rule.t list -> 'src t -> 'src t
+  (** [with_session_rules rules t] is [t] with [rules] prepended as its
+      highest-precedence rows, deciding before every durable, preset, and
+      sandbox-backed row.
+
+      These are a reviewer's in-session "always allow" grants: a session-scoped
+      family rule takes effect for the rest of the run — including within the
+      turn that installed it, because {!Run.make}'s policy is rebuilt from the
+      posture each turn — without waiting for a durable config write to load.
+      The rows borrow the preset's provenance, so {!find} and {!denial_message}
+      read them as preset rows; since "always allow" only installs allow rules,
+      they never decide a denial. Rules already present by content (equal
+      {!rule_id}) are skipped, so re-installing the same rule is idempotent. *)
+
   val preset : 'src t -> Preset.t
   (** [preset t] is the selected permission preset. *)
 

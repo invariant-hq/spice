@@ -155,9 +155,26 @@ module Run = struct
     if not sandbox_backed then t
     else
       let extra =
-        List.map (annotate t.preset_source) (Preset.sandbox_backed_rules t.preset)
+        List.map (annotate t.preset_source)
+          (Preset.sandbox_backed_rules t.preset)
       in
       { t with rows = t.rows @ extra }
+
+  (* Session rows prepend at the highest precedence — the reverse of the
+     sandbox-backed rows, which append as the last word — because an "always
+     allow" the reviewer just gave should win over the durable and preset rules
+     that raised the prompt. Duplicates (against existing rows or within the
+     added list) are skipped so re-installing a rule is idempotent. *)
+  let with_session_rules rules t =
+    let rec add seen acc = function
+      | [] -> List.rev acc
+      | rule :: rest ->
+          let row = annotate t.preset_source rule in
+          if List.mem row.id seen then add seen acc rest
+          else add (row.id :: seen) (row :: acc) rest
+    in
+    let existing = List.map (fun row -> row.id) t.rows in
+    { t with rows = add existing [] rules @ t.rows }
 
   let preset t = t.preset
   let rows t = t.rows

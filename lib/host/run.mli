@@ -172,6 +172,19 @@ val runner :
     Errors are {!Host.Error.t}: {!Host.Error.Instructions} from prelude
     construction. *)
 
+val add_session_rule : t -> Spice_permission.Policy.Rule.t -> unit
+(** [add_session_rule t rule] installs [rule] as a highest-precedence permission
+    rule for the rest of the run (see {!Permission.Run.with_session_rules}). It
+    is the in-session half of a reviewer's "always allow" answer: the next turn
+    derivation — including the one continuing after the prompt that produced it
+    — decides tool calls under the augmented posture, so a later matching call
+    runs without a prompt.
+
+    The rule is not persisted; it lives only in this run. A durable "always
+    allow" scope additionally writes the rule to config with
+    {!Config.Config_file.add_permission_rule}. Adding the same rule twice is
+    idempotent. *)
+
 val workspace : t -> Spice_workspace.t
 (** [workspace t] is the run's workspace. *)
 
