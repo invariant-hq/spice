@@ -23,21 +23,7 @@ let json_obj fields =
     (List.map (fun (name, value) -> Json.mem (Json.name name) value) fields)
 
 let json_null = Json.null ()
-
-(* Metavariables are __ followed by one or more digits, mirroring
-   {!Spice_ocaml_grep}'s private predicate: the engine does not expose it, so
-   this tool replicates the grammar exactly. Any change to the engine grammar
-   must be reflected here. *)
-let is_metavar str =
-  String.length str > 2
-  && str.[0] = '_'
-  && str.[1] = '_'
-  &&
-  let all_digits = ref true in
-  for i = 2 to String.length str - 1 do
-    match str.[i] with '0' .. '9' -> () | _ -> all_digits := false
-  done;
-  !all_digits
+let is_metavar = Grep.Pattern.is_metavariable_name
 
 (* {1 Pure template parsing and validation} *)
 
@@ -368,8 +354,8 @@ let render template holes frags mode =
   in
   splice template subs
 
-(* The template with each hole replaced by the site fragment's stripped AST:
-   the structural target the rewritten site must strip-equal. *)
+(* The template with each hole replaced by the site fragment's AST: the
+   structural target the rewritten site must equal under grep's equality. *)
 let expected_ast template_ast frags =
   let super = Ast_mapper.default_mapper in
   let expr self e =
@@ -381,11 +367,11 @@ let expected_ast template_ast frags =
     | _ -> super.Ast_mapper.expr self e
   in
   let mapper = { super with Ast_mapper.expr } in
-  Grep.strip_expr (mapper.Ast_mapper.expr mapper template_ast)
+  mapper.Ast_mapper.expr mapper template_ast
 
 let isolation_ok replacement expected =
   match parse_expr replacement with
-  | Some e -> Grep.strip_expr e = expected
+  | Some e -> Grep.structurally_equal_expr e expected
   | None -> false
 
 (* Collect every expression node of a parsed structure with its byte span, for
@@ -450,7 +436,7 @@ let build_frags site_texts =
                 (( hole,
                    {
                      fr_raw = raw;
-                     fr_ast = Grep.strip_expr e;
+                     fr_ast = e;
                      fr_atomic = is_atomic raw e;
                    } )
                 :: frags)
@@ -525,7 +511,8 @@ let rec verify_file ~path source sites =
         List.find_opt
           (fun (site, fstart, fend) ->
             match node_at spans fstart fend with
-            | Some node -> Grep.strip_expr node <> site.st_expected
+            | Some node ->
+                not (Grep.structurally_equal_expr node site.st_expected)
             | None -> true)
           (final_ranges sites)
       in
@@ -1147,11 +1134,7 @@ let run ~fs ~workspace ?(max_bytes = default_max_bytes)
     | Error error ->
         Tool.Result.failed `Invalid_input (Grep.Pattern.error_message error)
     | Ok pattern -> (
-        let pattern_metavars =
-          match parse_expr (Input.pattern input) with
-          | Some ast -> collect_metavars ast
-          | None -> []
-        in
+        let pattern_metavars = Grep.Pattern.metavariables pattern in
         match validate_template ~pattern_metavars (Input.template input) with
         | Error message -> Tool.Result.failed `Invalid_input message
         | Ok (template, template_ast, holes) -> (

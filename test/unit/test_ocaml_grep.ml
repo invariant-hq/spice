@@ -75,6 +75,37 @@ let find pattern source =
 let check pattern source expected =
   equal (list string) ~msg:pattern expected (find pattern source)
 
+let parse_expr source =
+  match Parse.expression (Lexing.from_string source) with
+  | expr -> expr
+  | exception exn ->
+      failf "expression %S did not parse: %s" source (Printexc.to_string exn)
+
+let pattern_api () =
+  List.iter
+    (fun (name, expected) ->
+      equal bool ~msg:name expected (Grep.Pattern.is_metavariable_name name))
+    [
+      ("__", false);
+      ("__1", true);
+      ("__23", true);
+      ("__a", false);
+      ("__1a", false);
+    ];
+  let pattern =
+    match
+      Grep.Pattern.parse "match __1 with Some __2 -> __2 | None -> __.field"
+    with
+    | Ok pattern -> pattern
+    | Error error ->
+        failf "pattern parse failed: %s" (Grep.Pattern.error_message error)
+  in
+  equal (list string) ~msg:"metavariables"
+    [ "__1"; "__2" ]
+    (Grep.Pattern.metavariables pattern);
+  is_true ~msg:"structural expression equality ignores locations"
+    (Grep.structurally_equal_expr (parse_expr "f  x") (parse_expr "f x"))
+
 let identifier_suffix () =
   let source = "let ys = List.filter pred xs\nlet n = String.length s\n" in
   check "List.filter" source [ "List.filter" ];
@@ -242,6 +273,7 @@ let binding_disjoint_ranges () =
 let () =
   run "spice.ocaml.grep"
     [
+      test "pattern API" pattern_api;
       test "binding capture: flagship ghost-to-real upgrade"
         binding_flagship_upgrade;
       test "binding capture: identifier-only metavariable" binding_ident_capture;

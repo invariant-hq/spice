@@ -68,6 +68,7 @@ let strip =
   }
 
 let strip_expr expr = strip.Ast_mapper.expr strip expr
+let structurally_equal_expr a b = strip_expr a = strip_expr b
 
 let rec strip_lident lid =
   match lid with
@@ -81,6 +82,41 @@ let rec strip_lident lid =
 
 let last_component lid =
   match lid with Lident s -> s | Ldot (_, s) -> s.txt | Lapply _ -> ""
+
+let metavariables_in_expr root =
+  let vars = ref [] in
+  let add name =
+    if is_metavar name && not (List.mem name !vars) then vars := name :: !vars
+  in
+  let rec lident = function
+    | Lident name -> add name
+    | Ldot (lid, name) ->
+        lident lid.Location.txt;
+        add name.Location.txt
+    | Lapply (left, right) ->
+        lident left.Location.txt;
+        lident right.Location.txt
+  in
+  let super = Ast_iterator.default_iterator in
+  let expr self e =
+    (match e.pexp_desc with
+    | Pexp_ident { txt; _ } | Pexp_new { txt; _ } -> lident txt
+    | Pexp_construct ({ txt; _ }, _) -> lident txt
+    | Pexp_field (_, { txt; _ }) | Pexp_setfield (_, { txt; _ }, _) ->
+        lident txt
+    | _ -> ());
+    super.expr self e
+  in
+  let pat self pat =
+    (match pat.ppat_desc with
+    | Ppat_var { txt; _ } -> add txt
+    | Ppat_construct ({ txt; _ }, _) -> lident txt
+    | _ -> ());
+    super.pat self pat
+  in
+  let iterator = { super with expr; pat } in
+  iterator.expr iterator root;
+  List.sort String.compare !vars
 
 (* A capture is "real" only when it is an expression occurrence with a
    non-ghost location: its verbatim bytes beat a reconstructed identifier. *)
@@ -423,6 +459,8 @@ module Pattern = struct
 
   let error_message = function Syntax m -> m | Unsupported m -> m
   let source t = t.source
+  let is_metavariable_name = is_metavar
+  let metavariables t = metavariables_in_expr t.parsed
 
   exception Unsupported_found of string
 

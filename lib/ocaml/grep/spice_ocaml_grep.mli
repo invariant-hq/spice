@@ -56,6 +56,11 @@ module Pattern : sig
   val error_message : error -> string
   (** [error_message e] is the human-readable message of [e]. *)
 
+  val is_metavariable_name : string -> bool
+  (** [is_metavariable_name name] is [true] iff [name] is a numbered
+      metavariable name such as ["__1"] or ["__23"]. The anonymous wildcard
+      ["__"] is not a metavariable. *)
+
   val parse : string -> (t, error) result
   (** [parse query] parses [query] as one OCaml expression and validates it as a
       search pattern.
@@ -66,6 +71,11 @@ module Pattern : sig
 
   val source : t -> string
   (** [source t] is the query text [t] was parsed from. *)
+
+  val metavariables : t -> string list
+  (** [metavariables t] is the sorted list of distinct numbered metavariables
+      used by [t]. Metavariables are collected from expression identifiers,
+      identifier paths, constructors, record fields, and pattern variables. *)
 end
 
 (** {1 Parsing searched sources} *)
@@ -141,9 +151,7 @@ val search_with_bindings :
     location as in {!search}, and match ranges within a file are pairwise
     disjoint. *)
 
-val strip_expr : Parsetree.expression -> Parsetree.expression
-(** [strip_expr e] is [e] with every location set to a ghost none, every
-    attribute removed, and every location stack cleared. It is the canonical
-    notion of "structurally equal" used to unify metavariable bindings; callers
-    that reconstruct or re-check a match must strip with this function to share
-    one notion of equality with the matcher. *)
+val structurally_equal_expr : Parsetree.expression -> Parsetree.expression -> bool
+(** [structurally_equal_expr a b] is [true] iff [a] and [b] are equal under the
+    same location- and attribute-insensitive structural equality used to unify
+    metavariable bindings. *)
