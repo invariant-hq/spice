@@ -470,26 +470,24 @@ let feature t = t.feature
 let cursor t = t.cursor
 
 (* One review unit per hunk of a Text file, one per Opaque file. *)
-let file_unit_scopes file =
+let file_unit_scopes_of_file file =
   let path = Feature.File.path file in
   match Feature.File.content file with
   | Feature.File.Text hunks ->
       List.map (fun hunk -> Scope.of_hunk ~path hunk) hunks
   | Feature.File.Opaque _ -> [ Scope.File path ]
 
+let file_unit_scopes t ~path =
+  Option.map file_unit_scopes_of_file (Feature.find_file t.feature ~path)
+
+let unit_scopes t = List.concat_map file_unit_scopes_of_file (Feature.files t.feature)
+
 let files t = List.length (Feature.files t.feature)
 
-let units t =
-  List.fold_left
-    (fun units file -> units + List.length (file_unit_scopes file))
-    0 (Feature.files t.feature)
+let units t = List.length (unit_scopes t)
 
 let reviewed_units t =
-  List.fold_left
-    (fun reviewed file ->
-      reviewed
-      + List.length (List.filter (is_reviewed t) (file_unit_scopes file)))
-    0 (Feature.files t.feature)
+  List.length (List.filter (is_reviewed t) (unit_scopes t))
 
 let open_crs t =
   Array.fold_left

@@ -395,6 +395,16 @@ val cursor : t -> Cursor.t
 val files : t -> int
 (** [files review] is the number of changed files. *)
 
+val unit_scopes : t -> Scope.t list
+(** [unit_scopes review] is [review]'s review units in canonical file order: one
+    hunk scope per hunk of a {!Feature.File.Text} file, and one file scope per
+    {!Feature.File.Opaque} file. *)
+
+val file_unit_scopes : t -> path:Spice_path.Rel.t -> Scope.t list option
+(** [file_unit_scopes review ~path] is [Some scopes] for [path]'s review units,
+    using the same rule as {!unit_scopes}, or [None] when [path] is not in the
+    feature. *)
+
 val units : t -> int
 (** [units review] is the number of review units: one per hunk of a
     {!Feature.File.Text} file and one per {!Feature.File.Opaque} file. *)

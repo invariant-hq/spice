@@ -23,18 +23,13 @@ let occ_in_file occ path = String.equal (occ_path_string occ) (path_string path)
 
 let unreviewed_units review file =
   let path = Spice_review.Feature.File.path file in
-  match Spice_review.Feature.File.content file with
-  | Spice_review.Feature.File.Text hunks ->
+  match Spice_review.file_unit_scopes review ~path with
+  | None -> 0
+  | Some scopes ->
       List.length
         (List.filter
-           (fun hunk ->
-             not
-               (Spice_review.is_reviewed review
-                  (Spice_review.Scope.of_hunk ~path hunk)))
-           hunks)
-  | Spice_review.Feature.File.Opaque _ ->
-      if Spice_review.is_reviewed review (Spice_review.Scope.File path) then 0
-      else 1
+           (fun scope -> not (Spice_review.is_reviewed review scope))
+           scopes)
 
 (* {1 Cursor} *)
 

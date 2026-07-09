@@ -64,12 +64,9 @@ let simple_review () =
   Review.v ~feature:(feature [ change ]) ~crs:[]
 
 let first_hunk_scope review =
-  let feature = Review.feature review in
-  let changed = List.hd (Review.Feature.files feature) in
-  match Review.Feature.File.content changed with
-  | Review.Feature.File.Text (hunk :: _) ->
-      Review.Scope.of_hunk ~path:(Review.Feature.File.path changed) hunk
-  | _ -> failf "expected a text file with hunks"
+  match Review.unit_scopes review with
+  | (Review.Scope.Hunk _ as scope) :: _ -> scope
+  | _ -> failf "expected a hunk review unit"
 
 let feature_construction_boundaries () =
   expect_error "file needs one side" Review.Error.Invalid_file
@@ -157,6 +154,11 @@ let summary_progress () =
   let review = simple_review () in
   equal int ~msg:"one file" 1 (Review.files review);
   equal int ~msg:"two units" 2 (Review.units review);
+  equal int ~msg:"unit scopes agree with unit count" 2
+    (List.length (Review.unit_scopes review));
+  equal (option int) ~msg:"file unit scopes agree with unit count" (Some 2)
+    (Option.map List.length
+       (Review.file_unit_scopes review ~path:(rel "lib/a.ml")));
   equal int ~msg:"none reviewed" 0 (Review.reviewed_units review);
   is_true ~msg:"pending verdict"
     (match Review.verdict_freshness review with `Pending -> true | _ -> false);
