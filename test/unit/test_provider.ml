@@ -209,23 +209,23 @@ let login_contracts () =
   let device_endpoint = Uri.of_string "https://auth.example/device" in
   let token_endpoint = Uri.of_string "https://auth.example/token" in
   let oauth_device =
-    Login.oauth2_device_code ~id:"oauth-device" ~label:"OAuth device"
-      ~client ~device_endpoint ~token_endpoint
-      ~scope:[ "openid"; "profile" ]
+    Login.oauth2_device_code ~id:"oauth-device" ~label:"OAuth device" ~client
+      ~device_endpoint ~token_endpoint ~scope:[ "openid"; "profile" ]
       ~extra:[ ("audience", "spice") ]
       ()
   in
   begin match Login.protocol oauth_device with
   | Login.Protocol.OAuth2_device_code spec ->
-      equal string ~msg:"OAuth device endpoint"
-        "https://auth.example/device"
+      equal string ~msg:"OAuth device endpoint" "https://auth.example/device"
         (Uri.to_string spec.Login.Protocol.device_endpoint);
       equal string ~msg:"OAuth device token endpoint"
         "https://auth.example/token"
         (Uri.to_string spec.Login.Protocol.device_token_endpoint);
       equal (list string) ~msg:"OAuth device scopes" [ "openid"; "profile" ]
         spec.Login.Protocol.device_scope;
-      equal (list (pair string string)) ~msg:"OAuth device extras"
+      equal
+        (list (pair string string))
+        ~msg:"OAuth device extras"
         [ ("audience", "spice") ]
         spec.Login.Protocol.device_extra
   | Login.Protocol.Api_key | Login.Protocol.OAuth2_authorization_code _
@@ -236,8 +236,7 @@ let login_contracts () =
   let redirect_uri = Uri.of_string "http://localhost:1455/auth/callback" in
   let oauth_browser =
     Login.oauth2_authorization_code ~id:"oauth-browser" ~label:"OAuth browser"
-      ~client ~authorization_endpoint ~token_endpoint ~redirect_uri
-      ~pkce:false
+      ~client ~authorization_endpoint ~token_endpoint ~redirect_uri ~pkce:false
       ~scope:[ "email"; "offline_access" ]
       ~extra:[ ("prompt", "consent") ]
       ()
@@ -258,7 +257,9 @@ let login_contracts () =
       equal (list string) ~msg:"OAuth browser scopes"
         [ "email"; "offline_access" ]
         spec.Login.Protocol.authorization_scope;
-      equal (list (pair string string)) ~msg:"OAuth browser extras"
+      equal
+        (list (pair string string))
+        ~msg:"OAuth browser extras"
         [ ("prompt", "consent") ]
         spec.Login.Protocol.authorization_extra;
       is_false ~msg:"OAuth browser PKCE can be disabled"
@@ -597,9 +598,7 @@ let provider_contracts () =
   expect_invalid_arg "undeclared default rejected" (fun () ->
       Provider.make openai ~default_model:gpt_5_mini [ model ]);
   expect_invalid_arg "unselectable default rejected" (fun () ->
-      let hidden =
-        Model.make gpt_5 ~status:(Model.Unavailable "retired") ()
-      in
+      let hidden = Model.make gpt_5 ~status:(Model.Unavailable "retired") () in
       Provider.make openai ~default_model:gpt_5 [ hidden ])
 
 let selector_of msg raw =

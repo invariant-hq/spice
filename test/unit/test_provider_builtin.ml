@@ -59,7 +59,9 @@ let openai_contracts () =
       equal (list string) ~msg:"OpenAI browser scopes"
         [ "openid"; "profile"; "email"; "offline_access" ]
         spec.Login.Protocol.authorization_scope;
-      equal (list (pair string string)) ~msg:"OpenAI browser extras"
+      equal
+        (list (pair string string))
+        ~msg:"OpenAI browser extras"
         [
           ("id_token_add_organizations", "true");
           ("codex_cli_simplified_flow", "true");
@@ -145,8 +147,7 @@ let anthropic_contracts () =
     (Builtin.anthropic |> provider_auth |> Auth.logins |> List.map Login.id);
   equal int ~msg:"Anthropic catalog is curated" 7
     (Builtin.anthropic |> Provider.models |> List.length);
-  equal (option string) ~msg:"Anthropic default model"
-    (Some "claude-sonnet-5")
+  equal (option string) ~msg:"Anthropic default model" (Some "claude-sonnet-5")
     (Builtin.anthropic |> Provider.default_model |> Option.map model_id);
   let sonnet_5 =
     lookup Builtin.anthropic (Spice_llm_anthropic.model "claude-sonnet-5")
@@ -197,8 +198,7 @@ let google_contracts () =
     (Builtin.google |> provider_auth |> Auth.logins |> List.map Login.id);
   equal int ~msg:"Google catalog is curated" 7
     (Builtin.google |> Provider.models |> List.length);
-  equal (option string) ~msg:"Google default model"
-    (Some "gemini-3.5-flash")
+  equal (option string) ~msg:"Google default model" (Some "gemini-3.5-flash")
     (Builtin.google |> Provider.default_model |> Option.map model_id);
   let flash =
     lookup Builtin.google (Spice_llm_google.model "gemini-3.5-flash")
@@ -237,8 +237,7 @@ let google_contracts () =
       failf "expected Gemini 3 Pro Preview to be deprecated"
   end;
   is_true ~msg:"Gemini 3 Pro Preview remains visible" (Model.visible pro);
-  is_false ~msg:"Gemini 3 Pro Preview is not selectable"
-    (Model.selectable pro);
+  is_false ~msg:"Gemini 3 Pro Preview is not selectable" (Model.selectable pro);
   equal (list string) ~msg:"Google reasoning efforts"
     [ "minimal"; "low"; "medium"; "high" ]
     (Model.supported_reasoning flash

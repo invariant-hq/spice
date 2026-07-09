@@ -101,10 +101,10 @@ let openai_models =
              ]
            ())
       ();
-    Model.make (llm "gpt-5.5-pro") ~display_name:"GPT-5.5 Pro"
-      ~family:"gpt-pro" ~released_on:(date "2026-04-23")
-      ~context_window:1_050_000 ~max_output_tokens:128_000
-      ~input_modalities:text_image_pdf ~capabilities:gpt_coding_capabilities
+    Model.make (llm "gpt-5.5-pro") ~display_name:"GPT-5.5 Pro" ~family:"gpt-pro"
+      ~released_on:(date "2026-04-23") ~context_window:1_050_000
+      ~max_output_tokens:128_000 ~input_modalities:text_image_pdf
+      ~capabilities:gpt_coding_capabilities
       ~default_reasoning:Options.Reasoning_effort.Medium
       ~supported_reasoning:gpt5_efforts
       ~pricing:
@@ -127,10 +127,10 @@ let openai_models =
              ]
            ())
       ();
-    Model.make (llm "gpt-5.4-pro") ~display_name:"GPT-5.4 Pro"
-      ~family:"gpt-pro" ~released_on:(date "2026-03-05")
-      ~context_window:1_050_000 ~max_output_tokens:128_000
-      ~input_modalities:text_image ~capabilities:gpt_coding_capabilities
+    Model.make (llm "gpt-5.4-pro") ~display_name:"GPT-5.4 Pro" ~family:"gpt-pro"
+      ~released_on:(date "2026-03-05") ~context_window:1_050_000
+      ~max_output_tokens:128_000 ~input_modalities:text_image
+      ~capabilities:gpt_coding_capabilities
       ~default_reasoning:Options.Reasoning_effort.Medium
       ~supported_reasoning:gpt5_efforts
       ~pricing:
@@ -248,11 +248,12 @@ let google_models =
     Model.make (llm "gemini-3.5-flash") ~display_name:"Gemini 3.5 Flash"
       ~family:"gemini-flash" ~released_on:(date "2026-05-19")
       ~context_window:1_048_576 ~max_output_tokens:65_536
-      ~input_modalities:text_image_audio_video_pdf
-      ~capabilities:tools_reasoning ~supported_reasoning:gemini_3_flash_efforts
+      ~input_modalities:text_image_audio_video_pdf ~capabilities:tools_reasoning
+      ~supported_reasoning:gemini_3_flash_efforts
       ~pricing:(pricing ~input:1.5 ~output:9. ~cache_read:0.15 ())
       ();
-    Model.make (llm "gemini-3.1-pro-preview")
+    Model.make
+      (llm "gemini-3.1-pro-preview")
       ~display_name:"Gemini 3.1 Pro Preview" ~family:"gemini-pro"
       ~released_on:(date "2026-02-19") ~context_window:1_048_576
       ~max_output_tokens:65_536 ~input_modalities:text_image_audio_video_pdf
@@ -267,7 +268,8 @@ let google_models =
              ]
            ())
       ();
-    Model.make (llm "gemini-3.1-flash-lite")
+    Model.make
+      (llm "gemini-3.1-flash-lite")
       ~display_name:"Gemini 3.1 Flash Lite" ~family:"gemini-flash-lite"
       ~released_on:(date "2026-05-07") ~context_window:1_048_576
       ~max_output_tokens:65_536 ~input_modalities:text_image_audio_video_pdf
