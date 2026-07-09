@@ -75,20 +75,19 @@ Neither the access token nor the refresh token appears in status output.
   $ spice auth logout openai
   Removed openai credential default
 
-A device authorization that expires reports the expiry with the time, and
-saves nothing.
+A device authorization that expires reports the expiry, and saves nothing.
 
   $ cat > script-expired.jsonl <<'JSONL'
   > {"expect":{"request_line":"POST /api/accounts/deviceauth/usercode HTTP/1.1"},"http":{"status":200,"json":{"device_auth_id":"dev-2","user_code":"CODE-9999","expires_in":0,"interval":0}}}
   > JSONL
   $ start_fake_server script-expired.jsonl capture-expired port-expired
   $ export SPICE_OPENAI_AUTH_BASE_URL="http://127.0.0.1:$(cat port-expired)"
-  $ spice auth login openai --method device-code 2>&1 | sed -E -e 's#http://127.0.0.1:[0-9]+#http://FAKE#' -e 's/expired at [0-9]+/expired at TS/'
+  $ spice auth login openai --method device-code 2>&1 | sed -E 's#http://127.0.0.1:[0-9]+#http://FAKE#'
   Go to: http://FAKE/codex/device
   Enter code: CODE-9999
   Device codes are a common phishing target. Never share this code.
   Waiting for authorization...
-  spice: device-code authorization expired at TS
+  spice: device code expired — run the login again
   [1]
   $ wait_fake_server
   $ spice auth status openai --json

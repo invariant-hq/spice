@@ -205,10 +205,8 @@ let drive_device ~stdenv host ~provider ?name ?cancel ~events ~http ~sw started
           | Ok (Auth.Device_code.Authorized secret) ->
               save ~stdenv host ~provider ?name secret
           | Ok (Auth.Device_code.Pending authorization) -> poll authorization
-          | Ok (Auth.Device_code.Expired authorization) ->
-              Failed
-                (Printf.sprintf "device-code authorization expired at %Ld"
-                   (Auth.Device_code.expires_at authorization))
+          | Ok (Auth.Device_code.Expired _) ->
+              Failed "device code expired — run the login again"
           | Ok (Auth.Device_code.Rejected error) ->
               Failed (Auth.Error.message error)
         in
