@@ -2020,12 +2020,13 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                         (Spice_protocol.Command.Reply
                            { permission; answer; via = None; message })
                   | None -> ())
-          | App.Answer_tool { turn; call_id; text } ->
+          | App.Answer_tool { turn; call_id; answer } ->
               perform (fun () ->
                   match !attachment with
                   | Some (live, _) ->
                       Spice_host.Live.submit live
-                        (Spice_protocol.Command.Answer { turn; call_id; text })
+                        (Spice_protocol.Command.Answer
+                           { turn; call_id; answer })
                   | None -> ())
           | App.Resolve_plan { turn; call_id; decision } ->
               perform (fun () ->

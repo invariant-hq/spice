@@ -471,7 +471,8 @@ let%expect_test "a host tool after a question settles in the transcript" =
   let todo =
     tool_call_line ~id:"r-qt-todo" ~call_id:"c-qt-todo" ~name:"todo_write"
       ~arguments:board_early
-      ~body_contains:[ "function_call_output"; "c-qt-question"; "inspect" ]
+      ~body_contains:
+        [ "function_call_output"; "c-qt-question"; "User answered: inspect" ]
   in
   let final = answer_line ~id:"r-qt-final" ~answer:"Sequenced the work." in
   Provider.with_responses project [ question; todo; final ] @@ fun provider ->
@@ -498,7 +499,7 @@ let%expect_test "a host tool after a question settles in the transcript" =
      07 |   answered
      08 |
      09 | ⏺ Question(What should come first?)
-     10 |   ⎿  answered · "inspect"
+     10 |   ⎿  answered · "User answered: inspect"
      11 |
      12 | ⏺ Todo(2 tasks · 0 done · 1 running)
      13 |       ◼ scaffold the module

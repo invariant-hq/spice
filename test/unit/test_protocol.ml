@@ -197,6 +197,22 @@ module Call_tests = struct
     equal (option string) ~msg:"an invalid proposal is not a plan proposal" None
       (Option.map (fun _ -> "plan") (Call.plan_proposal invalid))
 
+  let answer_text_is_call_specific () =
+    let classified name input =
+      Option.get (Call.classify (call ~name ~input))
+    in
+    equal (result string string) ~msg:"questions use canonical answer wording"
+      (Ok "User answered: yes")
+      (Call.answer_text (classified "ask_user" question_input) "yes");
+    equal (result string string) ~msg:"parent messages remain verbatim"
+      (Ok "focus here")
+      (Call.answer_text
+         (classified "message_parent" subagent_message_parent_input)
+         "focus here");
+    is_true ~msg:"plans cannot be resolved through a generic answer"
+      (Result.is_error
+         (Call.answer_text (classified "propose_plan" plan_input) "yes"))
+
   let suite =
     group "call"
       [
@@ -209,6 +225,7 @@ module Call_tests = struct
         test "Kind and classify agree" kind_and_classify_agree;
         test "answerable_question folds valid and invalid"
           answerable_question_folds_valid_and_invalid;
+        test "answer text is call-specific" answer_text_is_call_specific;
         test "plan_proposal rejects Invalid" plan_proposal_rejects_invalid;
       ]
 end
@@ -1127,7 +1144,7 @@ module Boundary_tests = struct
             via = None;
             message = None;
           };
-        Command.Answer { turn = turn_id; call_id = "call-1"; text = "yes" };
+        Command.Answer { turn = turn_id; call_id = "call-1"; answer = "yes" };
         Command.Finish_tool (tool_claim_id, result);
         Command.Interrupt { reason = Some "user cancelled" };
       ]

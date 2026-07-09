@@ -15,7 +15,7 @@ type t =
   | Answer of {
       turn : Spice_session.Turn.Id.t;
       call_id : string;
-      text : string;
+      answer : string;
     }
   | Resolve_plan of {
       turn : Spice_session.Turn.Id.t;
@@ -60,10 +60,10 @@ let pp ppf = function
         via
         (Format.pp_print_option Format.pp_print_string)
         message
-  | Answer { turn; call_id; text } ->
+  | Answer { turn; call_id; answer } ->
       Format.fprintf ppf
-        "@[<hov>answer { turn = %a; call_id = %s; text = %S }@]"
-        Spice_session.Turn.Id.pp turn call_id text
+        "@[<hov>answer { turn = %a; call_id = %s; answer = %S }@]"
+        Spice_session.Turn.Id.pp turn call_id answer
   | Resolve_plan { turn; call_id; decision } ->
       Format.fprintf ppf
         "@[<hov>resolve_plan { turn = %a; call_id = %s; decision = %a }@]"

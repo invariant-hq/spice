@@ -111,6 +111,13 @@ val answerable_question : t -> string option
     sites compose it over {!classify}:
     [Option.bind (classify call) answerable_question]. *)
 
+val answer_text : t -> string -> (string, string) result
+(** [answer_text call answer] renders a raw user [answer] for a parked [call].
+    Questions, including an invalid [ask_user] payload, use
+    {!Question.answer_text}; {!Subagent_message_parent} preserves the parent's
+    message verbatim. Errors when [answer] is empty or [call] has no user-answer
+    contract. *)
+
 val plan_proposal : t -> Plan.Proposal.t option
 (** [plan_proposal t] is the proposal when [t] is a well-formed [propose_plan],
     else [None]. An invalid proposal is [None]: it is not a plan the surface can

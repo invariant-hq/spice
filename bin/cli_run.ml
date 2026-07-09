@@ -1442,35 +1442,25 @@ type action =
       answer : Spice_permission.Policy.Review.answer;
       message : string option;
     }
-  | Answer_question of { pending : Session.Waiting.host_tool; text : string }
+  | Answer_question of { pending : Session.Waiting.host_tool; answer : string }
+  | Resolve_plan of {
+      pending : Session.Waiting.host_tool;
+      decision : Spice_protocol.Plan.Decision.t;
+    }
   | Finish of {
       id : Session.Tool_claim.Id.t;
       result : Spice_tool.Output.t Spice_tool.Result.t;
     }
 
-let resolve_continuation ~fs ~root ~now document = function
+let resolve_continuation document = function
   | Permission_reply { id; answer; message } ->
       Ok (Reply { id; answer; message })
   | Question_answer { call_id; answer } ->
       let* pending = execution (pending_question_call document ~call_id) in
-      let* text =
-        Spice_protocol.Question.answer_text answer
-        |> Result.map_error (fun message -> `Runtime message)
-      in
-      Ok (Answer_question { pending; text })
+      Ok (Answer_question { pending; answer })
   | Plan_decision decision ->
-      (* Resolving transitions the stored plan artifact and yields the
-         model-visible answer text, which drives the same [Answer] path as a
-         question. Answering the plan block with the generic [--answer] bypasses
-         this transition; that is the documented interim behavior. *)
-      let* pending, proposal = execution (pending_plan_call document) in
-      let* text =
-        sidecar
-          (Spice_host.Artifacts.Plan.resolve ~fs ~root
-             ~session:(Session.id (Store.Document.session document))
-             ~now ~decision proposal)
-      in
-      Ok (Answer_question { pending; text })
+      let* pending, _proposal = execution (pending_plan_call document) in
+      Ok (Resolve_plan { pending; decision })
   | Tool_claim_interrupted { id; reason } ->
       let result = Spice_tool.Result.interrupted ~reason ~cancelled:false () in
       Ok (Finish { id; result })
@@ -1491,11 +1481,7 @@ let continue json model reasoning_effort workflow_mode permission_mode
      let id = Session.id session in
      let* mode = active_turn_mode workflow_mode session in
      let* () = validate_max_steps max_steps in
-     let* action =
-       resolve_continuation ~fs:(Eio.Stdenv.fs stdenv)
-         ~root:(Store.root store |> Spice_path.Abs.to_string)
-         ~now:(now stdenv) document continuation
-     in
+     let* action = resolve_continuation document continuation in
      let max_steps = effective_max_steps host max_steps in
      let reasoning_request = effective_reasoning host reasoning_effort in
      let* ({ stop_dune; permission_of; _ } as runtime) =
@@ -1512,7 +1498,7 @@ let continue json model reasoning_effort workflow_mode permission_mode
                    ~mode ~max_steps ~reasoning_request runtime document
                    (Spice_protocol.Command.Reply
                       { permission; answer; via = None; message })
-             | Answer_question { pending; text } ->
+             | Answer_question { pending; answer } ->
                  drive_goal ~stdenv ~store ~json
                    ~unattended:(effective_unattended host permission_unattended)
                    ~mode ~max_steps ~reasoning_request runtime document
@@ -1520,7 +1506,17 @@ let continue json model reasoning_effort workflow_mode permission_mode
                       {
                         turn = pending.Session.Waiting.turn;
                         call_id = Tool_call.id pending.Session.Waiting.call;
-                        text;
+                        answer;
+                      })
+             | Resolve_plan { pending; decision } ->
+                 drive_goal ~stdenv ~store ~json
+                   ~unattended:(effective_unattended host permission_unattended)
+                   ~mode ~max_steps ~reasoning_request runtime document
+                   (Spice_protocol.Command.Resolve_plan
+                      {
+                        turn = pending.Session.Waiting.turn;
+                        call_id = Tool_call.id pending.Session.Waiting.call;
+                        decision;
                       })
              | Finish { id; result } ->
                  drive_goal ~stdenv ~store ~json

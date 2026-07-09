@@ -95,10 +95,6 @@ let run_error session (error : Spice_session.Run.Error.t) :
 
 let map_run session result = Result.map_error (run_error session) result
 
-let validate_answer = function
-  | "" -> Error (Spice_protocol.Error.Invalid_answer "answer must not be empty")
-  | _ -> Ok ()
-
 let document_id document = Spice_session_store.Document.id document
 let map_store result = Result.map_error of_store result
 
@@ -674,10 +670,22 @@ let execute ~store ~client ~host_tool ~resolve_plan ~run ?compaction ~hooks
           |> map_run session
         in
         continue_step document step
-    | Spice_protocol.Command.Answer { turn; call_id; text } ->
-        let* () = validate_answer text in
+    | Spice_protocol.Command.Answer { turn; call_id; answer } ->
         let* () = check_active_document session in
         let* waiting = pending_host_tool run session ~turn ~call_id in
+        let* text =
+          match
+            Spice_protocol.Call.classify waiting.Spice_session.Waiting.call
+          with
+          | Some call ->
+              Spice_protocol.Call.answer_text call answer
+              |> Result.map_error (fun message ->
+                  Spice_protocol.Error.Invalid_answer message)
+          | None ->
+              Error
+                (Spice_protocol.Error.Invalid_answer
+                   "the pending tool is not a user-answerable host tool")
+        in
         register_answer projector waiting.Spice_session.Waiting.call;
         let* step =
           Spice_session.Run.answer_host_tool run waiting ~text session

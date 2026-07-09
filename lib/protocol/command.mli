@@ -32,15 +32,16 @@ type t =
   | Answer of {
       turn : Spice_session.Turn.Id.t;
       call_id : string;
-      text : string;
+      answer : string;
     }
       (** Answer a blocked host-tool call, named by its turn and model call id,
-          with model-visible [text]. [call_id] is the plain
+          with the user's raw [answer]. [call_id] is the plain
           {!Spice_llm.Tool.Call.id}; the engine re-derives the pending host-tool
-          boundary from the session and matches [turn] and [call_id], reporting
-          a mismatch as {!Error.Tool_call_not_pending}. [text] must be non-empty
-          (enforced at execute). A client obtains [(turn, call_id)] from a prior
-          {!Outcome.Waiting}. *)
+          boundary from the session, matches [turn] and [call_id], and applies
+          that call's canonical answer rendering. A mismatch is
+          {!Error.Tool_call_not_pending}; an empty answer or a call without a
+          user-answer contract is {!Error.Invalid_answer}. A client obtains
+          [(turn, call_id)] from a prior {!Outcome.Waiting}. *)
   | Resolve_plan of {
       turn : Spice_session.Turn.Id.t;
       call_id : string;

@@ -191,7 +191,7 @@ type command =
   | Answer_tool of {
       turn : Spice_session.Turn.Id.t;
       call_id : string;
-      text : string;
+      answer : string;
     }
       (** Answer a blocked question (or an unblockable host-tool) dialog: the
           runtime submits {!Spice_protocol.Command.Answer}. *)

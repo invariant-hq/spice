@@ -115,6 +115,18 @@ let answerable_question = function
   | Subagent_message _ | Subagent_message_parent _ | Invalid _ ->
       None
 
+let answer_text call answer =
+  match call with
+  | Question _ -> Question.answer_text answer
+  | Invalid { name; _ } when String.equal name Question.name ->
+      Question.answer_text answer
+  | Subagent_message_parent _ ->
+      if String.is_empty answer then Error "answer must not be empty"
+      else Ok answer
+  | Plan _ | Todo _ | Goal _ | Subagent _ | Subagent_wait _
+  | Subagent_cancel _ | Subagent_message _ | Invalid _ ->
+      Error "the pending host tool does not accept a user answer"
+
 let plan_proposal = function
   | Plan proposal -> Some proposal
   | Question _ | Todo _ | Goal _ | Subagent _ | Subagent_wait _

@@ -525,7 +525,8 @@ let message ~origin t child text =
               count ();
               let* () =
                 resume_parked t entry ~child
-                  (Spice_protocol.Command.Answer { turn; call_id; text })
+                  (Spice_protocol.Command.Answer
+                     { turn; call_id; answer = text })
               in
               Ok `Resumed
           | _ ->

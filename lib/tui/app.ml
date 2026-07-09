@@ -406,7 +406,7 @@ type command =
   | Answer_tool of {
       turn : Spice_session.Turn.Id.t;
       call_id : string;
-      text : string;
+      answer : string;
     }
   | Resolve_plan of {
       turn : Spice_session.Turn.Id.t;
@@ -1211,7 +1211,7 @@ let command_of_resolution boundary (resolution : Dialog.resolution) =
   | ( Dialog.Answer { text },
       ( Spice_protocol.Pending.Question { turn; call_id; _ }
       | Spice_protocol.Pending.Host_tool { turn; call_id; _ } ) ) ->
-      Some (Answer_tool { turn; call_id; text })
+      Some (Answer_tool { turn; call_id; answer = text })
   | ( Dialog.Resolve_plan { decision; _ },
       Spice_protocol.Pending.Plan { turn; call_id; _ } ) ->
       Some (Resolve_plan { turn; call_id; decision })
