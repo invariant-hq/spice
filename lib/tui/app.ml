@@ -1746,6 +1746,7 @@ let interpret_auth_event panel event t =
       | Some request -> (stay, [ Auth_open_url { request; url } ])
       | None -> (stay, []))
   | Auth_panel.Cancel { request } -> (stay, [ Auth_cancel { request } ])
+  | Auth_panel.Reload -> (stay, [ Load_auth_providers ])
   | Auth_panel.Begin_api_key { provider; method_id; key } ->
       begin_flow (fun request ->
           Auth_save_api_key { request; provider; method_id; key })
@@ -2548,33 +2549,47 @@ let update msg t =
       ( { t with cols; rows; pane_open = Pane.presence ~cols ~was:t.pane_open },
         [] )
   | Ctrl_c -> (
-      if
-        (* Ctrl+C is the quit chord, and ONLY the quit chord — it is never an
-         interrupt (esc owns interrupt; see the esc ladder in [interrupt_rung]
-         and [Escape]). A non-empty draft discards to history in
-         one press (03-composer.md §Keybindings); otherwise, in every phase and
-         turn state — home, chat idle, mid-turn, mid-Interrupting, or with a
-         panel up — the first press arms the exit notice and a second within the
-         window quits. The quit chord must always reach [Quit]: no turn state
-         diverts it. *)
-        not (Composer.is_blank t.composer)
-      then
-        (* Fold the discard's events: [Draft_saved] carries the JSONL
-           persistence, exactly as the esc-clear rung does. *)
-        let composer, events =
-          Composer.update Composer.Clear_to_history t.composer
-        in
-        List.fold_left
-          (fun (t, commands) event ->
-            let t, more = composer_event event t in
-            (t, commands @ more))
-          ({ t with composer; armed = None }, [])
-          events
-      else
-        match t.armed with
-        | Some Quit_armed -> ({ t with armed = None }, [ Quit ])
-        | Some Clear_armed | Some Interrupt_armed | None ->
-            ({ t with armed = Some Quit_armed }, []))
+      (* Ctrl+C is the quit chord — with one exception: while a browser /
+         device login flow is waiting, the abort a user means is the flow's,
+         not the app's, so the first press cancels the flow exactly as esc
+         does and the chord regains its quit meaning once no flow is live.
+         Esc otherwise owns interrupt (see the esc ladder in [interrupt_rung]
+         and [Escape]). *)
+      let auth_flow_cancel =
+        match t.surface with
+        | Panel (Auth panel) -> Auth_panel.cancel_active panel
+        | Conversing | Panel (Session_switch _ | Model _ | Dialog _) | Screen _
+          ->
+            None
+      in
+      match auth_flow_cancel with
+      | Some (panel, event) -> interpret_auth_event panel event t
+      | None -> (
+          if
+            (* A non-empty draft discards to history in one press
+               (03-composer.md §Keybindings); otherwise, in every phase and
+               turn state — home, chat idle, mid-turn, mid-Interrupting, or
+               with a panel up — the first press arms the exit notice and a
+               second within the window quits. The quit chord must always
+               reach [Quit]: no turn state diverts it. *)
+            not (Composer.is_blank t.composer)
+          then
+            (* Fold the discard's events: [Draft_saved] carries the JSONL
+               persistence, exactly as the esc-clear rung does. *)
+            let composer, events =
+              Composer.update Composer.Clear_to_history t.composer
+            in
+            List.fold_left
+              (fun (t, commands) event ->
+                let t, more = composer_event event t in
+                (t, commands @ more))
+              ({ t with composer; armed = None }, [])
+              events
+          else
+            match t.armed with
+            | Some Quit_armed -> ({ t with armed = None }, [ Quit ])
+            | Some Clear_armed | Some Interrupt_armed | None ->
+                ({ t with armed = Some Quit_armed }, [])))
   | Armed_expired -> ({ t with armed = None }, [])
   | Shift_tab ->
       (* Cycle the approval posture (04-header-footer.md §4): the pill is the

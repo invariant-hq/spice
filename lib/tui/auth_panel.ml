@@ -81,6 +81,15 @@ type api_key_state = {
   ak_flash : string option;
 }
 
+(* An external method's instruction card: Spice cannot drive the flow, so it
+   shows the provider's declared instructions and offers to copy them. *)
+type external_state = {
+  ext_entry : provider_entry;
+  ext_label : string;
+  ext_instructions : string;
+  ext_copied : bool;
+}
+
 type stage =
   | Loading
   | Load_error of string
@@ -90,6 +99,7 @@ type stage =
   | Api_key of api_key_state
   | Browser of flow_panel
   | Device of flow_panel
+  | External of external_state
   | Working of { entry : provider_entry; request : int option; label : string }
 
 type t = {
@@ -115,6 +125,7 @@ type event =
   | Cancel of { request : int }
   | Copy of string
   | Open_url of Uri.t
+  | Reload
   | Flash of string
 
 let loading ~mode ?provider () =
@@ -218,7 +229,22 @@ let confirm_method entry login t =
   | Device_kind ->
       ( { t with stage = Device (fresh_panel entry) },
         Begin_device { provider = entry.provider; method_id } )
-  | External_kind -> (t, Flash "this method is completed outside Spice")
+  | External_kind -> (
+      match Login.protocol login with
+      | Protocol.External { instructions = Some instructions } ->
+          ( {
+              t with
+              stage =
+                External
+                  {
+                    ext_entry = entry;
+                    ext_label = Login.label login;
+                    ext_instructions = instructions;
+                    ext_copied = false;
+                  };
+            },
+            Stay )
+      | _ -> (t, Flash "this method is completed outside Spice"))
 
 (* Route a chosen provider to its next surface: the method picker when it
    declares more than one method, else straight to the sole method's protocol
@@ -390,7 +416,11 @@ let back t =
   | Loading | Load_error _ | Logout_empty | Provider_pick _ -> (t, Close)
   | Method_pick _ -> (back_to_provider t, Stay)
   | Api_key { ak_entry; _ } -> (back_from_protocol ak_entry t, Stay)
-  | Working _ -> (t, Stay)
+  | External { ext_entry; _ } -> (back_from_protocol ext_entry t, Stay)
+  (* The host call behind a working line is synchronous and cannot be
+     cancelled; esc stops watching instead of wedging the panel, and the
+     request guard drops the settle that lands after the close. *)
+  | Working _ -> (t, Close)
   | Browser panel | Device panel -> (
       let t = back_from_protocol panel.fp_entry t in
       match panel.fp_request with
@@ -455,15 +485,28 @@ let update (Key k) t =
                 Copy s )
           | None -> (t, Stay))
       | Panel.Action Panel.Enter -> (
-          (* The browser flow's explicit open (09-auth §6); device-code has no
-             open (the browser is on another device). *)
+          (* The browser flow's explicit open (09-auth §6), also re-opening a
+             closed window; device-code has no open (the browser is on another
+             device). *)
           match t.stage with
-          | Browser { fp_url = Some url; fp_opened = false; _ } ->
-              (t, Open_url url)
+          | Browser { fp_url = Some url; _ } -> (t, Open_url url)
           | _ -> (t, Stay))
       | _ -> (t, Stay))
-  | Working _ -> (t, Stay)
-  | Loading | Load_error _ | Logout_empty -> (
+  | External state -> (
+      match k with
+      | Panel.Action Panel.Escape -> back t
+      | Panel.Printable "c" ->
+          ( { t with stage = External { state with ext_copied = true } },
+            Copy state.ext_instructions )
+      | _ -> (t, Stay))
+  | Working _ -> (
+      match k with Panel.Action Panel.Escape -> back t | _ -> (t, Stay))
+  | Load_error _ -> (
+      match k with
+      | Panel.Action Panel.Escape -> (t, Close)
+      | Panel.Action Panel.Enter -> ({ t with stage = Loading }, Reload)
+      | _ -> (t, Stay))
+  | Loading | Logout_empty -> (
       match k with Panel.Action Panel.Escape -> (t, Close) | _ -> (t, Stay))
   | Provider_pick _ | Method_pick _ -> (
       match k with
@@ -520,6 +563,15 @@ let active_request t =
   match t.stage with
   | Browser panel | Device panel -> panel.fp_request
   | Working { request; _ } -> request
+  | _ -> None
+
+(* The shell's abort chord (ctrl+c) while a browser / device flow waits:
+   cancel and step back exactly as esc does. [None] when no cancellable flow
+   is in flight, so the chord keeps its quit meaning everywhere else. *)
+let cancel_active t =
+  match t.stage with
+  | Browser { fp_request = Some _; _ } | Device { fp_request = Some _; _ } ->
+      Some (back t)
   | _ -> None
 
 let map_flow request f t =
@@ -921,6 +973,16 @@ let device_content ~width p =
       waiting_row p;
     ]
 
+(* The instruction card for a method Spice cannot drive: the provider's
+   declared instructions, verbatim, with the usual copy affordance. *)
+let external_content state =
+  let instruction_rows =
+    String.split_on_char '\n' state.ext_instructions |> List.map muted_line
+  in
+  bold_line
+    ("Log in to " ^ state.ext_entry.display_name ^ " · " ^ state.ext_label)
+  :: blank_row :: instruction_rows
+
 let chip_name = function Login -> "log in" | Logout -> "log out"
 
 let hint_for stage mode =
@@ -932,7 +994,10 @@ let hint_for stage mode =
   | Api_key _ -> [ "↵ save"; "esc back" ]
   | Browser _ -> [ "↵ open browser"; "c copy"; "esc cancel" ]
   | Device _ -> [ "c copy"; "esc cancel" ]
-  | Loading | Load_error _ | Logout_empty | Working _ -> [ "esc close" ]
+  | External { ext_copied; _ } ->
+      [ (if ext_copied then "copied" else "c copy"); "esc back" ]
+  | Load_error _ -> [ "↵ retry"; "esc close" ]
+  | Loading | Logout_empty | Working _ -> [ "esc close" ]
 
 let content ~width ~rows t =
   match t.stage with
@@ -944,6 +1009,7 @@ let content ~width ~rows t =
   | Api_key state -> api_key_content ~width state
   | Browser p -> browser_content ~width p
   | Device p -> device_content ~width p
+  | External state -> external_content state
   | Working { label; _ } -> [ muted_line label ]
 
 let view ~frame ~width ~rows t =

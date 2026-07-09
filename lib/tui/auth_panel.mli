@@ -94,8 +94,9 @@ type record = {
 
 type t
 (** The panel state: the current stage of the drill-down (loading, a load error,
-    a picker, the masked api-key entry, a browser / device flow panel, a working
-    line, or the logout empty state) plus the loaded entries and mode. *)
+    a picker, the masked api-key entry, a browser / device flow panel, an
+    external method's instruction card, a working line, or the logout empty
+    state) plus the loaded entries and mode. *)
 
 type msg
 (** A key routed to the panel, opaque; produced by {!key}. *)
@@ -127,10 +128,17 @@ type event =
   | Cancel of { request : int }
       (** Esc from a waiting flow: resolve the runtime's cancel promise for
           [request] (no secret written), then step back one rung. *)
-  | Copy of string  (** Copy the display-safe string (a URL or user code). *)
+  | Copy of string
+      (** Copy the display-safe string (a URL, a user code, or an external
+          method's instructions). *)
   | Open_url of Uri.t
       (** The browser flow's explicit open keypress: launch the OS browser on
-          [url] (tui-next never auto-opens — 09-auth §6). *)
+          [url] (tui-next never auto-opens — 09-auth §6). [↵] re-emits after a
+          first open, so a closed browser window can be reopened. *)
+  | Reload
+      (** [↵] on the load-error line: reload the provider entries (the shell
+          re-issues its load command). The panel is back in its loading stage.
+      *)
   | Flash of string
       (** Reject a no-op key (a non-selectable provider, an empty key) and flash
           the message; the panel stays. *)
@@ -155,9 +163,13 @@ val update : msg -> t -> t * event
     back one rung ({!Close} from the provider picker). In the api-key stage:
     every printable and digit appends to the masked buffer, backspace erases one
     UTF-8 scalar, [↵] submits (empty → {!Flash}), esc steps back to the method
-    picker. In a flow panel: [c] copies ({!Copy}), [↵] opens the browser
-    ({!Open_url}, browser stage only), esc cancels ({!Cancel}) and steps back.
-    In the working stage every key is ignored. *)
+    picker. In a flow panel: [c] copies ({!Copy}), [↵] opens — or re-opens — the
+    browser ({!Open_url}, browser stage only), esc cancels ({!Cancel}) and steps
+    back. In the instruction card: [c] copies the instructions, esc steps back.
+    On the load-error line [↵] retries ({!Reload}). In the working stage esc
+    closes the panel — the host call is synchronous and cannot be cancelled, so
+    esc stops watching and the request guard drops the settle that lands after
+    the close; every other key is ignored. *)
 
 (** {1:async Runtime folds}
 
@@ -185,6 +197,13 @@ val active_request : t -> int option
     or [None] when no flow is in flight. The shell reads it to decide whether a
     settled record belongs to the attempt on screen (append + close) or is a
     superseded / late result (drop). *)
+
+val cancel_active : t -> (t * event) option
+(** [cancel_active t] is the esc transition — cancel the flow, step back one
+    rung — when a started browser / device flow is waiting, and [None]
+    otherwise. The shell routes its abort chord (ctrl+c) through this so
+    aborting a live OAuth wait cancels the flow instead of arming quit; with
+    [None] the chord keeps its quit meaning. *)
 
 val challenge : request:int -> challenge -> t -> t
 (** [challenge ~request c t] advances the browser / device flow panel to the
@@ -227,4 +246,5 @@ val view : frame:Mosaic.Ansi.Color.t -> width:int -> rows:int -> t -> _ Mosaic.t
     account detail with a [✓] / [!] mark), the masked api-key entry (bullets, a
     framed input, the env-prefill note), the browser or device flow panel (the
     static copyable URL / code rows, the spinner, the phishing warning, the
-    headless steer), the working line, or the loading / error / empty lines. *)
+    headless steer), the external method's instruction card, the working line,
+    or the loading / error / empty lines. *)
