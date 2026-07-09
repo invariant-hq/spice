@@ -62,11 +62,19 @@ let editor_decision host model =
 let make ~sw ~stdenv host ?model ~workspace ~sandbox ~skills ~cwd ~http
     ~fetch_https ?anchors ?dune ?project_source ?merlin_program () =
   let config = Host.config host in
+  (* The shell tool cannot read the network posture back from the sealed
+     sandbox, so pass it: a network-restricted confinement lets a failed
+     command that looks network-blocked explain the policy to the model. *)
+  let network_restricted =
+    match (Sandbox.Effective.status sandbox).Sandbox.Status.network with
+    | Sandbox.Status.Restricted -> true
+    | Sandbox.Status.Enabled | Sandbox.Status.External -> false
+  in
   let shell =
     Spice_tools.Shell.Config.make
       ~shell:(Config.Runtime.shell (Config.runtime config))
       ~sandbox:(Sandbox.Effective.sandbox sandbox)
-      ()
+      ~network_restricted ()
   in
   let dune =
     match dune with

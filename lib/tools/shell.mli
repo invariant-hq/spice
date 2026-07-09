@@ -112,6 +112,7 @@ module Config : sig
   val make :
     ?shell:string ->
     ?sandbox:Spice_sandbox.t ->
+    ?network_restricted:bool ->
     ?default_timeout_ms:int ->
     ?max_timeout_ms:int ->
     ?max_output_bytes:int ->
@@ -125,9 +126,14 @@ module Config : sig
       read-only request sealed without a backend, so the zero-configuration
       shell refuses every command. The host resolves modes, backends, and gates
       and passes authority in; sandbox policy is never model input.
-      [environment] is an overlay applied after the built-in deterministic
-      non-interactive environment. A binding [(name, Some value)] sets [name];
-      [(name, None)] removes [name].
+      [network_restricted] (default [false]) states whether that sealed sandbox
+      denies outbound network: when a confined command fails and its output
+      looks like a blocked network request, the tool result explains that the
+      restriction is policy, not a transient error, so the model does not retry
+      it blindly. The sealed sandbox does not expose its network posture, so the
+      host supplies it. [environment] is an overlay applied after the built-in
+      deterministic non-interactive environment. A binding [(name, Some value)]
+      sets [name]; [(name, None)] removes [name].
 
       Raises [Invalid_argument] if [shell] or an environment name is empty, if
       an environment name contains ["="], if any string contains NUL, if timeout

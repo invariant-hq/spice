@@ -13,6 +13,11 @@
   (= %{system} macosx)))
 
 (cram
+ (applies_to sandbox-network-diagnosis)
+ (enabled_if
+  (= %{system} macosx)))
+
+(cram
  (applies_to linux-bubblewrap)
  (enabled_if
   (and

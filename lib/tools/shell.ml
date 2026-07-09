@@ -122,6 +122,7 @@ module Config = struct
   type t = {
     shell : string;
     sandbox : Spice_sandbox.t;
+    network_restricted : bool;
     default_timeout_ms : int;
     max_timeout_ms : int;
     max_output_bytes : int;
@@ -147,9 +148,9 @@ module Config = struct
     Spice_sandbox.seal
       (Spice_sandbox.Spec.Confined Spice_sandbox.Confinement.read_only)
 
-  let make ?(shell = default_shell) ?sandbox ?(default_timeout_ms = 60_000)
-      ?(max_timeout_ms = 600_000) ?(max_output_bytes = 65_536)
-      ?(environment = []) () =
+  let make ?(shell = default_shell) ?sandbox ?(network_restricted = false)
+      ?(default_timeout_ms = 60_000) ?(max_timeout_ms = 600_000)
+      ?(max_output_bytes = 65_536) ?(environment = []) () =
     let sandbox =
       match sandbox with Some sandbox -> sandbox | None -> default_sandbox ()
     in
@@ -166,6 +167,7 @@ module Config = struct
     {
       shell;
       sandbox;
+      network_restricted;
       default_timeout_ms;
       max_timeout_ms;
       max_output_bytes;
@@ -174,6 +176,7 @@ module Config = struct
 
   let shell t = t.shell
   let sandbox t = t.sandbox
+  let network_restricted t = t.network_restricted
   let default_timeout_ms t = t.default_timeout_ms
   let max_timeout_ms t = t.max_timeout_ms
   let max_output_bytes t = t.max_output_bytes
@@ -686,18 +689,82 @@ let output_of_process ~input ~workdir ~timeout_ms ~max_output_bytes ~enforcement
     ~duration_ms:result.Process.shell_duration_ms ~timeout_ms ~max_output_bytes
     ~enforcement ~description:(Input.description input)
 
-let result_of_output output =
+let stream_text = function
+  | Output.Complete text -> text
+  | Output.Truncated { head; tail; _ } -> head ^ tail
+
+let contains_affix ~affix haystack =
+  let affix_len = String.length affix and hay_len = String.length haystack in
+  if affix_len = 0 then true
+  else
+    let rec loop i =
+      if i + affix_len > hay_len then false
+      else if String.equal (String.sub haystack i affix_len) affix then true
+      else loop (i + 1)
+    in
+    loop 0
+
+(* Signatures a blocked outbound request leaves in command output, across the
+   platform sandboxes: a denied socket surfaces as a name-resolution or connect
+   failure rather than a spawn error, so a failed command carrying one of these
+   under a network-restricted confinement is a policy denial, not a transient
+   fault. Matched case-insensitively against the combined streams. *)
+let network_denial_signatures =
+  [
+    "could not resolve host";
+    "couldn't resolve host";
+    "could not resolve";
+    "name or service not known";
+    "temporary failure in name resolution";
+    "couldn't connect to server";
+    "connection refused";
+    "network is unreachable";
+    "no route to host";
+    "operation not permitted while establishing";
+  ]
+
+let looks_like_network_denial output =
+  let lowered = String.lowercase_ascii output in
+  List.exists (fun affix -> contains_affix ~affix lowered) network_denial_signatures
+
+let confined_enforcement = function
+  | Spice_sandbox.Evidence.Enforced _ -> true
+  | Spice_sandbox.Evidence.Refused _ | Spice_sandbox.Evidence.Not_requested
+  | Spice_sandbox.Evidence.Declared_external ->
+      false
+
+let network_denial_diagnosis =
+  "\n\nThis command ran inside a sandbox with network access restricted, and \
+   its output looks like a blocked network request. That is a policy \
+   restriction, not a transient error: re-running the command unchanged will \
+   fail the same way. If the command genuinely needs the network, re-run this \
+   exact command with escalate:true to ask the user to approve running it \
+   outside the sandbox, or ask the user to allow network access for this run."
+
+let network_denial_note ~network_restricted output =
+  if
+    network_restricted
+    && confined_enforcement (Output.enforcement output)
+    && looks_like_network_denial
+         (stream_text (Output.stdout output)
+         ^ "\n"
+         ^ stream_text (Output.stderr output))
+  then network_denial_diagnosis
+  else ""
+
+let result_of_output ~network_restricted output =
+  let note = network_denial_note ~network_restricted output in
   match Output.status output with
   | Output.Exited 0 -> Tool.Result.completed ~output ()
   | Output.Exited code ->
       Tool.Result.failed ~output `Failed
-        (Printf.sprintf "command exited with status %d" code)
+        (Printf.sprintf "command exited with status %d%s" code note)
   | Output.Signaled signal ->
       Tool.Result.failed ~output `Failed
-        (Printf.sprintf "command terminated by signal %d" signal)
+        (Printf.sprintf "command terminated by signal %d%s" signal note)
   | Output.Timed_out { timeout_ms } ->
       Tool.Result.failed ~output `Timed_out
-        (Printf.sprintf "command timed out after %dms" timeout_ms)
+        (Printf.sprintf "command timed out after %dms%s" timeout_ms note)
   | Output.Cancelled ->
       Tool.Result.interrupted ~output ~reason:"tool call cancelled"
         ~cancelled:true ()
@@ -732,7 +799,9 @@ let run ~fs ~workspace ~config ?(cancelled = default_cancelled) input =
                 output_of_process ~input ~workdir ~timeout_ms ~max_output_bytes
                   ~enforcement result
               in
-              result_of_output output
+              result_of_output
+                ~network_restricted:(Config.network_restricted config)
+                output
             in
             let escalation = Spice_sandbox.escalation (Config.sandbox config) in
             match (Input.escalate input, escalation) with
