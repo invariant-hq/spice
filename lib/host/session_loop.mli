@@ -172,18 +172,12 @@ val with_notices :
     classes; invariant violations a host cannot repair become
     {!Spice_protocol.Error.Internal}. *)
 
-val of_store :
-  ?id:Spice_session.Id.t ->
-  Spice_session_store.Error.t ->
-  Spice_protocol.Error.t
-(** [of_store ?id error] maps a store error into the protocol error. [id]
-    supplies the session id for a wrapped session-domain error, which has none
-    of its own. *)
+val of_store : Spice_session_store.Error.t -> Spice_protocol.Error.t
+(** [of_store error] maps a store error into the protocol error. *)
 
-val of_compaction :
-  id:Spice_session.Id.t -> Compaction_run.error -> Spice_protocol.Error.t
-(** [of_compaction ~id error] maps a {!Compaction_run.error} into the protocol
-    error, with [id] in scope for any wrapped store error. *)
+val of_compaction : Compaction_run.error -> Spice_protocol.Error.t
+(** [of_compaction error] maps a {!Compaction_run.error} into the protocol
+    error. *)
 
 (** {1:preconditions Preconditions and store} *)
 

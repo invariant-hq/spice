@@ -109,11 +109,11 @@ let store_error = Session_loop.of_store
 
 let load store id =
   Spice_session_store.load store id
-  |> Result.map_error (Session_loop.of_store ~id)
+  |> Result.map_error Session_loop.of_store
 
 let save store document session =
   Spice_session_store.save store document session
-  |> Result.map_error (Session_loop.of_store ~id:(Spice_session.id session))
+  |> Result.map_error Session_loop.of_store
 
 let fresh_counter = ref 0
 
@@ -130,7 +130,7 @@ let fresh_turn_id ~clock =
 let create ~store ~id ?title ~cwd ~created_at () =
   let session = Spice_session.create ~id ?title ~cwd ~created_at () in
   Spice_session_store.create store session
-  |> Result.map_error (Session_loop.of_store ~id)
+  |> Result.map_error Session_loop.of_store
 
 (* Flatten a pure session error into the host's single protocol error, following
    the same recovery-class grouping the store path uses: idle-guard violations
@@ -163,7 +163,7 @@ let fork ~store ~clock ?id ?title ~cwd document =
       (* An explicit id that collides is the caller's error, not a retry. *)
       let* child = fork_session id in
       Spice_session_store.create store child
-      |> Result.map_error (Session_loop.of_store ~id)
+      |> Result.map_error Session_loop.of_store
   | None ->
       let rec attempt remaining =
         let id = fresh_session_id ~clock in
@@ -179,7 +179,7 @@ let fork ~store ~clock ?id ?title ~cwd document =
                  ("generated child session id already exists after "
                  ^ string_of_int fork_attempts
                  ^ " attempts"))
-        | Error error -> Error (Session_loop.of_store ~id error)
+        | Error error -> Error (Session_loop.of_store error)
       in
       attempt fork_attempts
 
@@ -190,7 +190,7 @@ let rewind ~store ~id ?title ~cwd ~created_at anchor document =
     |> Result.map_error (session_error ~id:(Spice_session.id parent))
   in
   Spice_session_store.create store child
-  |> Result.map_error (Session_loop.of_store ~id)
+  |> Result.map_error Session_loop.of_store
 
 type listing = {
   rows : Spice_protocol.Session_summary.t list;
@@ -269,7 +269,7 @@ module Threads = struct
   let of_store ~fs ~store ~current =
     let* documents, corrupt =
       Spice_session_store.list store ()
-      |> Result.map_error (Session_loop.of_store ?id:None)
+      |> Result.map_error Session_loop.of_store
     in
     let summaries = List.map of_document documents in
     let by_id = Hashtbl.create (List.length summaries) in
@@ -459,7 +459,6 @@ let compact ~store ~client ?(policy = Compactor.Policy.default)
      through {!Compaction_run.compact_with} directly and may run while the
      active turn is request-ready. *)
   let session = Spice_session_store.Document.session document in
-  let id = Spice_session.id session in
   let* () = Session_loop.check_active_document session in
   let* () = Session_loop.require_no_active_turn session in
   let save document events = Session_loop.raw_save store document events in
@@ -469,4 +468,4 @@ let compact ~store ~client ?(policy = Compactor.Policy.default)
   Compaction_run.compact_with ~save ~model ~policy ~observe ~after_save
     ~cancelled:Session_loop.not_cancelled document
     ~reason:Spice_session.Compaction.Reason.User_requested
-  |> Result.map_error (Session_loop.of_compaction ~id)
+  |> Result.map_error Session_loop.of_compaction

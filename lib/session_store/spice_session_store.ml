@@ -44,6 +44,7 @@ module Document = struct
   type t = { session : Spice_session.t; revision : Spice_session.Revision.t }
 
   let make ~session ~revision = { session; revision }
+  let id t = Spice_session.id t.session
   let session t = t.session
   let revision t = t.revision
 end
@@ -67,7 +68,7 @@ module Error = struct
         actual : Spice_session.Revision.t;
       }
     | Corrupt of { path : string; message : string }
-    | Session of Spice_session.Error.t
+    | Session of { id : Spice_session.Id.t; error : Spice_session.Error.t }
     | Io of { path : string; message : string }
 
   let message (error : t) =
@@ -82,7 +83,7 @@ module Error = struct
           Spice_session.Id.pp id Spice_session.Revision.pp expected
           Spice_session.Revision.pp actual
     | Corrupt { path; message } -> path ^ ": " ^ message
-    | Session error -> Spice_session.Error.message error
+    | Session { error; _ } -> Spice_session.Error.message error
     | Io { path; message } -> path ^ ": " ^ message
 
   let pp ppf t = Format.pp_print_string ppf (message t)
@@ -352,7 +353,7 @@ let create store session =
         Ok (Document.make ~session ~revision:(revision_of_bytes text)))
 
 let check_document_session document session =
-  let document_id = Spice_session.id (Document.session document) in
+  let document_id = Document.id document in
   let session_id = Spice_session.id session in
   if Spice_session.Id.equal document_id session_id then ()
   else
@@ -386,7 +387,7 @@ let save store document session =
 
 let append store document events =
   match Spice_session.Log.append_all events (Document.session document) with
-  | Error error -> Error (Error.Session error)
+  | Error error -> Error (Error.Session { id = Document.id document; error })
   | Ok session -> save store document session
 
 let session_document_path dir = Filename.concat dir document_filename

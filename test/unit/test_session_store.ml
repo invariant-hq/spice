@@ -76,7 +76,7 @@ let session_json id =
     id
 
 let doc_id document =
-  Session.Id.to_string (Session.id (Store.Document.session document))
+  Session.Id.to_string (Store.Document.id document)
 
 let listed_ids result =
   let documents, _corrupt = ok_or_fail result in
@@ -135,6 +135,24 @@ let save_rejects_id_mismatch () =
   let document = ok_or_fail (Store.create store (make_session "a")) in
   raises_invalid_arg "session id b does not match document id a" (fun () ->
       Store.save store document (make_session "b"))
+
+let append_reports_session_errors () =
+  with_store "append-session-error" @@ fun ~root_path:_ store ->
+  let document = ok_or_fail (Store.create store (make_session "doc")) in
+  let invalid =
+    Session.Event.turn_finished
+      ~turn:(Session.Turn.Id.of_string "missing")
+      Session.Turn.Outcome.completed
+  in
+  match Store.append store document [ invalid ] with
+  | Error (Store.Error.Session { id; error = Session.Error.State _ }) ->
+      equal string ~msg:"session error carries the document id" "doc"
+        (Session.Id.to_string id);
+      let loaded = ok_or_fail (Store.load store id) in
+      equal string ~msg:"failed append leaves revision unchanged"
+        (revision_string document) (revision_string loaded)
+  | Ok _ -> failf "invalid append should fail"
+  | Error error -> failf "unexpected error: %a" Store.Error.pp error
 
 let list_filters_lifecycle_and_limit () =
   with_store "list" @@ fun ~root_path:_ store ->
@@ -348,6 +366,7 @@ let () =
         load_rejects_non_file_document_path;
       test "list rejects a non-positive limit" list_rejects_non_positive_limit;
       test "save rejects a session id mismatch" save_rejects_id_mismatch;
+      test "append reports session errors" append_reports_session_errors;
       test "list filters lifecycle and applies limit"
         list_filters_lifecycle_and_limit;
       test "list reports corrupt entries without counting the limit"

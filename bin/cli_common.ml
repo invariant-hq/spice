@@ -75,7 +75,7 @@ let session_store_diagnostic id error =
       Spice_session_store.Error.diagnostic ?id error
   | error ->
       Spice_protocol.Error.diagnostic
-        (Spice_host.Session.store_error ?id error)
+        (Spice_host.Session.store_error error)
 
 let status (result : (exit_status, error) result) =
   let render diagnostic = Spice_diagnostic.to_string diagnostic in

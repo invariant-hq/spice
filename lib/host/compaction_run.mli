@@ -23,9 +23,9 @@
 
 (** The type for a compaction failure, grouped by caller recovery class.
 
-    Callers map it back into {!Spice_protocol.Error.t} with their session id in
-    scope (see {!Session_loop.of_compaction}); this type keeps the distinctions
-    that mapping needs. *)
+    Callers map it back into {!Spice_protocol.Error.t} with
+    {!Session_loop.of_compaction}; this type keeps the distinctions that mapping
+    needs. *)
 type error =
   | Nothing_to_summarize
       (** No transcript prefix was eligible: nothing was summarized and nothing

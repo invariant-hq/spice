@@ -63,6 +63,9 @@ module Document : sig
       with revisions. A document becomes stale as soon as another successful
       write replaces the same session. *)
 
+  val id : t -> Spice_session.Id.t
+  (** [id t] is the id of [t]'s session document. *)
+
   val session : t -> Spice_session.t
   (** [session t] is [t]'s session document. *)
 
@@ -114,9 +117,9 @@ module Error : sig
     | Corrupt of { path : string; message : string }
         (** Persisted data at [path], or encoded data about to be written, is
             not a valid session store document. *)
-    | Session of Spice_session.Error.t
-        (** A session-domain operation rejected the requested semantic change.
-        *)
+    | Session of { id : Spice_session.Id.t; error : Spice_session.Error.t }
+        (** A session-domain operation rejected the requested semantic change
+            for [id]. *)
     | Io of { path : string; message : string }
         (** A filesystem operation failed for [path]. *)
 

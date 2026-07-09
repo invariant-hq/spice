@@ -48,8 +48,7 @@ let session_error ~id (error : Spice_session.Error.t) : Spice_protocol.Error.t =
          rewind anchors. They flatten with [State] as unrepairable. *)
       Spice_protocol.Error.Internal (Spice_session.Error.message error)
 
-let of_store ?id (error : Spice_session_store.Error.t) : Spice_protocol.Error.t
-    =
+let of_store (error : Spice_session_store.Error.t) : Spice_protocol.Error.t =
   match error with
   | Spice_session_store.Error.Not_found id -> Spice_protocol.Error.Not_found id
   | Spice_session_store.Error.Conflict { id; expected; actual } ->
@@ -59,13 +58,9 @@ let of_store ?id (error : Spice_session_store.Error.t) : Spice_protocol.Error.t
       Spice_protocol.Error.Storage { path; message }
   | Spice_session_store.Error.Already_exists _ ->
       Spice_protocol.Error.Internal (Spice_session_store.Error.message error)
-  | Spice_session_store.Error.Session error -> (
-      match id with
-      | Some id -> session_error ~id error
-      | None ->
-          Spice_protocol.Error.Internal (Spice_session.Error.message error))
+  | Spice_session_store.Error.Session { id; error } -> session_error ~id error
 
-let of_compaction ~id (error : Compaction_run.error) : Spice_protocol.Error.t =
+let of_compaction (error : Compaction_run.error) : Spice_protocol.Error.t =
   match error with
   | Compaction_run.Nothing_to_summarize ->
       Spice_protocol.Error.Nothing_to_summarize
@@ -76,7 +71,7 @@ let of_compaction ~id (error : Compaction_run.error) : Spice_protocol.Error.t =
   | Compaction_run.Transcript_not_ready error ->
       Spice_protocol.Error.Transcript_not_ready error
   | Compaction_run.Provider error -> Spice_protocol.Error.Provider error
-  | Compaction_run.Store error -> of_store ~id error
+  | Compaction_run.Store error -> of_store error
   | Compaction_run.Internal message -> Spice_protocol.Error.Internal message
 
 let run_error session (error : Spice_session.Run.Error.t) :
@@ -105,12 +100,12 @@ let validate_answer = function
   | _ -> Ok ()
 
 let document_id document =
-  Spice_session.id (Spice_session_store.Document.session document)
+  Spice_session_store.Document.id document
 
-let map_store ~id result = Result.map_error (of_store ~id) result
+let map_store result = Result.map_error of_store result
 
-(* Compaction reuses raw store appends; it maps its own error class back with the
-   session id in scope at the caller. *)
+(* Compaction reuses raw store appends and maps its own error class back into
+   the protocol error boundary. *)
 let raw_save store document events =
   match events with
   | [] -> Ok document
@@ -322,7 +317,7 @@ let save_step ~store projector hooks document step =
   | _ :: _ ->
       let* document =
         Spice_session_store.append store document events
-        |> map_store ~id:(document_id document)
+        |> map_store
       in
       hooks.after_save document events;
       emit_saved projector hooks.observe events;
@@ -333,7 +328,6 @@ let save_step ~store projector hooks document step =
    grounds the started progress delta's projection in the same number the
    trigger compared. *)
 let execute_compact ~store ~model hooks policy ?request document ~reason =
-  let id = document_id document in
   (* Summary generation is not an assistant step: its stream deltas must not
      reach the observer as assistant or reasoning text, so the compaction model
      call drops them. *)
@@ -342,7 +336,7 @@ let execute_compact ~store ~model hooks policy ?request document ~reason =
     ~save:(fun document events -> raw_save store document events)
     ~model ~policy ~observe:hooks.observe ~after_save:hooks.after_save
     ~cancelled:hooks.cancelled ?request document ~reason
-  |> Result.map_error (of_compaction ~id)
+  |> Result.map_error of_compaction
 
 let should_compact_request policy state request =
   match Compactor.Policy.auto_limit policy with

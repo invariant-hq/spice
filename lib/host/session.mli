@@ -139,15 +139,12 @@ val store : stdenv:Eio_unix.Stdenv.base -> Host.t -> Spice_session_store.t
 (** [store ~stdenv host] is the session store for [host]'s resolved
     configuration. Host configuration owns store-root resolution. *)
 
-val store_error :
-  ?id:Spice_session.Id.t ->
-  Spice_session_store.Error.t ->
-  Spice_protocol.Error.t
-(** [store_error ?id error] flattens a store error into the host's single
-    protocol error: not-found, conflict, and corrupt/io storage errors keep
-    their protocol shapes; a wrapped pure session error maps through [id] when
-    one names the document (archived, deleted, active turn), and unrepairable
-    invariants flatten to {!Spice_protocol.Error.Internal}. This is the one
+val store_error : Spice_session_store.Error.t -> Spice_protocol.Error.t
+(** [store_error error] flattens a store error into the host's single protocol
+    error: not-found, conflict, and corrupt/io storage errors keep their
+    protocol shapes; wrapped pure session errors use the id carried by the
+    store error, and unrepairable invariants flatten to
+    {!Spice_protocol.Error.Internal}. This is the one
     mapping every store consumer shares; frontends define no second one. *)
 
 val load :
