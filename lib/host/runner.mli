@@ -24,6 +24,8 @@ type t
 val make :
   store:Spice_session_store.t ->
   client:Spice_llm.Client.t ->
+  model:Spice_llm.Model.t ->
+  mode:Spice_protocol.Mode.t option ->
   run:Spice_session.Run.Config.t ->
   ?host_tool:Handler.t ->
   ?resolve_plan:Session_loop.plan_resolver ->
@@ -31,8 +33,12 @@ val make :
   ?hooks:Session.hooks ->
   unit ->
   t
-(** [make ~store ~client ~run ?host_tool ?resolve_plan ?compaction ?hooks ()] is
-    an interpreter over [store] and [client] with run configuration [run].
+(** [make ~store ~client ~model ~mode ~run ?host_tool ?resolve_plan ?compaction
+    ?hooks ()] is an interpreter over [store] and [client] with effective turn
+    [model], optional root [mode], and run configuration [run]. These bound
+    values, plus [run]'s host-tool catalog, are the only source of persisted
+    turn contract facts; {!Spice_protocol.Command.Start} supplies request data
+    only.
 
     [host_tool] answers caller-owned host-tool calls; calls it does not answer
     remain blocked for the caller to resolve. [resolve_plan] applies a

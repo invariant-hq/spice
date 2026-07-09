@@ -44,7 +44,6 @@ type child = {
   runner :
     Spice_session.Id.t -> notices:Notice_queue.t -> (Runner.t, string) result;
   prompt : string;
-  turn_model : Spice_llm.Model.t;
   title : string;
   cwd : Spice_path.Abs.t;
 }
@@ -55,7 +54,6 @@ type entry = {
   mutable record : Spice_protocol.Subagent_run.t;
   mutable live : Live.t;
   child_runner : Runner.t; (* kept for terminal-resume re-attach *)
-  child_model : Spice_llm.Model.t;
   notices : Notice_queue.t; (* parent messages ride it, unique keys *)
   mutable settled : settlement Eio.Promise.t;
   mutable resolve : settlement Eio.Promise.u;
@@ -402,7 +400,6 @@ let spawn t ~parent ~parent_turn ~parent_call_id ~spawn ~depth
       record = run;
       live;
       child_runner = runner;
-      child_model = child_spec.turn_model;
       notices;
       settled;
       resolve;
@@ -414,13 +411,13 @@ let spawn t ~parent ~parent_turn ~parent_call_id ~spawn ~depth
   t.entries <- (child, entry) :: t.entries;
   wire t entry;
   emit t (Started run);
-  let turn =
-    Spice_session.Turn.make
+  let request =
+    Spice_protocol.Command.Start.make
       ~id:(Spice_session.Turn.Id.of_string (fresh_id t.stdenv "turn"))
       ~input:(Spice_session.Turn.Input.user_text child_spec.prompt)
-      ~model:child_spec.turn_model ()
+      ()
   in
-  Live.submit live (Spice_protocol.Command.Start turn);
+  Live.submit live (Spice_protocol.Command.Start request);
   Ok child
 
 (* Re-arm the settlement promise; the next drain settlement resolves the new
@@ -474,13 +471,13 @@ let resume_terminal t entry ~child text =
   entry.live <- live;
   wire t entry;
   emit t (Resumed record);
-  let turn =
-    Spice_session.Turn.make
+  let request =
+    Spice_protocol.Command.Start.make
       ~id:(Spice_session.Turn.Id.of_string (fresh_id t.stdenv "turn"))
       ~input:(Spice_session.Turn.Input.user_text text)
-      ~model:entry.child_model ()
+      ()
   in
-  Live.submit live (Spice_protocol.Command.Start turn);
+  Live.submit live (Spice_protocol.Command.Start request);
   Ok ()
 
 let message ~origin t child text =

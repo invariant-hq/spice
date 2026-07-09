@@ -609,8 +609,8 @@ type plan_resolver =
   Spice_protocol.Plan.Proposal.t ->
   (string, Spice_protocol.Error.t) result
 
-let execute ~store ~client ~host_tool ~resolve_plan ~run ?compaction ~hooks
-    document (command : Spice_protocol.Command.t) =
+let execute ~store ~client ~host_tool ~resolve_plan ~turn_model ~turn_mode ~run
+    ?compaction ~hooks document (command : Spice_protocol.Command.t) =
   let session = Spice_session_store.Document.session document in
   let projector = new_projector session in
   let model ~on_event ~cancelled request =
@@ -624,11 +624,11 @@ let execute ~store ~client ~host_tool ~resolve_plan ~run ?compaction ~hooks
   let session_id = document_id document in
   let started = Unix.gettimeofday () in
   (match command with
-  | Spice_protocol.Command.Start turn ->
+  | Spice_protocol.Command.Start request ->
       Log.info (fun m ->
           m "turn started session=%a turn=%a" Spice_session.Id.pp session_id
             Spice_session.Turn.Id.pp
-            (Spice_session.Turn.id turn))
+            (Spice_protocol.Command.Start.id request))
   | Spice_protocol.Command.Interrupt { reason } ->
       Log.info (fun m ->
           m "turn interrupt requested session=%a reason=%s" Spice_session.Id.pp
@@ -640,18 +640,18 @@ let execute ~store ~client ~host_tool ~resolve_plan ~run ?compaction ~hooks
       ());
   let result =
     match command with
-    | Spice_protocol.Command.Start turn ->
+    | Spice_protocol.Command.Start request ->
         let* () = check_active_document session in
         let* () = require_no_active_turn session in
+        let mode = Option.map Spice_protocol.Mode.to_string turn_mode in
         let* step =
           Spice_session.Run.start run
-            ~id:(Spice_session.Turn.id turn)
-            ~input:(Spice_session.Turn.input turn)
-            ~model:(Spice_session.Turn.model turn)
-            ~options:(Spice_session.Turn.options turn)
-            ?mode:(Spice_session.Turn.mode turn)
-            ?origin:(Spice_session.Turn.origin turn)
-            ?max_steps:(Spice_session.Turn.max_steps turn)
+            ~id:(Spice_protocol.Command.Start.id request)
+            ~input:(Spice_protocol.Command.Start.input request)
+            ~model:turn_model
+            ?options:(Spice_protocol.Command.Start.options request)
+            ?mode ?origin:(Spice_protocol.Command.Start.origin request)
+            ?max_steps:(Spice_protocol.Command.Start.max_steps request)
             session
           |> map_run session
         in

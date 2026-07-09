@@ -954,7 +954,7 @@ let effective_unattended host override =
       (Spice_host.Config.Permissions.unattended
          (Spice_host.Config.permissions (Spice_host.Host.config host)))
 
-let make_turn ?(skill_texts = []) ?origin stdenv model mode prompt max_steps
+let make_turn ?(skill_texts = []) ?origin stdenv model prompt max_steps
     ~reasoning_request =
   let reasoning_effort =
     match reasoning_request with
@@ -962,9 +962,6 @@ let make_turn ?(skill_texts = []) ?origin stdenv model mode prompt max_steps
     | None -> Spice_provider.Model.default_reasoning model
   in
   let options = Spice_host.Turn_options.resolve ~model ?reasoning_effort () in
-  let host_tools =
-    List.map Spice_protocol.Call.Kind.name (Spice_protocol.Mode.host_tools mode)
-  in
   let input =
     (* [--skill] texts are durable user content blocks ahead of the prompt
        block, so forced guidance survives resume like a /name expansion. *)
@@ -974,11 +971,8 @@ let make_turn ?(skill_texts = []) ?origin stdenv model mode prompt max_steps
         Session.Turn.Input.user
           (List.map Spice_llm.Content.text (texts @ [ prompt ]))
   in
-  Session.Turn.make ~id:(fresh_turn_id stdenv) ~input
-    ~model:(Spice_provider.Model.llm model)
-    ~options
-    ~mode:(Spice_protocol.Mode.to_string mode)
-    ?origin ?max_steps ~host_tools ()
+  Spice_protocol.Command.Start.make ~id:(fresh_turn_id stdenv) ~input ~options
+    ?origin ?max_steps ()
 
 (* Goal-driven execution. The host owns the decision and the safety
    transitions ([Spice_host.Goal_run]); this loop owns launching: it settles
@@ -1198,8 +1192,8 @@ let drive_goal ~stdenv ~store ~json ~unattended ~mode ~max_steps
                   stderr_printf "spice: goal: continuing (turn %d)\n"
                     (Goal.continuation_turns goal + 1);
                 let turn =
-                  make_turn ~origin:Goal.turn_origin stdenv runtime.model mode
-                    prompt max_steps ~reasoning_request
+                  make_turn ~origin:Goal.turn_origin stdenv runtime.model prompt
+                    max_steps ~reasoning_request
                 in
                 exec runtime document (Spice_protocol.Command.Start turn)))
   in
@@ -1344,7 +1338,7 @@ let start json raw_id title model reasoning_effort workflow_mode permission_mode
      | Some goal -> print_goal_event ~json ~type_:"goal.set" id goal
      | None -> ());
      let turn =
-       make_turn ~skill_texts stdenv model mode prompt max_steps
+       make_turn ~skill_texts stdenv model prompt max_steps
          ~reasoning_request
      in
      let* result =
@@ -1401,7 +1395,7 @@ let resume_in_host ~stdenv host json model reasoning_effort workflow_mode
                 | None -> Spice_protocol.Command.Resume
                 | Some prompt ->
                     Spice_protocol.Command.Start
-                      (make_turn stdenv model mode prompt max_steps
+                      (make_turn stdenv model prompt max_steps
                          ~reasoning_request))))
      in
      print_changed_trailer ~json ~stdenv ~store result;
@@ -1610,7 +1604,7 @@ let goal_reply json model reasoning_effort workflow_mode permission_mode
                  ~model ~reasoning_request ~permission_mode ~sandbox ~max_steps
              in
              let turn =
-               make_turn ~origin:Goal.turn_origin stdenv model mode
+               make_turn ~origin:Goal.turn_origin stdenv model
                  (Goal_run.continuation_prompt goal)
                  max_steps ~reasoning_request
              in

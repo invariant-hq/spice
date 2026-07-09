@@ -3,8 +3,39 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
+module Start = struct
+  type t = {
+    id : Spice_session.Turn.Id.t;
+    input : Spice_session.Turn.Input.t;
+    options : Spice_llm.Request.Options.t option;
+    origin : string option;
+    max_steps : int option;
+  }
+
+  let make ~id ~input ?options ?origin ?max_steps () =
+    Option.iter
+      (fun origin ->
+        if String.is_empty origin then
+          invalid_arg
+            "Spice_protocol.Command.Start.make: origin must not be empty")
+      origin;
+    Option.iter
+      (fun max_steps ->
+        if max_steps <= 0 then
+          invalid_arg
+            "Spice_protocol.Command.Start.make: max_steps must be positive")
+      max_steps;
+    { id; input; options; origin; max_steps }
+
+  let id t = t.id
+  let input t = t.input
+  let options t = t.options
+  let origin t = t.origin
+  let max_steps t = t.max_steps
+end
+
 type t =
-  | Start of Spice_session.Turn.t
+  | Start of Start.t
   | Resume
   | Reply of {
       permission : Spice_session.Permission.Id.t;
@@ -48,8 +79,18 @@ let pp_result ppf result =
       Format.fprintf ppf "interrupted(%S)" reason
 
 let pp ppf = function
-  | Start turn ->
-      Format.fprintf ppf "@[<hov>start %a@]" Spice_session.Turn.pp turn
+  | Start request ->
+      Format.fprintf ppf
+        "@[<hov>start { id = %a; input = %a; options = %a; origin = %a; \
+         max_steps = %a }@]"
+        Spice_session.Turn.Id.pp (Start.id request) Spice_session.Turn.Input.pp
+        (Start.input request)
+        (Format.pp_print_option (fun ppf _ -> Format.pp_print_string ppf "set"))
+        (Start.options request)
+        (Format.pp_print_option Format.pp_print_string)
+        (Start.origin request)
+        (Format.pp_print_option Format.pp_print_int)
+        (Start.max_steps request)
   | Resume -> Format.pp_print_string ppf "resume"
   | Reply { permission; answer; via; message } ->
       Format.fprintf ppf

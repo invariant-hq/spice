@@ -7,18 +7,55 @@
 
     A command is a request a client makes of a session: start a turn, resume a
     blocked one, resolve a pending permission or host-tool boundary, record a
-    recovered tool result, or interrupt. It is plain data — no validated
-    invariants — because a wire decoder cannot promise any. The engine checks
-    every precondition at execute time and reports violations as {!Error.t}
+    recovered tool result, or interrupt. The engine checks session-dependent
+    preconditions at execute time and reports violations as {!Error.t}
     ({!Error.Tool_call_not_pending}, {!Error.Invalid_answer},
-    {!Error.Active_turn_exists}, …); private or abstract construction would only
-    launder unverifiable data.
+    {!Error.Active_turn_exists}, …). {!Start.t} is abstract for a different
+    reason: model, mode, and tool catalogs are not client input at all; the
+    configured runner owns them.
 
     {!Command.t} in and {!Event.t} out is the narrow waist a session speaks. *)
 
+module Start : sig
+  (** Client-owned data for starting a turn. The bound runner supplies the
+      effective model, mode, and host-tool catalog recorded on the accepted
+      turn. *)
+
+  type t
+  (** The type for a turn-start request. *)
+
+  val make :
+    id:Spice_session.Turn.Id.t ->
+    input:Spice_session.Turn.Input.t ->
+    ?options:Spice_llm.Request.Options.t ->
+    ?origin:string ->
+    ?max_steps:int ->
+    unit ->
+    t
+  (** [make ~id ~input ?options ?origin ?max_steps ()] requests a new turn.
+      The fields have the same meaning and validation as their
+      {!Spice_session.Turn.make} counterparts. Raises [Invalid_argument] when a
+      present [origin] is empty or [max_steps] is not positive. *)
+
+  val id : t -> Spice_session.Turn.Id.t
+  (** [id t] is the requested turn id. *)
+
+  val input : t -> Spice_session.Turn.Input.t
+  (** [input t] is the requested durable user input. *)
+
+  val options : t -> Spice_llm.Request.Options.t option
+  (** [options t] is the request-specific model option set, if supplied. *)
+
+  val origin : t -> string option
+  (** [origin t] is the optional turn origin tag. *)
+
+  val max_steps : t -> int option
+  (** [max_steps t] is the optional per-turn step limit. *)
+end
+
 type t =
-  | Start of Spice_session.Turn.t
-      (** Append a turn to an idle session and advance it. *)
+  | Start of Start.t
+      (** Ask the bound runner to append and advance a turn. *)
   | Resume  (** Advance the active turn from its saved boundary. *)
   | Reply of {
       permission : Spice_session.Permission.Id.t;

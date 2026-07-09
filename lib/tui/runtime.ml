@@ -723,21 +723,15 @@ let turn_reasoning config model =
   | Some effort -> Some effort
   | None -> Spice_provider.Model.default_reasoning model
 
-let make_turn ~clock ~config ~model ~effort ~mode prompt =
+let make_turn ~clock ~config ~model ~effort prompt =
   let reasoning_effort =
     match effort with Some _ -> effort | None -> turn_reasoning config model
   in
   let options = Spice_host.Turn_options.resolve ~model ?reasoning_effort () in
-  let host_tools =
-    List.map Spice_protocol.Call.Kind.name (Spice_protocol.Mode.host_tools mode)
-  in
-  Spice_session.Turn.make
+  Spice_protocol.Command.Start.make
     ~id:(Spice_host.Session.fresh_turn_id ~clock)
     ~input:(Spice_session.Turn.Input.user_text prompt)
-    ~model:(Spice_provider.Model.llm model)
-    ~options
-    ~mode:(Spice_protocol.Mode.to_string mode)
-    ~host_tools ()
+    ~options ()
 
 (* The unified @ completion's ignore set: the host's default ignores plus
    picker-local extras — directories a mention would never target (VCS innards,
@@ -1998,7 +1992,7 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                           let turn =
                             make_turn ~clock
                               ~config:(Spice_host.Host.config host)
-                              ~model ~effort ~mode:!current_mode prompt
+                              ~model ~effort prompt
                           in
                           Spice_host.Live.submit live
                             (Spice_protocol.Command.Start turn)))

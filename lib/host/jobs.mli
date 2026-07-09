@@ -84,7 +84,6 @@ type child = {
           registry-owned per-run queue the runner must drain at its request
           boundaries ({!Session.with_notices}) — parent messages ride it. *)
   prompt : string;  (** The child turn's user-text input. *)
-  turn_model : Spice_llm.Model.t;  (** The model recorded on the child turn. *)
   title : string;  (** The child session title. *)
   cwd : Spice_path.Abs.t;  (** The child session working directory. *)
 }

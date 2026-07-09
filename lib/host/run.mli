@@ -165,10 +165,9 @@ val runner :
     [client] is the credentialed client the caller resolved for [model] from the
     current credential store; re-deriving at each turn is how a login or a model
     switch takes effect mid-session. The derivation is cheap — pure assembly
-    over the loaded workspace — and starts no producer. The turn submitted to
-    the derived interpreter declares the same [mode] and [model] (see
-    {!Spice_session.Turn.make}); the caller stamps both from the values it binds
-    here.
+    over the loaded workspace — and starts no producer. The interpreter binds
+    [mode], [model], and its effective tool catalogs; a submitted
+    {!Spice_protocol.Command.Start} cannot override those persisted facts.
 
     Errors are {!Host.Error.t}: {!Host.Error.Instructions} from prelude
     construction. *)

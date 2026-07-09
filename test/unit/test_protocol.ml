@@ -1087,18 +1087,11 @@ module Boundary_tests = struct
   module Tool = Spice_tool
   module Permission = Spice_permission
 
-  let model =
-    Llm.Model.make
-      ~provider:(Llm.Provider.make "openai")
-      ~api:(Llm.Model.Api.make "responses")
-      ~id:"gpt-5"
-
   let turn_id = Session.Turn.Id.of_string "turn-1"
 
-  let turn =
-    Session.Turn.make ~id:turn_id
-      ~input:(Session.Turn.Input.user_text "Go.")
-      ~model ()
+  let start =
+    Command.Start.make ~id:turn_id
+      ~input:(Session.Turn.Input.user_text "Go.") ()
 
   let ask_call =
     Llm.Tool.Call.make ~id:"call-1" ~name:"ask_user"
@@ -1156,7 +1149,7 @@ module Boundary_tests = struct
     in
     let commands =
       [
-        Command.Start turn;
+        Command.Start start;
         Command.Resume;
         Command.Reply
           {

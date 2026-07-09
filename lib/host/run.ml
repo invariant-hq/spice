@@ -491,7 +491,9 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
                   | Error error -> Error (Host.Error.message error)
                   | Ok child_config ->
                       Ok
-                        (Runner.make ~store ~client ~run:child_config
+                        (Runner.make ~store ~client
+                           ~model:(Spice_provider.Model.llm model) ~mode:None
+                           ~run:child_config
                            ~host_tool:Handler.child
                            ~hooks:
                              (Session.with_notices
@@ -499,7 +501,6 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
                                 notices Session.no_hooks)
                            ()));
               prompt = child_prompt spawn;
-              turn_model = Spice_provider.Model.llm model;
               title = child_session_title spawn;
               cwd =
                 Spice_session.Metadata.cwd
@@ -521,8 +522,9 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
         ~message:message_run
     in
     Ok
-      (Runner.make ~store ~client ~run:run_config ~host_tool:handler
-         ~resolve_plan ?compaction ~hooks ())
+      (Runner.make ~store ~client ~model:(Spice_provider.Model.llm model)
+         ~mode:(Some mode) ~run:run_config ~host_tool:handler ~resolve_plan
+         ?compaction ~hooks ())
   in
   Ok
     {

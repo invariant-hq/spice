@@ -222,6 +222,8 @@ val execute :
   client:Spice_llm.Client.t ->
   host_tool:Handler.t ->
   resolve_plan:plan_resolver ->
+  turn_model:Spice_llm.Model.t ->
+  turn_mode:Spice_protocol.Mode.t option ->
   run:Spice_session.Run.Config.t ->
   ?compaction:Compactor.Policy.t ->
   hooks:hooks ->
@@ -230,10 +232,11 @@ val execute :
   ( Spice_session_store.Document.t * Spice_protocol.Outcome.t,
     Spice_protocol.Error.t )
   result
-(** [execute ~store ~client ~host_tool ~run ?compaction ~hooks document command]
-    interprets [command] against [document] until the session blocks or
-    finishes, returning the latest saved document beside its
-    {!Spice_protocol.Outcome.t}.
+(** [execute ~store ~client ~host_tool ~turn_model ~turn_mode ~run ?compaction
+    ~hooks document command] interprets [command] against [document] until the
+    session blocks or finishes, returning the latest saved document beside its
+    {!Spice_protocol.Outcome.t}. [turn_model], [turn_mode], and [run]'s host-tool
+    catalog form the accepted turn contract for {!Spice_protocol.Command.Start}.
 
     Save-before-effect: each planned event suffix is appended before the model
     request or executable tool it precedes is interpreted. An executable tool
