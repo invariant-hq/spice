@@ -19,6 +19,7 @@ module Error = struct
         model : string;
         field : Config.Field.any option;
         known : string list;
+        base_url : string option;
       }
     | Invalid_selector of {
         input : string;
@@ -142,6 +143,24 @@ module Error = struct
       Printf.sprintf "run `spice models show %s` to inspect the model" selector;
     ]
 
+  (* A configured base URL means the reference is aimed at a server other than
+     the provider's own API, yet the model id is still checked against the
+     built-in catalog. That is almost never a catalog typo; it is a self-hosted
+     OpenAI-compatible server, which speaks chat-completions and is reached
+     through the [ollama] provider — overriding this provider's base URL does not
+     make its catalog accept arbitrary ids. *)
+  let custom_endpoint_hints ~provider ~base_url =
+    let id = Spice_llm.Provider.id provider in
+    [
+      Printf.sprintf
+        "providers.%s.base_url is set to %s, but the model id is still validated \
+         against the built-in %s catalog"
+        id base_url id;
+      "for a self-hosted OpenAI-compatible server (llama.cpp, vLLM, LM Studio), \
+       use the ollama provider: set providers.ollama.base_url and model \
+       ollama/<id>";
+    ]
+
   let hints = function
     | Config error -> Config.Error.hints error
     | Unknown_provider { provider; field; known } ->
@@ -149,8 +168,13 @@ module Error = struct
           (Spice_llm.Provider.id provider)
           ~candidates:known
         @ unset_hint field
-    | Unknown_model { model; field; known; _ } ->
-        Spice_diagnostic.did_you_mean model ~candidates:known @ unset_hint field
+    | Unknown_model { provider; model; field; known; base_url } -> (
+        match base_url with
+        | Some base_url ->
+            custom_endpoint_hints ~provider ~base_url @ unset_hint field
+        | None ->
+            Spice_diagnostic.did_you_mean model ~candidates:known
+            @ unset_hint field)
     | Invalid_selector { candidates; _ } -> Spice_diagnostic.suggest candidates
     | Not_selectable { field = Some _ as field; _ } -> unset_hint field
     | Not_selectable { field = None; _ } ->

@@ -47,7 +47,9 @@ let resolve_input ?field catalog input =
                (Spice_provider.Model.provider synthesized) ->
           Ok synthesized
       | Some _ | None ->
-          Error (Host.Error.Unknown_model { provider; model; field; known }))
+          Error
+            (Host.Error.Unknown_model
+               { provider; model; field; known; base_url = None }))
   | Error
       (Spice_provider.Catalog.Lookup_error.Invalid_selector
          { input; message; candidates }) ->
@@ -149,9 +151,23 @@ let configured_choice t ~field selector origin =
               selector);
         Reason.derived "configured"
   in
-  Result.map
-    (fun model -> { model; reason; field = Some field })
-    (resolve_input ~field (Host.catalog t) selector)
+  match resolve_input ~field (Host.catalog t) selector with
+  | Ok model -> Ok { model; reason; field = Some field }
+  (* A configured selector whose provider carries a base-URL override is aimed at
+     a custom endpoint; annotate the unknown-model failure with that override so
+     the diagnostic points at the OpenAI-compatible [ollama] route rather than at
+     catalog typos. *)
+  | Error (Host.Error.Unknown_model { provider; model; field = error_field; known; base_url = _ })
+    ->
+      let base_url =
+        Config.Models.provider_base_url
+          (Config.models (Host.config t))
+          ~provider
+      in
+      Error
+        (Host.Error.Unknown_model
+           { provider; model; field = error_field; known; base_url })
+  | Error error -> Error error
 
 let configured_main t =
   let models = Config.models (Host.config t) in
