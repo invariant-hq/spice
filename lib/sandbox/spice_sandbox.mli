@@ -31,8 +31,9 @@ module Env = Env
 
     This module is for sandbox status and explain surfaces that need to describe
     the filtering policy without spawning. Common spawn callers should use
-    {!spawn}; the resulting {!Spawn.t} reports the filtered environment and
-    stripped names for the actual command. *)
+    {!spawn}; the resulting {!Spawn.t} carries the filtered environment and
+    sandbox evidence for the actual command. Call {!Env.partition} directly
+    when a diagnostic surface needs stripped names. *)
 
 module Evidence = Evidence
 (** Sandbox enforcement evidence. *)
@@ -68,10 +69,10 @@ val spawn :
 (** [spawn t ~argv ~env] is the complete spawn decision for one command.
 
     [Ok spawn] carries the argv to execute, the environment to pass to the
-    process, the stripped environment names, and the evidence that the command
-    result must report. For confined sandboxes the argv may be wrapped by the
-    prepared backend and [env] is filtered with {!Env.partition}; for unconfined
-    and declared-external sandboxes both pass through unchanged.
+    process, and the evidence that the command result must report. For confined
+    sandboxes the argv may be wrapped by the prepared backend and [env] is
+    filtered with {!Env.partition}; for unconfined and declared-external
+    sandboxes both pass through unchanged.
 
     [Error error] is a structured sandbox refusal. The command must not be
     spawned; callers that produce command output should report

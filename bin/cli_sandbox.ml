@@ -332,7 +332,7 @@ let explain_command =
     (CCmd.info "explain"
        ~doc:
          "Report the sandbox policy Spice would apply to this workspace: mode, \
-          backend, network, writable and protected paths, and environment \
+          backend, network, writable roots, protected entries, and environment \
           stripping."
        ~exits)
     (exit_term
@@ -350,8 +350,13 @@ let group =
              "Reports the sandbox posture runs would use without loading \
               provider credentials or touching a session: $(b,status) for \
               platform and backend facts, $(b,explain) for the concrete policy \
-              — writable roots, protected paths, network, and environment \
-              stripping.";
+              — writable roots, protected metadata names and concrete paths, \
+              network, and environment stripping.";
+           `P
+             "For $(b,workspace-write), writable roots are shaped by the \
+              workspace, temp roots, $(b,sandbox.writable_roots), and the \
+              $(b,sandbox.toolchain_caches) preset. Network posture is shaped \
+              by $(b,sandbox.network).";
          ]
        ~exits)
     [ status_command; explain_command ]

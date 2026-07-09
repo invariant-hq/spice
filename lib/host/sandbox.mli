@@ -260,7 +260,9 @@ val gate : Effective.t -> (unit, Gate_error.t) result
     A confined request whose backend is unavailable fails under
     {!Require.Enforced} and {!Require.Enforced_or_external}. A declared external
     boundary fails only under {!Require.Enforced}. Unconfined requests and
-    {!Require.Off} always pass. *)
+    {!Require.Off} always pass. Passing the gate with {!Require.Off} does not
+    run refused confined commands unconfined: each shell command is still
+    refused by the sealed sandbox if no backend can enforce it. *)
 
 val mutating_tools : Effective.t -> bool
 (** [mutating_tools effective] is [false] iff the effective mode is
