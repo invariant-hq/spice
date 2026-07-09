@@ -6,6 +6,7 @@
 open Windtrap
 module Auth = Spice_auth
 module Browser = Auth.OAuth2_authorization_code
+module Device = Auth.Device_code
 module Protocol = Spice_provider.Auth.Login.Protocol
 
 let read_body body = Eio.Buf_read.(of_flow ~max_size:4096 body |> take_all)
@@ -172,6 +173,100 @@ let rejects_invalid_openai_auth_issuer () =
   | Error error -> failf "expected invalid request, got %a" Auth.Error.pp error
   | Ok _ -> failf "expected invalid issuer rejection"
 
+let oauth_device_spec ~base_uri =
+  let client = Oauth2.Client.make ~id:"device-client" () in
+  {
+    Protocol.device_client = client;
+    Protocol.device_endpoint = Uri.with_path base_uri "/device";
+    Protocol.device_token_endpoint = Uri.with_path base_uri "/token";
+    Protocol.device_scope = [ "profile" ];
+    Protocol.device_extra = [];
+  }
+
+let with_oauth_device_server env token_responses f =
+  let token_responses = ref token_responses in
+  with_server env
+    (fun request body ->
+      let resource = Http.Request.resource request in
+      if String.equal resource "/device" then (
+        ignore (read_body body);
+        respond_string ~status:`OK
+          ~body:
+            {|{"device_code":"device-secret","user_code":"USER-CODE","verification_uri":"https://provider.example/device","verification_uri_complete":"https://provider.example/device?user_code=USER-CODE","expires_in":30,"interval":2}|}
+          ())
+      else if String.equal resource "/token" then (
+        ignore (read_body body);
+        match !token_responses with
+        | [] -> failf "unexpected device token poll"
+        | (status, response_body) :: rest ->
+            token_responses := rest;
+            respond_string ~status ~body:response_body ())
+      else failf "unexpected auth path %S" resource)
+    (fun ~sw ~base_uri -> f ~sw ~base_uri)
+
+let start_oauth_device ~sw ~base_uri env =
+  match
+    Device.start_oauth2 ~http:(Oauth2_eio.make_client env#net) ~sw ~now:10L
+      (oauth_device_spec ~base_uri)
+  with
+  | Ok device -> device
+  | Error error -> failf "expected device start, got %a" Auth.Error.pp error
+
+let poll_oauth_device ~sw env ~now device =
+  match Device.poll ~http:(Oauth2_eio.make_client env#net) ~sw ~now device with
+  | Ok poll -> poll
+  | Error error -> failf "expected device poll, got %a" Auth.Error.pp error
+
+let standard_device_poll_schedules_pending_and_slow_down env () =
+  with_oauth_device_server env
+    [
+      (`Bad_request, {|{"error":"authorization_pending"}|});
+      (`Bad_request, {|{"error":"slow_down"}|});
+    ]
+    (fun ~sw ~base_uri ->
+      let device = start_oauth_device ~sw ~base_uri env in
+      let challenge = Device.challenge device in
+      equal string ~msg:"user code" "USER-CODE" challenge.Device.user_code;
+      equal int ~msg:"initial poll delay" 2
+        (Device.next_poll_delay_s ~now:10L device);
+      match poll_oauth_device ~sw env ~now:12L device with
+      | Device.Pending pending ->
+          equal int ~msg:"pending keeps interval" 2
+            (Device.next_poll_delay_s ~now:12L pending);
+          begin match poll_oauth_device ~sw env ~now:14L pending with
+          | Device.Pending slowed ->
+              equal int ~msg:"slow down increases interval" 7
+                (Device.next_poll_delay_s ~now:14L slowed)
+          | Device.Authorized _ | Device.Expired _ | Device.Rejected _ ->
+              failf "expected slow_down pending state"
+          end
+      | Device.Authorized _ | Device.Expired _ | Device.Rejected _ ->
+          failf "expected authorization_pending state")
+
+let standard_device_poll_reports_provider_expiry env () =
+  with_oauth_device_server env
+    [ (`Bad_request, {|{"error":"expired_device_code"}|}) ]
+    (fun ~sw ~base_uri ->
+      let device = start_oauth_device ~sw ~base_uri env in
+      match poll_oauth_device ~sw env ~now:12L device with
+      | Device.Expired _ -> ()
+      | Device.Authorized _ | Device.Pending _ | Device.Rejected _ ->
+          failf "expected provider-reported expiry")
+
+let standard_device_poll_authorizes_bearer_tokens env () =
+  with_oauth_device_server env
+    [
+      ( `OK,
+        {|{"access_token":"device-access","token_type":"Bearer","refresh_token":"device-refresh"}|}
+      );
+    ]
+    (fun ~sw ~base_uri ->
+      let device = start_oauth_device ~sw ~base_uri env in
+      match poll_oauth_device ~sw env ~now:12L device with
+      | Device.Authorized _ -> ()
+      | Device.Pending _ | Device.Expired _ | Device.Rejected _ ->
+          failf "expected authorized device poll")
+
 let with_eio test () = Eio_main.run @@ fun env -> test env ()
 
 let () =
@@ -194,5 +289,14 @@ let () =
             (with_eio rejects_empty_generic_access_token);
           test ~timeout:3.0 "rejects empty generic refresh tokens"
             (with_eio rejects_empty_generic_refresh_token);
+        ];
+      group "device"
+        [
+          test ~timeout:3.0 "schedules pending and slow_down polls"
+            (with_eio standard_device_poll_schedules_pending_and_slow_down);
+          test ~timeout:3.0 "reports provider device-code expiry"
+            (with_eio standard_device_poll_reports_provider_expiry);
+          test ~timeout:3.0 "authorizes Bearer token responses"
+            (with_eio standard_device_poll_authorizes_bearer_tokens);
         ];
     ]
