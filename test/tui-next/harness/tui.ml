@@ -35,9 +35,14 @@ type t = {
   provider : Provider.t option;
 }
 
-(* A fixed launch instant (2026-07-09T02:40:00Z). Ages, elapsed counters, and
-   session-id stamps derive from it deterministically. *)
-let epoch = 1_783_565_000.
+(* The virtual clock's launch instant. Ages, elapsed counters, and session-id
+   stamps derive from it deterministically. Kept small on purpose: the runtime
+   and Mosaic pace frames off sub-second intervals (0.1 s and finer), and at a
+   real-epoch magnitude (~1.7e9) those intervals fall below the float ULP, so
+   [last +. interval -. now] and [now -. last >= interval] disagree at the
+   boundary and a cadence check can stall. A small base keeps that arithmetic
+   exact; nothing here renders an absolute wall-clock date. *)
+let epoch = 1000.
 let debug = Option.is_some (Sys.getenv_opt "TUI_HARNESS_DEBUG")
 let timings = Option.is_some (Sys.getenv_opt "TUI_HARNESS_TIMINGS")
 let t0 = ref 0.
@@ -165,14 +170,12 @@ let rec settle_from t spent =
     Mosaic.Probe.messages_pending probe
     || Matrix.redraw_requested (Matrix_test.app t.backend)
   then (
-    (* Work is queued but the loop parked: under live animation the render
-       cadence gates it behind a virtual frame deadline. Flush by advancing
-       to the deadline — at most one frame interval, exactly what real time
-       would have done. *)
-    (match t.last_timeout with
-    | Some s when s > 0. && t.parked ->
-        set_time t (Matrix_test.now t.backend +. s)
-    | _ -> ());
+    (* Async work landed a message or a redraw between the loop parking and
+       this observation (a provider fiber dispatching, say). Wake the loop to
+       process it and re-settle — never step time. The backend renders a
+       one-shot redraw at the current instant, so no cadence-flush advance is
+       needed; advancing here would instead march live timers (the working-line
+       [Sub.every]) a frame past where the interaction left them. *)
     round_trip t;
     settle_from t (spent + 1))
   else if Mosaic.Probe.render_pending probe then (
@@ -193,33 +196,26 @@ let rec settle_from t spent =
     done;
     if not (!stable && t.parked) then settle_from t (spent + 1)
 
-(* Settle, then land on a whole virtual second. Settling can consume a few
-   render-cadence steps (16.7ms each) whenever live animation gates queued
-   messages, and how many depends on real async interleaving. Quantizing to
-   the next second boundary absorbs that drift, so spinner phases and elapsed
-   counters are identical run to run. *)
+(* Settle to quiescence and stop where the settle lands — do not step time
+   forward. The old backend forced cadence-gated frames through the harness
+   here, so a settle drifted a nondeterministic handful of render steps and
+   was quantized up to the next whole second to erase that drift. The current
+   backend renders a one-shot redraw at the current instant ([pace_redraws]
+   off) and advances its own clock only for a live-animation frame deadline, so
+   a settle observes a stable frame at an unmoved clock — there is no sub-second
+   drift left to quantize away. Quantizing now would only march live timers —
+   the working-line [Sub.every] most visibly — a full second past where the
+   interaction left them. Time moves solely through {!advance}. *)
 let settle t =
   mark "settle: begin";
-  let rec quantized rounds =
-    settle_from t 0;
-    let now = Matrix_test.now t.backend in
-    (* Tolerant ceiling: already sitting on a boundary is settled. *)
-    let boundary = epoch +. Float.ceil (now -. epoch -. 1e-6) in
-    if now < boundary -. 1e-6 && rounds < 4 then begin
-      step_to t boundary;
-      quantized (rounds + 1)
-    end
-  in
-  quantized 0;
+  settle_from t 0;
   mark "settle: end"
 
-(* Move virtual time forward by [dt] seconds. Relative to the current
-   instant — call after {!settle} so the base is a quantized boundary and
-   displayed counters move by exactly [dt]. The trailing settle is
-   non-quantizing: a tick left queued at landing flushes one frame
-   (16.7 ms), and quantizing that residue would ratchet displayed counters
-   a full second on timing parity. Displayed state doesn't need it — the
-   spinner phase follows the tick count, not the clock. *)
+(* Move virtual time forward by [dt] seconds, relative to the current instant.
+   Displayed counters move by exactly [dt]. The trailing settle is
+   non-quantizing: a tick left queued at landing flushes one frame, and
+   quantizing that residue would ratchet displayed counters a full second on
+   timing parity — the spinner phase follows the tick count, not the clock. *)
 let advance t dt =
   step_to t (Matrix_test.now t.backend +. dt);
   settle_from t 0

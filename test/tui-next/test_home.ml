@@ -81,8 +81,8 @@ let%expect_test "virtual time advances the idle animation deterministically" =
     {|01 |
 02 |
 03 |
-04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀  ·
-05 |                              ▄██ █▀  █ ▀▄▄ █▄▄   ▂
+04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
 06 |
 07 |                            dev · openai/gpt-5.5 medium
 08 |

@@ -33,7 +33,7 @@ let%expect_test "a held turn shows working state, ticks, then settles" =
 05 |
 06 | ❯ say hello
 07 |
-08 | ⠇ Working… (0s · esc to interrupt)
+08 | ⠋ Working… (0s · esc to interrupt)
 09 |
 10 |
 11 |
@@ -61,7 +61,7 @@ let%expect_test "a held turn shows working state, ticks, then settles" =
 05 |
 06 | ❯ say hello
 07 |
-08 | ⠇ Working… (5s · esc to interrupt)
+08 | ⠋ Working… (5s · esc to interrupt)
 09 |
 10 |
 11 |
