@@ -112,29 +112,34 @@ let bind_metavar_lident env id lid =
     ~capture:(Cap_ident (last_component lid))
     (Ast_helper.Exp.ident (Location.mknoloc (strip_lident lid)))
 
-let try_match (env : env) f x =
-  let saved = !env in
-  try
-    f x;
-    true
-  with Dont_match ->
-    env := saved;
-    false
-
-let one_of env f l =
-  if not (List.exists (fun x -> try_match env f x) l) then dont_match ()
-
 (* Order-independent matching: every target element must match some pattern
    element, and every pattern element must be used at least once. One
    pattern element may cover several target elements. *)
 let match_set env f ps ts =
-  let used = Hashtbl.create 8 in
-  let attempt t p =
-    f p t;
-    Hashtbl.replace used p ()
+  let ps = List.mapi (fun i p -> (i, p)) ps in
+  let all_used used =
+    List.for_all (fun (i, _) -> List.mem i used) ps
   in
-  List.iter (fun t -> one_of env (attempt t) ps) ts;
-  List.iter (fun p -> if not (Hashtbl.mem used p) then dont_match ()) ps
+  let rec match_targets used = function
+    | [] -> if not (all_used used) then dont_match ()
+    | t :: ts ->
+        let rec try_patterns = function
+          | [] -> dont_match ()
+          | (i, p) :: ps ->
+              let saved = !env in
+              let used = if List.mem i used then used else i :: used in
+              match
+                f p t;
+                match_targets used ts
+              with
+              | () -> ()
+              | exception Dont_match ->
+                  env := saved;
+                  try_patterns ps
+        in
+        try_patterns ps
+  in
+  match_targets [] ts
 
 let match_opt f p t =
   match (p, t) with

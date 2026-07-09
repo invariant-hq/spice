@@ -130,6 +130,25 @@ let record_fields () =
   check "{ x = __ }" source [ "{ x = 1 }" ];
   check "{ __ = __ }" source [ "{ x = 1; y = 2 }"; "{ x = 1 }" ]
 
+let mixed_set_patterns_backtrack () =
+  check "{ __1 = __2; x = __2 }" "let r = { x = 1; y = 1 }\n"
+    [ "{ x = 1; y = 1 }" ];
+  check "{ __1 = __2; x = __2 }" "let r = { y = 1; x = 1 }\n"
+    [ "{ y = 1; x = 1 }" ];
+  let clauses =
+    "let f = function\n\
+    \  | Some 1 -> true\n\
+    \  | None -> false\n\
+    \  | Some n -> n > 0\n"
+  in
+  check "function __ -> __ | None -> false" clauses
+    [
+      "function\n\
+      \  | Some 1 -> true\n\
+      \  | None -> false\n\
+      \  | Some n -> n > 0";
+    ]
+
 let field_access_and_patterns () =
   let source =
     "let read r = r.name\n\
@@ -240,6 +259,7 @@ let () =
       test "clause set order independence" clause_sets;
       test "formatting invariance" formatting_invariance;
       test "record field sets" record_fields;
+      test "mixed unordered set patterns backtrack" mixed_set_patterns_backtrack;
       test "field access, assignment, and patterns" field_access_and_patterns;
       test "type annotation transparency" annotation_transparency;
       test "value binding sets" binding_sets;
