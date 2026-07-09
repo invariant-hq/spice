@@ -104,7 +104,14 @@ module Secret = struct
         (fun seconds -> timestamp_add seconds now)
         (Oauth2.Token.expires_in token)
     in
-    Ok (Spice_account.Secret.oauth ~access_token ?refresh_token ?expires_at ())
+    match
+      Spice_account.Secret.oauth ~access_token ?refresh_token ?expires_at ()
+    with
+    | secret -> Ok secret
+    | exception Invalid_argument message ->
+        Error
+          (Error.Protocol
+             ("invalid OAuth token secret: " ^ user_error_message message))
 end
 
 module Http = struct

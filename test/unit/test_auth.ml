@@ -84,18 +84,13 @@ let authorization_setup ~token_endpoint =
   in
   (spec, started, callback)
 
-let complete_secret env ~profile ~token_type =
+let complete_secret_response env ~profile ~response_body =
   let observed_body = ref None in
   with_server env
     (fun request body ->
       equal string ~msg:"token path" "/token" (Http.Request.resource request);
       observed_body := Some (read_body body);
-      respond_string ~status:`OK
-        ~body:
-          (Printf.sprintf
-             {|{"access_token":"access-secret","token_type":%S,"refresh_token":"refresh-secret"}|}
-             token_type)
-        ())
+      respond_string ~status:`OK ~body:response_body ())
     (fun ~sw ~base_uri ->
       let token_endpoint = Uri.with_path base_uri "/token" in
       let spec, started, callback = authorization_setup ~token_endpoint in
@@ -110,6 +105,13 @@ let complete_secret env ~profile ~token_type =
             (String.includes ~affix:"code=code-1" body)
       | None -> failf "token endpoint was not called");
       result)
+
+let complete_secret env ~profile ~token_type =
+  complete_secret_response env ~profile
+    ~response_body:
+      (Printf.sprintf
+         {|{"access_token":"access-secret","token_type":%S,"refresh_token":"refresh-secret"}|}
+         token_type)
 
 let rejects_non_bearer_token_type env () =
   match
@@ -141,6 +143,29 @@ let accepts_bearer_token_type env () =
   | Ok _ -> ()
   | Error error -> failf "expected bearer token, got %a" Auth.Error.pp error
 
+let rejects_empty_generic_access_token env () =
+  match
+    complete_secret_response env ~profile:Auth.OAuth2_authorization_code.Generic
+      ~response_body:{|{"access_token":"","token_type":"Bearer"}|}
+  with
+  | Error (Auth.Error.Protocol message) ->
+      is_true ~msg:"empty access token is reported"
+        (String.includes ~affix:"access_token must not be empty" message)
+  | Error error -> failf "expected protocol error, got %a" Auth.Error.pp error
+  | Ok _ -> failf "expected empty access token rejection"
+
+let rejects_empty_generic_refresh_token env () =
+  match
+    complete_secret_response env ~profile:Auth.OAuth2_authorization_code.Generic
+      ~response_body:
+        {|{"access_token":"access-secret","token_type":"Bearer","refresh_token":""}|}
+  with
+  | Error (Auth.Error.Protocol message) ->
+      is_true ~msg:"empty refresh token is reported"
+        (String.includes ~affix:"refresh_token must not be empty" message)
+  | Error error -> failf "expected protocol error, got %a" Auth.Error.pp error
+  | Ok _ -> failf "expected empty refresh token rejection"
+
 let with_eio test () = Eio_main.run @@ fun env -> test env ()
 
 let () =
@@ -154,5 +179,9 @@ let () =
             (with_eio rejects_non_bearer_openai_profile);
           test ~timeout:3.0 "accepts Bearer token responses"
             (with_eio accepts_bearer_token_type);
+          test ~timeout:3.0 "rejects empty generic access tokens"
+            (with_eio rejects_empty_generic_access_token);
+          test ~timeout:3.0 "rejects empty generic refresh tokens"
+            (with_eio rejects_empty_generic_refresh_token);
         ];
     ]
