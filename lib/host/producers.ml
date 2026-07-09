@@ -34,8 +34,17 @@ let is_shape_drift (event : Spice_fswatch.Event.t) =
 let start ~sw ~stdenv host ~inbox ~workspace ~cwd ~root () =
   let config = Host.config host in
   let notices = Config.notices config in
-  let dune_diagnostics = Config.Notices.dune_diagnostics notices in
-  let dune_build = Config.Notices.dune_build notices in
+  (* [workspace.tooling] gates the whole OCaml/Dune integration: when it does
+     not engage — [off], or [auto] outside a Dune workspace — the boot
+     [dune describe] capture, the Merlin resolution, the [dune build --watch]
+     instance, and the filesystem watcher are all skipped, so a non-Dune, CI, or
+     headless run spawns no background workspace processes and the footer reads a
+     degraded state. The per-notice flags still gate within an engaged run. *)
+  let engaged =
+    Config.Workspace.tooling_engaged (Config.workspace config) ~root
+  in
+  let dune_diagnostics = engaged && Config.Notices.dune_diagnostics notices in
+  let dune_build = engaged && Config.Notices.dune_build notices in
   let dune =
     let start =
       if dune_diagnostics || dune_build then
@@ -73,38 +82,42 @@ let start ~sw ~stdenv host ~inbox ~workspace ~cwd ~root () =
           ~clock:(Eio.Stdenv.clock stdenv) ~cwd ~workspace ~cancelled ())
       ()
   in
-  (match Spice_ocaml_dune.Project_source.capture project_source with
-  | Ok () -> ()
-  | Error error ->
-      (* Degrade honestly: no boot snapshot (for instance a user-owned watch
-         already held the lock at boot). Describe-backed tools then serve a
-         structured blocked result rather than a stale shape. Do not fail the
-         run. *)
-      Log.warn (fun m ->
-          m "project-shape boot capture failed: %s"
-            (Spice_ocaml_dune.Error.message error)));
+  (if engaged then
+     match Spice_ocaml_dune.Project_source.capture project_source with
+     | Ok () -> ()
+     | Error error ->
+         (* Degrade honestly: no boot snapshot (for instance a user-owned watch
+            already held the lock at boot). Describe-backed tools then serve a
+            structured blocked result rather than a stale shape. Do not fail the
+            run. *)
+         Log.warn (fun m ->
+             m "project-shape boot capture failed: %s"
+               (Spice_ocaml_dune.Error.message error)));
   let merlin_program =
-    let configured = Config.Ocaml.merlin_program (Config.ocaml config) in
-    match
-      Spice_tools.Ocaml_merlin.resolve_program ~cwd:(Eio.Path.native_exn cwd)
-        ~configured ()
-    with
-    | Ok argv -> argv
-    | Error error ->
-        (* Resolution is filesystem-first, so the default [ocamlmerlin] prefix
-           resolves to dune's already-built dev-tool binary without engaging the
-           engine; an [Error] is only reachable when an explicitly configured
-           [dune tools exec] prefix had to be warmed and that warming failed.
-           Fall back to plain [ocamlmerlin] on PATH — lock-free and honest, even
-           if PATH lacks it (the Merlin tools then report Unavailable). *)
-        Log.warn (fun m ->
-            m "merlin program resolution failed: %s; falling back to %s"
-              (Spice_tools.Ocaml_merlin.resolution_error_message error)
-              (String.concat " " Spice_tools.Ocaml_merlin.default_program));
-        Spice_tools.Ocaml_merlin.default_program
+    if not engaged then Spice_tools.Ocaml_merlin.default_program
+    else
+      let configured = Config.Ocaml.merlin_program (Config.ocaml config) in
+      match
+        Spice_tools.Ocaml_merlin.resolve_program ~cwd:(Eio.Path.native_exn cwd)
+          ~configured ()
+      with
+      | Ok argv -> argv
+      | Error error ->
+          (* Resolution is filesystem-first, so the default [ocamlmerlin] prefix
+             resolves to dune's already-built dev-tool binary without engaging
+             the engine; an [Error] is only reachable when an explicitly
+             configured [dune tools exec] prefix had to be warmed and that
+             warming failed. Fall back to plain [ocamlmerlin] on PATH —
+             lock-free and honest, even if PATH lacks it (the Merlin tools then
+             report Unavailable). *)
+          Log.warn (fun m ->
+              m "merlin program resolution failed: %s; falling back to %s"
+                (Spice_tools.Ocaml_merlin.resolution_error_message error)
+                (String.concat " " Spice_tools.Ocaml_merlin.default_program));
+          Spice_tools.Ocaml_merlin.default_program
   in
-  let fswatch_notice = Config.Notices.fswatch notices in
-  let cr_notice = Config.Notices.cr_comments notices in
+  let fswatch_notice = engaged && Config.Notices.fswatch notices in
+  let cr_notice = engaged && Config.Notices.cr_comments notices in
   let stop_fswatch =
     if fswatch_notice || cr_notice then begin
       (* The drift consumer runs on every fswatch batch, alongside the CR-comment

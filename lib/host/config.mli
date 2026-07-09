@@ -244,6 +244,10 @@ module Field : sig
   val notices_dune_build : bool t
   (** [notices_dune_build] is the [notices.dune_build] field. *)
 
+  val workspace_tooling : string t
+  (** [workspace_tooling] is the [workspace.tooling] field: [auto], [on], or
+      [off]. *)
+
   val instructions_global : bool t
   (** [instructions_global] is the [instructions.global] field. *)
 
@@ -771,6 +775,30 @@ module Notices : sig
   (** [dune_build t] is [true] iff Dune build notices are enabled. *)
 end
 
+module Workspace : sig
+  (** Workspace OCaml/Dune tooling configuration. *)
+
+  type t
+  (** The workspace-tooling view of an effective {!Config.t}. *)
+
+  val tooling : t -> string
+  (** [tooling t] is the [workspace.tooling] mode: [auto], [on], or [off]. It
+      gates the workspace's OCaml/Dune integration as a whole — the boot
+      [dune describe] shape capture, the [dune build --watch] diagnostics and
+      build-health instance, the filesystem watcher, and Merlin program
+      resolution. [off] disables them for CI, headless, and non-interactive
+      test runs, leaving a truthful degraded footer and no background workspace
+      processes. *)
+
+  val tooling_engaged : t -> root:string -> bool
+  (** [tooling_engaged t ~root] resolves {!tooling} to whether the workspace
+      tooling runs for the workspace rooted at [root]: [on] forces it on, [off]
+      forces it off, and [auto] engages it only when [root] holds a
+      [dune-project] or [dune-workspace] file. It is resolved against the
+      filesystem on each call, so a directory that gains or loses a Dune marker
+      between launches is read afresh. *)
+end
+
 module Skills : sig
   (** Skill discovery configuration. *)
 
@@ -901,6 +929,9 @@ val instructions : t -> Instructions.t
 
 val notices : t -> Notices.t
 (** [notices t] is [t]'s notice configuration view. *)
+
+val workspace : t -> Workspace.t
+(** [workspace t] is [t]'s workspace-tooling configuration view. *)
 
 val skills : t -> Skills.t
 (** [skills t] is [t]'s skill configuration view. *)

@@ -99,6 +99,7 @@ let string_enum_of_string ~what ~spellings value =
 
 let tools_editor_spellings = [ "auto"; "apply-patch"; "string-replace" ]
 let web_search_backend_spellings = [ "disabled"; "brave" ]
+let workspace_tooling_spellings = [ "auto"; "on"; "off" ]
 
 let tools_editor_of_string =
   string_enum_of_string ~what:"tools editor" ~spellings:tools_editor_spellings
@@ -106,6 +107,10 @@ let tools_editor_of_string =
 let web_search_backend_of_string =
   string_enum_of_string ~what:"web search backend"
     ~spellings:web_search_backend_spellings
+
+let workspace_tooling_of_string =
+  string_enum_of_string ~what:"workspace tooling mode"
+    ~spellings:workspace_tooling_spellings
 
 let with_error_context context = function
   | Ok _ as ok -> ok
@@ -629,6 +634,10 @@ let web_search_backend_codec =
   string_enum_codec ~spellings:web_search_backend_spellings
     web_search_backend_of_string
 
+let workspace_tooling_codec =
+  string_enum_codec ~spellings:workspace_tooling_spellings
+    workspace_tooling_of_string
+
 module Field = struct
   type 'a t =
     | Model : string t
@@ -654,6 +663,7 @@ module Field = struct
     | Notices_cr_comments : bool t
     | Notices_dune_diagnostics : bool t
     | Notices_dune_build : bool t
+    | Workspace_tooling : string t
     | Instructions_global : bool t
     | Instructions_project : bool t
     | Instructions_claude_md : bool t
@@ -701,6 +711,7 @@ module Field = struct
   let notices_cr_comments = Notices_cr_comments
   let notices_dune_diagnostics = Notices_dune_diagnostics
   let notices_dune_build = Notices_dune_build
+  let workspace_tooling = Workspace_tooling
   let instructions_global = Instructions_global
   let instructions_project = Instructions_project
   let instructions_claude_md = Instructions_claude_md
@@ -748,6 +759,7 @@ module Field = struct
     | Notices_cr_comments -> "notices.cr_comments"
     | Notices_dune_diagnostics -> "notices.dune_diagnostics"
     | Notices_dune_build -> "notices.dune_build"
+    | Workspace_tooling -> "workspace.tooling"
     | Instructions_global -> "instructions.global"
     | Instructions_project -> "instructions.project"
     | Instructions_claude_md -> "instructions.claude_md"
@@ -799,6 +811,7 @@ module Field = struct
       Any Notices_cr_comments;
       Any Notices_dune_diagnostics;
       Any Notices_dune_build;
+      Any Workspace_tooling;
       Any Instructions_global;
       Any Instructions_project;
       Any Instructions_claude_md;
@@ -855,6 +868,7 @@ module Field = struct
     | Sandbox_network -> sandbox_network_codec.values
     | Tools_editor -> tools_editor_codec.values
     | Web_search_backend -> web_search_backend_codec.values
+    | Workspace_tooling -> workspace_tooling_codec.values
 
   let supported_key_spellings =
     List.concat_map
@@ -902,6 +916,7 @@ module Field = struct
     | "notices.cr_comments" -> Ok (Any Notices_cr_comments)
     | "notices.dune_diagnostics" -> Ok (Any Notices_dune_diagnostics)
     | "notices.dune_build" -> Ok (Any Notices_dune_build)
+    | "workspace.tooling" -> Ok (Any Workspace_tooling)
     | "instructions.global" -> Ok (Any Instructions_global)
     | "instructions.project" -> Ok (Any Instructions_project)
     | "instructions.claude_md" -> Ok (Any Instructions_claude_md)
@@ -1056,6 +1071,10 @@ let field_spec : type a. a Field.t -> a spec =
       make_spec bool_codec ~default:(builtin field true)
   | Field.Notices_dune_build ->
       make_spec bool_codec ~default:(builtin field true)
+  | Field.Workspace_tooling ->
+      make_spec workspace_tooling_codec ~shared:true
+        ~default:(builtin field "auto")
+        ~env:("SPICE_WORKSPACE_TOOLING", workspace_tooling_of_string)
   | Field.Instructions_global ->
       make_spec bool_codec ~default:(builtin field true)
   | Field.Instructions_project ->
@@ -2124,6 +2143,24 @@ module Notices = struct
   let dune_build t = value Field.notices_dune_build t
 end
 
+module Workspace = struct
+  type nonrec t = t
+
+  let tooling t = value Field.workspace_tooling t
+
+  (* The codec admits only the three spellings, so the wildcard is [auto]: it
+     engages when the workspace root carries a Dune project marker, resolved
+     against the filesystem here rather than at config load so a directory that
+     gains or loses a [dune-project] between launches is read afresh. *)
+  let tooling_engaged t ~root =
+    match tooling t with
+    | "on" -> true
+    | "off" -> false
+    | _ ->
+        Sys.file_exists (Filename.concat root "dune-project")
+        || Sys.file_exists (Filename.concat root "dune-workspace")
+end
+
 module Skills = struct
   type nonrec t = t
 
@@ -2180,6 +2217,7 @@ let permission_posture ?preset t =
 let sandbox t = t
 let instructions t = t
 let notices t = t
+let workspace t = t
 let skills t = t
 let tools t = t
 let ocaml t = t

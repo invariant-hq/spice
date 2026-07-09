@@ -3,22 +3,22 @@ Workspace config is scoped to preferences.
 Capability-shaped keys are rejected when writing either workspace file.
 
   $ spice config set --project shell /bin/bash
-  spice: shell is not allowed in workspace config; allowed keys: model, small_model, reasoning, run.max_steps, permission.unattended, tools.editor, ocaml.merlin_program, web.search_backend, web.fetch_max_bytes, web.output_max_chars, web.timeout_ms, web.max_timeout_ms
+  spice: shell is not allowed in workspace config; allowed keys: model, small_model, reasoning, run.max_steps, permission.unattended, workspace.tooling, tools.editor, ocaml.merlin_program, web.search_backend, web.fetch_max_bytes, web.output_max_chars, web.timeout_ms, web.max_timeout_ms
   [2]
 
   $ spice config set --project permission.mode bypass
-  spice: permission.mode is not allowed in workspace config; allowed keys: model, small_model, reasoning, run.max_steps, permission.unattended, tools.editor, ocaml.merlin_program, web.search_backend, web.fetch_max_bytes, web.output_max_chars, web.timeout_ms, web.max_timeout_ms
+  spice: permission.mode is not allowed in workspace config; allowed keys: model, small_model, reasoning, run.max_steps, permission.unattended, workspace.tooling, tools.editor, ocaml.merlin_program, web.search_backend, web.fetch_max_bytes, web.output_max_chars, web.timeout_ms, web.max_timeout_ms
   [2]
 
   $ spice config set --project providers.openai.base_url https://repo.example/v1
-  spice: providers.openai.base_url is not allowed in workspace config; allowed keys: model, small_model, reasoning, run.max_steps, permission.unattended, tools.editor, ocaml.merlin_program, web.search_backend, web.fetch_max_bytes, web.output_max_chars, web.timeout_ms, web.max_timeout_ms
+  spice: providers.openai.base_url is not allowed in workspace config; allowed keys: model, small_model, reasoning, run.max_steps, permission.unattended, workspace.tooling, tools.editor, ocaml.merlin_program, web.search_backend, web.fetch_max_bytes, web.output_max_chars, web.timeout_ms, web.max_timeout_ms
   [2]
 
 Project-local config is workspace content a repository can commit, so it
 shares the same allowlist.
 
   $ spice config set --project-local shell /bin/bash
-  spice: shell is not allowed in workspace config; allowed keys: model, small_model, reasoning, run.max_steps, permission.unattended, tools.editor, ocaml.merlin_program, web.search_backend, web.fetch_max_bytes, web.output_max_chars, web.timeout_ms, web.max_timeout_ms
+  spice: shell is not allowed in workspace config; allowed keys: model, small_model, reasoning, run.max_steps, permission.unattended, workspace.tooling, tools.editor, ocaml.merlin_program, web.search_backend, web.fetch_max_bytes, web.output_max_chars, web.timeout_ms, web.max_timeout_ms
   [2]
 
 Hand-written workspace config applies only allowlisted keys; disallowed keys

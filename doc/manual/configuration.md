@@ -48,6 +48,7 @@ Keys supported by `get`, `set`, and `unset`:
 | `run.max_steps` | Maximum model/tool cycles per run. |
 | `permission.mode` | Permission preset: `default`, `accept-edits`, `plan`, or `bypass`. |
 | `shell` | Shell program used for shell commands. |
+| `workspace.tooling` | Whether the OCaml/Dune workspace tooling runs: `auto` (default), `on`, or `off`. |
 | `instructions.global` | Load the global `AGENTS.md` from the config home. |
 | `instructions.project` | Load project instruction files. |
 | `instructions.claude_md` | Load `CLAUDE.md` compatibility files. |
@@ -65,6 +66,27 @@ config files:
 - `web.*` — web tools: `enabled`, `allow_private_network`, `search_backend`,
   `fetch_max_bytes`, `output_max_chars`, `timeout_ms`, `max_timeout_ms`.
 - `sandbox.*` — sandbox mode and enforcement requirements.
+
+## Workspace tooling
+
+`workspace.tooling` gates Spice's OCaml/Dune integration for a session: the
+boot-time `dune describe` project-shape capture, the `dune build --watch`
+instance behind the footer's `dune:` build-health glyph and the Dune
+diagnostics notices, the filesystem watcher, and Merlin program resolution.
+
+| Value | Behavior |
+| --- | --- |
+| `auto` | Default. Engage the tooling only when the working directory holds a `dune-project` or `dune-workspace` file. |
+| `on` | Always engage the tooling. |
+| `off` | Never engage it. |
+
+When the tooling does not engage, Spice starts no background workspace
+processes and the footer's `dune:` glyph shows the degraded state; the OCaml and
+Dune tools stay in the catalog and fall back to their on-demand behavior. `off`
+is the setting for CI, headless, and non-interactive runs that want a
+deterministic, process-free session. The `SPICE_WORKSPACE_TOOLING` environment
+variable overrides the configured value with the same `auto`, `on`, and `off`
+spellings.
 
 ## Filesystem Notices
 
