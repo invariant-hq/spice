@@ -335,20 +335,36 @@ module Run = struct
           ("Spice_session.Run.Config.make: invalid executable tool \
             declaration: " ^ message)
 
+    let invalid_config message =
+      invalid_arg ("Spice_session.Run.Config.make: " ^ message)
+
+    let validate_host_tool_names tools host_tools =
+      let executable_names = List.map Tool.name (Tool.Catalog.tools tools) in
+      let rec loop seen = function
+        | [] -> ()
+        | host_tool :: host_tools ->
+            let name = Llm.Tool.name host_tool in
+            if List.exists (String.equal name) executable_names then
+              invalid_config
+                ("host tool name also used by executable tool: " ^ name)
+            else if List.exists (String.equal name) seen then
+              invalid_config ("duplicate host tool name: " ^ name)
+            else loop (name :: seen) host_tools
+      in
+      loop [] host_tools
+
     let make ~tools ?(host_tools = []) ~policy
         ?(prelude = Llm.Request.Prelude.empty) ?(max_steps = max_int)
         ?(denial_message = default_denial_message) () =
       if max_steps <= 0 then
-        invalid_arg
-          (Printf.sprintf
-             "Spice_session.Run.Config.make: max_steps must be positive, got %d"
-             max_steps);
+        invalid_config
+          (Printf.sprintf "max_steps must be positive, got %d" max_steps);
       match Tool.Catalog.make tools with
       | Error error ->
-          invalid_arg
-            ("Spice_session.Run.Config.make: " ^ Tool.Error.message error)
+          invalid_config (Tool.Error.message error)
       | Ok tools ->
           validate_executable_declarations tools;
+          validate_host_tool_names tools host_tools;
           { tools; host_tools; policy; prelude; max_steps; denial_message }
 
     let tools t = Tool.Catalog.tools t.tools

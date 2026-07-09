@@ -108,7 +108,18 @@ let config_construction_is_programmer_local () =
   in
   expect_invalid_arg "invalid executable tool names raise" (fun () ->
       Run.Config.make ~tools:[ bad_name_tool ] ~policy:Permission.Policy.default
-        ())
+        ());
+  let host_tool name =
+    Llm.Tool.make ~name ~input_schema:(Json.object' []) ()
+  in
+  expect_invalid_arg "executable and host tool name collisions raise" (fun () ->
+      Run.Config.make ~tools:[ executable_tool () ]
+        ~host_tools:[ host_tool "review_tool" ]
+        ~policy:Permission.Policy.default ());
+  expect_invalid_arg "duplicate host tool names raise" (fun () ->
+      Run.Config.make ~tools:[]
+        ~host_tools:[ host_tool "ask_user"; host_tool "ask_user" ]
+        ~policy:Permission.Policy.default ())
 
 let permission_from_step step =
   match Run.Step.next step with

@@ -415,7 +415,8 @@ module Run : sig
 
         Raises [Invalid_argument] if [tools] contains duplicate tool names, if
         an executable tool cannot be projected to a model-visible declaration,
-        or if [max_steps] is not positive. *)
+        if a host-tool name is duplicated or also used by an executable tool, or
+        if [max_steps] is not positive. *)
 
     val tools : t -> Spice_tool.t list
     (** [tools t] are [t]'s executable host capabilities. *)
