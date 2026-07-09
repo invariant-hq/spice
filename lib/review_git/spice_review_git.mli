@@ -79,8 +79,8 @@ val user_handle : t -> Spice_cr.Handle.t
 
 val fingerprint : t -> base:string -> (string, Error.t) result
 (** [fingerprint t ~base] is the current fingerprint of the reviewable state
-    from [base] to the worktree: the tracked diff plus the untracked set (paths
-    and modification times). [base] must be a resolved commit hash (see
+    from [base] to the worktree: the tracked diff plus untracked file paths and
+    content identities. [base] must be a resolved commit hash (see
     {!resolve_base}); a symbolic ref would let the fingerprinted state drift out
     from under the {!load} it guards. *)
 

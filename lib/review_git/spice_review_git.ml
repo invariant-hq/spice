@@ -167,24 +167,30 @@ let untracked_paths t =
       | Error _ as error -> error
       | Ok paths -> Ok (List.filter (fun rel -> not (meta_path rel)) paths))
 
-(* An equality token for the untracked set: paths plus mtimes, so creating,
-   deleting, or editing an untracked file moves the fingerprint. *)
+let add_frame buffer text =
+  Buffer.add_string buffer (string_of_int (String.length text));
+  Buffer.add_char buffer ':';
+  Buffer.add_string buffer text
+
+(* An equality token for the untracked set: paths plus content identities, so
+   creating, deleting, or editing an untracked file moves the fingerprint even
+   when a writer preserves mtimes. *)
 let untracked_token t paths =
   let (Fs fs) = t.fs in
   let buffer = Buffer.create 256 in
   List.iter
     (fun rel ->
       let text = Spice_path.Rel.to_string rel in
-      Buffer.add_string buffer text;
-      Buffer.add_char buffer '\000';
+      add_frame buffer text;
       (match
-         Eio.Path.stat ~follow:false
+         Eio.Path.load
            (Eio.Path.( / ) fs (Filename.concat t.root text))
        with
-      | stat ->
-          Buffer.add_string buffer (Float.to_string stat.Eio.File.Stat.mtime)
-      | exception _ -> Buffer.add_string buffer "absent");
-      Buffer.add_char buffer '\000')
+      | contents ->
+          add_frame buffer
+            (Spice_digest.Identity.to_string
+               (Spice_digest.Identity.of_contents contents))
+      | exception _ -> add_frame buffer "absent"))
     paths;
   Buffer.contents buffer
 

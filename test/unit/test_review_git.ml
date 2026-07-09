@@ -174,6 +174,23 @@ let fingerprints_and_load_if_changed () =
         (not (String.equal second reloaded.Review.Live.fingerprint))
   | `Unchanged -> failf "expected a reload"
 
+let untracked_content_moves_fingerprint_with_preserved_mtime () =
+  with_repo @@ fun ~proc ~fs ~dir ~git:_ ->
+  write dir "scratch.ml" "let x = 1\n";
+  let repo = expect_ok "discover" (Git.discover ~proc ~fs ~cwd:dir) in
+  let base = expect_ok "resolve" (Git.resolve_base repo "HEAD") in
+  let path = Filename.concat dir "scratch.ml" in
+  let stat = Unix.stat path in
+  let first = expect_ok "fingerprint" (Git.fingerprint repo ~base) in
+  write dir "scratch.ml" "let x = 2\n";
+  Unix.utimes path stat.Unix.st_atime stat.Unix.st_mtime;
+  let second =
+    expect_ok "fingerprint after preserved-mtime rewrite"
+      (Git.fingerprint repo ~base)
+  in
+  is_true ~msg:"untracked content edit moves fingerprint"
+    (not (String.equal first second))
+
 let tracked_meta_files_are_excluded () =
   (* [load_worktree_snapshot] pins that an *untracked* .spice file is excluded;
      this pins the symmetric tracked side: a committed meta file that is then
@@ -295,4 +312,6 @@ let () =
       test "glance short-circuits when unchanged"
         glance_short_circuits_when_unchanged;
       test "fingerprints and load_if_changed" fingerprints_and_load_if_changed;
+      test "untracked content moves fingerprint with preserved mtime"
+        untracked_content_moves_fingerprint_with_preserved_mtime;
     ]
