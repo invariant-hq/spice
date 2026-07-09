@@ -152,7 +152,7 @@ metadata and environment stripping facts, without secret values.
   require=enforced
   backend=$BACKEND
   network=restricted
-  readable=.
+  readable=/ (read-only)
   writable=$ROOTS
   protected=.git,.spice,./.spice,./xdg-config/spice
   environment=inherited $N, stripped $M

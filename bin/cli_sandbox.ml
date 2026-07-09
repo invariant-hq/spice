@@ -200,7 +200,10 @@ let explain_text host workspace effective =
   (match policy_facts effective with
   | None -> ()
   | Some policy ->
-      stdout_printf "readable=.\n";
+      (* The confined mount is full read of the host root, not just the
+         workspace, so a command can still read system files and the developer
+         toolchain; only writes are scoped. *)
+      stdout_printf "readable=/ (read-only)\n";
       stdout_printf "writable=%s\n"
         (match Sandbox.Confinement.writable_roots policy with
         | [] -> "(none)"
