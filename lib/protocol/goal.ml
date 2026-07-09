@@ -165,6 +165,17 @@ let check_budget = function
 let check_counter name count =
   if count < 0 then Error ("goal " ^ name ^ " must not be negative") else Ok ()
 
+let check_budget_status ~status ~token_budget ~tokens_used =
+  match (status, token_budget) with
+  | Status.Budget_limited, None ->
+      Error "budget-limited goal must have a token budget"
+  | Status.Budget_limited, Some budget when tokens_used < budget ->
+      Error "budget-limited goal must have exhausted its token budget"
+  | ( ( Status.Active | Status.Paused | Status.Blocked _ | Status.Budget_limited
+      | Status.Completed _ | Status.Cleared ),
+      (Some _ | None) ) ->
+      Ok ()
+
 let check_updated_at ~created_at updated_at =
   if Time.compare updated_at created_at < 0 then
     Error "goal update time must not be before goal creation time"
@@ -179,6 +190,7 @@ let make ~id ~session ~objective ~status ?token_budget ~tokens_used
   let* () = check_counter "tokens used" tokens_used in
   let* () = check_counter "time used" time_used_ms in
   let* () = check_counter "continuation turns" continuation_turns in
+  let* () = check_budget_status ~status ~token_budget ~tokens_used in
   let* () = check_updated_at ~created_at updated_at in
   Ok
     {
@@ -279,7 +291,12 @@ let block ~blocked_at ?reason t =
 
 let limit_budget ~limited_at t =
   match (t.status, t.token_budget) with
-  | Status.Active, Some _ -> transition ~at:limited_at Status.budget_limited t
+  | Status.Active, Some budget when t.tokens_used >= budget ->
+      transition ~at:limited_at Status.budget_limited t
+  | Status.Active, Some _ ->
+      Error
+        ("cannot budget-limit goal " ^ Id.to_string t.id
+       ^ " while its token budget has remaining capacity")
   | Status.Active, None ->
       Error
         ("cannot budget-limit goal " ^ Id.to_string t.id

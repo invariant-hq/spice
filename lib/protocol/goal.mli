@@ -101,6 +101,7 @@ type t
 
     Invariants: [objective] is non-empty; [token_budget] is absent or positive;
     [tokens_used], [time_used_ms], and [continuation_turns] are non-negative;
+    {!Status.Budget_limited} has a token budget exhausted by [tokens_used];
     {!updated_at} is at or after {!created_at}; blocked reasons and completion
     summaries are absent or non-empty. *)
 
@@ -210,8 +211,9 @@ val block :
 
 val limit_budget : limited_at:Spice_session.Time.t -> t -> (t, string) result
 (** [limit_budget ~limited_at t] stops a budgeted {!Status.Active} goal as
-    {!Status.Budget_limited}. Errors when [t] has no budget or is not active.
-    This is the host's boundary transition; the model never requests it. *)
+    {!Status.Budget_limited}. Errors when [t] has no budget, still has remaining
+    budget, or is not active. This is the host's boundary transition; the model
+    never requests it. *)
 
 val record_turn :
   at:Spice_session.Time.t ->

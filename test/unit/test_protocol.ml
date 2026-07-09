@@ -853,6 +853,34 @@ module Artifacts_tests = struct
     is_true ~msg:"budget-limited goal completes with usage report"
       (Result.is_ok (Goal.complete ~completed_at:(time 60) limited))
 
+  let goal_budget_limit_requires_exhaustion () =
+    is_error "cannot budget-limit while budget remains"
+      (Goal.limit_budget ~limited_at:(time 20) (a_goal ~token_budget:100 ()));
+    let json ?token_budget tokens_used =
+      let budget =
+        match token_budget with
+        | None -> ""
+        | Some budget -> Printf.sprintf ",\"token_budget\":%d" budget
+      in
+      Printf.sprintf
+        {|{"id":"goal-1","session":"session-1","objective":"Do it","status":{"type":"budget_limited"}%s,"tokens_used":%d,"time_used_ms":0,"continuation_turns":0,"created_at":10,"updated_at":20}|}
+        budget tokens_used
+    in
+    let rejects message json =
+      match Jsont_bytesrw.decode_string Goal.jsont json with
+      | Error _ -> ()
+      | Ok _ -> failf "%s" message
+    in
+    rejects "budget-limited goal without a budget should be rejected" (json 0);
+    rejects "budget-limited goal with remaining budget should be rejected"
+      (json ~token_budget:100 99);
+    match
+      Jsont_bytesrw.decode_string Goal.jsont (json ~token_budget:100 100)
+    with
+    | Ok _ -> ()
+    | Error error ->
+        failf "exhausted budget-limited goal should decode: %s" error
+
   let goal_round_trips () =
     round_trip ~msg:"goal jsont round-trips" ~equal:Goal.equal Goal.jsont
       (ok "block"
@@ -972,6 +1000,8 @@ module Artifacts_tests = struct
         test "goal rejections" goal_rejections;
         test "goal transitions" goal_transitions;
         test "goal budget and accounting" goal_budget_and_accounting;
+        test "goal budget limit requires exhaustion"
+          goal_budget_limit_requires_exhaustion;
         test "goal round-trips" goal_round_trips;
         test "goal update and apply" goal_update_and_apply;
         test "goal turn origin" goal_turn_origin;
