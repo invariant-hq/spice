@@ -34,12 +34,11 @@ let is_shape_drift (event : Spice_fswatch.Event.t) =
 let start ~sw ~stdenv host ~inbox ~workspace ~cwd ~root () =
   let config = Host.config host in
   let notices = Config.notices config in
-  (* [workspace.tooling] gates the whole OCaml/Dune integration: when it does
-     not engage — [off], or [auto] outside a Dune workspace — the boot
-     [dune describe] capture, the Merlin resolution, the [dune build --watch]
-     instance, and the filesystem watcher are all skipped, so a non-Dune, CI, or
-     headless run spawns no background workspace processes and the footer reads a
-     degraded state. The per-notice flags still gate within an engaged run. *)
+  (* [workspace.tooling] gates the OCaml/Dune integration: when it does not
+     engage — [off], or [auto] outside a Dune workspace — the boot [dune
+     describe] capture, the Merlin resolution, and the [dune build --watch]
+     instance are skipped. Filesystem and CR-comment notices are general host
+     streams and remain governed by their own config flags. *)
   let engaged =
     Config.Workspace.tooling_engaged (Config.workspace config) ~root
   in
@@ -116,8 +115,8 @@ let start ~sw ~stdenv host ~inbox ~workspace ~cwd ~root () =
                 (String.concat " " Spice_tools.Ocaml_merlin.default_program));
           Spice_tools.Ocaml_merlin.default_program
   in
-  let fswatch_notice = engaged && Config.Notices.fswatch notices in
-  let cr_notice = engaged && Config.Notices.cr_comments notices in
+  let fswatch_notice = Config.Notices.fswatch notices in
+  let cr_notice = Config.Notices.cr_comments notices in
   let stop_fswatch =
     if fswatch_notice || cr_notice then begin
       (* The drift consumer runs on every fswatch batch, alongside the CR-comment
@@ -126,7 +125,7 @@ let start ~sw ~stdenv host ~inbox ~workspace ~cwd ~root () =
          never flagged and the boot snapshot serves without a [drifted] signal.
          Accepted v1 gap. *)
       let flag_drift events =
-        if List.exists is_shape_drift events then
+        if engaged && List.exists is_shape_drift events then
           Spice_ocaml_dune.Project_source.set_drifted project_source true
       in
       let on_events =

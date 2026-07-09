@@ -32,11 +32,11 @@ The follow-up provider request carries the filesystem notice and the normal
 path. Ignored directories may appear in the earlier shell command, but they do
 not appear as watcher event lines in the notice body.
 
-  $ grep -oF 'source: fswatch' fswatch-capture/request-2.json
+  $ grep -oF 'source: fswatch' fswatch-capture/request-2.json | head -1
   source: fswatch
-  $ grep -oF 'severity: info' fswatch-capture/request-2.json
+  $ grep -oF 'severity: info' fswatch-capture/request-2.json | head -1
   severity: info
-  $ grep -oF 'title: Workspace files changed' fswatch-capture/request-2.json
+  $ grep -oF 'title: Workspace files changed' fswatch-capture/request-2.json | head -1
   title: Workspace files changed
   $ grep -oF 'created watched.txt' fswatch-capture/request-2.json
   created watched.txt

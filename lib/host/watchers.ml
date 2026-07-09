@@ -43,6 +43,11 @@ module Fswatch = struct
     ^ " "
     ^ Spice_path.Rel.to_string event.Fsw.Event.path
 
+  let event_key event =
+    kind_text event.Fsw.Event.kind
+    ^ ":"
+    ^ Spice_path.Rel.to_string event.Fsw.Event.path
+
   let body events =
     let count = List.length events in
     let shown = take 20 events in
@@ -66,7 +71,10 @@ module Fswatch = struct
     match events with
     | [] -> ()
     | _ :: _ ->
-        let key = "fswatch\000" ^ root in
+        let key =
+          "fswatch\000" ^ root ^ "\000"
+          ^ String.concat "\000" (List.map event_key events)
+        in
         enqueue inbox ~source ~severity:Notice.Severity.Info
           ~title:"Workspace files changed" ~body:(body events) ~key
 
