@@ -636,22 +636,16 @@ let save_model_selection ~stdenv host ~selector ~effort =
   |> Result.map (fun () -> model)
 
 (* The effective sandbox for a run: the [--sandbox] flag over the config mode,
-   gated, protecting Spice's own config directory. The resolution mirrors the
-   headless CLI and old TUI so the frontends confine identically. *)
+   gated, protecting the same host authority roots as the headless CLI so the
+   frontends confine identically. *)
 let resolve_sandbox ?flag host ~workspace =
   let process_env = Spice_host.Env.current () in
   let config = Spice_host.Host.config host in
   let sandbox_config = Spice_host.Config.sandbox config in
-  let protect =
-    let user =
-      Spice_host.Config.Config_file.user (Spice_host.Config.files config)
-    in
-    Option.to_list (Spice_path.Abs.parent user)
-  in
   Spice_host.Sandbox.resolve ?flag
     ?config_mode:(Spice_host.Config.Sandbox.mode sandbox_config)
     ~require:(Spice_host.Config.Sandbox.require sandbox_config)
-    ~protect
+    ~protect:(Spice_host.Config.sandbox_protected_roots config)
     ~writable_roots:(Spice_host.Config.Sandbox.writable_roots sandbox_config)
     ~network:(Spice_host.Config.Sandbox.network sandbox_config)
     ~toolchain_caches:

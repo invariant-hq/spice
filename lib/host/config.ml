@@ -1984,6 +1984,12 @@ let store_root t = t.store_root
 let auth_store_path t = t.auth_store_path
 let process_env t = t.process_env
 let files t = t.files
+
+let sandbox_protected_roots t =
+  Option.to_list (Spice_path.Abs.parent (Files.user t.files))
+  @ Option.to_list (Spice_path.Abs.parent (Files.project t.files))
+  @ [ t.store_root ]
+
 let find field t = Layer.get_field field t.layer
 
 let field_default field getenv =

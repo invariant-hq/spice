@@ -596,6 +596,12 @@ val process_env : t -> Env.t
 val files : t -> Config_file.paths
 (** [files t] is the discovered config file set for [t]. *)
 
+val sandbox_protected_roots : t -> Spice_path.Abs.t list
+(** [sandbox_protected_roots t] are host authority roots that
+    workspace-write sandboxes must keep read-only even when they sit beneath a
+    writable root: the user config/auth directory, the project config
+    directory, and {!store_root}. *)
+
 module Models : sig
   (** Model-related configuration.
 

@@ -442,22 +442,10 @@ let resolve_sandbox host ~workspace args =
     if args.require_sandbox then Spice_host.Sandbox.Require.Enforced
     else Spice_host.Config.Sandbox.require sandbox_config
   in
-  (* Paths that decide a later run's authority stay protected inside
-     otherwise writable roots: the user config home (config files and auth
-     store) and the workspace store. The default workspace store lives under
-     [.spice], which workspace-write already protects as a meta name; listing
-     the resolved store root here keeps custom store roots protected too. *)
-  let protect =
-    let files = Spice_host.Config.files config in
-    let user = Spice_host.Config.Config_file.user files in
-    Option.to_list (Spice_path.Abs.parent user)
-    @ Option.to_list
-        (Spice_path.Abs.parent (Spice_host.Config.Config_file.project files))
-    @ [ Spice_host.Config.store_root config ]
-  in
   Spice_host.Sandbox.resolve ?flag:args.sandbox_flag
     ?config_mode:(Spice_host.Config.Sandbox.mode sandbox_config)
-    ~require ~protect
+    ~require
+    ~protect:(Spice_host.Config.sandbox_protected_roots config)
     ~writable_roots:(Spice_host.Config.Sandbox.writable_roots sandbox_config)
     ~network:(Spice_host.Config.Sandbox.network sandbox_config)
     ~toolchain_caches:(Spice_host.Config.Sandbox.toolchain_caches sandbox_config)
