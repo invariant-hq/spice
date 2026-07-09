@@ -1339,8 +1339,7 @@ module Rpc = struct
       | Disconnected _ ->
           t.diagnostics <- Diagnostic.Store.clear t.diagnostics;
           t.stopped <- true
-      end;
-      Ok ()
+      end
 
     let rec poll_stream stream ~map_event ~on_event =
       match Dune_rpc_client.Stream.next stream with
@@ -1357,9 +1356,8 @@ module Rpc = struct
 
     let run t ~on_event =
       let handle event =
-        match apply t event with
-        | Ok () -> on_event event
-        | Error error -> raise (Failure (Error.message error))
+        apply t event;
+        on_event event
       in
       let* progress = poll_subscription t.client Drpc.Public.Sub.progress in
       let* diagnostics =
@@ -1549,15 +1547,11 @@ module Rpc = struct
 
     let choose_registry_entry ~workspace entries =
       let roots = workspace_root_strings workspace in
-      match
-        List.find_opt
-          (fun entry ->
-            process_alive (Registry.pid entry)
-            && List.exists (same_root (Registry.root entry)) roots)
-          entries
-      with
-      | Some entry -> Ok (Some entry)
-      | None -> Ok None
+      List.find_opt
+        (fun entry ->
+          process_alive (Registry.pid entry)
+          && List.exists (same_root (Registry.root entry)) roots)
+        entries
 
     let refresh_unlocked t =
       let (Fs fs) = t.fs in
@@ -1568,15 +1562,11 @@ module Rpc = struct
       in
       let* entries = Registry.poll ~fs t.registry in
       match choose_registry_entry ~workspace:t.workspace entries with
-      | Error _ as error ->
-          note_lost ();
-          t.endpoint <- None;
-          error
-      | Ok None ->
+      | None ->
           note_lost ();
           t.endpoint <- None;
           Ok None
-      | Ok (Some entry) ->
+      | Some entry ->
           let endpoint = Registry.endpoint entry in
           (match previous with
           | Some prev
