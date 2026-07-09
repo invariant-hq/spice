@@ -1,4 +1,0 @@
-(library
- (name spice_crash)
- (public_name spice.crash)
- (libraries unix))

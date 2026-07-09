@@ -32,7 +32,6 @@
   mtime
   spice_account
   spice_auth
-  spice_crash
   spice_host
   spice_host_builtin
   spice_protocol

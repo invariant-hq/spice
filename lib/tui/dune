@@ -99,6 +99,7 @@
   eio.unix
   jsont
   jsont.bytesrw
+  logs
   matrix
   matrix-eio
   mosaic
@@ -106,7 +107,6 @@
   spice_account
   spice_auth
   spice_cr
-  spice_crash
   spice_diagnostic
   spice_diff
   spice_edit
