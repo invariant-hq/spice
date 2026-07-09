@@ -18,7 +18,11 @@ let make ~id ~available ~prepare () =
   if String.equal id "" then invalid_arg' "make" "id is empty";
   { id; available; prepare }
 
-let prepared ~prefix ~profile = { prefix; profile }
+let prepared ~prefix ~profile =
+  (match prefix with
+  | "" :: _ -> invalid_arg' "prepared" "prefix program is empty"
+  | _ -> ());
+  { prefix; profile }
 
 let none ~reason =
   if String.equal reason "" then invalid_arg' "none" "reason is empty";

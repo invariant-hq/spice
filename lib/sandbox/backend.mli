@@ -52,6 +52,8 @@ val prepared : prefix:string list -> profile:Spice_digest.t -> prepared
     own tokens are preserved verbatim. [profile] is the digest of the generated
     enforcement profile. Backend implementations build this in their [prepare].
 
+    Raises [Invalid_argument] if [prefix] starts with an empty program name.
+
     A prefix cannot rewrite, reorder, or drop the command it wraps, only stand
     in front of it. This is misuse-resistance, not a security boundary: a prefix
     still names a trusted program that is expected to hand control to the

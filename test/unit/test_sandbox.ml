@@ -167,6 +167,13 @@ let backend_validates () =
             (Sandbox.Backend.prepared ~prefix:[] ~profile:(policy_digest policy)))
         ())
 
+let backend_prepared_validates_prefix_program () =
+  raises_match
+    (function Invalid_argument _ -> true | _ -> false)
+    (fun () ->
+      Sandbox.Backend.prepared ~prefix:[ ""; "--" ]
+        ~profile:(Digest.string "bad-prefix"))
+
 let backend_wraps_non_empty_argv () =
   let prepared =
     Sandbox.Backend.prepared ~prefix:[ "fake-wrap" ]
@@ -661,6 +668,8 @@ let () =
         env_partition_strips_credentials;
       test "refusing backend fails closed" backend_none_refuses;
       test "backend validates identity" backend_validates;
+      test "backend validates wrapper prefix program"
+        backend_prepared_validates_prefix_program;
       test "backend wrappers use non-empty argv" backend_wraps_non_empty_argv;
       test "backend prefix preserves the wrapped command"
         backend_prefix_preserves_command;
