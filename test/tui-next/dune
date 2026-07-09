@@ -1,0 +1,30 @@
+; The deterministic in-process TUI suite: the real application runs under a
+; headless matrix.test backend with a virtual clock — no pty, no subprocess,
+; no sleeps. Each feature is its own executable and runtest rule so dune runs
+; the suite in parallel.
+
+(executables
+ (names test_home test_turn)
+ (modules test_home test_turn)
+ (libraries unix windtrap tui_next_harness)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(rule
+ (alias runtest)
+ (deps test_home.exe)
+ (action
+  (progn
+   (run ./test_home.exe)
+   (diff? test_home.ml test_home.ml.corrected))))
+
+
+(rule
+ (alias runtest)
+ (deps test_turn.exe)
+ (action
+  (progn
+   (run ./test_turn.exe)
+   (diff? test_turn.ml test_turn.ml.corrected))))
+
+
