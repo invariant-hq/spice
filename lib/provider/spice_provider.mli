@@ -660,8 +660,9 @@ val make :
     system (local weight files, a model daemon) synthesizes a {!Model.t} for ids
     it will interpret at request time and returns [None] for ids it will not.
     The function must be pure — no filesystem or network reads — and must return
-    models whose provider is [id]; whether the id resolves to real weights is
-    the provider client's runtime concern.
+    models whose provider is [id]. This provider namespace invariant is checked
+    by {!dynamic_model}. Whether the id resolves to real weights is the provider
+    client's runtime concern.
 
     Raises [Invalid_argument] if [display_name] is empty, if a model's provider
     is not [id], if two models have the same provider-local id or canonical
@@ -685,7 +686,10 @@ val dynamic_model : t -> string -> Model.t option
 (** [dynamic_model t id] is the synthesized metadata for undeclared
     provider-local model id [id], when [t] declares a dynamic-model policy and
     that policy accepts [id]. Ids declared in {!models} are not consulted here;
-    resolve them with {!model}. *)
+    resolve them with {!model}.
+
+    Raises [Invalid_argument] if [id] is declared in {!models}, or if [t]'s
+    dynamic-model policy returns metadata whose provider is not {!id}[ t]. *)
 
 val default_model : t -> Model.t option
 (** [default_model t] is [t]'s default model metadata, if declared. *)

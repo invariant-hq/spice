@@ -706,10 +706,23 @@ let default_model t = t.default_model
 let models t = t.models
 let model t llm = declared_model t.models llm
 
+let model_by_id models id =
+  List.find_opt (fun model -> String.equal id (Model.id model)) models
+
 let dynamic_model t model_id =
   match t.dynamic_model with
   | None -> None
-  | Some synthesize -> synthesize model_id
+  | Some synthesize ->
+      if Option.is_some (model_by_id t.models model_id) then
+        invalid "dynamic_model" "model id is already declared";
+      begin match synthesize model_id with
+      | None -> None
+      | Some model ->
+          if not (Llm_provider.equal t.id (Model.provider model)) then
+            invalid "dynamic_model"
+              "model provider does not match declaration provider";
+          Some model
+      end
 
 module Provider_map = Map.Make (struct
   type t = Llm_provider.t
@@ -719,9 +732,6 @@ end)
 
 let visible_models ~include_hidden models =
   if include_hidden then models else List.filter Model.visible models
-
-let model_by_id models id =
-  List.find_opt (fun model -> String.equal id (Model.id model)) models
 
 module Catalog = struct
   type declaration = t

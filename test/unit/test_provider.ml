@@ -500,6 +500,29 @@ let provider_contracts () =
     (Provider.model provider gpt_5_mini |> option_map Model.llm);
   equal (option llm_model_value) ~msg:"missing model lookup" None
     (Provider.model provider (llm "gpt-4") |> option_map Model.llm);
+  let dynamic =
+    Provider.make openai
+      ~dynamic_model:(fun id ->
+        if String.ends_with ~suffix:".gguf" id then
+          Some (Model.make (llm id) ())
+        else None)
+      [ model ]
+  in
+  equal (option llm_model_value) ~msg:"dynamic model lookup"
+    (Some (llm "weights.gguf"))
+    (Provider.dynamic_model dynamic "weights.gguf" |> option_map Model.llm);
+  equal (option llm_model_value) ~msg:"dynamic model miss" None
+    (Provider.dynamic_model dynamic "weights.bin" |> option_map Model.llm);
+  expect_invalid_arg "dynamic model rejects declared ids" (fun () ->
+      Provider.dynamic_model dynamic "gpt-5" |> ignore);
+  let bad_dynamic =
+    Provider.make openai
+      ~dynamic_model:(fun _ ->
+        Some (Model.make (llm ~provider:anthropic ~api:messages "claude") ()))
+      []
+  in
+  expect_invalid_arg "dynamic model provider must match" (fun () ->
+      Provider.dynamic_model bad_dynamic "claude" |> ignore);
   expect_invalid_arg "display_name cannot be empty" (fun () ->
       Provider.make openai ~display_name:"" [ model ]);
   expect_invalid_arg "foreign model rejected" (fun () ->
