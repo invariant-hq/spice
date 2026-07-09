@@ -102,8 +102,7 @@ let pattern_api () =
     | Error error ->
         failf "pattern parse failed: %s" (Grep.Pattern.error_message error)
   in
-  equal (list string) ~msg:"metavariables"
-    [ "__1"; "__2" ]
+  equal (list string) ~msg:"metavariables" [ "__1"; "__2" ]
     (Grep.Pattern.metavariables pattern);
   is_true ~msg:"structural expression equality ignores locations"
     (Grep.structurally_equal_expr (parse_expr "f  x") (parse_expr "f x"))
@@ -175,12 +174,7 @@ let mixed_set_patterns_backtrack () =
     \  | Some n -> n > 0\n"
   in
   check "function __ -> __ | None -> false" clauses
-    [
-      "function\n\
-      \  | Some 1 -> true\n\
-      \  | None -> false\n\
-      \  | Some n -> n > 0";
-    ]
+    [ "function\n  | Some 1 -> true\n  | None -> false\n  | Some n -> n > 0" ]
 
 let field_access_and_patterns () =
   let source =
@@ -223,7 +217,8 @@ let source_parse_errors () =
   match Grep.parse_implementation ~filename:"broken.ml" "let x =\n" with
   | Error error ->
       equal string ~msg:"filename" "broken.ml" (Grep.Parse_error.filename error);
-      equal string ~msg:"message" "syntax error" (Grep.Parse_error.message error);
+      equal string ~msg:"message" "syntax error"
+        (Grep.Parse_error.message error);
       is_true ~msg:"diagnostic mentions a syntax error"
         (String.length (Grep.Parse_error.to_string error) > 0);
       begin match Grep.Parse_error.position error with

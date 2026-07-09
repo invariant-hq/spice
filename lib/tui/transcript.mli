@@ -20,8 +20,8 @@ type block =
           the frozen brand lockup and the session facts, rendered by
           {!Banner.record}. It heads the document as the first block the shell
           appends at the drop and scrolls away with the conversation — there is
-          no sticky header. It carries its own framing margin, so {!view} adds no
-          blank after it (the margin is that one blank, never doubled). *)
+          no sticky header. It carries its own framing margin, so {!view} adds
+          no blank after it (the margin is that one blank, never doubled). *)
   | User of string
       (** A full-width [user]-background block: [❯ ] muted, text default, no
           markdown, wrapped lines hanging at column 2. *)
@@ -66,9 +66,9 @@ val append : t -> block -> t
 
 val user_block : string -> _ Mosaic.t
 (** [user_block value] renders one {!User} block in isolation — the full-width
-    user-background row (01-transcript.md §User message). The live tail reuses it
-    to echo a submitted-but-not-yet-started prompt identically to its eventual
-    settled document block. *)
+    user-background row (01-transcript.md §User message). The live tail reuses
+    it to echo a submitted-but-not-yet-started prompt identically to its
+    eventual settled document block. *)
 
 val view : ?expanded:bool -> width:int -> t -> _ Mosaic.t
 (** [view ~width t] renders the document at [width] columns. [expanded] (default

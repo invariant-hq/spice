@@ -275,15 +275,15 @@ let bubblewrap_workspace_write_wrap_shape () =
   is_true ~msg:"protected metadata is restored read-only"
     (has_sequence [ "--ro-bind-try"; "/usr/.git"; "/usr/.git" ] argv);
   is_true ~msg:"protected store path is restored read-only"
-    (has_sequence [ "--ro-bind-try"; "/usr/.spice/store"; "/usr/.spice/store" ]
+    (has_sequence
+       [ "--ro-bind-try"; "/usr/.spice/store"; "/usr/.spice/store" ]
        argv)
 
 let bubblewrap_skips_missing_writable_roots () =
   let missing = Filename.temp_file "spice-sandbox-missing-" "-root" in
   Sys.remove missing;
   let policy =
-    Confinement.read_only
-    |> Confinement.writable [ abs "/tmp"; abs missing ]
+    Confinement.read_only |> Confinement.writable [ abs "/tmp"; abs missing ]
   in
   let argv = bubblewrap_wrap policy [ "true" ] in
   is_true ~msg:"existing root is bound"
@@ -310,7 +310,8 @@ let bubblewrap_ignores_protected_paths_outside_writable_roots () =
   let argv = bubblewrap_wrap policy [ "true" ] in
   is_false ~msg:"outside protected path is not mounted"
     (has_sequence
-       [ "--ro-bind-try"; "/outside/.spice"; "/outside/.spice" ] argv)
+       [ "--ro-bind-try"; "/outside/.spice"; "/outside/.spice" ]
+       argv)
 
 let bubblewrap_carveouts_follow_writable_binds () =
   let argv = bubblewrap_wrap bubblewrap_policy [ "true" ] in

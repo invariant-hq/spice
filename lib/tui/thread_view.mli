@@ -12,17 +12,23 @@
     the old TUI's [Subagent_view]; the old module binds the retired
     [Theme]/[Glyph], so its logic is ported rather than shared.
 
-    This module is pure: every value is a function of a {!Spice_protocol}
-    record (and a clock passed as [~now]), reads no host, and renders formatting
+    This module is pure: every value is a function of a {!Spice_protocol} record
+    (and a clock passed as [~now]), reads no host, and renders formatting
     (glyphs, ages, ellipsis, token compaction), never facts. *)
 
 (** {1 Status} *)
 
-type status = Queued | Running | Blocked | Completed | Failed | Interrupted
-(** The surface-level run state — the persisted
-    {!Spice_protocol.Subagent_run.Status.t} lifecycle projected to what renders.
-    A cancelled run is {!Interrupted}: interruption reads as neutral, not
-    failure. *)
+type status =
+  | Queued
+  | Running
+  | Blocked
+  | Completed
+  | Failed
+  | Interrupted
+      (** The surface-level run state — the persisted
+          {!Spice_protocol.Subagent_run.Status.t} lifecycle projected to what
+          renders. A cancelled run is {!Interrupted}: interruption reads as
+          neutral, not failure. *)
 
 val of_run_status : Spice_protocol.Subagent_run.Status.t -> status
 (** [of_run_status status] is the persisted lifecycle [status] as a surface
@@ -33,7 +39,8 @@ val of_run : Spice_protocol.Subagent_run.t -> status
 
 val glyph : status -> string
 (** [glyph status] is the status mark: [•] running and blocked, [✓] completed,
-    [✗] failed, [◌] queued and interrupted (00-overview.md §Glyph vocabulary). *)
+    [✗] failed, [◌] queued and interrupted (00-overview.md §Glyph vocabulary).
+*)
 
 val style : status -> Mosaic.Ansi.Style.t
 (** [style status] is the outcome color for [glyph status]: running
@@ -56,14 +63,14 @@ val compact : string -> string
 val clip : max:int -> string -> string
 (** [clip ~max text] truncates [text] to at most [max] bytes with a trailing
     ["…"], never splitting a UTF-8 scalar. Pre-truncation in OCaml, not Mosaic
-    [truncate] — flex-truncated text measures at its prior layout width
-    (project memory, the flex-truncate quirk). *)
+    [truncate] — flex-truncated text measures at its prior layout width (project
+    memory, the flex-truncate quirk). *)
 
 (** {1 Facts} *)
 
 val duration : ms:int64 -> string
-(** [duration ~ms] renders a span: ["45s"], ["3m 12s"], ["1h 57m 23s"].
-    Negative spans clamp to ["0s"]. *)
+(** [duration ~ms] renders a span: ["45s"], ["3m 12s"], ["1h 57m 23s"]. Negative
+    spans clamp to ["0s"]. *)
 
 val elapsed :
   now:Spice_session.Time.t -> Spice_protocol.Subagent_run.t -> string option
@@ -91,8 +98,9 @@ val settled_line :
     doc/plans/tui-next-threads.md §2.5): [● Agent "<task>" <phrase> · <facts>],
     where the task is quoted, [phrase] is ["finished"] / ["was interrupted"] /
     ["failed: <message>"], and the facts are usage and duration joined by
-    {!Theme.separator}. A completed run's summary hangs clipped on a second line.
-    The severity is [`Problem] only for failures; cancellation is neutral. *)
+    {!Theme.separator}. A completed run's summary hangs clipped on a second
+    line. The severity is [`Problem] only for failures; cancellation is neutral.
+*)
 
 (** {1 Attention} *)
 

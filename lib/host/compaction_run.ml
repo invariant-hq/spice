@@ -317,8 +317,7 @@ let compact_with ~save ~model ~policy ~observe ~after_save ~cancelled ?request
             ( Spice_llm.Usage.input_total usage,
               Spice_llm.Usage.output_total usage )
         | None ->
-            ( Token_heuristic.messages submitted,
-              Token_heuristic.string summary )
+            (Token_heuristic.messages submitted, Token_heuristic.string summary)
       in
       let after =
         Token_heuristic.messages (Spice_llm.Transcript.messages replacement)
@@ -330,7 +329,8 @@ let compact_with ~save ~model ~policy ~observe ~after_save ~cancelled ?request
       let compaction =
         Spice_session.Compaction.make ~reason ~summary ~transcript:replacement
           ~model:(Spice_llm.Response.model response)
-          ~tokens ~range:(Partition.range partition)
+          ~tokens
+          ~range:(Partition.range partition)
           ()
       in
       let event = Spice_session.Event.compaction_installed compaction in

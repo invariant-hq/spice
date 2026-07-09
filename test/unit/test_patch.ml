@@ -51,8 +51,7 @@ let expect_apply_error contents update ~chunk ~mismatch =
   match Patch.Update.apply update contents with
   | Ok _ -> fail "expected apply error"
   | Error error ->
-      equal int ~msg:"apply error chunk" chunk
-        (Patch.Update.Error.chunk error);
+      equal int ~msg:"apply error chunk" chunk (Patch.Update.Error.chunk error);
       equal apply_mismatch ~msg:"apply error mismatch" mismatch
         (Patch.Update.Error.mismatch error)
 
@@ -380,8 +379,7 @@ let applies_eof_constrained_chunks () =
   in
   equal string ~msg:"EOF replacement changes suffix" "keep\nnew\n"
     (apply "keep\nold\n" replace_suffix);
-  expect_apply_error "old\nkeep\n" replace_suffix
-    ~chunk:0
+  expect_apply_error "old\nkeep\n" replace_suffix ~chunk:0
     ~mismatch:
       (Patch.Update.Error.Missing_lines
          { old_lines = [ "old" ]; end_of_file = true });
@@ -399,8 +397,7 @@ let applies_eof_constrained_chunks () =
   in
   equal string ~msg:"EOF insertion after final context" "before\nanchor\ntail\n"
     (apply "before\nanchor\n" insert_after_eof_context);
-  expect_apply_error "anchor\nafter\n" insert_after_eof_context
-    ~chunk:0
+  expect_apply_error "anchor\nafter\n" insert_after_eof_context ~chunk:0
     ~mismatch:
       (Patch.Update.Error.Missing_insertion_point { end_of_file = true });
   let insert_at_eof =
@@ -416,7 +413,8 @@ let applies_eof_constrained_chunks () =
          ])
   in
   equal string ~msg:"contextless EOF insertion appends to a non-empty file"
-    "head\ntail\n" (apply "head\n" insert_at_eof);
+    "head\ntail\n"
+    (apply "head\n" insert_at_eof);
   let marker_whitespace =
     parsed_update
       (patch
@@ -432,8 +430,7 @@ let applies_eof_constrained_chunks () =
   in
   equal string ~msg:"whitespace around EOF marker" "keep\nnew\n"
     (apply "keep\nold\n" marker_whitespace);
-  expect_apply_error "old\nkeep\n" marker_whitespace
-    ~chunk:0
+  expect_apply_error "old\nkeep\n" marker_whitespace ~chunk:0
     ~mismatch:
       (Patch.Update.Error.Missing_lines
          { old_lines = [ "old" ]; end_of_file = true })
@@ -484,8 +481,7 @@ let reports_apply_mismatches () =
   in
   expect_apply_error "body\n" update ~chunk:0
     ~mismatch:(Patch.Update.Error.Missing_context "anchor");
-  expect_apply_error "anchor\nother\n" update
-    ~chunk:0
+  expect_apply_error "anchor\nother\n" update ~chunk:0
     ~mismatch:
       (Patch.Update.Error.Missing_lines
          { old_lines = [ "old" ]; end_of_file = false });
@@ -504,8 +500,7 @@ let reports_apply_mismatches () =
            "*** End Patch";
          ])
   in
-  expect_apply_error "a\nb\n" second_chunk_fails
-    ~chunk:1
+  expect_apply_error "a\nb\n" second_chunk_fails ~chunk:1
     ~mismatch:
       (Patch.Update.Error.Missing_lines
          { old_lines = [ "missing" ]; end_of_file = false })

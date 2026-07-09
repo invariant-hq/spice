@@ -41,7 +41,8 @@ let%expect_test "question structured single-select picks a label" =
       ~body_contains:[ "function_call_output"; "call-q"; "dune runtest" ]
       ~body_not_contains:[] ~answer
   in
-  Provider.with_responses project [ ask_options_call; resume ] @@ fun provider ->
+  Provider.with_responses project [ ask_options_call; resume ]
+  @@ fun provider ->
   run project ~provider ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
   Term.wait t (Screen.has "dune:");
   Term.send t "which runner should I use";
@@ -71,7 +72,8 @@ let%expect_test "question esc borrows the composer for a custom answer" =
       ~body_contains:[ "function_call_output"; "call-q"; "my own runner" ]
       ~body_not_contains:[] ~answer
   in
-  Provider.with_responses project [ ask_options_call; resume ] @@ fun provider ->
+  Provider.with_responses project [ ask_options_call; resume ]
+  @@ fun provider ->
   run project ~provider ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
   Term.wait t (Screen.has "dune:");
   Term.send t "which runner should I use";
@@ -97,16 +99,21 @@ let%expect_test "plan approval builds and resumes the turn" =
       ~body_contains:[ "function_call_output"; "call-plan" ]
       ~body_not_contains:[] ~answer
   in
-  Provider.with_responses project [ propose_plan_call; resume ] @@ fun provider ->
-  run project ~provider ~args:[ "--mode"; "plan" ] ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
+  Provider.with_responses project [ propose_plan_call; resume ]
+  @@ fun provider ->
+  run project ~provider ~args:[ "--mode"; "plan" ] ~env:reduced_motion ~rows:24
+    ~cols:80
+  @@ fun t ->
   Term.wait t (Screen.has "dune:");
   Term.send t "draft a plan for the refactor";
   Term.wait t (Screen.has "❯ draft a plan for the refactor");
   Term.send t Keys.enter;
   Term.wait t (Screen.has "Refactor the parser");
   print_fact "plan chip" (Screen.has "plan" (Term.screen t));
-  print_fact "plan title shown" (Screen.has "Refactor the parser" (Term.screen t));
-  print_fact "plan body shown" (Screen.has "Split the tokenizer out" (Term.screen t));
+  print_fact "plan title shown"
+    (Screen.has "Refactor the parser" (Term.screen t));
+  print_fact "plan body shown"
+    (Screen.has "Split the tokenizer out" (Term.screen t));
   print_fact "approve option present" (Screen.has "approve" (Term.screen t));
   Screen.print ~project (Term.screen t);
   Term.send t "1";
@@ -123,8 +130,11 @@ let%expect_test "plan esc never approves and keeps planning" =
       ~body_contains:[ "function_call_output"; "call-plan" ]
       ~body_not_contains:[] ~answer
   in
-  Provider.with_responses project [ propose_plan_call; resume ] @@ fun provider ->
-  run project ~provider ~args:[ "--mode"; "plan" ] ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
+  Provider.with_responses project [ propose_plan_call; resume ]
+  @@ fun provider ->
+  run project ~provider ~args:[ "--mode"; "plan" ] ~env:reduced_motion ~rows:24
+    ~cols:80
+  @@ fun t ->
   Term.wait t (Screen.has "dune:");
   Term.send t "draft a plan for the refactor";
   Term.wait t (Screen.has "❯ draft a plan for the refactor");

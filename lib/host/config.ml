@@ -1020,7 +1020,8 @@ let field_spec : type a. a Field.t -> a spec =
       make_spec int_codec ~default:(builtin field 4)
   | Field.Run_subagent_max_depth ->
       make_spec int_codec ~default:(builtin field 2)
-  | Field.Run_subagent_wake -> make_spec bool_codec ~default:(builtin field true)
+  | Field.Run_subagent_wake ->
+      make_spec bool_codec ~default:(builtin field true)
   | Field.Run_subagent_max_exchanges ->
       make_spec int_codec ~default:(builtin field 8)
   | Field.Permission_mode ->
@@ -2085,16 +2086,10 @@ module Runtime = struct
   type nonrec t = t
 
   let max_steps t = find Field.run_max_steps t
-
-  let subagent_max_concurrent t =
-    value Field.run_subagent_max_concurrent t
-
+  let subagent_max_concurrent t = value Field.run_subagent_max_concurrent t
   let subagent_max_depth t = value Field.run_subagent_max_depth t
   let subagent_wake t = value Field.run_subagent_wake t
-
-  let subagent_max_exchanges t =
-    value Field.run_subagent_max_exchanges t
-
+  let subagent_max_exchanges t = value Field.run_subagent_max_exchanges t
   let shell t = value Field.shell t
   let compaction_auto t = value Field.compaction_auto t
 end

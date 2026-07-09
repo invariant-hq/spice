@@ -309,7 +309,9 @@ let duplicate_consumed_metadata_key keys =
         if is_consumed_metadata_key key && List.exists (String.equal key) seen
         then Some key
         else
-          let seen = if is_consumed_metadata_key key then key :: seen else seen in
+          let seen =
+            if is_consumed_metadata_key key then key :: seen else seen
+          in
           loop seen keys
   in
   loop [] keys
@@ -324,7 +326,7 @@ let metadata_text field value =
   then
     Error
       (`Invalid_frontmatter
-        (Printf.sprintf "frontmatter %s must be single-line text" field))
+         (Printf.sprintf "frontmatter %s must be single-line text" field))
   else Ok value
 
 let fs_abs stdenv abs =
@@ -354,45 +356,45 @@ let content_of_text ~resources text =
       | Some key ->
           Error
             (`Invalid_frontmatter
-              (Printf.sprintf "frontmatter %s must appear only once" key))
+               (Printf.sprintf "frontmatter %s must appear only once" key))
       | None -> (
-      match Spice_frontmatter.string "description" header with
-      | None -> Error `Description_missing
-      | Some description when String.length description > max_description_bytes
-        ->
-          Error `Description_too_long
-      | Some description -> (
-          match metadata_text "description" description with
-          | Error _ as error -> error
-          | Ok description -> (
-              let display_name =
-                match Spice_frontmatter.string "name" header with
-                | None -> Ok None
-                | Some name -> (
-                    match metadata_text "name" name with
-                    | Error _ as error -> error
-                    | Ok name -> Ok (Some name))
-              in
-              match display_name with
+          match Spice_frontmatter.string "description" header with
+          | None -> Error `Description_missing
+          | Some description
+            when String.length description > max_description_bytes ->
+              Error `Description_too_long
+          | Some description -> (
+              match metadata_text "description" description with
               | Error _ as error -> error
-              | Ok display_name ->
-                  let body = Spice_frontmatter.body header in
-                  let ignored_keys =
-                    Spice_frontmatter.keys header
-                    |> List.filter (fun key ->
-                        not (is_consumed_metadata_key key))
+              | Ok description -> (
+                  let display_name =
+                    match Spice_frontmatter.string "name" header with
+                    | None -> Ok None
+                    | Some name -> (
+                        match metadata_text "name" name with
+                        | Error _ as error -> error
+                        | Ok name -> Ok (Some name))
                   in
-                  Ok
-                    {
-                      Skill.description;
-                      display_name;
-                      text;
-                      body;
-                      bytes = String.length text;
-                      digest = digest_string text;
-                      resources;
-                      ignored_keys;
-                    }))))
+                  match display_name with
+                  | Error _ as error -> error
+                  | Ok display_name ->
+                      let body = Spice_frontmatter.body header in
+                      let ignored_keys =
+                        Spice_frontmatter.keys header
+                        |> List.filter (fun key ->
+                            not (is_consumed_metadata_key key))
+                      in
+                      Ok
+                        {
+                          Skill.description;
+                          display_name;
+                          text;
+                          body;
+                          bytes = String.length text;
+                          digest = digest_string text;
+                          resources;
+                          ignored_keys;
+                        }))))
 
 (* One filesystem skills root. [gate] of [None] reads candidates; [Some
    disabled] lists them from existence checks only, without content reads. *)

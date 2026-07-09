@@ -46,8 +46,8 @@ module Client : sig
       [client_id] and [client_secret] in the form body. [`Secret_basic secret]
       sends [Authorization: Basic base64(form(client_id) ^ ":" ^ form(secret))]
       and omits client credentials from the form body, where [form] uses the
-      same encoding rules as {!encode_form}. Both secret variants contain
-      client secret material. *)
+      same encoding rules as {!encode_form}. Both secret variants contain client
+      secret material. *)
 
   type t
   (** OAuth client identity and authentication method. *)
@@ -681,11 +681,10 @@ module Authorization : sig
       duplicates included. Additional callback query parameters are allowed. URI
       fragments are ignored for target comparison and are not searched for
       [code], [state], or OAuth error fields. Callback fields are read from the
-      URI query only. The [state] parameter is required, must be unique, and must
-      match [t]. OAuth callback errors are surfaced only after state validation
-      succeeds. Successful callbacks require a unique [code] parameter and
-      return a checked authorization code.
-  *)
+      URI query only. The [state] parameter is required, must be unique, and
+      must match [t]. OAuth callback errors are surfaced only after state
+      validation succeeds. Successful callbacks require a unique [code]
+      parameter and return a checked authorization code. *)
 
   val code : code -> string
   (** [code c] is the secret-bearing authorization code. *)

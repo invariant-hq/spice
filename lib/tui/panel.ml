@@ -62,7 +62,9 @@ let classify (ev : Matrix.Input.Key.event) =
 (* The boundary spans the terminal: the glyph repeated to [width], drawn in the
    frame color so it reads as the panel's own edge, not a rule. *)
 let boundary ~frame ~width =
-  let s = String.concat "" (List.init (max 0 width) (fun _ -> Theme.panel_boundary)) in
+  let s =
+    String.concat "" (List.init (max 0 width) (fun _ -> Theme.panel_boundary))
+  in
   box ~key:"panel.boundary" ~flex_shrink:0.
     ~size:{ width = pct 100; height = px 1 }
     [ text ~style:(Ansi.Style.make ~fg:frame ()) ~wrap:`None s ]
@@ -72,8 +74,7 @@ let boundary ~frame ~width =
    beside the chip as the one narrowing readout. *)
 let chip_row ~frame ~name ~filter =
   let echo =
-    if String.equal filter "" then []
-    else [ seg Theme.faint ("  " ^ filter) ]
+    if String.equal filter "" then [] else [ seg Theme.faint ("  " ^ filter) ]
   in
   box ~key:"panel.chip" ~flex_direction:Flex_direction.Row ~flex_shrink:0.
     ~padding:(padding_lrtb 2 2 0 0)

@@ -300,17 +300,23 @@ let unusual_components_are_preserved () =
   List.iter
     (fun component ->
       let msg = String.escaped component in
-      is_true ~msg:("component is valid: " ^ msg)
+      is_true
+        ~msg:("component is valid: " ^ msg)
         (Path.Rel.is_component component);
-      equal_result ("relative path preserves " ^ msg) (Ok component)
-        (rel_string component);
-      equal_result ("relative add_component preserves " ^ msg)
+      equal_result
+        ("relative path preserves " ^ msg)
+        (Ok component) (rel_string component);
+      equal_result
+        ("relative add_component preserves " ^ msg)
         (Ok ("dir/" ^ component))
         (Result.map Path.Rel.to_string
            (Path.Rel.add_component (rel "dir") component));
-      equal_result ("absolute path preserves " ^ msg) (Ok ("/" ^ component))
+      equal_result
+        ("absolute path preserves " ^ msg)
+        (Ok ("/" ^ component))
         (abs_string ("/" ^ component));
-      equal_result ("absolute add_component preserves " ^ msg)
+      equal_result
+        ("absolute add_component preserves " ^ msg)
         (Ok ("/dir/" ^ component))
         (Result.map Path.Abs.to_string
            (Path.Abs.add_component (abs "/dir") component)))
@@ -319,8 +325,7 @@ let unusual_components_are_preserved () =
 let relativize_and_reach_root_edges () =
   let rel_target = rel "a/b" in
   equal (option rel_path)
-    ~msg:"relative equal paths relativize to relative root"
-    (Some Path.Rel.root)
+    ~msg:"relative equal paths relativize to relative root" (Some Path.Rel.root)
     (Path.Rel.relativize ~root:rel_target rel_target);
   equal string ~msg:"relative equal paths reach with dot" "."
     (Path.Rel.reach ~from:rel_target rel_target);
@@ -329,8 +334,7 @@ let relativize_and_reach_root_edges () =
     (Path.Rel.relativize ~root:Path.Rel.root rel_target);
   let abs_target = abs "/a/b" in
   equal (option rel_path)
-    ~msg:"absolute equal paths relativize to relative root"
-    (Some Path.Rel.root)
+    ~msg:"absolute equal paths relativize to relative root" (Some Path.Rel.root)
     (Path.Abs.relativize ~root:abs_target abs_target);
   equal string ~msg:"absolute equal paths reach with dot" "."
     (Path.Abs.reach ~from:abs_target abs_target);

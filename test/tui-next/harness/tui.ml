@@ -43,9 +43,9 @@ let timings = Option.is_some (Sys.getenv_opt "TUI_HARNESS_TIMINGS")
 let t0 = ref 0.
 
 let mark label =
-  if timings then (
+  if timings then
     let now = Unix.gettimeofday () in
-    Printf.eprintf "[t+%6.1fms] %s\n%!" ((now -. !t0) *. 1000.) label)
+    Printf.eprintf "[t+%6.1fms] %s\n%!" ((now -. !t0) *. 1000.) label
 
 let wake t =
   t.wakes <- t.wakes + 1;
@@ -65,8 +65,7 @@ let check_alive t =
 (* Event-based: the loop broadcasts [parked_cond] as it parks (and the loop
    fiber broadcasts it once more when it finishes, so waiters fail loudly). *)
 let wait_parked t =
-  (if debug && not t.parked then Printf.eprintf "[wait_parked] awaiting
-%!");
+  if debug && not t.parked then Printf.eprintf "[wait_parked] awaiting\n%!";
   while not t.parked do
     check_alive t;
     Eio.Condition.await_no_mutex t.parked_cond
@@ -125,28 +124,30 @@ let next_second t =
 let settle_budget = 20_000 (* iterations, ~1ms each: fail loudly, never hang *)
 
 let rec settle_from t spent =
-  (if (debug || timings) && Option.is_some t.probe then
-     let probe = Option.get t.probe in
-     mark "settle iteration";
-     Printf.eprintf
-       "[settle %d] performs:%b messages:%b render:%b redraw:%b parked:%b         gate:%b now:%.3f
-%!"
-       spent
-       (Mosaic.Probe.performs_pending probe)
-       (Mosaic.Probe.messages_pending probe)
-       (Mosaic.Probe.render_pending probe)
-       (Matrix.redraw_requested (Matrix_test.app t.backend))
-       t.parked (gate_held t)
-       (Matrix_test.now t.backend -. epoch));
-  if spent > settle_budget then (
+  if (debug || timings) && Option.is_some t.probe then (
     let probe = Option.get t.probe in
-    Util.failf
-      "tui harness: settle did not converge (performs:%b messages:%b        render:%b redraw:%b parked:%b gate_held:%b)"
+    mark "settle iteration";
+    Printf.eprintf
+      "[settle %d] performs:%b messages:%b render:%b redraw:%b \
+       parked:%b         gate:%b now:%.3f\n\
+       %!"
+      spent
       (Mosaic.Probe.performs_pending probe)
       (Mosaic.Probe.messages_pending probe)
       (Mosaic.Probe.render_pending probe)
       (Matrix.redraw_requested (Matrix_test.app t.backend))
-      t.parked (gate_held t));
+      t.parked (gate_held t)
+      (Matrix_test.now t.backend -. epoch));
+  (if spent > settle_budget then
+     let probe = Option.get t.probe in
+     Util.failf
+       "tui harness: settle did not converge (performs:%b messages:%b        \
+        render:%b redraw:%b parked:%b gate_held:%b)"
+       (Mosaic.Probe.performs_pending probe)
+       (Mosaic.Probe.messages_pending probe)
+       (Mosaic.Probe.render_pending probe)
+       (Matrix.redraw_requested (Matrix_test.app t.backend))
+       t.parked (gate_held t));
   wait_parked t;
   let probe = Option.get t.probe in
   if Mosaic.Probe.performs_pending probe && not (gate_held t) then (
@@ -254,9 +255,11 @@ let resize t ~width ~height =
   wake t
 
 let screen t = Matrix_test.screen t.backend
+
 let print t =
   Screen.print ~project:t.project (screen t);
   flush stdout
+
 let project t = t.project
 
 let provider t =
@@ -312,7 +315,8 @@ let run ?(size = (80, 24)) ?(env = []) ?provider:script ?startup ?seed ~name f =
     Option.map (Provider.start ~sw ~net:(Eio.Stdenv.net stdenv)) script
   in
   let overrides =
-    Project.bindings ?openai_base_url:(Option.map Provider.base_url provider)
+    Project.bindings
+      ?openai_base_url:(Option.map Provider.base_url provider)
       ~extra:env project
   in
   Project.apply overrides;

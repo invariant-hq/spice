@@ -22,8 +22,7 @@ let reduced_motion = [ ("SPICE_REDUCED_MOTION", "1") ]
 let print_fact = Util.print_fact
 
 (* The panel under test is the hidden [tui-next] subcommand. *)
-let run ?env ?rows ?cols project f =
-  Term.run ?env ?rows ?cols project f
+let run ?env ?rows ?cols project f = Term.run ?env ?rows ?cols project f
 
 (* A resumable session document with an explicit update time, so recency order
    and the "just now" age are deterministic. Mirrors [Seed.session] but sets
@@ -51,9 +50,11 @@ let seed_prompt_session project id ~title ~prompt ~updated_at_ms =
 let seed_four project =
   let now = Int64.of_float (Unix.gettimeofday () *. 1000.) in
   let at k = Int64.sub now (Int64.of_int (k * 1000)) in
-  seed_session project "ses_1" ~title:"parser streaming fix" ~updated_at_ms:(at 0);
+  seed_session project "ses_1" ~title:"parser streaming fix"
+    ~updated_at_ms:(at 0);
   seed_session project "ses_2" ~title:"config gadt rework" ~updated_at_ms:(at 1);
-  seed_session project "ses_3" ~title:"review layer wiring" ~updated_at_ms:(at 2);
+  seed_session project "ses_3" ~title:"review layer wiring"
+    ~updated_at_ms:(at 2);
   seed_session project "ses_4" ~title:"auth flow polish" ~updated_at_ms:(at 3)
 
 (* Submit the [/sessions] command with Enter as a SEPARATE write. The panel
@@ -86,7 +87,8 @@ let%expect_test "quick-switch panel opens from the home stage" =
     && Screen.has "review layer wiring" (Term.screen t)
     && Screen.has "auth flow polish" (Term.screen t));
   Screen.print ~project (Term.screen t);
-  [%expect {|boundary present: true
+  [%expect
+    {|boundary present: true
 sessions chip present: true
 all four titles present: true
 01 |
@@ -138,7 +140,8 @@ let%expect_test "type-to-filter narrows the rows" =
     && Screen.lacks "auth flow polish" (Term.screen t));
   print_fact "filter echoed beside the chip" (Screen.has "gadt" (Term.screen t));
   Screen.print ~project (Term.screen t);
-  [%expect {|matching row kept: true
+  [%expect
+    {|matching row kept: true
 non-matching rows dropped: true
 filter echoed beside the chip: true
 01 | 
@@ -218,7 +221,8 @@ let%expect_test "empty workspace shows the one-sentence empty state" =
   print_fact "empty sentence shown"
     (Screen.has "No recent sessions in this workspace." (Term.screen t));
   Screen.print ~project (Term.screen t);
-  [%expect {|empty sentence shown: true
+  [%expect
+    {|empty sentence shown: true
 01 |
 02 |
 03 |
@@ -285,7 +289,8 @@ let%expect_test "tab promotes the panel to the browse screen" =
   Term.send t Keys.tab;
   Term.wait t (Screen.has "f fork");
   print_fact "screen keymap present"
-    (Screen.has "f fork" (Term.screen t) && Screen.has "r rename" (Term.screen t));
+    (Screen.has "f fork" (Term.screen t)
+    && Screen.has "r rename" (Term.screen t));
   print_fact "recency group header present" (Screen.has "today" (Term.screen t));
   [%expect
     {|

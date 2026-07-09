@@ -202,8 +202,7 @@ let show json name =
           end;
           Success)
 
-let json_flag =
-  Cli_arg.json_flag ()
+let json_flag = Cli_arg.json_flag ()
 
 let name_arg =
   CArg.(

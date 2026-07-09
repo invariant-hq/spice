@@ -89,7 +89,8 @@ let elapsed ~now run =
     let created =
       Spice_session.Time.to_unix_ms (Spice_protocol.Subagent_run.created_at run)
     in
-    Some (duration ~ms:(Int64.sub (Spice_session.Time.to_unix_ms until) created))
+    Some
+      (duration ~ms:(Int64.sub (Spice_session.Time.to_unix_ms until) created))
   in
   match Spice_protocol.Subagent_run.status run with
   | Spice_protocol.Subagent_run.Status.Queued -> None
@@ -147,17 +148,18 @@ let settled_line run =
   let task =
     clip ~max:48
       (compact
-         (Spice_protocol.Subagent.Spawn.task (Spice_protocol.Subagent_run.spawn run)))
+         (Spice_protocol.Subagent.Spawn.task
+            (Spice_protocol.Subagent_run.spawn run)))
   in
   let facts =
     (match Spice_protocol.Subagent_run.usage run with
-    | None -> []
-    | Some usage ->
-        [
-          Printf.sprintf "%d tool uses"
-            usage.Spice_protocol.Subagent_run.Usage.tool_uses;
-          tokens usage;
-        ])
+      | None -> []
+      | Some usage ->
+          [
+            Printf.sprintf "%d tool uses"
+              usage.Spice_protocol.Subagent_run.Usage.tool_uses;
+            tokens usage;
+          ])
     @ Option.to_list
         (elapsed ~now:(Spice_protocol.Subagent_run.updated_at run) run)
   in

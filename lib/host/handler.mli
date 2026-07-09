@@ -31,10 +31,10 @@ type t =
     model-visible error {!Spice_llm.Tool.Result.t}, not a caller error — the
     model can then correct its call.
 
-    [cancelled] is the turn's interrupt signal, the same flag the loop
-    samples between steps. Most handlers answer promptly and never read it;
-    a handler that blocks — [wait_subagents] — must sample it so an
-    interrupt reaches a parked drain instead of waiting out the block. *)
+    [cancelled] is the turn's interrupt signal, the same flag the loop samples
+    between steps. Most handlers answer promptly and never read it; a handler
+    that blocks — [wait_subagents] — must sample it so an interrupt reaches a
+    parked drain instead of waiting out the block. *)
 
 (** {1:combinators Combinators} *)
 
@@ -50,14 +50,13 @@ val for_tool : string -> t -> t
 
 val child : t
 (** [child] is the host-tool dispatch for subagent runners. A valid
-    [message_parent] returns [Ok None]: the turn parks on the waiting
-    boundary the run registry reads as an ask (doc/plans/subagent-tui.md
-    §5.6). Every other recognized host tool — the root workflow tools and
-    the subagent lifecycle tools — answers with a model-visible "not
-    available in a subagent session" error, so a stray [propose_plan] can
-    neither park the child nor recurse; an undecodable [message_parent]
-    answers with its decode error. Calls that are not host tools are
-    [Ok None]. *)
+    [message_parent] returns [Ok None]: the turn parks on the waiting boundary
+    the run registry reads as an ask (doc/plans/subagent-tui.md §5.6). Every
+    other recognized host tool — the root workflow tools and the subagent
+    lifecycle tools — answers with a model-visible "not available in a subagent
+    session" error, so a stray [propose_plan] can neither park the child nor
+    recurse; an undecodable [message_parent] answers with its decode error.
+    Calls that are not host tools are [Ok None]. *)
 
 (** {1:defaults Default dispatch} *)
 
@@ -74,10 +73,8 @@ val defaults :
     (cancelled:(unit -> bool) ->
     Spice_protocol.Subagent.Wait.Request.t ->
     (string, string) result) ->
-  cancel:
-    (Spice_protocol.Subagent.Cancel.Request.t -> (string, string) result) ->
-  message:
-    (Spice_protocol.Subagent.Message.Request.t -> (string, string) result) ->
+  cancel:(Spice_protocol.Subagent.Cancel.Request.t -> (string, string) result) ->
+  message:(Spice_protocol.Subagent.Message.Request.t -> (string, string) result) ->
   t
 (** [defaults ~fs ~root ~now ~mode ~spawn ~wait ~cancel ~message] is the
     built-in host-tool dispatch. It classifies each call once and answers by
@@ -110,9 +107,9 @@ val defaults :
       in [spawn], which captures the clock, store, and fresh child id the ledger
       needs.
     - {b Subagent wait/cancel.} A valid [wait_subagents] or [cancel_subagent]
-      runs [wait]/[cancel] against the run registry; the returned text ([Ok])
-      or failure message ([Error]) is wrapped into the tool result. [wait]
-      blocks the drain until the named runs settle.
+      runs [wait]/[cancel] against the run registry; the returned text ([Ok]) or
+      failure message ([Error]) is wrapped into the tool result. [wait] blocks
+      the drain until the named runs settle.
     - {b Question.} An [ask_user] call — valid or not — returns [Ok None] so the
       turn parks on the answerable question boundary.
     - {b Other host tools.} A recognized host tool whose payload cannot be

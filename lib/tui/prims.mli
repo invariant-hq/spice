@@ -18,13 +18,13 @@ val seg : Mosaic.Ansi.Style.t -> string -> 'msg Mosaic.t
 
 val truncate_tail : width:int -> string -> string
 (** [truncate_tail ~width s] is [s] truncated to [width] with a trailing ["…"]
-    when it overflows, so a following right-aligned column keeps its place. Width
-    is counted in bytes: exact for the ASCII titles and facts the stores hold, an
-    approximation for wider text. A [width] of at most [1] returns [s]
+    when it overflows, so a following right-aligned column keeps its place.
+    Width is counted in bytes: exact for the ASCII titles and facts the stores
+    hold, an approximation for wider text. A [width] of at most [1] returns [s]
     unchanged. *)
 
 val cell : int -> 'msg Mosaic.t -> 'msg Mosaic.t
-(** [cell w child] wraps [child] in a fixed [w]-column, one-row box that does not
-    shrink. Rows use explicit cells rather than a flex spacer so columns land at
-    deterministic positions, sidestepping the text-measurement width cache that
-    can drop a widened tail (doc/plans/tui-next.md §Rules). *)
+(** [cell w child] wraps [child] in a fixed [w]-column, one-row box that does
+    not shrink. Rows use explicit cells rather than a flex spacer so columns
+    land at deterministic positions, sidestepping the text-measurement width
+    cache that can drop a widened tail (doc/plans/tui-next.md §Rules). *)

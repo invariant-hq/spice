@@ -15,8 +15,7 @@ open Tui_harness
 let print_fact = Util.print_fact
 
 (* The home under test is the hidden [tui-next] subcommand. *)
-let run ?env ?rows ?cols project f =
-  Term.run ?env ?rows ?cols project f
+let run ?env ?rows ?cols project f = Term.run ?env ?rows ?cols project f
 
 (* A mid-pour mound (08-brand.md §Motion): the mound region reads [▂▄▄▄▂] only
    partway through a pour, never at rest. It is displayed only by the animation

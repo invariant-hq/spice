@@ -72,8 +72,9 @@ let render_row ~width ~index ~selected ~hovered ~can_open ?on_mouse row =
       let style = if active then Theme.accent else Theme.muted in
       line ?on_mouse
         (seg style (cur ^ main_glyph ^ " main")
-        :: (if hint then [ seg Theme.faint (Theme.separator ^ enter_hint) ]
-            else []))
+        ::
+        (if hint then [ seg Theme.faint (Theme.separator ^ enter_hint) ] else [])
+        )
   | Thread { glyph; style; name; task; facts; depth; last } ->
       let conn = connector ~depth ~last in
       let name_col = pad_right 10 name in
@@ -85,7 +86,8 @@ let render_row ~width ~index ~selected ~hovered ~can_open ?on_mouse row =
          trailing facts and the selected hint (each behind a separator). *)
       let used =
         2 + 2 + width_of conn + width_of glyph + 1 + width_of name_col
-        + (if facts = [] then 0 else width_of Theme.separator + width_of facts_str)
+        + (if facts = [] then 0
+           else width_of Theme.separator + width_of facts_str)
         + width_of hint_text
       in
       let task = clip ~max:(max 4 (width - used)) task in
@@ -102,10 +104,7 @@ let render_row ~width ~index ~selected ~hovered ~can_open ?on_mouse row =
            ])
 
 let overflow_row ~width:_ n =
-  line
-    [
-      seg Theme.faint ("… " ^ string_of_int n ^ " more (↓ to browse)");
-    ]
+  line [ seg Theme.faint ("… " ^ string_of_int n ^ " more (↓ to browse)") ]
 
 let seam text = line [ seg Theme.muted text ]
 
@@ -123,7 +122,9 @@ let window ~limit ~selected ~count =
 
 let view ?(can_open = true) ?on_mouse ?(hovered = None) ~rows ~selected ~width
     ~rows_avail () =
-  let is_hovered index = match hovered with Some h -> h = index | None -> false in
+  let is_hovered index =
+    match hovered with Some h -> h = index | None -> false
+  in
   match rows with
   | [] -> []
   | _ -> (
@@ -150,7 +151,8 @@ let view ?(can_open = true) ?on_mouse ?(hovered = None) ~rows ~selected ~width
               visible
           in
           rendered
-          @ (if count > shown then [ overflow_row ~width (count - shown) ] else [])
+          @
+          if count > shown then [ overflow_row ~width (count - shown) ] else []
       | Some sel ->
           (* The focused browse: the whole list windowed around the selection. *)
           let limit = window_limit rows_avail in
@@ -162,7 +164,8 @@ let view ?(can_open = true) ?on_mouse ?(hovered = None) ~rows ~selected ~width
             List.mapi
               (fun i r ->
                 render_row ~width ~index:(start + i)
-                  ~selected:(start + i = sel) ~hovered:(is_hovered (start + i))
+                  ~selected:(start + i = sel)
+                  ~hovered:(is_hovered (start + i))
                   ~can_open ?on_mouse r)
               visible
           in

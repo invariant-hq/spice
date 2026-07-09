@@ -538,10 +538,12 @@ let account_model_contracts () =
   in
   let missing = Account.missing ~provider:openai in
   let present = Account.present credential in
-  equal (option (list string)) ~msg:"missing has unknown model set" None
-    (Account.models missing);
-  equal (option (list string)) ~msg:"present has unknown model set" None
-    (Account.models present);
+  equal
+    (option (list string))
+    ~msg:"missing has unknown model set" None (Account.models missing);
+  equal
+    (option (list string))
+    ~msg:"present has unknown model set" None (Account.models present);
   equal string ~msg:"missing model availability is unknown" "unknown"
     (availability_string (Account.model_available missing "gpt-a"));
   let checked =
@@ -549,7 +551,9 @@ let account_model_contracts () =
   in
   equal phase_value ~msg:"model availability does not affect phase" `Ready
     (Account.phase checked);
-  equal (option (list string)) ~msg:"models are sorted and deduplicated"
+  equal
+    (option (list string))
+    ~msg:"models are sorted and deduplicated"
     (Some [ "gpt-a"; "gpt-b" ])
     (Account.models checked);
   equal string ~msg:"listed model is available" "available"

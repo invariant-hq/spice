@@ -12,9 +12,7 @@ let make ~count = { selected = 0; count = max 1 count }
 let selected t = t.selected
 let up t = { t with selected = (t.selected - 1 + t.count) mod t.count }
 let down t = { t with selected = (t.selected + 1) mod t.count }
-
-let jump n t =
-  if n >= 1 && n <= t.count then { t with selected = n - 1 } else t
+let jump n t = if n >= 1 && n <= t.count then { t with selected = n - 1 } else t
 
 type checkbox = No_box | Checked | Unchecked
 

@@ -116,16 +116,13 @@ let structured_fields_are_listed_not_read () =
 let yaml_alias_values_are_not_a_parse_error () =
   let t =
     parsed
-      "---\n\
-       description: &desc \"Use carefully.\"\n\
-       copy: *desc\n\
-       ---\n\
-       body\n"
+      "---\ndescription: &desc \"Use carefully.\"\ncopy: *desc\n---\nbody\n"
   in
   equal (list string) ~msg:"keys list aliases in document order"
     [ "description"; "copy" ] (Frontmatter.keys t);
   equal (option string) ~msg:"anchored scalar reads as a string"
-    (Some "Use carefully.") (Frontmatter.string "description" t);
+    (Some "Use carefully.")
+    (Frontmatter.string "description" t);
   equal (option string) ~msg:"alias values are not string fields" None
     (Frontmatter.string "copy" t)
 
@@ -201,7 +198,8 @@ let () =
         non_string_scalar_fields_are_not_read;
       test "lists structured fields without reading them"
         structured_fields_are_listed_not_read;
-      test "does not reject YAML aliases" yaml_alias_values_are_not_a_parse_error;
+      test "does not reject YAML aliases"
+        yaml_alias_values_are_not_a_parse_error;
       test "errors on an unterminated fence" unterminated_fence;
       test "errors on a fence-only document" fence_only_document;
       test "errors on invalid YAML" invalid_yaml;

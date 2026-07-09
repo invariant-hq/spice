@@ -99,9 +99,7 @@ let validate_answer = function
   | "" -> Error (Spice_protocol.Error.Invalid_answer "answer must not be empty")
   | _ -> Ok ()
 
-let document_id document =
-  Spice_session_store.Document.id document
-
+let document_id document = Spice_session_store.Document.id document
 let map_store result = Result.map_error of_store result
 
 (* Compaction reuses raw store appends and maps its own error class back into
@@ -316,8 +314,7 @@ let save_step ~store projector hooks document step =
   | [] -> Ok document
   | _ :: _ ->
       let* document =
-        Spice_session_store.append store document events
-        |> map_store
+        Spice_session_store.append store document events |> map_store
       in
       hooks.after_save document events;
       emit_saved projector hooks.observe events;

@@ -57,4 +57,4 @@ let normalize ~project screen =
 let print ~project screen =
   normalize ~project screen |> String.split_on_char '\n'
   |> List.iteri (fun index line ->
-         Printf.printf "%02d | %s\n" (index + 1) (Util.rstrip line))
+      Printf.printf "%02d | %s\n" (index + 1) (Util.rstrip line))

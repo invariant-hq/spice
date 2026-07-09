@@ -116,11 +116,10 @@ let config_construction_is_programmer_local () =
   expect_invalid_arg "invalid executable tool names raise" (fun () ->
       Run.Config.make ~tools:[ bad_name_tool ] ~policy:Permission.Policy.default
         ());
-  let host_tool name =
-    Llm.Tool.make ~name ~input_schema:(Json.object' []) ()
-  in
+  let host_tool name = Llm.Tool.make ~name ~input_schema:(Json.object' []) () in
   expect_invalid_arg "executable and host tool name collisions raise" (fun () ->
-      Run.Config.make ~tools:[ executable_tool () ]
+      Run.Config.make
+        ~tools:[ executable_tool () ]
         ~host_tools:[ host_tool "review_tool" ]
         ~policy:Permission.Policy.default ());
   expect_invalid_arg "duplicate host tool names raise" (fun () ->
@@ -467,25 +466,27 @@ let interrupt_answers_pending_host_tool_call () =
        (Session.State.transcript (Session.state (Run.Step.session blocked))));
   match Run.interrupt ~reason:"cancelled" (Run.Step.session blocked) with
   | Error error -> failf "interrupt failed: %a" Run.Error.pp error
-  | Ok step ->
+  | Ok step -> (
       equal int
-        ~msg:"interrupt appends the synthesized tool result and the terminal \
-              event"
+        ~msg:
+          "interrupt appends the synthesized tool result and the terminal event"
         2
         (List.length (Run.Step.events step));
       let state = Session.state (Run.Step.session step) in
       is_true
-        ~msg:"the interrupted transcript is provider-well-formed (no pending \
-              tool results)"
+        ~msg:
+          "the interrupted transcript is provider-well-formed (no pending tool \
+           results)"
         (Llm.Transcript.is_ready (Session.State.transcript state));
       (match Run.Step.next step with
       | Run.Step.Finished { outcome = Session.Turn.Outcome.Interrupted _; _ } ->
           ()
-      | next -> failf "expected interrupted finish, got %a" Run.Step.pp_next next);
+      | next ->
+          failf "expected interrupted finish, got %a" Run.Step.pp_next next);
       let last_message =
         List.rev (Llm.Transcript.messages (Session.State.transcript state))
       in
-      (match last_message with
+      match last_message with
       | Llm.Message.Tool_result result :: _ ->
           equal string ~msg:"the synthesized result answers the question call"
             "question-1"
@@ -515,8 +516,9 @@ let interrupt_finishes_pending_claim () =
   | Ok step ->
       let state = Session.state (Run.Step.session step) in
       is_true
-        ~msg:"the interrupted transcript is provider-well-formed after a \
-              pending claim"
+        ~msg:
+          "the interrupted transcript is provider-well-formed after a pending \
+           claim"
         (Llm.Transcript.is_ready (Session.State.transcript state));
       is_true ~msg:"the pending claim was finished by the interrupt"
         (Option.is_none

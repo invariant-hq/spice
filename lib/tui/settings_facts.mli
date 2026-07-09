@@ -10,8 +10,8 @@
     module assembles from the host views — the config field inventory, the
     read-only status sheet, the session usage, and the skills snapshot. The
     runtime calls {!assemble} when the screen opens and re-calls it after each
-    write so the screen reflects the persisted state rather than optimistic edits
-    (doc/plans/tui-next-surfaces.md §Sequencing 4). This is the one impure
+    write so the screen reflects the persisted state rather than optimistic
+    edits (doc/plans/tui-next-surfaces.md §Sequencing 4). This is the one impure
     builder; the screen itself reads no host, config, or filesystem. *)
 
 val assemble :

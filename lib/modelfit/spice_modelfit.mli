@@ -256,10 +256,10 @@ module Gguf : sig
       - [<arch>.attention.key_length], or both [<arch>.embedding_length] and
         [<arch>.attention.head_count]
 
-      If both [<arch>.attention.key_length] and
-      [<arch>.attention.value_length] are present, their mean is used for the
-      per-head KV dimension and rounded up when fractional. The
-      [embedding_length / attention.head_count] fallback must divide evenly.
+      If both [<arch>.attention.key_length] and [<arch>.attention.value_length]
+      are present, their mean is used for the per-head KV dimension and rounded
+      up when fractional. The [embedding_length / attention.head_count] fallback
+      must divide evenly.
 
       Raises [Invalid_argument] if [weights_bytes] is not positive. *)
 end

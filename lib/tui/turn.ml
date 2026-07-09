@@ -46,7 +46,8 @@ type drain = Not_interrupting | Interrupting of { forcing : bool }
 type t = {
   phase : phase;
   turn_started : float;
-  step_started : float option;  (* the current model step, armed by Model_started *)
+  step_started : float option;
+      (* the current model step, armed by Model_started *)
   assistant_stable : string;
       (* the Assistant_delta buffer through its last newline, discarded at the
          durable Assistant. Physically stable between newlines: the tail's
@@ -58,18 +59,20 @@ type t = {
       (* the buffer past its last newline — the line still being typed. The tail
          renders it as plain wrapped rows, never markdown: it is the one part
          that changes every delta, so it must stay O(line) to draw. *)
-  reasoning : string;  (* Reasoning_delta buffer, discarded at durable Assistant *)
-  running : running list;  (* in start order *)
+  reasoning : string;
+      (* Reasoning_delta buffer, discarded at durable Assistant *)
+  running : running list; (* in start order *)
   pending_host : (Spice_llm.Tool.Call.t * float) list;
       (* host calls awaiting their result, each with the time it started, so a
          running host tool renders an elapsed clock (02-tools.md §Header) until
          its settled [Host_call] arrives. In start order. *)
-  workspace : Spice_mutation.Change.totals option;  (* coalesced, flushed at settle *)
+  workspace : Spice_mutation.Change.totals option;
+      (* coalesced, flushed at settle *)
   injected : string list;
       (* injected-notice titles, accumulated and flushed at settle: a live-only
          event may not create a document block, so this waits for the durable
          Turn_finished. In arrival order. *)
-  waiting : bool;  (* a dialog or host question owns the keyboard *)
+  waiting : bool; (* a dialog or host question owns the keyboard *)
   drain : drain;
   committed_output : int;
       (* turn output-token spend from settled steps: the sum of each durable
@@ -122,7 +125,8 @@ let idle =
     permission_pending = [];
   }
 
-let in_flight t = match t.phase with Idle -> false | Pending _ | Running -> true
+let in_flight t =
+  match t.phase with Idle -> false | Pending _ | Running -> true
 
 (* [interrupting] is reached only from [Not_interrupting] and [forcing] only from
    [Interrupting { forcing = false }] (the esc ladder gates both), so each names
@@ -196,12 +200,17 @@ let title_of body =
 
 (* ── The fold ────────────────────────────────────────────────────────────── *)
 
-let claim_key c = Spice_session.Tool_claim.Id.to_string (Spice_session.Tool_claim.Started.id c)
+let claim_key c =
+  Spice_session.Tool_claim.Id.to_string (Spice_session.Tool_claim.Started.id c)
 
 let reasoning_blocks ~duration reasoning_summary =
   let body = String.concat "\n\n" reasoning_summary in
   if String.trim body = "" then []
-  else [ Transcript.Reasoning { duration_s = duration; title = title_of body; body } ]
+  else
+    [
+      Transcript.Reasoning
+        { duration_s = duration; title = title_of body; body };
+    ]
 
 let assistant_blocks response =
   let text = Spice_llm.Response.text response in
@@ -218,7 +227,8 @@ let workspace_notice (totals : Spice_mutation.Change.totals) =
          facts =
            [
              Notice.Fact (Printf.sprintf "%d files" files);
-             Notice.Change { added = total_additions; removed = total_deletions };
+             Notice.Change
+               { added = total_additions; removed = total_deletions };
            ];
          atom = Some "/review";
          disclosable = true;
@@ -233,11 +243,7 @@ let outcome_notice outcome =
       [
         Transcript.Notice
           (Notice.Failure
-             {
-               message;
-               next_step = "Tell spice how to proceed.";
-               count = 1;
-             });
+             { message; next_step = "Tell spice how to proceed."; count = 1 });
       ]
 
 (* Humanized bytes for the download clause: GB/MB/KB with one decimal, plain
@@ -285,9 +291,7 @@ let apply ~now ~show_reasoning event t =
          of a resume — starts the clock now. [idle] drops the pending prompt; the
          durable User block below replaces it. *)
       let turn_started =
-        match t.phase with
-        | Pending _ -> t.turn_started
-        | Idle | Running -> now
+        match t.phase with Pending _ -> t.turn_started | Idle | Running -> now
       in
       let t = { idle with phase = Running; turn_started } in
       let blocks =
@@ -369,11 +373,17 @@ let apply ~now ~show_reasoning event t =
         },
         blocks )
   | Tool_started claim ->
-      ({ t with running = t.running @ [ { claim; started = now; output = "" } ] }, [])
+      ( {
+          t with
+          running = t.running @ [ { claim; started = now; output = "" } ];
+        },
+        [] )
   | Tool_finished { claim; result } ->
       let key = claim_key claim in
       let running =
-        List.filter (fun r -> not (String.equal (claim_key r.claim) key)) t.running
+        List.filter
+          (fun r -> not (String.equal (claim_key r.claim) key))
+          t.running
       in
       (* Keep the todo mirror current when the board settles through the
          executable path (the accessor a status-strip reads). *)
@@ -418,10 +428,14 @@ let apply ~now ~show_reasoning event t =
             [ Transcript.Tool (Tool_distill.of_host_call call result) ] ))
   | Workspace_changed { total; _ } -> ({ t with workspace = Some total }, [])
   | Compaction _ ->
-      ({ t with compacting = None }, [ Transcript.Notice (Notice.Seam "compacted") ])
+      ( { t with compacting = None },
+        [ Transcript.Notice (Notice.Seam "compacted") ] )
   | Notices_injected notices ->
       (* Live-only: accumulate, flush at Turn_finished — no block here. *)
-      ( { t with injected = t.injected @ List.map Spice_protocol.Notice.title notices },
+      ( {
+          t with
+          injected = t.injected @ List.map Spice_protocol.Notice.title notices;
+        },
         [] )
   | Permission_requested requested ->
       (* Record the blocked call so the tail shows what is awaiting permission
@@ -455,7 +469,9 @@ let apply ~now ~show_reasoning event t =
           t.permission_pending
       in
       let blocks =
-        match (matched, Spice_session.Permission.Resolved.decision resolved) with
+        match
+          (matched, Spice_session.Permission.Resolved.decision resolved)
+        with
         | Some p, Spice_session.Permission.Resolved.Deny _ ->
             [ Transcript.Tool (Tool_distill.denied p.call) ]
         | _ -> []
@@ -480,7 +496,9 @@ let apply ~now ~show_reasoning event t =
         match t.workspace with Some w -> [ workspace_notice w ] | None -> []
       in
       let injected_blocks =
-        List.map (fun title -> Transcript.Notice (Notice.Event title)) t.injected
+        List.map
+          (fun title -> Transcript.Notice (Notice.Event title))
+          t.injected
       in
       ( idle,
         running_blocks @ permission_blocks @ workspace_blocks @ injected_blocks
@@ -562,6 +580,7 @@ let apply ~now ~show_reasoning event t =
 
 let seg style s = text ~style ~wrap:`None ~flex_shrink:0. s
 let blank_row = box ~size:{ width = pct 100; height = px 1 } []
+
 let spinner_frame i =
   let f = Theme.spinner_frames in
   f.(i mod Array.length f)
@@ -613,9 +632,7 @@ let last_wrapped_rows ~width n buffer =
         | None -> 0
       in
       let line = String.sub buffer start (stop - start) in
-      let rows =
-        if String.trim line = "" then [] else word_wrap ~width line
-      in
+      let rows = if String.trim line = "" then [] else word_wrap ~width line in
       go (rows @ acc) (count + List.length rows) (start - 1)
   in
   take_last n (go [] 0 (String.length buffer))
@@ -635,7 +652,7 @@ let expanded_wrapped_rows ~width buffer =
     let rows =
       String.split_on_char '\n' buffer
       |> List.concat_map (fun l ->
-             if String.trim l = "" then [] else word_wrap ~width l)
+          if String.trim l = "" then [] else word_wrap ~width l)
     in
     expanded_wrap_cache := (buffer, width, rows);
     rows
@@ -710,8 +727,7 @@ let shell_running_tail ~width output =
   let window = last_wrapped_rows ~width:content 3 output in
   let pad = List.init (3 - List.length window) (fun _ -> "") in
   let row l =
-    box ~flex_direction:Flex_direction.Row
-      ~padding:(padding_lrtb 6 0 0 0)
+    box ~flex_direction:Flex_direction.Row ~padding:(padding_lrtb 6 0 0 0)
       ~size:{ width = pct 100; height = px 1 }
       [ text ~style:Theme.muted ~wrap:`None l ]
   in
@@ -731,7 +747,9 @@ let running_row ~now ~width r =
   box ~flex_direction:Flex_direction.Column
     ~size:{ width = pct 100; height = auto }
     (Tool_block.header verb
-       ~argument:(Tool_block.header_argument ~width ~verb (Tool_distill.argument_of_call call))
+       ~argument:
+         (Tool_block.header_argument ~width ~verb
+            (Tool_distill.argument_of_call call))
        ~dot:Tool_block.Running
     :: Tool_block.result ~summary:"running"
          ~facts:[ Printf.sprintf "%ds" elapsed ]
@@ -751,7 +769,9 @@ let host_running_row ~now ~width (call, started) =
     ~size:{ width = pct 100; height = auto }
     [
       Tool_block.header verb
-        ~argument:(Tool_block.header_argument ~width ~verb (Tool_distill.argument_of_call call))
+        ~argument:
+          (Tool_block.header_argument ~width ~verb
+             (Tool_distill.argument_of_call call))
         ~dot:Tool_block.Running;
       Tool_block.result ~summary:"running"
         ~facts:[ Printf.sprintf "%ds" elapsed ]
@@ -767,7 +787,9 @@ let permission_row ~width p =
     ~size:{ width = pct 100; height = auto }
     [
       Tool_block.header verb
-        ~argument:(Tool_block.header_argument ~width ~verb (Tool_distill.argument_of_call p.call))
+        ~argument:
+          (Tool_block.header_argument ~width ~verb
+             (Tool_distill.argument_of_call p.call))
         ~dot:Tool_block.Awaiting;
       Tool_block.result
         ~summary:(Theme.waiting ^ " waiting on permission")
@@ -851,7 +873,8 @@ let subagents_running t =
        (fun r ->
          match
            Tool_distill.verb_of_name
-             (Spice_llm.Tool.Call.name (Spice_session.Tool_claim.Started.call r.claim))
+             (Spice_llm.Tool.Call.name
+                (Spice_session.Tool_claim.Started.call r.claim))
          with
          | Tool_block.Task -> true
          | _ -> false)
@@ -860,12 +883,16 @@ let subagents_running t =
 let working_line ~now ~spinner t =
   if not (in_flight t) then None
   else
-    let elapsed = duration_text (int_of_float (Float.max 0. (now -. t.turn_started))) in
+    let elapsed =
+      duration_text (int_of_float (Float.max 0. (now -. t.turn_started)))
+    in
     let spin = spinner_frame spinner in
     (* A spinner-led verb with a muted parenthetical: the always-present elapsed,
        then [extras], then [esc to interrupt]. *)
     let working verb extras =
-      let parts = String.concat " · " ((elapsed :: extras) @ [ "esc to interrupt" ]) in
+      let parts =
+        String.concat " · " ((elapsed :: extras) @ [ "esc to interrupt" ])
+      in
       [
         seg Theme.running (spin ^ " ");
         seg Ansi.Style.default (verb ^ "… ");
@@ -891,13 +918,13 @@ let working_line ~now ~spinner t =
             seg Ansi.Style.default "Interrupting… ";
             seg Theme.muted "(esc again to force)";
           ]
-      | Not_interrupting ->
+      | Not_interrupting -> (
           if t.waiting then
             [
               seg Theme.muted (Theme.waiting ^ " ");
               seg Theme.muted "Waiting for your answer";
             ]
-          else (
+          else
             match t.downloading with
             | Some { label; bytes } ->
                 working ("Downloading " ^ label) (Option.to_list bytes)
@@ -928,9 +955,10 @@ let working_line ~now ~spinner t =
                              (if agents = 1 then "" else "s");
                          ]
                        else [])
-                      @ (if tokens > 0 then
-                           [ Printf.sprintf "↓ %s tokens" (token_text tokens) ]
-                         else [])
+                      @
+                      if tokens > 0 then
+                        [ Printf.sprintf "↓ %s tokens" (token_text tokens) ]
+                      else []
                     in
                     working verb extras))
     in

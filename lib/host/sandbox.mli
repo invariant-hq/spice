@@ -246,8 +246,8 @@ val resolve :
     [true]) adds a curated per-toolchain cache directory to the workspace-write
     writable roots when the workspace is a recognized project — currently the
     dune cache ([$DUNE_CACHE_ROOT], else [$XDG_CACHE_HOME/dune], else
-    [~/.cache/dune]) when a workspace root holds a [dune-project]. Protected-meta
-    names are not applied to these non-project cache roots.
+    [~/.cache/dune]) when a workspace root holds a [dune-project].
+    Protected-meta names are not applied to these non-project cache roots.
 
     Resolution does not gate: a resolved posture may still be rejected by
     {!gate}. *)

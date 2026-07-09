@@ -20,8 +20,7 @@ module Error = struct
   type t = No_tty | Runtime of string
 
   let message = function
-    | No_tty ->
-        "interactive terminal required to run the TUI"
+    | No_tty -> "interactive terminal required to run the TUI"
     | Runtime message -> message
 
   let diagnostic t = Spice_diagnostic.make (message t)

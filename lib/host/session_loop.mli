@@ -147,12 +147,13 @@ val with_terminal_observed :
   unit) ->
   hooks ->
   hooks
-(** [with_terminal_observed terminal hooks] adds a callback to {!field:terminal},
-    run once when execution reaches a terminal outcome. It self-chains: the prior
-    terminal callback runs before [terminal]. [terminal] receives the
-    loop-supplied [~observe] (see {!field:terminal}), so a callback that emits
-    events on a terminal outcome — the end-of-run mutation checkpoint — emits to
-    the runner's live observer without capturing one at composition time. *)
+(** [with_terminal_observed terminal hooks] adds a callback to
+    {!field:terminal}, run once when execution reaches a terminal outcome. It
+    self-chains: the prior terminal callback runs before [terminal]. [terminal]
+    receives the loop-supplied [~observe] (see {!field:terminal}), so a callback
+    that emits events on a terminal outcome — the end-of-run mutation checkpoint
+    — emits to the runner's live observer without capturing one at composition
+    time. *)
 
 val with_cancelled : (unit -> bool) -> hooks -> hooks
 (** [with_cancelled cancelled hooks] replaces {!field:cancelled}. *)
@@ -207,13 +208,14 @@ type plan_resolver =
   decision:Spice_protocol.Plan.Decision.t ->
   Spice_protocol.Plan.Proposal.t ->
   (string, Spice_protocol.Error.t) result
-(** The type for the host-side plan resolution the {!Spice_protocol.Command.Resolve_plan}
-    executor calls. It applies [decision] to a parked proposal — the durable
-    [Proposed → Approved/Rejected] transition and the model-visible answer
-    wording — and returns the wording to answer the blocked call with, or the
-    execution error a resolution failure raises (a superseded plan becomes
-    {!Spice_protocol.Error.Internal}). It is injected rather than called
-    directly so the loop keeps no filesystem dependency, mirroring [host_tool]. *)
+(** The type for the host-side plan resolution the
+    {!Spice_protocol.Command.Resolve_plan} executor calls. It applies [decision]
+    to a parked proposal — the durable [Proposed → Approved/Rejected] transition
+    and the model-visible answer wording — and returns the wording to answer the
+    blocked call with, or the execution error a resolution failure raises (a
+    superseded plan becomes {!Spice_protocol.Error.Internal}). It is injected
+    rather than called directly so the loop keeps no filesystem dependency,
+    mirroring [host_tool]. *)
 
 val execute :
   store:Spice_session_store.t ->

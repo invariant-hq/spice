@@ -8,13 +8,13 @@
 
     The asking tool's operation is the review surface: a command shows its
     verbatim [$] line and cwd, a file edit shows the proposed diff (from
-    {!Spice_permission.Request.Change.diff}) with its [+A −B] counts collapsed to
-    a window and expanded with [ctrl+o], and a bundled request shows a per-file
-    list. The three options are allow once, allow this exact scope for the
-    session — labelled honestly with the narrow scope an identical
-    {!Spice_permission.Access.t} re-approves ("this command", "edits to lib/x.ml")
-    since grants are exact (doc/design/permission.md §8) — and deny, which
-    borrows the composer for feedback. It is a pure view over a durable
+    {!Spice_permission.Request.Change.diff}) with its [+A −B] counts collapsed
+    to a window and expanded with [ctrl+o], and a bundled request shows a
+    per-file list. The three options are allow once, allow this exact scope for
+    the session — labelled honestly with the narrow scope an identical
+    {!Spice_permission.Access.t} re-approves ("this command", "edits to
+    lib/x.ml") since grants are exact (doc/design/permission.md §8) — and deny,
+    which borrows the composer for feedback. It is a pure view over a durable
     {!Spice_session.Permission.Requested.t}. *)
 
 type t
@@ -41,11 +41,11 @@ val key : Matrix.Input.Key.event -> t -> t * outcome
 
 val summary : t -> string
 (** [summary t] is the one-line operation description the deny-feedback line
-    quotes ("Run a shell command?  $ …", "Edit lib/x.ml?"). *)
+    quotes ("Run a shell command? $ …", "Edit lib/x.ml?"). *)
 
 val scope_label : t -> string
-(** [scope_label t] is the exact-grant scope the session-allow echo names
-    ("this command", "edits to lib/x.ml"). *)
+(** [scope_label t] is the exact-grant scope the session-allow echo names ("this
+    command", "edits to lib/x.ml"). *)
 
 val view : width:int -> t -> _ Mosaic.t
 (** [view ~width t] renders the whole dialog as a panel. *)

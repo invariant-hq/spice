@@ -34,9 +34,7 @@ type env = (string * bound) list ref
 let is_metavar str =
   let len = String.length str in
   let rec digits i =
-    i = len
-    ||
-    match str.[i] with '0' .. '9' -> digits (i + 1) | _ -> false
+    i = len || match str.[i] with '0' .. '9' -> digits (i + 1) | _ -> false
   in
   len > 2 && str.[0] = '_' && str.[1] = '_' && digits 2
 
@@ -151,15 +149,13 @@ let bind_metavar_lident env id lid =
    pattern element may cover several target elements. *)
 let match_set env f ps ts =
   let ps = List.mapi (fun i p -> (i, p)) ps in
-  let all_used used =
-    List.for_all (fun (i, _) -> List.mem i used) ps
-  in
+  let all_used used = List.for_all (fun (i, _) -> List.mem i used) ps in
   let rec match_targets used = function
     | [] -> if not (all_used used) then dont_match ()
     | t :: ts ->
         let rec try_patterns = function
           | [] -> dont_match ()
-          | (i, p) :: ps ->
+          | (i, p) :: ps -> (
               let saved = !env in
               let used = if List.mem i used then used else i :: used in
               match
@@ -169,7 +165,7 @@ let match_set env f ps ts =
               | () -> ()
               | exception Dont_match ->
                   env := saved;
-                  try_patterns ps
+                  try_patterns ps)
         in
         try_patterns ps
   in

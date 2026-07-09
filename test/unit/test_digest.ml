@@ -136,8 +136,7 @@ let key () =
     (not
        (String.equal
           (Digest.key ~length:digest_hex_size ~domain:key_domain [ "ab"; "c" ])
-          (Digest.key ~length:digest_hex_size ~domain:key_domain
-             [ "a"; "bc" ])));
+          (Digest.key ~length:digest_hex_size ~domain:key_domain [ "a"; "bc" ])));
   is_true ~msg:"empty part and no parts are distinct"
     (not
        (String.equal
@@ -271,12 +270,12 @@ let identity_json_codec () =
   is_true ~msg:"identity JSON round-trips"
     (Digest.Identity.equal identity decoded);
   (match Json.decode Digest.Identity.jsont (Json.string "bad") with
-  | Ok parsed -> failf "invalid identity decoded as %a" Digest.Identity.pp parsed
+  | Ok parsed ->
+      failf "invalid identity decoded as %a" Digest.Identity.pp parsed
   | Error message ->
       is_true ~msg:"decode error includes identity grammar"
         (String.includes
-           ~affix:"identity must be sha256:<64 lowercase hex>:<length>"
-           message));
+           ~affix:"identity must be sha256:<64 lowercase hex>:<length>" message));
   is_true ~msg:"identity JSON rejects non-string values"
     (Result.is_error (Json.decode Digest.Identity.jsont (Json.int 1)))
 

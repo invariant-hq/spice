@@ -12,8 +12,8 @@
     owns its keyboard wholly (no native widget, no key passthrough), so the
     component folds printables and backspace into the draft with {!append} and
     {!backspace} and this module paints a cursor glyph at the insertion point
-    (doc/plans/tui-next-review.md §divergence 3). A parse or write problem renders
-    as a [! …] line under the input with the draft preserved. *)
+    (doc/plans/tui-next-review.md §divergence 3). A parse or write problem
+    renders as a [! …] line under the input with the draft preserved. *)
 
 (** The type for what the compose targets. *)
 type target =
@@ -67,4 +67,5 @@ val view : ?width:int -> t -> Spice_review.t -> _ Mosaic.t
 (** [view t review] is the painted dialog: a muted title naming the target line,
     the draft with a painted accent cursor (a faint placeholder when empty), and
     a [! …] problem line when present, over an opaque {!Style.color_overlay}
-    background. Renders no interactive widget — the component drives the draft. *)
+    background. Renders no interactive widget — the component drives the draft.
+*)

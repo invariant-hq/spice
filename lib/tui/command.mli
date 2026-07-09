@@ -11,8 +11,8 @@
     draw from this one table so no property is re-derived in a parallel match
     elsewhere (10-commands.md, 03-composer.md §Slash palette).
 
-    The catalog is closed: {!all} enumerates every command in display order,
-    and a new command cannot exist without joining {!type:t} — and without the
+    The catalog is closed: {!all} enumerates every command in display order, and
+    a new command cannot exist without joining {!type:t} — and without the
     shell's dispatch match gaining its arm, so a cataloged command is always
     backed end to end. *)
 

@@ -16,8 +16,7 @@ let indent = " "
 (* One styled line: the SGR-wrapped text when color is on, the bare text
    otherwise. [Mosaic.Ansi.render] emits the minimal SGR prefix and a closing
    reset, so each line stands alone. *)
-let line ~color style s =
-  if color then Mosaic.Ansi.render [ (style, s) ] else s
+let line ~color style s = if color then Mosaic.Ansi.render [ (style, s) ] else s
 
 let render ~color ~session =
   let lockup =
@@ -27,6 +26,8 @@ let render ~color ~session =
     match session with
     | None -> []
     | Some id ->
-        [ ""; line ~color Theme.muted (indent ^ "continue  " ^ resume_command id) ]
+        [
+          ""; line ~color Theme.muted (indent ^ "continue  " ^ resume_command id);
+        ]
   in
   "\n" ^ String.concat "\n" (lockup @ resume) ^ "\n\n"

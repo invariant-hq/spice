@@ -240,7 +240,8 @@ let device ~stdenv host ~provider ~method_id ?name ?cancel events =
                   (Auth.Device_code.start_openai_chatgpt ~http ~sw
                      ~now:(timestamp stdenv) config))
         | Protocol.Provider_device_code { provider_flow } ->
-            Error (Printf.sprintf "unknown provider login flow %S" provider_flow)
+            Error
+              (Printf.sprintf "unknown provider login flow %S" provider_flow)
         | Protocol.Api_key | Protocol.OAuth2_authorization_code _
         | Protocol.External _ ->
             Error "this provider has no device-code login"

@@ -70,10 +70,10 @@ let failure ~message ~next_step ~count =
             box ~flex_direction:Flex_direction.Row
               ~size:{ width = pct 100; height = auto }
               (text ~style:Theme.error ~wrap:`Word ~flex_shrink:1. message
-               ::
-               (if count > 1 then
-                  [ seg Theme.muted (Printf.sprintf " × %d" count) ]
-                else []));
+              ::
+              (if count > 1 then
+                 [ seg Theme.muted (Printf.sprintf " × %d" count) ]
+               else []));
           ];
       ]
   in
@@ -90,7 +90,9 @@ let repeat s n = String.concat "" (List.init (max 0 n) (fun _ -> s))
 let seam label =
   let width = 78 in
   let label = "  " ^ label ^ "  " in
-  let label_width = Matrix.Text.measure ~width_method:`Unicode ~tab_width:2 label in
+  let label_width =
+    Matrix.Text.measure ~width_method:`Unicode ~tab_width:2 label
+  in
   let remaining = max 0 (width - label_width) in
   let left = remaining / 2 in
   let right = remaining - left in
@@ -122,7 +124,9 @@ let fact_segs = function
 
 let data ~source ~facts ~atom ~disclosable =
   let sep = seg Theme.muted Theme.separator in
-  let head = [ seg Theme.muted (Theme.watcher ^ " "); seg Theme.muted source ] in
+  let head =
+    [ seg Theme.muted (Theme.watcher ^ " "); seg Theme.muted source ]
+  in
   let facts = List.concat_map (fun f -> sep :: fact_segs f) facts in
   let atom =
     match atom with None -> [] | Some a -> [ sep; seg Theme.atom a ]

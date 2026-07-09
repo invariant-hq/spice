@@ -12,8 +12,8 @@
     The header must be empty or a YAML mapping. Mapping values may use the full
     YAML language so documents written for other agents parse rather than error;
     Spice itself only reads YAML string nodes. A non-string value under a key is
-    visible in {!keys} but reads as [None] from {!string}; callers
-    distinguish "absent" from "present but not a string" with {!keys}.
+    visible in {!keys} but reads as [None] from {!string}; callers distinguish
+    "absent" from "present but not a string" with {!keys}.
 
     Parsing splits bytes and never normalizes the body: the body is the exact
     byte suffix following the closing fence line. *)

@@ -71,12 +71,10 @@ let session_document_path ~root_path id =
 
 let session_json id =
   Printf.sprintf
-    "{\"version\":1,\"id\":%S,\"metadata\":{\"status\":\"active\",\
-     \"cwd\":\"/workspace\",\"created_at\":1,\"updated_at\":1},\"events\":[]}\n"
+    "{\"version\":1,\"id\":%S,\"metadata\":{\"status\":\"active\",\"cwd\":\"/workspace\",\"created_at\":1,\"updated_at\":1},\"events\":[]}\n"
     id
 
-let doc_id document =
-  Session.Id.to_string (Store.Document.id document)
+let doc_id document = Session.Id.to_string (Store.Document.id document)
 
 let listed_ids result =
   let documents, _corrupt = ok_or_fail result in
@@ -142,7 +140,8 @@ let save_after_removed_document_is_not_found () =
   let path = session_document_path ~root_path "doc" in
   Eio.Path.unlink path;
   let session =
-    Session.set_title (Some "should-not-return") (Store.Document.session document)
+    Session.set_title (Some "should-not-return")
+      (Store.Document.session document)
   in
   match Store.save store document session with
   | Error (Store.Error.Not_found id) ->

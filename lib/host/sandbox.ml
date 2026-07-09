@@ -65,7 +65,6 @@ module Network = struct
   type t = Restricted | Enabled
 
   let all = [ Restricted; Enabled ]
-
   let to_string = function Restricted -> "restricted" | Enabled -> "enabled"
 
   let of_string = function
@@ -254,7 +253,8 @@ let abs_of_config_path ~env spelling =
     if String.equal spelling "~" then env "HOME"
     else if String.length spelling >= 2 && String.sub spelling 0 2 = "~/" then
       match env "HOME" with
-      | Some home -> Some (home ^ String.sub spelling 1 (String.length spelling - 1))
+      | Some home ->
+          Some (home ^ String.sub spelling 1 (String.length spelling - 1))
       | None -> None
     else Some spelling
   in
@@ -292,7 +292,8 @@ let is_dune_project workspace =
    dune project. Kept small and explicit; new ecosystems are added by decision,
    not by pattern. *)
 let toolchain_cache_roots ~env ~workspace =
-  if is_dune_project workspace then Option.to_list (dune_cache_root ~env) else []
+  if is_dune_project workspace then Option.to_list (dune_cache_root ~env)
+  else []
 
 let is_linux () =
   String.equal Sys.os_type "Unix" && Sys.file_exists "/proc/sys/kernel/ostype"

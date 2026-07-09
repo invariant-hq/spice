@@ -119,7 +119,10 @@ let config_facts config =
   let groups =
     List.map
       (fun (title, entries) ->
-        { Settings_screen.Config.title; rows = List.map (config_row_of config) entries })
+        {
+          Settings_screen.Config.title;
+          rows = List.map (config_row_of config) entries;
+        })
       config_groups_spec
   in
   { Settings_screen.Config.groups; sources = config_sources config }
@@ -156,7 +159,7 @@ let account_line ~stdenv host provider =
           let id = Spice_llm.Provider.id provider in
           match Spice_account.phase account with
           | `Missing -> "not connected · /login"
-          | (`Blocked | `Unchecked | `Ready | `Degraded) as phase ->
+          | (`Blocked | `Unchecked | `Ready | `Degraded) as phase -> (
               let label = Spice_account.phase_to_string phase in
               let who =
                 match Spice_account.profile account with
@@ -170,7 +173,9 @@ let account_line ~stdenv host provider =
               (* A stored-but-rejected credential ([`Blocked]) needs re-auth, so
                  it carries the [/login] pointer the way [`Missing] does
                  (09-auth.md §States). *)
-              (match phase with `Blocked -> base ^ " · /login" | _ -> base)))
+              match phase with
+              | `Blocked -> base ^ " · /login"
+              | _ -> base)))
 
 let session_line = function
   | None -> "none"
@@ -193,7 +198,8 @@ let status_facts ~stdenv host config ~session ~model =
   in
   let permission =
     Spice_host.Permission.Preset.to_string
-      (Spice_host.Config.Permissions.mode (Spice_host.Config.permissions config))
+      (Spice_host.Config.Permissions.mode
+         (Spice_host.Config.permissions config))
   in
   let sandbox =
     match Spice_host.Config.Sandbox.mode (Spice_host.Config.sandbox config) with
@@ -264,7 +270,8 @@ let usage_facts ~session ~model =
         | None -> "cost unavailable"
       in
       {
-        Settings_screen.Usage.has_turns = metrics.Spice_session.Metrics.turns > 0;
+        Settings_screen.Usage.has_turns =
+          metrics.Spice_session.Metrics.turns > 0;
         model =
           (match model with Some m -> model_label m | None -> "unavailable");
         lanes;
@@ -284,13 +291,16 @@ let skill_row_of skill =
   in
   {
     Settings_screen.Skills.name =
-      Spice_host.Skills.Skill.Name.to_string (Spice_host.Skills.Skill.name skill);
+      Spice_host.Skills.Skill.Name.to_string
+        (Spice_host.Skills.Skill.name skill);
     state = Spice_host.Skills.Skill.state_string status;
     source =
       Spice_host.Skills.Skill.kind_string (Spice_host.Skills.Skill.kind skill);
     cost = Option.value (Spice_host.Skills.Skill.context_cost skill) ~default:0;
     enabled =
-      (match status with Spice_host.Skills.Skill.Active _ -> true | _ -> false);
+      (match status with
+      | Spice_host.Skills.Skill.Active _ -> true
+      | _ -> false);
     description;
   }
 

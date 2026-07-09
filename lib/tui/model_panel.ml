@@ -132,7 +132,10 @@ let move delta ready =
   match List.length (slots ready) with
   | 0 -> ready
   | count ->
-      { ready with selected = (((ready.selected + delta) mod count) + count) mod count }
+      {
+        ready with
+        selected = (((ready.selected + delta) mod count) + count) mod count;
+      }
 
 (* The effort a pick persists for a model: the panel's live effort when the model
    supports it, else [None] (follow the model default). Selecting the default
@@ -200,7 +203,8 @@ let pick ready =
       else
         ( Ready ready,
           Select
-            { selector = model.selector; effort = selected_effort ready model } )
+            { selector = model.selector; effort = selected_effort ready model }
+        )
 
 (* A digit jump-picks the nth visible slot (1-indexed) while the filter is empty,
    moving the selection without confirming — the effort is part of a model pick,
@@ -240,14 +244,16 @@ let update (Key k) t =
       | Panel.Action Panel.Left -> (Ready (adjust (-1) ready), Stay)
       | Panel.Action Panel.Right -> (Ready (adjust 1 ready), Stay)
       | Panel.Action Panel.Backspace ->
-          ( Ready (clamp { ready with filter = drop_last ready.filter; selected = 0 }),
+          ( Ready
+              (clamp
+                 { ready with filter = drop_last ready.filter; selected = 0 }),
             Stay )
       | Panel.Printable s -> narrow ready s
       | Panel.Digit d ->
           if String.equal ready.filter "" then jump ready d
           else narrow ready (string_of_int d)
-      | Panel.Action (Panel.Tab | Panel.Ctrl_d | Panel.Other) -> (Ready ready, Stay)
-      )
+      | Panel.Action (Panel.Tab | Panel.Ctrl_d | Panel.Other) ->
+          (Ready ready, Stay))
 
 (* Glyphs the panel needs that {!Theme} does not yet carry (contract gap reported
    upstream): the current-item check and the reasoning-effort intensity ramp
@@ -258,12 +264,9 @@ let effort_low = "○"
 let effort_medium = "◐"
 let effort_high = "●"
 let effort_max = "◉"
-
 let default_style = Ansi.Style.default
 let hidden = { x = Overflow.Hidden; y = Overflow.Hidden }
-
-let blank_row =
-  box ~flex_shrink:0. ~size:{ width = pct 100; height = px 1 } []
+let blank_row = box ~flex_shrink:0. ~size:{ width = pct 100; height = px 1 } []
 
 let muted_line s =
   box ~flex_shrink:0. ~padding:(padding_lrtb 2 2 0 0)
@@ -291,14 +294,19 @@ let utf8_char_len c =
 
 let column_count s =
   let n = String.length s in
-  let rec loop i acc = if i >= n then acc else loop (i + utf8_char_len s.[i]) (acc + 1) in
+  let rec loop i acc =
+    if i >= n then acc else loop (i + utf8_char_len s.[i]) (acc + 1)
+  in
   loop 0 0
 
 let truncate_cols ~cols s =
   if cols <= 0 then ""
   else if column_count s <= cols then s
   else
-    let rec take i c = if i >= String.length s || c >= cols - 1 then i else take (i + utf8_char_len s.[i]) (c + 1) in
+    let rec take i c =
+      if i >= String.length s || c >= cols - 1 then i
+      else take (i + utf8_char_len s.[i]) (c + 1)
+    in
     String.sub s 0 (take 0 0) ^ "…"
 
 let label_cap = 24
@@ -313,9 +321,7 @@ let cursor_cols = 2
    tint so the whole line reads as the selection. *)
 let model_row ~width ~selected ~mark_current slot =
   let model = slot.model in
-  let label =
-    if slot.alias then "Default (recommended)" else model.name
-  in
+  let label = if slot.alias then "Default (recommended)" else model.name in
   let label = truncate_cols ~cols:label_cap label in
   let label_style =
     if model.locked then Theme.muted
@@ -330,9 +336,12 @@ let model_row ~width ~selected ~mark_current slot =
     else if slot.alias then model.name
     else model.detail
   in
-  let is_current = (mark_current || slot.alias) && model.is_current && not model.locked in
+  let is_current =
+    (mark_current || slot.alias) && model.is_current && not model.locked
+  in
   let trailing, trailing_cols =
-    if model.locked then ([ seg Theme.faint (Theme.separator ^ "log in to use") ], 15)
+    if model.locked then
+      ([ seg Theme.faint (Theme.separator ^ "log in to use") ], 15)
     else if is_current then ([ seg Theme.success (" " ^ check) ], 2)
     else ([], 0)
   in
@@ -397,10 +406,15 @@ let effort_line ready model =
   | [] ->
       box ~flex_shrink:0. ~overflow:hidden ~padding:(padding_lrtb 2 2 0 0)
         ~size:{ width = pct 100; height = px 1 }
-        [ seg Theme.muted (effort_low ^ " Effort not supported for " ^ model.name) ]
+        [
+          seg Theme.muted
+            (effort_low ^ " Effort not supported for " ^ model.name);
+        ]
   | _ ->
       let effort = current_level ready model in
-      let is_default = Option.equal ( = ) model.default_reasoning (Some effort) in
+      let is_default =
+        Option.equal ( = ) model.default_reasoning (Some effort)
+      in
       let glyph = effort_glyph effort in
       let glyph_style =
         if String.equal glyph effort_low then Theme.muted else Theme.accent
@@ -451,13 +465,16 @@ let list_rows ~width ready =
     | (index, slot) :: rest ->
         let headers =
           if slot.alias then []
-          else if Option.equal String.equal prev (Some slot.model.provider_title)
+          else if
+            Option.equal String.equal prev (Some slot.model.provider_title)
           then []
           else
             let blank = if group_started then [ blank_row ] else [] in
             blank @ [ group_header slot.model.provider_title ]
         in
-        let prev = if slot.alias then prev else Some slot.model.provider_title in
+        let prev =
+          if slot.alias then prev else Some slot.model.provider_title
+        in
         let group_started = group_started || not slot.alias in
         let y = y + List.length headers in
         let selected_y =
@@ -485,8 +502,7 @@ let list_block ~width ~rows ready =
     rendered |> List.filteri (fun i _ -> i >= start && i < start + length)
   in
   let above =
-    if start > 0 then
-      [ muted_line ("↑ " ^ string_of_int start ^ " more") ]
+    if start > 0 then [ muted_line ("↑ " ^ string_of_int start ^ " more") ]
     else []
   in
   let below =
@@ -503,22 +519,27 @@ let content ~width ~rows t =
   | Ready ready -> (
       match slots ready with
       | [] ->
-          if String.equal ready.filter "" then [ muted_line "No models available." ]
+          if String.equal ready.filter "" then
+            [ muted_line "No models available." ]
           else [ muted_line "No matching models." ]
-      | slots ->
+      | slots -> (
           let selected =
-            List.nth_opt slots (max 0 (min ready.selected (List.length slots - 1)))
+            List.nth_opt slots
+              (max 0 (min ready.selected (List.length slots - 1)))
           in
           list_block ~width ~rows ready
           @
           match selected with
           | Some { model; _ } -> [ blank_row; effort_line ready model ]
-          | None -> [])
+          | None -> []))
 
 let view ~frame ~width ~rows t =
   let filter =
     match t with Loading | Failed _ -> "" | Ready ready -> ready.filter
   in
   Panel.view ~frame ~name:"model" ~filter ~width
-    ~hint:[ "↵ set default"; "←→ effort"; "type to filter"; "↑↓ select"; "esc close" ]
+    ~hint:
+      [
+        "↵ set default"; "←→ effort"; "type to filter"; "↑↓ select"; "esc close";
+      ]
     ~content:(content ~width ~rows t)

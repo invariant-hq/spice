@@ -444,8 +444,7 @@ module Device = struct
     match (scheme, Uri.host uri) with
     | (Some "http" | Some "https"), Some _ -> Ok uri
     | _ ->
-        Error
-          (malformed ~field ~raw:json "expected absolute http or https URI")
+        Error (malformed ~field ~raw:json "expected absolute http or https URI")
 
   let parse json =
     match Error.parse_json json with
@@ -459,7 +458,8 @@ module Device = struct
             Json.required "verification_uri" parse_verification_uri json
           in
           let* verification_uri_complete =
-            Json.optional "verification_uri_complete" parse_verification_uri json
+            Json.optional "verification_uri_complete" parse_verification_uri
+              json
           in
           let* expires_in =
             Json.required "expires_in" Json.non_negative_int json

@@ -508,9 +508,7 @@ let select target small raw =
   Cli_config.set target key raw
 
 let list_term =
-  let json =
-    Cli_arg.json_flag ()
-  in
+  let json = Cli_arg.json_flag () in
   let provider =
     CArg.(
       value
@@ -525,9 +523,7 @@ let list_term =
   CTerm.(const list $ json $ provider $ all)
 
 let show_command =
-  let json =
-    Cli_arg.json_flag ()
-  in
+  let json = Cli_arg.json_flag () in
   let model =
     CArg.(required & pos 0 (some string) None & info [] ~docv:"MODEL")
   in
@@ -536,9 +532,7 @@ let show_command =
     (exit_term CTerm.(const show $ json $ model))
 
 let current_command =
-  let json =
-    Cli_arg.json_flag ()
-  in
+  let json = Cli_arg.json_flag () in
   CCmd.v
     (CCmd.info "current"
        ~doc:

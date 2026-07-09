@@ -279,11 +279,8 @@ let doctor json cwd =
   else List.iter print_check checks;
   if failed then Failed else Success
 
-let json_flag =
-  Cli_arg.json_flag ()
-
-let cwd =
-  Cli_arg.cwd ~short:true ()
+let json_flag = Cli_arg.json_flag ()
+let cwd = Cli_arg.cwd ~short:true ()
 
 let command =
   let man =

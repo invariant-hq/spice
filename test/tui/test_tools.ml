@@ -46,7 +46,8 @@ let json_strings texts =
 let tool_call_line ~id ~call_id ~name ~arguments ~body_contains =
   Printf.sprintf
     {|{"expect":{"request_line":"POST /v1/responses HTTP/1.1","body_contains":[%s]},"response":{"id":%S,"status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-%s","call_id":%S,"name":%S,"arguments":%S}]}}|}
-    (json_strings body_contains) id call_id call_id name arguments
+    (json_strings body_contains)
+    id call_id call_id name arguments
 
 (* An [ask_user] host-tool call: the model asks a question with no assistant
    text, so the host suspends the turn on the question boundary and a dialog
@@ -55,7 +56,8 @@ let question_line ~id ~call_id ~body_contains ~question =
   let arguments = Printf.sprintf {|{"question":%S}|} question in
   Printf.sprintf
     {|{"expect":{"request_line":"POST /v1/responses HTTP/1.1","body_contains":[%s]},"response":{"id":%S,"status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-question","call_id":%S,"name":"ask_user","arguments":%S}]}}|}
-    (json_strings body_contains) id call_id arguments
+    (json_strings body_contains)
+    id call_id arguments
 
 (* The follow-up step: the model's request now carries the tool result, so it
    matches on [function_call_output] and settles the answer. *)
@@ -86,11 +88,15 @@ let%expect_test "an edit renders a real inline diff" =
   configure_edits project;
   Project.write project "notes.ml" "let x = 1\nlet y = 2\n";
   let call =
-    tool_call_line ~id:"resp-update-call" ~call_id:"call-update" ~name:"edit_file"
-      ~arguments:{|{"path":"notes.ml","old_string":"let y = 2","new_string":"let y = 3"}|}
+    tool_call_line ~id:"resp-update-call" ~call_id:"call-update"
+      ~name:"edit_file"
+      ~arguments:
+        {|{"path":"notes.ml","old_string":"let y = 2","new_string":"let y = 3"}|}
       ~body_contains:[ "bump" ]
   in
-  let final = answer_line ~id:"resp-update-final" ~answer:"Bumped y to three." in
+  let final =
+    answer_line ~id:"resp-update-final" ~answer:"Bumped y to three."
+  in
   Provider.with_responses project [ call; final ] @@ fun provider ->
   run project ~provider ~env:edit_env ~rows:24 ~cols:80 @@ fun t ->
   Term.wait t (Screen.has "dune:");
@@ -123,10 +129,13 @@ let%expect_test "a write shows a capped content preview" =
   let call =
     tool_call_line ~id:"resp-create-call" ~call_id:"call-create"
       ~name:"write_file"
-      ~arguments:(Printf.sprintf {|{"path":"fresh.txt","contents":%S}|} contents)
+      ~arguments:
+        (Printf.sprintf {|{"path":"fresh.txt","contents":%S}|} contents)
       ~body_contains:[ "scaffold" ]
   in
-  let final = answer_line ~id:"resp-create-final" ~answer:"Wrote the scaffold." in
+  let final =
+    answer_line ~id:"resp-create-final" ~answer:"Wrote the scaffold."
+  in
   Provider.with_responses project [ call; final ] @@ fun provider ->
   run project ~provider ~env:edit_env ~rows:24 ~cols:80 @@ fun t ->
   Term.wait t (Screen.has "dune:");
@@ -193,7 +202,8 @@ let%expect_test "a failed edit renders no diff" =
   let call =
     tool_call_line ~id:"resp-failed-call" ~call_id:"call-failed"
       ~name:"edit_file"
-      ~arguments:{|{"path":"src.ml","old_string":"GAMMA_ABSENT","new_string":"REPLACEMENT_TEXT"}|}
+      ~arguments:
+        {|{"path":"src.ml","old_string":"GAMMA_ABSENT","new_string":"REPLACEMENT_TEXT"}|}
       ~body_contains:[ "rename" ]
   in
   let final =
@@ -237,14 +247,16 @@ let%expect_test "todo boards land at their call sites" =
   in
   let read =
     tool_call_line ~id:"r-tr" ~call_id:"c-tr" ~name:"read_file"
-      ~arguments:{|{"path":"data.txt"}|} ~body_contains:[ "function_call_output" ]
+      ~arguments:{|{"path":"data.txt"}|}
+      ~body_contains:[ "function_call_output" ]
   in
   let todo2 =
     tool_call_line ~id:"r-t2" ~call_id:"c-t2" ~name:"todo_write"
       ~arguments:board_late ~body_contains:[ "function_call_output" ]
   in
   let final = answer_line ~id:"r-tf" ~answer:"Planned and inspected." in
-  Provider.with_responses project [ todo1; read; todo2; final ] @@ fun provider ->
+  Provider.with_responses project [ todo1; read; todo2; final ]
+  @@ fun provider ->
   run project ~provider ~env:reduced_motion ~rows:30 ~cols:80 @@ fun t ->
   Term.wait t (Screen.has "dune:");
   Term.send t "plan the work";
@@ -347,7 +359,8 @@ let%expect_test "a failed shell humanizes the exit and shows the output tail" =
   let cmd = {|for i in 1 2 3 4 5 6 7; do echo OUT$i; done; exit 3|} in
   let call =
     tool_call_line ~id:"r-sf" ~call_id:"c-sf" ~name:"shell"
-      ~arguments:(Printf.sprintf {|{"command":%S}|} cmd) ~body_contains:[ "fail it" ]
+      ~arguments:(Printf.sprintf {|{"command":%S}|} cmd)
+      ~body_contains:[ "fail it" ]
   in
   let final = answer_line ~id:"r-sf-final" ~answer:"The command failed." in
   Provider.with_responses project [ call; final ] @@ fun provider ->
@@ -368,7 +381,8 @@ let%expect_test "a failed shell humanizes the exit and shows the output tail" =
     (Screen.lacks "command exited with status" s);
   print_fact "the last output line shows" (Screen.has "OUT7" s);
   print_fact "an earlier line is behind the overflow" (Screen.lacks "OUT1" s);
-  print_fact "the overflow row counts the hidden lines" (Screen.has "+2 lines" s);
+  print_fact "the overflow row counts the hidden lines"
+    (Screen.has "+2 lines" s);
   [%expect
     {|
     exit code is humanized: true
@@ -388,7 +402,8 @@ let%expect_test "a long failure summary wraps instead of truncating" =
   in
   let call =
     tool_call_line ~id:"r-wrap" ~call_id:"c-wrap" ~name:"read_file"
-      ~arguments:(Printf.sprintf {|{"path":%S}|} path) ~body_contains:[ "read it" ]
+      ~arguments:(Printf.sprintf {|{"path":%S}|} path)
+      ~body_contains:[ "read it" ]
   in
   let final = answer_line ~id:"r-wrap-final" ~answer:"The file was missing." in
   Provider.with_responses project [ call; final ] @@ fun provider ->
@@ -452,8 +467,8 @@ let%expect_test "an answered question records the question and answer" =
    subprocess and no Dune RPC handshake — so it is drivable in the pty harness
    where those hang. Two [List.map __ __] applications in one seeded file give a
    deterministic [2 matches across 1 file]; [__] matches any expression. *)
-let%expect_test "ocaml_search_expressions renders a Search verb with real counts"
-    =
+let%expect_test
+    "ocaml_search_expressions renders a Search verb with real counts" =
   Project.with_temp "next-tools-searchexpr" @@ fun project ->
   Project.write project "probe.ml"
     "let a = List.map succ [ 1; 2; 3 ]\nlet b = List.map pred [ 4; 5 ]\n";
@@ -462,7 +477,9 @@ let%expect_test "ocaml_search_expressions renders a Search verb with real counts
       ~arguments:{|{"pattern":"List.map __ __","paths":["probe.ml"]}|}
       ~body_contains:[ "search it" ]
   in
-  let final = answer_line ~id:"r-se-final" ~answer:"Searched the expressions." in
+  let final =
+    answer_line ~id:"r-se-final" ~answer:"Searched the expressions."
+  in
   Provider.with_responses project [ call; final ] @@ fun provider ->
   run project ~provider ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
   Term.wait t (Screen.has "dune:");
@@ -472,7 +489,8 @@ let%expect_test "ocaml_search_expressions renders a Search verb with real counts
   Term.wait t (fun s ->
       Screen.has "Searched the expressions." s && Screen.has "? for shortcuts" s);
   let s = Term.screen t in
-  print_fact "the Search verb names the pattern" (Screen.has "Search(List.map" s);
+  print_fact "the Search verb names the pattern"
+    (Screen.has "Search(List.map" s);
   print_fact "the summary counts the real matches"
     (Screen.has "Found 2 matches" s);
   print_fact "the summary counts the files" (Screen.has "1 file" s);

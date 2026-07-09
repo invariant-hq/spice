@@ -32,8 +32,8 @@ module Env = Env
     This module is for sandbox status and explain surfaces that need to describe
     the filtering policy without spawning. Common spawn callers should use
     {!spawn}; the resulting {!Spawn.t} carries the filtered environment and
-    sandbox evidence for the actual command. Call {!Env.partition} directly
-    when a diagnostic surface needs stripped names. *)
+    sandbox evidence for the actual command. Call {!Env.partition} directly when
+    a diagnostic surface needs stripped names. *)
 
 module Evidence = Evidence
 (** Sandbox enforcement evidence. *)

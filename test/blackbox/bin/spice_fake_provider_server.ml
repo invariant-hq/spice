@@ -117,7 +117,8 @@ let script_item_of_json json =
   | None -> (
       match object_field "response" json with
       | None -> { expect = None; delay_ms; stream_delay_ms; reply = Sse json }
-      | Some response -> { expect; delay_ms; stream_delay_ms; reply = Sse response })
+      | Some response ->
+          { expect; delay_ms; stream_delay_ms; reply = Sse response })
 
 let read_lines path =
   let input = open_in_bin path in
@@ -266,29 +267,29 @@ let response_fragments response =
   | Some output ->
       json_array output
       |> List.concat_map (fun item ->
-             match string_field "output item" "type" item with
-             | Some "message" -> (
-                 match object_field "content" item with
-                 | None -> []
-                 | Some content ->
-                     json_array content
-                     |> List.filter_map (fun part ->
-                            match string_field "content part" "type" part with
-                            | Some "output_text" ->
-                                Option.map
-                                  (fun text -> Text text)
-                                  (string_field "content part" "text" part)
-                            | _ -> None))
-             | Some "reasoning" -> (
-                 match object_field "summary" item with
-                 | None -> []
-                 | Some summary ->
-                     json_array summary
-                     |> List.filter_map (fun part ->
-                            Option.map
-                              (fun text -> Reasoning text)
-                              (string_field "summary part" "text" part)))
-             | _ -> [])
+          match string_field "output item" "type" item with
+          | Some "message" -> (
+              match object_field "content" item with
+              | None -> []
+              | Some content ->
+                  json_array content
+                  |> List.filter_map (fun part ->
+                      match string_field "content part" "type" part with
+                      | Some "output_text" ->
+                          Option.map
+                            (fun text -> Text text)
+                            (string_field "content part" "text" part)
+                      | _ -> None))
+          | Some "reasoning" -> (
+              match object_field "summary" item with
+              | None -> []
+              | Some summary ->
+                  json_array summary
+                  |> List.filter_map (fun part ->
+                      Option.map
+                        (fun text -> Reasoning text)
+                        (string_field "summary part" "text" part)))
+          | _ -> [])
 
 (* Split [s] into up to three UTF-8-safe chunks so a single fragment streams as
    several deltas. A split never breaks a codepoint; boundaries are arbitrary
@@ -345,12 +346,12 @@ let sse_parts response =
   let deltas =
     response_fragments response
     |> List.concat_map (fun fragment ->
-           let name, text =
-             match fragment with
-             | Text text -> ("response.output_text.delta", text)
-             | Reasoning text -> ("response.reasoning_summary_text.delta", text)
-           in
-           List.map (sse_delta name) (chunk_text text))
+        let name, text =
+          match fragment with
+          | Text text -> ("response.output_text.delta", text)
+          | Reasoning text -> ("response.reasoning_summary_text.delta", text)
+        in
+        List.map (sse_delta name) (chunk_text text))
   in
   (String.concat "" deltas, sse_event response)
 
@@ -428,9 +429,7 @@ let send_reply client item =
       match item.stream_delay_ms with
       | None -> write_all client (http_response (deltas ^ terminal))
       | Some stream_delay_ms ->
-          let content_length =
-            String.length deltas + String.length terminal
-          in
+          let content_length = String.length deltas + String.length terminal in
           write_all client (http_head ~content_length () ^ deltas);
           Unix.sleepf (float_of_int stream_delay_ms /. 1000.);
           write_all client terminal)
@@ -452,7 +451,8 @@ let serve_ordered options socket items =
         (fun () ->
           let request = read_http_request client in
           Option.iter
-            (fun expectation -> check_expectation (index + 1) expectation request)
+            (fun expectation ->
+              check_expectation (index + 1) expectation request)
             item.expect;
           handle_client options client item ~arrival:(index + 1) request))
     items
@@ -472,7 +472,8 @@ let serve_unordered options socket items =
         match pending.(i) with
         | Some item
           when Option.fold ~none:true
-                 ~some:(fun expectation -> expectation_matches expectation request)
+                 ~some:(fun expectation ->
+                   expectation_matches expectation request)
                  item.expect ->
             Some (i, item)
         | Some _ | None -> loop (i + 1)

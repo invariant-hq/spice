@@ -268,6 +268,6 @@ module Subagent_run : sig
     (Spice_session.Id.t list, Error.t) result
   (** [children ~fs ~root] is every child session id with a run record, across
       all parents, from filenames alone — no run file is decoded. For callers
-      that need only the membership set, like the session picker's
-      hide-children filter. *)
+      that need only the membership set, like the session picker's hide-children
+      filter. *)
 end

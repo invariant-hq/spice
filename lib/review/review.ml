@@ -480,14 +480,12 @@ let file_unit_scopes_of_file file =
 let file_unit_scopes t ~path =
   Option.map file_unit_scopes_of_file (Feature.find_file t.feature ~path)
 
-let unit_scopes t = List.concat_map file_unit_scopes_of_file (Feature.files t.feature)
+let unit_scopes t =
+  List.concat_map file_unit_scopes_of_file (Feature.files t.feature)
 
 let files t = List.length (Feature.files t.feature)
-
 let units t = List.length (unit_scopes t)
-
-let reviewed_units t =
-  List.length (List.filter (is_reviewed t) (unit_scopes t))
+let reviewed_units t = List.length (List.filter (is_reviewed t) (unit_scopes t))
 
 let open_crs t =
   Array.fold_left

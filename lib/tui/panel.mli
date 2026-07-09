@@ -53,9 +53,9 @@ val classify : Matrix.Input.Key.event -> key
     otherwise. [ctrl+d] classifies as [Action Ctrl_d]; [ctrl+p]/[ctrl+n] are the
     chorded aliases for the arrows and classify as [Action Up]/[Action Down], as
     do [pageup]/[pagedown] (a short panel list steps rather than pages); any
-    other printable held with ctrl/alt/super, and any control character, classify
-    as [Action Other]. Shift is not a chord — a capital letter is {!Printable}.
-    Backspace and Delete both classify as [Action Backspace]. *)
+    other printable held with ctrl/alt/super, and any control character,
+    classify as [Action Other]. Shift is not a chord — a capital letter is
+    {!Printable}. Backspace and Delete both classify as [Action Backspace]. *)
 
 val view :
   frame:Mosaic.Ansi.Color.t ->

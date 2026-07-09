@@ -3,9 +3,8 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-(** The design language for the TUI: color roles, the glyph
-    vocabulary, and the brand marks (doc/ui-design/00-overview.md,
-    spec/08-brand.md).
+(** The design language for the TUI: color roles, the glyph vocabulary, and the
+    brand marks (doc/ui-design/00-overview.md, spec/08-brand.md).
 
     This is one flat constant vocabulary with no invariants, gathered in one
     place so the design language reads top to bottom. The heap in particular is
@@ -70,10 +69,10 @@ val color_hover_bg : Mosaic.Ansi.Color.t
 
 val color_overlay : Mosaic.Ansi.Color.t
 (** [color_overlay] is the opaque near-black backdrop a transient overlay paints
-    to occlude the content beneath it — the terminal-default color is transparent
-    (alpha 0), so an overlay that must hide what it covers fills with this
-    instead. It backs the app notice a screen overlays on its bottom row
-    (doc/plans/tui-next-review.md Appendix D). *)
+    to occlude the content beneath it — the terminal-default color is
+    transparent (alpha 0), so an overlay that must hide what it covers fills
+    with this instead. It backs the app notice a screen overlays on its bottom
+    row (doc/plans/tui-next-review.md Appendix D). *)
 
 val color_code_kw : Mosaic.Ansi.Color.t
 (** [color_code_kw] is the soft violet of keywords inside code fences. It and
@@ -171,8 +170,8 @@ val kind_file : string
 (** [kind_file] (["+"]) keys a file row in the unified [@] completion list. *)
 
 val kind_thread : string
-(** [kind_thread] (["*"]) keys an agent-thread row in the unified [@]
-    completion list. [◇] stays reserved for MCP resources. *)
+(** [kind_thread] (["*"]) keys an agent-thread row in the unified [@] completion
+    list. [◇] stays reserved for MCP resources. *)
 
 val own_answer : string
 (** [own_answer] (["✎"]) heads the permanent "type your own answer" row of a
@@ -263,21 +262,22 @@ val lockup : string list
     of its own. *)
 
 type pour_frame = {
-  grain : string;  (** The 3-column grain slot, drawn on row 1 above the mound. *)
+  grain : string;
+      (** The 3-column grain slot, drawn on row 1 above the mound. *)
   mound : string;  (** The 5-column mound (the heap region of row 2). *)
 }
 (** One heap-region frame of the pour: both rows, so the grain can appear and
-    vanish relative to the mound as a grain drops and lands (08-brand.md §Motion,
-    brand-preview.sh). *)
+    vanish relative to the mound as a grain drops and lands (08-brand.md
+    §Motion, brand-preview.sh). *)
 
 val pour_frames : pour_frame array
 (** [pour_frames] are the nine two-row renderings of the pour. A grain appears
     aloft, then vanishes as it lands and raises the mound one step: the mound
-    grows through the pinned keyframes ["     "], ["  ▂  "], [" ▂▄▂ "], ["▂▄▄▄▂"],
-    ["▂▄▆▄▂"] while the grain drops one grain at a time. [pour_frames.(8)] is the
-    lockup's rest — the grain settled to the right ({!grain_aloft}) over the full
-    {!heap} — so it matches {!lockup} byte-for-byte. A view renders one frame per
-    ~80–150ms tick. *)
+    grows through the pinned keyframes ["     "], ["  ▂  "], [" ▂▄▂ "],
+    ["▂▄▄▄▂"], ["▂▄▆▄▂"] while the grain drops one grain at a time.
+    [pour_frames.(8)] is the lockup's rest — the grain settled to the right
+    ({!grain_aloft}) over the full {!heap} — so it matches {!lockup}
+    byte-for-byte. A view renders one frame per ~80–150ms tick. *)
 
 val grain_aloft : string
 (** [grain_aloft] is the single falling grain ([·]): it drops through the pour

@@ -70,8 +70,7 @@ let user_marker_style =
 let user_block value =
   box ~flex_direction:Flex_direction.Row
     ~size:{ width = pct 100; height = auto }
-    ~background:Theme.color_user_bg
-    ~padding:(padding_lrtb 0 1 0 0)
+    ~background:Theme.color_user_bg ~padding:(padding_lrtb 0 1 0 0)
     [
       text ~style:user_marker_style ~wrap:`None ~flex_shrink:0. Theme.cursor;
       box ~flex_direction:Flex_direction.Column ~flex_grow:1. ~flex_shrink:1.
@@ -101,7 +100,9 @@ let reasoning ~expanded ~duration_s ~title ~body ~width =
           (* The head is one row (01-transcript.md §Reasoning): the title takes
              what is left after the label, its separator, and the [(ctrl+o)] hint,
              truncated with an ellipsis rather than overflowing off the row. *)
-          let dw s = Matrix.Text.measure ~width_method:`Unicode ~tab_width:2 s in
+          let dw s =
+            Matrix.Text.measure ~width_method:`Unicode ~tab_width:2 s
+          in
           let budget =
             width - dw label - dw Theme.separator
             - if has_hint then dw "  (ctrl+o)" else 0

@@ -16,7 +16,6 @@ module Error = struct
 end
 
 type field_value = String of string | Other
-
 type t = { fields : (string * field_value) list; body : string }
 
 (* [line_end doc start] is the index of the '\n' ending the line starting at

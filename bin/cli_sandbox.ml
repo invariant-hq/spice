@@ -304,16 +304,14 @@ let explain json overrides cwd =
 
 (* Commands *)
 
-let json_flag =
-  Cli_arg.json_flag ()
+let json_flag = Cli_arg.json_flag ()
 
 let verbose_flag =
   CArg.(
     value & flag
     & info [ "verbose" ] ~doc:"Include diagnostics and derived facts.")
 
-let cwd_arg =
-  Cli_arg.cwd ()
+let cwd_arg = Cli_arg.cwd ()
 
 let status_command =
   CCmd.v

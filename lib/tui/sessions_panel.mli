@@ -8,8 +8,8 @@
     type-to-filter, digit jump-pick, [↑↓] selection, esc closes.
 
     A mini-Elm surface (doc/plans/tui-next-surfaces.md): the shell holds [t],
-    routes keys through {!key}, folds the resulting {!msg} with {!update} — which
-    yields the next [t] and an {!event} the shell interprets — and renders
+    routes keys through {!key}, folds the resulting {!msg} with {!update} —
+    which yields the next [t] and an {!event} the shell interprets — and renders
     {!view}. The panel never reads the shell's draft, config, clock, or the
     host; the runtime loads its rows and delivers them with {!loaded}, ages
     already formatted, or reports a transient store failure with {!failed}.
@@ -25,8 +25,8 @@ type row = {
       (** The display title ({!Spice_protocol.Session_summary.display_title}),
           never a raw id. *)
   age : string;
-      (** The relative age of the last update, formatted by the runtime
-          (mirrors {!Home.Brief.relative_age}). *)
+      (** The relative age of the last update, formatted by the runtime (mirrors
+          {!Home.Brief.relative_age}). *)
   search_key : string;
       (** The filter key ({!Spice_protocol.Session_summary.search_key}): id,
           title, preview, and cwd, matched case-insensitively. *)
@@ -47,12 +47,12 @@ type event =
   | Close  (** Esc: close and restore the composer unchanged. *)
   | Resume of Spice_session.Id.t
       (** A pick ([↵] on the selection, or a digit jump-pick while the filter is
-          empty): resume that session — the shell attaches its {!Spice_host.Live}
-          and replays it into the chat transcript. *)
+          empty): resume that session — the shell attaches its
+          {!Spice_host.Live} and replays it into the chat transcript. *)
   | Promote of { filter : string; select : Spice_session.Id.t option }
-      (** [tab]: promote to the browse screen, carrying the current [filter] text
-          and the [select]ed session so the screen opens where the panel left off
-          (03-ia §Sessions). *)
+      (** [tab]: promote to the browse screen, carrying the current [filter]
+          text and the [select]ed session so the screen opens where the panel
+          left off (03-ia §Sessions). *)
 
 val loading : t
 (** [loading] is the panel just opened, before its rows arrive: {!view} renders

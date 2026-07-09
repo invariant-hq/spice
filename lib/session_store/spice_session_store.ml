@@ -105,9 +105,7 @@ let io_exception path = function
   | exn -> Error (Error.Io { path; message = Printexc.to_string exn })
 
 let io path f =
-  match f () with
-  | value -> Ok value
-  | exception exn -> io_exception path exn
+  match f () with value -> Ok value | exception exn -> io_exception path exn
 
 let fs_path t path = Eio.Path.( / ) t.fs path
 let native_path t path = Eio.Path.native_exn (fs_path t path)
@@ -286,18 +284,18 @@ let load store id =
   | Ok `Missing -> Error (Error.Not_found id)
   | Ok (`Directory | `Other) -> non_file_document path
   | Ok `File ->
-    let* document = load_path store path in
-    let actual = Spice_session.id (Document.session document) in
-    if Spice_session.Id.equal id actual then Ok document
-    else
-      Error
-        (Error.Corrupt
-           {
-             path;
-             message =
-               Format.asprintf "document id %a does not match requested id %a"
-                 Spice_session.Id.pp actual Spice_session.Id.pp id;
-           })
+      let* document = load_path store path in
+      let actual = Spice_session.id (Document.session document) in
+      if Spice_session.Id.equal id actual then Ok document
+      else
+        Error
+          (Error.Corrupt
+             {
+               path;
+               message =
+                 Format.asprintf "document id %a does not match requested id %a"
+                   Spice_session.Id.pp actual Spice_session.Id.pp id;
+             })
 
 let fsync_path store path =
   match native_path store path with
@@ -344,10 +342,10 @@ let create store session =
       | Ok `File -> Error (Error.Already_exists id)
       | Ok (`Directory | `Other) -> non_file_document path
       | Ok `Missing ->
-        let* text = encode_session session in
-        let* () = write_document store path text in
-        Log.debug (fun m -> m "session created id=%a" Spice_session.Id.pp id);
-        Ok (Document.make ~session ~revision:(revision_of_bytes text)))
+          let* text = encode_session session in
+          let* () = write_document store path text in
+          Log.debug (fun m -> m "session created id=%a" Spice_session.Id.pp id);
+          Ok (Document.make ~session ~revision:(revision_of_bytes text)))
 
 let check_document_session document session =
   let document_id = Document.id document in
@@ -368,19 +366,20 @@ let save store document session =
       | Ok `Missing -> Error (Error.Not_found id)
       | Ok (`Directory | `Other) -> non_file_document path
       | Ok `File ->
-        let* actual = load_path store path |> Result.map Document.revision in
-        let expected = Document.revision document in
-        if not (Spice_session.Revision.equal expected actual) then
-          Error (Error.Conflict { id; expected; actual })
-        else
-          let* session = touch_for_save store path session in
-          let* text = encode_session session in
-          let* () = write_document store path text in
-          Log.debug (fun m ->
-              m "session saved id=%a status=%a" Spice_session.Id.pp id
-                Spice_session.Metadata.Status.pp
-                (Spice_session.Metadata.status (Spice_session.metadata session)));
-          Ok (Document.make ~session ~revision:(revision_of_bytes text)))
+          let* actual = load_path store path |> Result.map Document.revision in
+          let expected = Document.revision document in
+          if not (Spice_session.Revision.equal expected actual) then
+            Error (Error.Conflict { id; expected; actual })
+          else
+            let* session = touch_for_save store path session in
+            let* text = encode_session session in
+            let* () = write_document store path text in
+            Log.debug (fun m ->
+                m "session saved id=%a status=%a" Spice_session.Id.pp id
+                  Spice_session.Metadata.Status.pp
+                  (Spice_session.Metadata.status
+                     (Spice_session.metadata session)));
+            Ok (Document.make ~session ~revision:(revision_of_bytes text)))
 
 let append store document events =
   match Spice_session.Log.append_all events (Document.session document) with
@@ -503,7 +502,7 @@ let list store ?(include_archived = false) ?(include_deleted = false) ?filter
                           let actual =
                             Spice_session.id (Document.session document)
                           in
-                          if not (Spice_session.Id.equal expected actual) then
+                          if not (Spice_session.Id.equal expected actual) then (
                             let message =
                               Format.asprintf
                                 "document id %a does not match store path id %a"
@@ -516,7 +515,7 @@ let list store ?(include_archived = false) ?(include_deleted = false) ?filter
                             collect documents
                               (Corrupt.make ~id:expected ~path ~message ()
                               :: corrupt)
-                              names
+                              names)
                           else if include_candidate document then
                             collect (document :: documents) corrupt names
                           else collect documents corrupt names)))

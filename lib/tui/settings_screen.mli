@@ -8,18 +8,20 @@
     only [config] and [skills] interactive.
 
     A mini-Elm surface (doc/plans/tui-next-surfaces.md): the shell holds {!t},
-    routes keys through {!key}, folds the resulting {!msg} with {!update} — which
-    yields the next {!t} and an {!event} the shell interprets — and renders
-    {!view} through {!Screen.view}. The screen reads no config, clock, host, or
-    environment: every host fact arrives as the {!facts} record the runtime
-    ({!Settings_facts}) assembles from the host views and re-assembles after each
-    write, so the screen reflects reality rather than optimistic state.
+    routes keys through {!key}, folds the resulting {!msg} with {!update} —
+    which yields the next {!t} and an {!event} the shell interprets — and
+    renders {!view} through {!Screen.view}. The screen reads no config, clock,
+    host, or environment: every host fact arrives as the {!facts} record the
+    runtime ({!Settings_facts}) assembles from the host views and re-assembles
+    after each write, so the screen reflects reality rather than optimistic
+    state.
 
     Editing outcomes are carried out host-side: {!Write_field} persists one
     config field through [Config_file.edit], {!Toggle_skill} flips a skill's
-    membership in [skills.disabled], and both reload the facts. {!Open_model_panel}
-    and {!Copy} are the two non-config outcomes — the model row defers to the
-    model panel (a later iteration), and the status tab copies the session id. *)
+    membership in [skills.disabled], and both reload the facts.
+    {!Open_model_panel} and {!Copy} are the two non-config outcomes — the model
+    row defers to the model panel (a later iteration), and the status tab copies
+    the session id. *)
 
 (** The four tabs. Selection, filter, and sort are per-tab; switching resets the
     filter and the inline editing state. *)
@@ -38,10 +40,11 @@ module Config : sig
   type value =
     | Enum of { current : string; options : string list }
         (** A closed-vocabulary field ([Field.values] is [Some]); [current] is
-            the effective spelling, [options] the allowed set. Edited through the
-            inline [●] radio. *)
+            the effective spelling, [options] the allowed set. Edited through
+            the inline [●] radio. *)
     | Toggle of bool  (** A boolean field, toggled on [↵]. *)
-    | Text of string  (** An open-shape field, edited through the inline input. *)
+    | Text of string
+        (** An open-shape field, edited through the inline input. *)
     | Managed of string
         (** The [model] row: [current] is the configured selector; [↵] opens the
             model panel rather than editing in place. *)
@@ -53,14 +56,15 @@ module Config : sig
     label : string;  (** The human label shown in the name column. *)
     value : value;
     is_default : bool;
-        (** Whether the effective value comes from no configured layer. A default
-            value renders muted; a changed one renders in the default foreground
-            (03-ia §Settings). *)
+        (** Whether the effective value comes from no configured layer. A
+            default value renders muted; a changed one renders in the default
+            foreground (03-ia §Settings). *)
     danger : string option;
-        (** An advisory in-place caution for a dangerous value ([bypass —
-            approvals skipped], [danger-full-access — no filesystem
-            confinement], [sandbox required off]); never a confirmation prompt
-            (those are dialogs, 07). *)
+        (** An advisory in-place caution for a dangerous value
+            ([bypass — approvals skipped],
+            [danger-full-access — no filesystem confinement],
+            [sandbox required off]); never a confirmation prompt (those are
+            dialogs, 07). *)
   }
   (** One config row, assembled from the {!Field} inventory, grouped into
       families. *)
@@ -71,8 +75,8 @@ module Config : sig
   type t = {
     groups : group list;
     sources : string;
-        (** The rule's right label: the config sources present, joined ([user +
-            project]); [""] when only defaults resolve. *)
+        (** The rule's right label: the config sources present, joined
+            ([user + project]); [""] when only defaults resolve. *)
   }
 end
 
@@ -94,9 +98,10 @@ module Usage : sig
 
   type t = {
     has_turns : bool;
-        (** Whether the session has run a turn; [false] renders the [no turns
-            yet] empty state. *)
-    model : string;  (** The session's model label, heading the per-model row. *)
+        (** Whether the session has run a turn; [false] renders the
+            [no turns yet] empty state. *)
+    model : string;
+        (** The session's model label, heading the per-model row. *)
     lanes : lane list;
     cost : string;
         (** The formatted session cost, or [cost unavailable] when the model has
@@ -130,8 +135,8 @@ module Skills : sig
         (** The enabled context budget summed for the header ([~N tok]): the
             catalog's standing cost plus every active skill's. *)
     available : bool;
-        (** Whether the skills surface exists; [false] renders the [skills are
-            disabled] empty state. *)
+        (** Whether the skills surface exists; [false] renders the
+            [skills are disabled] empty state. *)
   }
 end
 
@@ -141,15 +146,15 @@ type facts = {
   usage : Usage.t;
   skills : Skills.t;
 }
-(** Everything the four tabs draw, assembled once per open and re-assembled after
-    each write. *)
+(** Everything the four tabs draw, assembled once per open and re-assembled
+    after each write. *)
 
 (** {1:surface The surface} *)
 
 type t
-(** The screen state: loading, a load-error line, or loaded facts with the active
-    tab, the per-tab selection and filter, the skills sort, and any inline
-    editing affordance. *)
+(** The screen state: loading, a load-error line, or loaded facts with the
+    active tab, the per-tab selection and filter, the skills sort, and any
+    inline editing affordance. *)
 
 type msg
 (** A key routed to the screen, opaque; produced by {!key}. *)
@@ -158,7 +163,8 @@ type msg
     mutation is carried out host-side and reflected by reloading the facts. *)
 type event =
   | Stay  (** Remain open with the updated state. *)
-  | Close  (** Esc with the filter and editing closed: return to the prior view. *)
+  | Close
+      (** Esc with the filter and editing closed: return to the prior view. *)
   | Open_model_panel
       (** [↵] on the model row: the shell flashes the honest model-panel
           placeholder until that iteration lands. *)
@@ -166,8 +172,8 @@ type event =
       (** Persist [field] to the user config ([Some] sets, [None] unsets), then
           reload the facts. *)
   | Toggle_skill of string
-      (** Flip the named skill's membership in [skills.disabled], then reload the
-          facts. *)
+      (** Flip the named skill's membership in [skills.disabled], then reload
+          the facts. *)
   | Copy of string  (** Copy the string (the session id) to the clipboard. *)
 
 val loading : tab:tab -> t
@@ -178,8 +184,8 @@ val loaded : facts -> t -> t
 (** [loaded facts t] folds [facts] into [t]. From a loading or error state it
     seeds them on the opening tab; from a loaded state it replaces them while
     keeping the active tab, filter, selection, sort, and any inline editing — so
-    a write's own reload lands the user back exactly where they were, now reading
-    the persisted value. *)
+    a write's own reload lands the user back exactly where they were, now
+    reading the persisted value. *)
 
 val failed : string -> t
 (** [failed message] is the screen showing a facts-assembly error line rather
@@ -201,8 +207,8 @@ val update : msg -> t -> t * event
       an enum row [←]/[→] open the inline [●] radio and commit a {!Write_field}.
       The text input commits on [↵] and cancels on esc.
     - {b Status.} [c] yields {!Copy} of the session id.
-    - {b Skills.} [↑]/[↓] move; [t] cycles the sort (name/state/cost); [↵] yields
-      {!Toggle_skill} of the selected skill.
+    - {b Skills.} [↑]/[↓] move; [t] cycles the sort (name/state/cost); [↵]
+      yields {!Toggle_skill} of the selected skill.
     - {b Filter.} [/] opens the bare filter line over the active tab's rows; esc
       closes the filter, then (closed) yields {!Close}.
 
@@ -214,6 +220,7 @@ val view : frame:Mosaic.Ansi.Color.t -> width:int -> rows:int -> t -> _ Mosaic.t
     the rule (selected accent, rest muted), a blank line below it, then the
     active tab's body. Config groups render under muted family headers with the
     selected row's cursor and any inline radio, input, or danger caution; status
-    and usage are read-only fact sheets; skills lists [name · state · source · ~N
-    tok] rows with the selected row's faint description. [rows] bounds the
-    visible window; overflow collapses into a muted tail. *)
+    and usage are read-only fact sheets; skills lists
+    [name · state · source · ~N tok] rows with the selected row's faint
+    description. [rows] bounds the visible window; overflow collapses into a
+    muted tail. *)

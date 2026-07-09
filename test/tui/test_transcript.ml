@@ -51,7 +51,8 @@ let json_strings texts =
 let streaming_line ~id ~body_contains ~stream_delay_ms ~answer =
   Printf.sprintf
     {|{"expect":{"request_line":"POST /v1/responses HTTP/1.1","body_contains":[%s]},"stream_delay_ms":%d,"response":{"id":%S,"status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":%S}]}]}}|}
-    (json_strings body_contains) stream_delay_ms id answer
+    (json_strings body_contains)
+    stream_delay_ms id answer
 
 (* {!streaming_line} with a reasoning summary item ahead of the assistant
    message: the ticker streams while the turn is in flight and the block settles
@@ -59,7 +60,8 @@ let streaming_line ~id ~body_contains ~stream_delay_ms ~answer =
 let reasoning_line ~id ~body_contains ~stream_delay_ms ~summary ~answer =
   Printf.sprintf
     {|{"expect":{"request_line":"POST /v1/responses HTTP/1.1","body_contains":[%s]},"stream_delay_ms":%d,"response":{"id":%S,"status":"completed","model":"gpt-5.5","output":[{"type":"reasoning","summary":[{"type":"summary_text","text":%S}]},{"type":"message","role":"assistant","content":[{"type":"output_text","text":%S}]}]}}|}
-    (json_strings body_contains) stream_delay_ms id summary answer
+    (json_strings body_contains)
+    stream_delay_ms id summary answer
 
 (* An HTTP error reply: the provider fails the turn before any document block is
    produced, so the drain settles a failure the frontend folds into the [✗]
@@ -77,7 +79,8 @@ let question_line ~id ~call_id ~body_contains ~question =
   let arguments = Printf.sprintf {|{"question":%S}|} question in
   Printf.sprintf
     {|{"expect":{"request_line":"POST /v1/responses HTTP/1.1","body_contains":[%s]},"response":{"id":%S,"status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-question","call_id":%S,"name":"ask_user","arguments":%S}]}}|}
-    (json_strings body_contains) id call_id arguments
+    (json_strings body_contains)
+    id call_id arguments
 
 (* A model step that reads a file and reports [output_tokens] of usage on its
    terminal event. [read_file] is a Read op the Default posture auto-allows
@@ -90,7 +93,8 @@ let read_usage_line ~id ~body_contains ~path ~output_tokens =
   let arguments = Printf.sprintf {|{"path":%S}|} path in
   Printf.sprintf
     {|{"expect":{"request_line":"POST /v1/responses HTTP/1.1","body_contains":[%s]},"response":{"id":%S,"status":"completed","model":"gpt-5.5","usage":{"input_tokens":7,"output_tokens":%d},"output":[{"type":"function_call","id":"item-read-usage","call_id":"call-read-usage","name":"read_file","arguments":%S}]}}|}
-    (json_strings body_contains) id output_tokens arguments
+    (json_strings body_contains)
+    id output_tokens arguments
 
 (* The drop then a settled answer: submitting drops into chat — the compact
    banner record at the top, the user message echoed, the composer at the bottom
@@ -108,7 +112,8 @@ let%expect_test "the drop and a settled answer" =
   Term.send t Keys.enter;
   Term.wait t (fun s -> Screen.has answer s && Screen.has "? for shortcuts" s);
   print_fact "banner record at top" (Screen.has "spice" (Term.screen t));
-  print_fact "user block" (Screen.has "❯ explain the retry logic" (Term.screen t));
+  print_fact "user block"
+    (Screen.has "❯ explain the retry logic" (Term.screen t));
   print_fact "assistant answer settled" (Screen.has answer (Term.screen t));
   Screen.print ~project (Term.screen t);
   [%expect
@@ -157,11 +162,13 @@ let%expect_test "working line while a turn is in flight" =
   Term.wait t (Screen.has "❯ ponder this");
   Term.send t Keys.enter;
   Term.wait t (Screen.has "esc to interrupt");
-  print_fact "working line present" (Screen.has "esc to interrupt" (Term.screen t));
+  print_fact "working line present"
+    (Screen.has "esc to interrupt" (Term.screen t));
   print_fact "verb is Working" (Screen.has "Working" (Term.screen t));
   Term.wait t (Screen.has answer);
   print_fact "answer settled" (Screen.has answer (Term.screen t));
-  print_fact "working line gone" (not (Screen.has "esc to interrupt" (Term.screen t)));
+  print_fact "working line gone"
+    (not (Screen.has "esc to interrupt" (Term.screen t)));
   [%expect
     {|
     working line present: true
@@ -320,13 +327,13 @@ let%expect_test "ctrl+c leaves the app while a turn is interrupting" =
    hood, spice_session.ml), and the next prompt runs a fresh turn that completes.
    Before the session-layer fix the second submit failed with "assistant tool
    calls are missing tool results", so this pins the regression end-to-end. *)
-let%expect_test "interrupting a waiting question then submitting again completes" =
+let%expect_test
+    "interrupting a waiting question then submitting again completes" =
   Project.with_temp "next-wedge" @@ fun project ->
   let answer = "Summarizing the deploy options instead." in
   let question =
     question_line ~id:"resp-next-wedge-q" ~call_id:"question-1"
-      ~body_contains:[ "deploy" ]
-      ~question:"Which environment should I target?"
+      ~body_contains:[ "deploy" ] ~question:"Which environment should I target?"
   in
   let final =
     Provider.response_line ~id:"resp-next-wedge-final"
@@ -390,7 +397,8 @@ let%expect_test "streaming is observed before the turn settles" =
     (not (Screen.has "esc to interrupt" (Term.screen t)));
   print_fact "settled text equals streamed" (Screen.has answer (Term.screen t));
   Screen.print ~project (Term.screen t);
-  [%expect {|working line present mid-stream: true
+  [%expect
+    {|working line present mid-stream: true
 streamed text visible before settle: true
 working line gone after settle: true
 settled text equals streamed: true
@@ -428,8 +436,8 @@ settled text equals streamed: true
 let%expect_test "reasoning streams a ticker and settles to a titled one-liner" =
   Project.with_temp "next-reasoning" @@ fun project ->
   let summary =
-    "**Backoff plan**\nThe user asks how retries space out, so I walk the \
-     exponential schedule."
+    "**Backoff plan**\n\
+     The user asks how retries space out, so I walk the exponential schedule."
   in
   let answer = "Retries back off exponentially." in
   let line =
@@ -448,11 +456,13 @@ let%expect_test "reasoning streams a ticker and settles to a titled one-liner" =
   Term.wait t (fun s -> not (Screen.has "esc to interrupt" s));
   print_fact "settled thought one-liner"
     (Screen.has "∴ Thought for" (Term.screen t));
-  print_fact "title from the bold lead" (Screen.has "Backoff plan" (Term.screen t));
+  print_fact "title from the bold lead"
+    (Screen.has "Backoff plan" (Term.screen t));
   print_fact "ticker header gone after settle"
     (not (Screen.has "∴ Thinking" (Term.screen t)));
   print_fact "answer settled" (Screen.has answer (Term.screen t));
-  [%expect {|ticker header mid-stream: true
+  [%expect
+    {|ticker header mid-stream: true
 settled thought one-liner: true
 title from the bold lead: true
 ticker header gone after settle: true
@@ -483,7 +493,8 @@ let%expect_test "the document grammar spaces top-level blocks" =
     (Screen.has "❯ describe the retry design" (Term.screen t));
   print_fact "assistant block keyed by a dot" (Screen.has "⏺" (Term.screen t));
   Screen.print ~project (Term.screen t);
-  [%expect {|user block keyed by cursor: true
+  [%expect
+    {|user block keyed by cursor: true
 assistant block keyed by a dot: true
 01 | ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 02 | ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
@@ -532,7 +543,8 @@ let%expect_test "a provider failure settles a failure notice" =
     (Screen.has "Tell spice how to proceed." (Term.screen t));
   print_fact "no assistant block" (Screen.lacks "⏺" (Term.screen t));
   Screen.print ~project (Term.screen t);
-  [%expect {|failure glyph: true
+  [%expect
+    {|failure glyph: true
 provider message shown: true
 muted next-step line: true
 no assistant block: true
@@ -569,8 +581,11 @@ no assistant block: true
 let%expect_test "an ocaml fence renders borderless code" =
   Project.with_temp "next-fence" @@ fun project ->
   let answer =
-    "Here is the helper:\n\n```ocaml\nlet add x y = x + y\n```\n\nCall it with \
-     two ints."
+    "Here is the helper:\n\n\
+     ```ocaml\n\
+     let add x y = x + y\n\
+     ```\n\n\
+     Call it with two ints."
   in
   Provider.with_openai project ~answer ~body_contains:[ "helper" ]
   @@ fun provider ->
@@ -586,7 +601,8 @@ let%expect_test "an ocaml fence renders borderless code" =
   print_fact "no vertical border" (Screen.lacks "│" (Term.screen t));
   print_fact "no fence markers" (Screen.lacks "```" (Term.screen t));
   Screen.print ~project (Term.screen t);
-  [%expect {|code text renders: true
+  [%expect
+    {|code text renders: true
 no vertical border: true
 no fence markers: true
 01 | ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
@@ -741,8 +757,8 @@ let%expect_test "ctrl+o pins the reasoning ticker open mid-stream" =
    to a hard cancel ([Live.force_interrupt]), so the line advertises that next
    rung — [(esc again to force)] — until forcing begins (01-transcript.md §The
    working line). *)
-let%expect_test "esc shows an interrupting line advertising the force escalation"
-    =
+let%expect_test
+    "esc shows an interrupting line advertising the force escalation" =
   Project.with_temp "next-interrupting" @@ fun project ->
   let answer = "This answer is held open by the stream delay." in
   let line =
@@ -782,8 +798,8 @@ let%expect_test "the working line shows committed output tokens across a step" =
   Project.write project "notes.txt" "retry notes: backoff doubles each attempt";
   let answer = "The notes describe exponential backoff." in
   let step_read =
-    read_usage_line ~id:"resp-next-tokens-read" ~body_contains:[ "read the notes" ]
-      ~path:"notes.txt" ~output_tokens:3100
+    read_usage_line ~id:"resp-next-tokens-read"
+      ~body_contains:[ "read the notes" ] ~path:"notes.txt" ~output_tokens:3100
   in
   let step_answer =
     streaming_line ~id:"resp-next-tokens-answer"
@@ -850,7 +866,8 @@ let wheel_up ~col ~row = Printf.sprintf "\027[<64;%d;%dM" col row
    the top at the tail, no [█] remains on screen. *)
 let%expect_test "the transcript renders no scrollbar on overflow" =
   Project.with_temp "next-noscroll" @@ fun project ->
-  Provider.with_openai project ~answer:overflow_answer ~body_contains:[ "overflow" ]
+  Provider.with_openai project ~answer:overflow_answer
+    ~body_contains:[ "overflow" ]
   @@ fun provider ->
   run project ~provider ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
   Term.wait t (Screen.has "dune:");
@@ -873,9 +890,11 @@ let%expect_test "the transcript renders no scrollbar on overflow" =
    PageDown returns to the bottom, where the final paragraph is pinned and the
    banner is gone again. The transcript never takes focus — the keys route
    through the shell (app.ml [key_msg]) while the composer keeps the caret. *)
-let%expect_test "PageUp reveals earlier content and PageDown returns to the tail" =
+let%expect_test
+    "PageUp reveals earlier content and PageDown returns to the tail" =
   Project.with_temp "next-paging" @@ fun project ->
-  Provider.with_openai project ~answer:overflow_answer ~body_contains:[ "overflow" ]
+  Provider.with_openai project ~answer:overflow_answer
+    ~body_contains:[ "overflow" ]
   @@ fun provider ->
   run project ~provider ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
   Term.wait t (Screen.has "dune:");
@@ -897,8 +916,7 @@ let%expect_test "PageUp reveals earlier content and PageDown returns to the tail
       && Screen.lacks "▄▀▀" s);
   print_fact "PageDown returned to the settled tail"
     (Screen.has "The final word is to cap the ceiling." (Term.screen t));
-  print_fact "banner off the top again"
-    (Screen.lacks "▄▀▀" (Term.screen t));
+  print_fact "banner off the top again" (Screen.lacks "▄▀▀" (Term.screen t));
   [%expect
     {|
     banner off the top at the settled tail: true
@@ -916,7 +934,8 @@ let%expect_test "PageUp reveals earlier content and PageDown returns to the tail
    that tree bubbles to the shell root and pages the transcript. *)
 let%expect_test "the wheel over the composer scrolls the transcript" =
   Project.with_temp "next-wheel" @@ fun project ->
-  Provider.with_openai project ~answer:overflow_answer ~body_contains:[ "overflow" ]
+  Provider.with_openai project ~answer:overflow_answer
+    ~body_contains:[ "overflow" ]
   @@ fun provider ->
   run project ~provider ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
   Term.wait t (Screen.has "dune:");
@@ -948,13 +967,13 @@ let%expect_test "/thinking hides reasoning at the source and restores it" =
   Project.with_temp "next-thinking" @@ fun project ->
   let drop_answer = "Ready when you are." in
   let hidden_summary =
-    "**Hidden plan**\nThinking is off, so this reasoning must never reach the \
-     screen."
+    "**Hidden plan**\n\
+     Thinking is off, so this reasoning must never reach the screen."
   in
   let hidden_answer = "Answered while reasoning was hidden." in
   let shown_summary =
-    "**Shown plan**\nThinking is back on, so the ticker streams this reasoning \
-     again."
+    "**Shown plan**\n\
+     Thinking is back on, so the ticker streams this reasoning again."
   in
   let shown_answer = "Answered while reasoning was shown." in
   let drop =
@@ -987,9 +1006,11 @@ let%expect_test "/thinking hides reasoning at the source and restores it" =
   Term.wait t (Screen.has "Toggle thinking");
   Term.send t Keys.enter;
   Term.wait t (Screen.has "thinking hidden");
-  print_fact "off: echo line rendered" (Screen.has "❯ /thinking" (Term.screen t));
+  print_fact "off: echo line rendered"
+    (Screen.has "❯ /thinking" (Term.screen t));
   print_fact "off: event notice is the honest off line"
-    (Screen.has "thinking hidden — reasoning stays in the session, not on screen"
+    (Screen.has
+       "thinking hidden — reasoning stays in the session, not on screen"
        (Term.screen t));
   (* A reasoning-bearing turn while off: no [∴] mid-stream or settled. *)
   Term.send t "reason while off";

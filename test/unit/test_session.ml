@@ -205,7 +205,8 @@ let final_text_projects_latest_assistant () =
       ]
   in
   equal (option string) ~msg:"latest prose skips whitespace-only response"
-    (Some "first") (State.final_text whitespace_turn);
+    (Some "first")
+    (State.final_text whitespace_turn);
   equal (option string) ~msg:"turn final text does not borrow from earlier turn"
     None
     (State.turn_final_text (turn_id "turn-2") whitespace_turn)

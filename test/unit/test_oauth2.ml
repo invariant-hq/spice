@@ -278,12 +278,14 @@ let pkce () =
     (O.Pkce.challenge generated);
   is_true ~msg:"generated verifier length"
     (String.length (O.Pkce.verifier generated) >= 43);
-  expect_invalid_arg ~expected:"OAuth2 random supplier returned the wrong number of bytes"
-    "pkce rejects short random output"
-    (fun () -> O.Pkce.generate ~random:(fun n -> String.make (n - 1) '\000'));
-  expect_invalid_arg ~expected:"OAuth2 random supplier returned the wrong number of bytes"
-    "state rejects long random output"
-    (fun () -> O.State.generate ~random:(fun n -> String.make (n + 1) '\000'));
+  expect_invalid_arg
+    ~expected:"OAuth2 random supplier returned the wrong number of bytes"
+    "pkce rejects short random output" (fun () ->
+      O.Pkce.generate ~random:(fun n -> String.make (n - 1) '\000'));
+  expect_invalid_arg
+    ~expected:"OAuth2 random supplier returned the wrong number of bytes"
+    "state rejects long random output" (fun () ->
+      O.State.generate ~random:(fun n -> String.make (n + 1) '\000'));
   let state = O.State.generate ~random:deterministic_random in
   let state_wire = O.State.to_string state in
   equal string ~msg:"state round trip" state_wire
@@ -741,18 +743,20 @@ let device_authorization () =
               ("user_code", Json.string "USER-CODE");
               ("verification_uri", Json.string "https://provider.example/device");
               ( "verification_uri_complete",
-                Json.string "https://provider.example/device?user_code=USER-CODE"
-              );
+                Json.string
+                  "https://provider.example/device?user_code=USER-CODE" );
               ("expires_in", Json.int 600);
             ]))
   in
   equal (option string) ~msg:"device complete uri"
     (Some "https://provider.example/device?user_code=USER-CODE")
-    (Option.map (fun uri -> Uri.to_string uri)
+    (Option.map
+       (fun uri -> Uri.to_string uri)
        (O.Device.verification_uri_complete device_with_complete));
   List.iter
     (fun uri ->
-      expect_device_malformed_field ("device invalid verification_uri " ^ uri)
+      expect_device_malformed_field
+        ("device invalid verification_uri " ^ uri)
         "verification_uri"
         (json_object
            [

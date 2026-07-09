@@ -12,7 +12,9 @@ type t = {
 }
 
 let option_count = 4
-let make proposal = { proposal; nav = Option_list.make ~count:option_count; expanded = false }
+
+let make proposal =
+  { proposal; nav = Option_list.make ~count:option_count; expanded = false }
 
 type outcome =
   | Stay
@@ -38,7 +40,8 @@ let key ev t =
   if ctrl_o ev then ({ t with expanded = not t.expanded }, Stay)
   else
     match Panel.classify ev with
-    | Panel.Digit d when d >= 1 && d <= option_count -> (t, resolve_index (d - 1))
+    | Panel.Digit d when d >= 1 && d <= option_count ->
+        (t, resolve_index (d - 1))
     | Panel.Digit _ -> (t, Stay)
     | Panel.Action Panel.Up -> ({ t with nav = Option_list.up t.nav }, Stay)
     | Panel.Action Panel.Down -> ({ t with nav = Option_list.down t.nav }, Stay)
@@ -63,7 +66,9 @@ let indent = padding_lrtb 2 2 0 0
 let blank = box ~flex_shrink:0. ~size:{ width = pct 100; height = px 1 } []
 
 let body_rows t =
-  let lines = String.split_on_char '\n' (Spice_protocol.Plan.Proposal.body t.proposal) in
+  let lines =
+    String.split_on_char '\n' (Spice_protocol.Plan.Proposal.body t.proposal)
+  in
   let limit = if t.expanded then max_int else max_body_lines in
   let shown = List.filteri (fun i _ -> i < limit) lines in
   let hidden = List.length lines - List.length shown in

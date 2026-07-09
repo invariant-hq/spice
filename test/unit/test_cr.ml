@@ -418,8 +418,8 @@ let text_insertions () =
   equal string ~msg:"insert after final line uses no indentation"
     "let f x =\n  x + 1\n(* CR: review this *)\n"
     (expect_ok "after final line"
-       (Cr.add_after_line ~syntax:Cr.Syntax.ocaml
-          ~text:"let f x =\n  x + 1" ~line:2 cr));
+       (Cr.add_after_line ~syntax:Cr.Syntax.ocaml ~text:"let f x =\n  x + 1"
+          ~line:2 cr));
   expect_error "line outside source" Cr.Error.Invalid_anchor
     (Cr.add_before_line ~syntax:Cr.Syntax.ocaml ~text:source ~line:99 cr);
   expect_error "line comments reject multi-line CRs" Cr.Error.Invalid_body
@@ -507,8 +507,7 @@ let line_comment_boundaries () =
   in
   equal string ~msg:"removing whole CRLF line preserves surrounding endings"
     "let x = 1\r\nlet y = 2\r\n"
-    (expect_ok "remove CRLF line comment"
-       (Cr.remove ~text:crlf occurrence))
+    (expect_ok "remove CRLF line comment" (Cr.remove ~text:crlf occurrence))
 
 let rendered_comments_parse_back (soon, recipient_text, body) =
   let priority = if soon then Cr.Priority.Soon else Cr.Priority.Now in

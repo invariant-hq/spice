@@ -176,29 +176,27 @@ module Field : sig
   (** [run_max_steps] is the [run.max_steps] field. *)
 
   val run_subagent_max_concurrent : int t
-  (** [run_subagent_max_concurrent] is the [run.subagent_max_concurrent]
-      field: the cap on concurrently running subagent children over a
-      session tree. Defaults to [4]; it is also the provider fan-out bound
+  (** [run_subagent_max_concurrent] is the [run.subagent_max_concurrent] field:
+      the cap on concurrently running subagent children over a session tree.
+      Defaults to [4]; it is also the provider fan-out bound
       (doc/plans/subagent-tui.md §8.3). *)
 
   val run_subagent_max_depth : int t
   (** [run_subagent_max_depth] is the [run.subagent_max_depth] field: the
-      deepest child a spawn may create; root children are depth [1].
-      Defaults to [2]. *)
+      deepest child a spawn may create; root children are depth [1]. Defaults to
+      [2]. *)
 
   val run_subagent_max_exchanges : int t
-  (** [run_subagent_max_exchanges] is the [run.subagent_max_exchanges]
-      field: the per-run cap on parent<->child message exchanges (messages
-      sent plus asks parked). Model-origin sends over the cap fail; asks
-      over the cap park with the cap as blocker; user-origin sends are
-      exempt. Defaults to [8]. *)
+  (** [run_subagent_max_exchanges] is the [run.subagent_max_exchanges] field:
+      the per-run cap on parent<->child message exchanges (messages sent plus
+      asks parked). Model-origin sends over the cap fail; asks over the cap park
+      with the cap as blocker; user-origin sends are exempt. Defaults to [8]. *)
 
   val run_subagent_wake : bool t
-  (** [run_subagent_wake] is the [run.subagent_wake] field: whether a
-      subagent settling while the session is idle starts a continuation turn
-      so the model sees the result immediately (doc/plans/subagent-tui.md
-      §8.4). Defaults to [true]; when off, results wait for the next user
-      message. *)
+  (** [run_subagent_wake] is the [run.subagent_wake] field: whether a subagent
+      settling while the session is idle starts a continuation turn so the model
+      sees the result immediately (doc/plans/subagent-tui.md §8.4). Defaults to
+      [true]; when off, results wait for the next user message. *)
 
   val permission_mode : Permission.Preset.t t
   (** [permission_mode] is the [permission.mode] field.
@@ -342,7 +340,7 @@ module Field : sig
       [permission.mode] (durable channels omit [bypass], so it is not offered),
       [permission.unattended], the [sandbox.*] modes, [tools.editor], and
       [web.search_backend] — and the booleans, whose values are
-      [\["true"; "false"\]]. The list is exactly the vocabulary the field's
+      [["true"; "false"]]. The list is exactly the vocabulary the field's
       {!Patch.set}, {!Config_file.set}, and file decoder accept, so a value
       drawn from it always validates. *)
 end
@@ -601,10 +599,10 @@ val files : t -> Config_file.paths
 (** [files t] is the discovered config file set for [t]. *)
 
 val sandbox_protected_roots : t -> Spice_path.Abs.t list
-(** [sandbox_protected_roots t] are host authority roots that
-    workspace-write sandboxes must keep read-only even when they sit beneath a
-    writable root: the user config/auth directory, the project config
-    directory, and {!store_root}. *)
+(** [sandbox_protected_roots t] are host authority roots that workspace-write
+    sandboxes must keep read-only even when they sit beneath a writable root:
+    the user config/auth directory, the project config directory, and
+    {!store_root}. *)
 
 module Models : sig
   (** Model-related configuration.
@@ -786,8 +784,8 @@ module Workspace : sig
       gates the workspace's OCaml/Dune integration as a whole — the boot
       [dune describe] shape capture, the [dune build --watch] diagnostics and
       build-health instance, the filesystem watcher, and Merlin program
-      resolution. [off] disables them for CI, headless, and non-interactive
-      test runs, leaving a truthful degraded footer and no background workspace
+      resolution. [off] disables them for CI, headless, and non-interactive test
+      runs, leaving a truthful degraded footer and no background workspace
       processes. *)
 
   val tooling_engaged : t -> root:string -> bool

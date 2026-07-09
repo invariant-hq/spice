@@ -3,17 +3,18 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-(** The question dialog form (03-ia-screens-overlays.md §Dialogs,
-    07-dialogs.md §Question).
+(** The question dialog form (03-ia-screens-overlays.md §Dialogs, 07-dialogs.md
+    §Question).
 
     A structured [ask_user] renders its options verbatim, each an accent/muted
-    label with an optional muted description, plus a permanent [✎ type your own
-    answer] row that borrows the composer — so a question is never a dead end.
-    Single-select answers with the chosen label; multi-select adds [[x]]/[[ ]]
-    checkboxes, toggles with space or a digit, and submits the checked labels
-    joined. A bare free-text question (no options, or an undecodable [ask_user]
-    the user must still unblock) renders the prompt and the [✎] row alone. The
-    answer is always {!Spice_protocol.Command.Answer} text. *)
+    label with an optional muted description, plus a permanent
+    [✎ type your own answer] row that borrows the composer — so a question is
+    never a dead end. Single-select answers with the chosen label; multi-select
+    adds [[x]]/[[ ]] checkboxes, toggles with space or a digit, and submits the
+    checked labels joined. A bare free-text question (no options, or an
+    undecodable [ask_user] the user must still unblock) renders the prompt and
+    the [✎] row alone. The answer is always {!Spice_protocol.Command.Answer}
+    text. *)
 
 type t
 (** The type for the question dialog's UI state. *)

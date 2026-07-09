@@ -14,7 +14,9 @@ open Result.Syntax
    only runs on a color-capable tty, so this is the sole color gate on the way
    out. *)
 let use_color () =
-  match Sys.getenv_opt "NO_COLOR" with Some s when s <> "" -> false | _ -> true
+  match Sys.getenv_opt "NO_COLOR" with
+  | Some s when s <> "" -> false
+  | _ -> true
 
 (* The parting frame, printed to the restored normal terminal after the TUI
    exits — the brand lockup and, once a session exists, how to resume it. *)
@@ -60,8 +62,8 @@ let run ?session cwd sandbox mode continue_ draft prompt =
            Spice_protocol.Mode.of_string raw
            |> Result.map (fun m -> Some m)
            |> Result.map_error (fun _ ->
-                  `Usage
-                    ("unknown mode: " ^ raw ^ " (expected build, plan, or review)"))
+               `Usage
+                 ("unknown mode: " ^ raw ^ " (expected build, plan, or review)"))
      in
      let* input = startup_input draft prompt in
      let* session =
@@ -147,9 +149,9 @@ let default_term =
 let resume_session =
   Cli_arg.session_pos
     ~doc:
-      "Session id to resume. When absent, the TUI opens on the home stage, where \
-       $(b,enter) on an empty composer resumes the newest session in this \
-       working directory."
+      "Session id to resume. When absent, the TUI opens on the home stage, \
+       where $(b,enter) on an empty composer resumes the newest session in \
+       this working directory."
     ()
 
 let last =
@@ -225,4 +227,3 @@ let review_command =
     (CCmd.info "review" ~doc:"Review the worktree changes in the TUI."
        ~docs:s_run_commands ~man ~exits)
     (exit_term CTerm.(const review $ cwd $ sandbox $ review_base))
-

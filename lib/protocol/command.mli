@@ -48,14 +48,15 @@ type t =
     }
       (** Resolve a blocked [propose_plan] host-tool call, named by its turn and
           model call id. The engine re-derives the pending host-tool boundary
-          exactly as {!Answer} does (a mismatch is {!Error.Tool_call_not_pending}),
-          applies [decision] to the parked proposal — the durable
-          [Proposed → Approved/Rejected] transition and the model-visible answer
-          wording, host-side — and answers the blocked call with that wording. A
-          proposal that can no longer be resolved (a superseded plan) is a
-          {!Error.Internal}. This replaces the client-side plan resolution the
-          old TUI performs before submitting an {!Answer}: a remote client no
-          longer links artifact storage or computes the answer text. *)
+          exactly as {!Answer} does (a mismatch is
+          {!Error.Tool_call_not_pending}), applies [decision] to the parked
+          proposal — the durable [Proposed → Approved/Rejected] transition and
+          the model-visible answer wording, host-side — and answers the blocked
+          call with that wording. A proposal that can no longer be resolved (a
+          superseded plan) is a {!Error.Internal}. This replaces the client-side
+          plan resolution the old TUI performs before submitting an {!Answer}: a
+          remote client no longer links artifact storage or computes the answer
+          text. *)
   | Finish_tool of
       Spice_session.Tool_claim.Id.t * Spice_tool.Output.t Spice_tool.Result.t
       (** Record a result for a pending unfinished tool claim — the recovery

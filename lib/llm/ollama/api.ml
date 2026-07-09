@@ -26,7 +26,8 @@ module Client = struct
     env : Eio_unix.Stdenv.base;
   }
 
-  let make ?(headers = []) ~base_url ~sw ~env () = { base_url; headers; sw; env }
+  let make ?(headers = []) ~base_url ~sw ~env () =
+    { base_url; headers; sw; env }
 end
 
 let max_error_body_size = 65_536

@@ -24,14 +24,11 @@ let print_fact = Util.print_fact
 
 (* The right-arrow escape the shared Keys module does not carry. *)
 let right = "\027[C"
-
-let run ?env ?rows ?cols project f =
-  Term.run ?env ?rows ?cols project f
+let run ?env ?rows ?cols project f = Term.run ?env ?rows ?cols project f
 
 (* The user config file the settings edits persist to: under the harness's
    isolated XDG config home ([<root>.xdg/config]), not the project tree. *)
-let user_config project =
-  Project.root project ^ ".xdg/config/spice/config.json"
+let user_config project = Project.root project ^ ".xdg/config/spice/config.json"
 
 let read_config project =
   let path = user_config project in
@@ -107,7 +104,8 @@ let%expect_test "tab switches to the status fact sheet" =
     (Screen.has "version" (Term.screen t)
     && Screen.has "permission" (Term.screen t)
     && Screen.has "sandbox" (Term.screen t));
-  print_fact "config group gone" (Screen.lacks "Model & reasoning" (Term.screen t));
+  print_fact "config group gone"
+    (Screen.lacks "Model & reasoning" (Term.screen t));
   Screen.print ~project (Term.screen t);
   [%expect
     {|
@@ -154,7 +152,8 @@ let%expect_test "enum row expands to a radio and commits" =
   (* The write reloads the facts; the rule's sources fact gains [user]. *)
   Term.wait t (Screen.has "user + env");
   print_fact "radio dot shown" (Screen.has "●" (Term.screen t));
-  print_fact "sources fact gained user" (Screen.has "user + env" (Term.screen t));
+  print_fact "sources fact gained user"
+    (Screen.has "user + env" (Term.screen t));
   print_fact "reasoning written to user config"
     (contains (read_config project) "reasoning");
   Screen.print ~project (Term.screen t);
@@ -270,7 +269,8 @@ let%expect_test "filter narrows the config rows" =
   print_fact "sandbox rows kept"
     (Screen.has "Sandbox mode" (Term.screen t)
     && Screen.has "Sandbox required" (Term.screen t));
-  print_fact "non-matching rows dropped" (Screen.lacks "Reasoning" (Term.screen t));
+  print_fact "non-matching rows dropped"
+    (Screen.lacks "Reasoning" (Term.screen t));
   Term.send t Keys.escape;
   Term.wait t (Screen.has "Reasoning");
   print_fact "esc cleared the filter" (Screen.has "Reasoning" (Term.screen t));
@@ -294,9 +294,9 @@ let%expect_test "esc closes the screen after clearing the filter" =
   Term.send t Keys.escape;
   Term.wait t (Screen.has "message spice");
   print_fact "composer restored" (Screen.has "message spice" (Term.screen t));
-  print_fact "screen chrome gone" (Screen.lacks "Model & reasoning" (Term.screen t));
-  [%expect
-    {|
+  print_fact "screen chrome gone"
+    (Screen.lacks "Model & reasoning" (Term.screen t));
+  [%expect {|
     composer restored: true
     screen chrome gone: true |}]
 

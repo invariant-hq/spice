@@ -54,14 +54,14 @@ type settlement = (Spice_protocol.Subagent_run.t * outcome, string) result
 type entry = {
   mutable record : Spice_protocol.Subagent_run.t;
   mutable live : Live.t;
-  child_runner : Runner.t;  (* kept for terminal-resume re-attach *)
+  child_runner : Runner.t; (* kept for terminal-resume re-attach *)
   child_model : Spice_llm.Model.t;
-  notices : Notice_queue.t;  (* parent messages ride it, unique keys *)
+  notices : Notice_queue.t; (* parent messages ride it, unique keys *)
   mutable settled : settlement Eio.Promise.t;
   mutable resolve : settlement Eio.Promise.u;
-  mutable exchanges : int;  (* parent<->child messages + asks, across resumes *)
-  mutable asked : string option;  (* pending unanswered message_parent text *)
-  mutable message_seq : int;  (* per-message notice key counter *)
+  mutable exchanges : int; (* parent<->child messages + asks, across resumes *)
+  mutable asked : string option; (* pending unanswered message_parent text *)
+  mutable message_seq : int; (* per-message notice key counter *)
 }
 
 type t = {
@@ -73,7 +73,7 @@ type t = {
   max_concurrent : int;
   max_depth : int;
   max_exchanges : int;
-  mutable entries : (Spice_session.Id.t * entry) list;  (* newest first *)
+  mutable entries : (Spice_session.Id.t * entry) list; (* newest first *)
   mutable subscribers : (event -> unit) list;
 }
 
@@ -181,9 +181,7 @@ let settle t entry ~parent ~child result =
   let settled_at = now t.stdenv in
   let parked = ref None in
   let transition_and_outcome :
-      (unit ->
-      (Spice_protocol.Subagent_run.t, string) result * outcome
-      ) =
+      unit -> (Spice_protocol.Subagent_run.t, string) result * outcome =
    fun () ->
     match result with
     | Error error ->
@@ -196,7 +194,8 @@ let settle t entry ~parent ~child result =
         let session = Spice_session_store.Document.session document in
         let usage = usage_of session in
         let summary =
-          match Spice_session.State.final_text (Spice_session.state session)
+          match
+            Spice_session.State.final_text (Spice_session.state session)
           with
           | Some text when not (String.equal text "") -> text
           | Some _ | None -> "Child session completed without visible text."
@@ -205,8 +204,8 @@ let settle t entry ~parent ~child result =
         | Spice_session.Turn.Outcome.Completed
         | Spice_session.Turn.Outcome.Step_limit ->
             ( update_run t ~parent ~child ~f:(fun run ->
-                  Spice_protocol.Subagent_run.complete
-                    ~completed_at:settled_at ~summary ?usage run),
+                  Spice_protocol.Subagent_run.complete ~completed_at:settled_at
+                    ~summary ?usage run),
               Summary summary )
         | Spice_session.Turn.Outcome.Interrupted { reason; cancelled } ->
             ( update_run t ~parent ~child ~f:(fun run ->
@@ -234,8 +233,8 @@ let settle t entry ~parent ~child result =
           | None -> blocker_text waiting
         in
         ( update_run t ~parent ~child ~f:(fun run ->
-              Spice_protocol.Subagent_run.block ~blocked_at:settled_at
-                ~blocker run),
+              Spice_protocol.Subagent_run.block ~blocked_at:settled_at ~blocker
+                run),
           Blocked_on { blocker } )
   in
   let settlement =
@@ -246,9 +245,8 @@ let settle t entry ~parent ~child result =
         | Blocked_on _, Some message, _ -> emit t (Asked { run; message })
         | Blocked_on _, None, Some waiting -> emit t (Blocked { run; waiting })
         | Blocked_on _, None, None -> ()
-        | ( ( Summary _ | Interrupted _ | Failed_with _ | Wait_interrupted ),
-            _,
-            _ ) ->
+        | (Summary _ | Interrupted _ | Failed_with _ | Wait_interrupted), _, _
+          ->
             ());
         emit t (Settled run);
         Ok (run, outcome)
@@ -281,7 +279,8 @@ let wire t entry =
              depth;
              event;
            }));
-  Live.on_settled entry.live (fun result -> settle t entry ~parent ~child result)
+  Live.on_settled entry.live (fun result ->
+      settle t entry ~parent ~child result)
 
 (* The child session id derives from the parent id and the spawning tool
    call id — deterministic, so lineage is readable, scripted fixtures can
@@ -322,8 +321,8 @@ let check_caps t ~depth =
     Error
       (Printf.sprintf
          "%d subagents are already running, the configured limit \
-          (run.subagent_max_concurrent); wait for one to settle or cancel \
-          one before spawning"
+          (run.subagent_max_concurrent); wait for one to settle or cancel one \
+          before spawning"
          t.max_concurrent)
   else Ok ()
 
@@ -343,8 +342,8 @@ let spawn t ~parent ~parent_turn ~parent_call_id ~spawn ~depth
     |> Result.map_error Spice_protocol.Error.message
   in
   let* run =
-    Spice_protocol.Subagent_run.make ~child ~parent ~parent_turn
-      ~parent_call_id ~spawn ~depth ~created_at ()
+    Spice_protocol.Subagent_run.make ~child ~parent ~parent_turn ~parent_call_id
+      ~spawn ~depth ~created_at ()
   in
   let* () =
     Artifacts.Subagent_run.put ~fs:t.fs ~root:t.root run
@@ -504,9 +503,7 @@ let message ~origin t child text =
             ^ Spice_session.Id.to_string child))
 
 let asked t child =
-  match find t child with
-  | Error _ -> None
-  | Ok entry -> entry.asked
+  match find t child with Error _ -> None | Ok entry -> entry.asked
 
 let answer t child command =
   let* entry = find t child in
@@ -553,12 +550,10 @@ let cancel t child =
           (* A parked run has no drain to interrupt: cancellation is a pure
              ledger transition plus release of the held attachment. *)
           let* record =
-            update_run t
-              ~parent:(Spice_protocol.Subagent_run.parent record)
-              ~child
-              ~f:(fun run ->
-                Spice_protocol.Subagent_run.cancel
-                  ~cancelled_at:(now t.stdenv) run)
+            update_run t ~parent:(Spice_protocol.Subagent_run.parent record)
+              ~child ~f:(fun run ->
+                Spice_protocol.Subagent_run.cancel ~cancelled_at:(now t.stdenv)
+                  run)
           in
           entry.record <- record;
           entry.asked <- None;
@@ -567,10 +562,9 @@ let cancel t child =
           Ok ()
       | _ ->
           Error
-            ("subagent run already settled: "
-            ^ Spice_session.Id.to_string child))
+            ("subagent run already settled: " ^ Spice_session.Id.to_string child)
+      )
   | Some (Error _) ->
-      Error
-        ("subagent run already settled: " ^ Spice_session.Id.to_string child)
+      Error ("subagent run already settled: " ^ Spice_session.Id.to_string child)
 
 let list t = List.rev_map (fun (_, entry) -> entry.record) t.entries

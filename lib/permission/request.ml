@@ -188,6 +188,6 @@ let jsont =
   (* Default-[true] and omitted when true, so pre-existing documents decode as
      grantable and current writers add the key only when capping at once-only. *)
   |> Jsont.Object.opt_mem "grantable" Jsont.bool ~enc:(fun t ->
-         if t.grantable then None else Some false)
+      if t.grantable then None else Some false)
   |> Jsont.Object.mem "items" Jsont.(list Item.jsont) ~enc:items
   |> Jsont.Object.error_unknown |> Jsont.Object.finish

@@ -19,7 +19,8 @@ type fact =
   | Errors of int
       (** a build error count: the number in [error], the noun muted. The one
           error color a build notice shows — the word ([build broken]) stays
-          muted, only the count is red (01-transcript.md §Data notices, dune). *)
+          muted, only the count is red (01-transcript.md §Data notices, dune).
+      *)
 
 type t =
   | Event of string
@@ -30,8 +31,8 @@ type t =
       (** A stateful slash command echoed back: muted [❯ /command] and its muted
           result. Overlay-openers do not echo. *)
   | Interrupt
-      (** The single interrupt line: [◌ Interrupted — tell spice what to do
-          differently.] *)
+      (** The single interrupt line:
+          [◌ Interrupted — tell spice what to do differently.] *)
   | Failure of { message : string; next_step : string; count : int }
       (** A provider, tool, or session error: a [✗] error line and a muted
           next-step line saying what happens now. [count] renders as [ × N] when

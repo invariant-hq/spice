@@ -111,8 +111,7 @@ module Wait : sig
     (** The type for a checked wait request: a non-empty run list. *)
 
     val make : runs:Spice_session.Id.t list -> (t, string) result
-    (** [make ~runs] is a checked wait request. Errors when [runs] is
-        empty. *)
+    (** [make ~runs] is a checked wait request. Errors when [runs] is empty. *)
 
     val runs : t -> Spice_session.Id.t list
     (** [runs t] is the child session ids to wait for, in request order. *)
@@ -125,8 +124,8 @@ module Wait : sig
     (** [pp] formats [t] for diagnostics. *)
 
     val jsont : t Jsont.t
-    (** [jsont] maps wait requests to JSON objects, funneling through
-        {!make}. *)
+    (** [jsont] maps wait requests to JSON objects, funneling through {!make}.
+    *)
   end
 
   val name : string
@@ -144,9 +143,9 @@ end
 module Cancel : sig
   (** The [cancel_subagent] host tool: interrupt one run.
 
-      A cancelled run settles with the ledger's [Cancelled] status — a
-      neutral outcome, not a failure. This module satisfies
-      {!Call.HOST_TOOL} with {!Request.t} as its request. *)
+      A cancelled run settles with the ledger's [Cancelled] status — a neutral
+      outcome, not a failure. This module satisfies {!Call.HOST_TOOL} with
+      {!Request.t} as its request. *)
 
   module Request : sig
     type t
@@ -183,11 +182,11 @@ end
 module Message : sig
   (** The [message_subagent] host tool: steer or resume one run.
 
-      Delivery is owned by the run registry and is instant: a running child
-      sees the message immediately before its next model request; a child
-      parked on a [message_parent] ask resumes with the message as that
-      call's result; a settled child resumes with a new turn — resume, not
-      respawn (doc/plans/subagent-tui.md decision 17). This module satisfies
+      Delivery is owned by the run registry and is instant: a running child sees
+      the message immediately before its next model request; a child parked on a
+      [message_parent] ask resumes with the message as that call's result; a
+      settled child resumes with a new turn — resume, not respawn
+      (doc/plans/subagent-tui.md decision 17). This module satisfies
       {!Call.HOST_TOOL} with {!Request.t} as its request. *)
 
   module Request : sig
@@ -195,10 +194,9 @@ module Message : sig
     (** The type for a checked message request: a target run and a non-empty
         message. *)
 
-    val make :
-      run:Spice_session.Id.t -> message:string -> (t, string) result
-    (** [make ~run ~message] is a checked message request. Errors when
-        [message] is empty. *)
+    val make : run:Spice_session.Id.t -> message:string -> (t, string) result
+    (** [make ~run ~message] is a checked message request. Errors when [message]
+        is empty. *)
 
     val run : t -> Spice_session.Id.t
     (** [run t] is the child session id to message. *)
@@ -224,29 +222,28 @@ module Message : sig
   (** [tool] is the model-visible message tool declaration. *)
 
   val decode : Spice_llm.Tool.Call.t -> (Request.t, string) result
-  (** [decode call] decodes [call]'s input as a message request. Errors with
-      a diagnostic when [call] does not target {!name} or its payload fails
+  (** [decode call] decodes [call]'s input as a message request. Errors with a
+      diagnostic when [call] does not target {!name} or its payload fails
       validation. *)
 end
 
 module Message_parent : sig
   (** The [message_parent] host tool: a child's question to its parent.
 
-      Granted through every child contract and offered by no root mode. A
-      valid call parks the child turn on its waiting boundary — the child's
-      analogue of [ask_user], pointed at the parent — and the run registry
-      surfaces the message as a notice with a wake; the reply, a parent
-      [message_subagent] or a drill-in user message, resumes the turn as
-      this call's result. This module satisfies {!Call.HOST_TOOL} with
-      {!Request.t} as its request. *)
+      Granted through every child contract and offered by no root mode. A valid
+      call parks the child turn on its waiting boundary — the child's analogue
+      of [ask_user], pointed at the parent — and the run registry surfaces the
+      message as a notice with a wake; the reply, a parent [message_subagent] or
+      a drill-in user message, resumes the turn as this call's result. This
+      module satisfies {!Call.HOST_TOOL} with {!Request.t} as its request. *)
 
   module Request : sig
     type t
     (** The type for a checked parent message: non-empty text. *)
 
     val make : message:string -> (t, string) result
-    (** [make ~message] is a checked parent message. Errors when [message]
-        is empty. *)
+    (** [make ~message] is a checked parent message. Errors when [message] is
+        empty. *)
 
     val message : t -> string
     (** [message t] is the message text. *)
@@ -258,8 +255,8 @@ module Message_parent : sig
     (** [pp] formats [t] for diagnostics. *)
 
     val jsont : t Jsont.t
-    (** [jsont] maps parent messages to JSON objects, funneling through
-        {!make}. *)
+    (** [jsont] maps parent messages to JSON objects, funneling through {!make}.
+    *)
   end
 
   val name : string
@@ -269,8 +266,8 @@ module Message_parent : sig
   (** [tool] is the model-visible parent-message tool declaration. *)
 
   val decode : Spice_llm.Tool.Call.t -> (Request.t, string) result
-  (** [decode call] decodes [call]'s input as a parent message. Errors with
-      a diagnostic when [call] does not target {!name} or its payload fails
+  (** [decode call] decodes [call]'s input as a parent message. Errors with a
+      diagnostic when [call] does not target {!name} or its payload fails
       validation. *)
 end
 

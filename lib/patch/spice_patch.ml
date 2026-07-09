@@ -271,9 +271,8 @@ let is_hunk_header line =
 let is_eof_marker line = String.equal (String.trim line) eof_marker
 
 let is_update_line line =
-  (not (String.is_empty line)) && match line.[0] with
-  | ' ' | '+' | '-' -> true
-  | _ -> false
+  (not (String.is_empty line))
+  && match line.[0] with ' ' | '+' | '-' -> true | _ -> false
 
 let parse_chunk lines line_index allow_missing_context =
   let context_result =

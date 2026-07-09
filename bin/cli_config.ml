@@ -475,9 +475,7 @@ let path_command =
     (exit_term CTerm.(const path $ Cli_arg.config_target))
 
 let show_command =
-  let json =
-    Cli_arg.json_flag ()
-  in
+  let json = Cli_arg.json_flag () in
   let origins =
     CArg.(
       value & flag
@@ -489,9 +487,7 @@ let show_command =
     (exit_term CTerm.(const show $ json $ origins))
 
 let get_command =
-  let json =
-    Cli_arg.json_flag ()
-  in
+  let json = Cli_arg.json_flag () in
   let key =
     CArg.(required & pos 0 (some Cli_arg.config_key) None & info [] ~docv:"KEY")
   in

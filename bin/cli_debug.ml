@@ -469,18 +469,16 @@ let model_report json model_raw overrides cwd =
 
 (* Commands *)
 
-let json_flag =
-  Cli_arg.json_flag ()
-
-let cwd_arg =
-  Cli_arg.cwd ()
+let json_flag = Cli_arg.json_flag ()
+let cwd_arg = Cli_arg.cwd ()
 
 let model_arg =
   Cli_arg.model_opt
     ~doc:
-      "Resolve the tool catalog for MODEL (a provider/model selector). The model \
-       determines the file-mutation editor family. Defaults to the host's main \
-       model; when no model resolves the string-replace editor family is used."
+      "Resolve the tool catalog for MODEL (a provider/model selector). The \
+       model determines the file-mutation editor family. Defaults to the \
+       host's main model; when no model resolves the string-replace editor \
+       family is used."
     ()
 
 let context_command =

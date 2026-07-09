@@ -23,8 +23,7 @@ let reduced_motion = [ ("SPICE_REDUCED_MOTION", "1") ]
 let print_fact = Util.print_fact
 
 (* The home under test is the hidden [tui-next] subcommand. *)
-let run ?env ?rows ?cols project f =
-  Term.run ?env ?rows ?cols project f
+let run ?env ?rows ?cols project f = Term.run ?env ?rows ?cols project f
 
 (* First run: no git repo, so no worktree, no CRs, no session. The workspace
    block is the dune line alone (always shown; disconnected here, no watch),
@@ -36,7 +35,8 @@ let%expect_test "first run — stage alone" =
   run project ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
   Term.wait t (Screen.has "sandbox: danger-full-access (config)");
   Screen.print ~project (Term.screen t);
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |
 03 |
 04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
@@ -77,7 +77,8 @@ let%expect_test "workspace block" =
   print_fact "crs row present, addressed count"
     (Screen.has "1 open · 1 addressed to spice" (Term.screen t));
   Screen.print ~project (Term.screen t);
-  [%expect {|crs row present, addressed count: true
+  [%expect
+    {|crs row present, addressed count: true
 01 |
 02 |
 03 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
@@ -117,8 +118,7 @@ let%expect_test "session line" =
   print_fact "session label present" (Screen.has "session" (Term.screen t));
   print_fact "title in quotes"
     (Screen.has "\"Fix the streaming parser bug\"" (Term.screen t));
-  [%expect
-    {|session label present: true
+  [%expect {|session label present: true
 title in quotes: true|}]
 
 (* Untitled session: the session line must never render the raw session id. An
@@ -172,8 +172,7 @@ let%expect_test "enter on an empty draft resumes the newest session" =
     (Screen.has "❯ spike it" (Term.screen t));
   print_fact "home stage gone"
     (Screen.lacks "welcome — and thanks for trying spice" (Term.screen t));
-  [%expect
-    {|
+  [%expect {|
     replayed prompt on screen: true
     home stage gone: true|}]
 
@@ -191,7 +190,8 @@ let%expect_test "short terminal sheds workspace facts" =
   print_fact "composer survives" (Screen.has "message spice" (Term.screen t));
   print_fact "footer survives" (Screen.has "dune:" (Term.screen t));
   print_fact "worktree row shed" (Screen.lacks "worktree" (Term.screen t));
-  print_fact "session row shed" (Screen.lacks "Home screen rethink" (Term.screen t));
+  print_fact "session row shed"
+    (Screen.lacks "Home screen rethink" (Term.screen t));
   [%expect
     {|composer survives: true
 footer survives: true
@@ -219,15 +219,13 @@ let%expect_test "short terminal keeps the footer and sheds top-down" =
   print_fact "10 rows: footer stands" (Screen.has "dune:" (Term.screen t));
   print_fact "10 rows: composer stands"
     (Screen.has "message spice" (Term.screen t));
-  [%expect
-    {|10 rows: footer stands: true
+  [%expect {|10 rows: footer stands: true
 10 rows: composer stands: true|}];
   run project ~env:reduced_motion ~rows:8 @@ fun t ->
   print_fact "8 rows: footer stands" (Screen.has "dune:" (Term.screen t));
   print_fact "8 rows: composer folded"
     (Screen.lacks "message spice" (Term.screen t));
-  [%expect
-    {|8 rows: footer stands: true
+  [%expect {|8 rows: footer stands: true
 8 rows: composer folded: true|}]
 
 (* Dangerous-config warning: the harness pins SPICE_SANDBOX_MODE=danger-full-

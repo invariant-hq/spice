@@ -122,8 +122,7 @@ module Input : sig
       [anchor], optional [end_anchor], and [text]. [replace] requires
       [end_anchor]; use the same value as [anchor] for a single-line replace.
       [insert_before] and [insert_after] reject [end_anchor]. Unknown fields are
-      rejected.
-  *)
+      rejected. *)
 
   val decode : Jsont.json -> (t, string) result
   (** [decode json] decodes [json] with {!contract}.

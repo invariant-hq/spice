@@ -257,7 +257,8 @@ module Auth : sig
   val none : t
   (** [none] declares no auth inputs or login methods. *)
 
-  val make : ?required:bool -> ?env:Env.t list -> ?login:Login.t list -> unit -> t
+  val make :
+    ?required:bool -> ?env:Env.t list -> ?login:Login.t list -> unit -> t
   (** [make ?required ?env ?login ()] is an auth declaration.
 
       [env] and [login] default to [[]]. [required] states whether a usable

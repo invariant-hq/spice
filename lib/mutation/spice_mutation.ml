@@ -6,6 +6,7 @@
 module Rel = Spice_path.Rel
 
 let decode_error message = Jsont.Error.msg Jsont.Meta.none message
+
 let short_id prefix ~domain parts =
   prefix ^ ":" ^ Spice_digest.key ~length:16 ~domain parts
 

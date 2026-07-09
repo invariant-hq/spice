@@ -145,9 +145,9 @@ module Status = struct
         | Queued | Running _ | Blocked _ | Failed _ | Cancelled _ ->
             assert false)
       |> usage_mem ~enc:(function
-           | Completed { usage; _ } -> usage
-           | Queued | Running _ | Blocked _ | Failed _ | Cancelled _ ->
-               assert false)
+        | Completed { usage; _ } -> usage
+        | Queued | Running _ | Blocked _ | Failed _ | Cancelled _ ->
+            assert false)
       |> Jsont.Object.error_unknown |> Jsont.Object.finish
       |> Jsont.Object.Case.map "completed" ~dec:Fun.id
     in
@@ -164,9 +164,9 @@ module Status = struct
         | Queued | Running _ | Blocked _ | Completed _ | Cancelled _ ->
             assert false)
       |> usage_mem ~enc:(function
-           | Failed { usage; _ } -> usage
-           | Queued | Running _ | Blocked _ | Completed _ | Cancelled _ ->
-               assert false)
+        | Failed { usage; _ } -> usage
+        | Queued | Running _ | Blocked _ | Completed _ | Cancelled _ ->
+            assert false)
       |> Jsont.Object.error_unknown |> Jsont.Object.finish
       |> Jsont.Object.Case.map "failed" ~dec:Fun.id
     in
@@ -178,9 +178,9 @@ module Status = struct
         | Queued | Running _ | Blocked _ | Completed _ | Failed _ ->
             assert false)
       |> usage_mem ~enc:(function
-           | Cancelled { usage; _ } -> usage
-           | Queued | Running _ | Blocked _ | Completed _ | Failed _ ->
-               assert false)
+        | Cancelled { usage; _ } -> usage
+        | Queued | Running _ | Blocked _ | Completed _ | Failed _ ->
+            assert false)
       |> Jsont.Object.error_unknown |> Jsont.Object.finish
       |> Jsont.Object.Case.map "cancelled" ~dec:Fun.id
     in
@@ -320,8 +320,8 @@ let resume ~resumed_at t =
   let* () = check_status_time ~created_at:t.created_at status in
   match t.status with
   | Status.Queued | Status.Running _ -> invalid_transition "resume" t
-  | Status.Blocked _ | Status.Completed _ | Status.Failed _
-  | Status.Cancelled _ ->
+  | Status.Blocked _ | Status.Completed _ | Status.Failed _ | Status.Cancelled _
+    ->
       Ok { t with status }
 
 let usage t =

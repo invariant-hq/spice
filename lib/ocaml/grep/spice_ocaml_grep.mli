@@ -107,8 +107,8 @@ module Parse_error : sig
   (** [position t] is the parser-reported start position, if available. *)
 
   val to_string : t -> string
-  (** [to_string t] is a human-readable diagnostic. The text is not stable enough
-      for programmatic matching. *)
+  (** [to_string t] is a human-readable diagnostic. The text is not stable
+      enough for programmatic matching. *)
 
   val pp : Format.formatter -> t -> unit
   (** [pp ppf t] formats {!to_string} [t]. *)
@@ -184,7 +184,8 @@ val search_with_bindings :
     location as in {!search}, and match ranges within a file are pairwise
     disjoint. *)
 
-val structurally_equal_expr : Parsetree.expression -> Parsetree.expression -> bool
+val structurally_equal_expr :
+  Parsetree.expression -> Parsetree.expression -> bool
 (** [structurally_equal_expr a b] is [true] iff [a] and [b] are equal under the
     same location- and attribute-insensitive structural equality used to unify
     metavariable bindings. *)

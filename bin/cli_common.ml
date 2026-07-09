@@ -62,8 +62,7 @@ let session_document_diagnostic id error =
   | Spice_session.Error.Active_turn turn ->
       Spice_protocol.Error.diagnostic
         (Spice_protocol.Error.Active_turn_exists turn)
-  | Spice_session.Error.State _
-  | Spice_session.Error.Unknown_turn _
+  | Spice_session.Error.State _ | Spice_session.Error.Unknown_turn _
   | Spice_session.Error.Turn_not_finished _ ->
       diagnostic (Spice_session.Error.message error)
 
@@ -74,8 +73,7 @@ let session_store_diagnostic id error =
          decode failure; the protocol [Storage] flattening would lose them. *)
       Spice_session_store.Error.diagnostic ?id error
   | error ->
-      Spice_protocol.Error.diagnostic
-        (Spice_host.Session.store_error error)
+      Spice_protocol.Error.diagnostic (Spice_host.Session.store_error error)
 
 let status (result : (exit_status, error) result) =
   let render diagnostic = Spice_diagnostic.to_string diagnostic in
@@ -448,7 +446,8 @@ let resolve_sandbox host ~workspace args =
     ~protect:(Spice_host.Config.sandbox_protected_roots config)
     ~writable_roots:(Spice_host.Config.Sandbox.writable_roots sandbox_config)
     ~network:(Spice_host.Config.Sandbox.network sandbox_config)
-    ~toolchain_caches:(Spice_host.Config.Sandbox.toolchain_caches sandbox_config)
+    ~toolchain_caches:
+      (Spice_host.Config.Sandbox.toolchain_caches sandbox_config)
     ~env:(Spice_host.Env.get process_env)
     ~workspace ()
 

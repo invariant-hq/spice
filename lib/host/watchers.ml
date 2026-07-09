@@ -204,11 +204,11 @@ module Cr_comments = struct
                   (* [rel] is a raw readdir path; validate it before scanning. *)
                   match Spice_path.Rel.of_string rel with
                   | Error _ -> ()
-                  | Ok path ->
+                  | Ok path -> (
                       if Option.is_some (Cr.Syntax.of_path path) then
                         match scan_file t path with
                         | [] -> ()
-                        | issues -> Hashtbl.replace t.by_path rel issues
+                        | issues -> Hashtbl.replace t.by_path rel issues)
                 end
             | Unix.S_LNK | Unix.S_CHR | Unix.S_BLK | Unix.S_FIFO | Unix.S_SOCK
               ->

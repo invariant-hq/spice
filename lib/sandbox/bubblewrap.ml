@@ -108,7 +108,6 @@ let path path = Spice_path.Abs.to_string path
    tolerates absence at the platform boundary. *)
 let bind_read_only root = [ "--ro-bind-try"; path root; path root ]
 let bind_writable root = [ "--bind"; path root; path root ]
-
 let existing root = Sys.file_exists (path root)
 
 let filesystem_args policy =

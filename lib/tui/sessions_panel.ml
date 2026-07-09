@@ -74,7 +74,10 @@ let move delta ready =
   match List.length (visible ready) with
   | 0 -> ready
   | count ->
-      { ready with selected = (((ready.selected + delta) mod count) + count) mod count }
+      {
+        ready with
+        selected = (((ready.selected + delta) mod count) + count) mod count;
+      }
 
 let pick ready =
   match List.nth_opt (visible ready) ready.selected with
@@ -102,13 +105,16 @@ let drop_last s =
     String.sub s 0 (back (n - 1))
 
 let narrow ready appended =
-  (Ready (clamp { ready with filter = ready.filter ^ appended; selected = 0 }), Stay)
+  ( Ready (clamp { ready with filter = ready.filter ^ appended; selected = 0 }),
+    Stay )
 
 (* [tab] promotes to the browse screen, carrying the filter and the selected
    session so the screen opens exactly where the panel left off (03-ia
    §Sessions). *)
 let promote ready =
-  let select = Option.map (fun row -> row.id) (List.nth_opt (visible ready) ready.selected) in
+  let select =
+    Option.map (fun row -> row.id) (List.nth_opt (visible ready) ready.selected)
+  in
   (Ready ready, Promote { filter = ready.filter; select })
 
 let update (Key k) t =
@@ -123,7 +129,10 @@ let update (Key k) t =
       | Panel.Action Panel.Up -> (Ready (move (-1) ready), Stay)
       | Panel.Action Panel.Down -> (Ready (move 1 ready), Stay)
       | Panel.Action Panel.Backspace ->
-          (Ready (clamp { ready with filter = drop_last ready.filter; selected = 0 }), Stay)
+          ( Ready
+              (clamp
+                 { ready with filter = drop_last ready.filter; selected = 0 }),
+            Stay )
       | Panel.Printable s -> narrow ready s
       | Panel.Digit d ->
           if String.equal ready.filter "" then jump ready d
@@ -154,7 +163,8 @@ let row_view ~width ~selected row =
     ~size:{ width = pct 100; height = px 1 }
     [
       cell cursor_cols
-        (if selected then seg Theme.accent Theme.cursor else seg default_style "  ");
+        (if selected then seg Theme.accent Theme.cursor
+         else seg default_style "  ");
       cell title_w (seg default_style title);
       cell age_w (seg Theme.muted age);
     ]
@@ -176,14 +186,18 @@ let content ~width t =
           | [] -> [ muted_line "No matching sessions." ]
           | rows ->
               List.mapi
-                (fun i row -> row_view ~width ~selected:(i = ready.selected) row)
+                (fun i row ->
+                  row_view ~width ~selected:(i = ready.selected) row)
                 rows))
 
 (* The hint now advertises the working affordances honestly: resume attaches for
    real and tab promotes to the browse screen (doc/plans/tui-next-surfaces.md
    §Sequencing 5). *)
 let view ~frame ~width t =
-  let filter = match t with Loading | Failed _ -> "" | Ready ready -> ready.filter in
+  let filter =
+    match t with Loading | Failed _ -> "" | Ready ready -> ready.filter
+  in
   Panel.view ~frame ~name:"sessions" ~filter ~width
-    ~hint:[ "↵ resume"; "tab browse"; "type to filter"; "↑↓ select"; "esc close" ]
+    ~hint:
+      [ "↵ resume"; "tab browse"; "type to filter"; "↑↓ select"; "esc close" ]
     ~content:(content ~width t)

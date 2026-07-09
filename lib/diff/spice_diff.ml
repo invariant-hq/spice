@@ -604,8 +604,7 @@ let add_display_string buffer text =
             (code < 0x20 && not (Char.equal char '\t'))
             || code = 0x7F
             || (code >= 0x80 && code <= 0x9F)
-          then
-            add_escaped_byte buffer code
+          then add_escaped_byte buffer code
           else Buffer.add_char buffer char;
           loop (i + 1)
   in
@@ -701,7 +700,8 @@ let pure_change_ops ?max_distance op contents =
 let ops_for_file_text ?max_distance text =
   match (text.before_state, text.after_state) with
   | None, None -> Some []
-  | None, Some after -> pure_change_ops ?max_distance (fun l -> Insert_line l) after
+  | None, Some after ->
+      pure_change_ops ?max_distance (fun l -> Insert_line l) after
   | Some before, None ->
       pure_change_ops ?max_distance (fun l -> Delete_line l) before
   | Some _, Some _ ->

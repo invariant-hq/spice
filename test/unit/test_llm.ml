@@ -739,8 +739,8 @@ let client_contracts () =
     | Ok response -> response
     | Error error -> failf "streamed response failed: %a" Error.pp error
   in
-  equal (opaque "response")
-    ~msg:"terminal response collected under on_event" terminal streamed_response;
+  equal (opaque "response") ~msg:"terminal response collected under on_event"
+    terminal streamed_response;
   equal
     (list (opaque "stream event"))
     ~msg:"on_event observes every live event in stream order"

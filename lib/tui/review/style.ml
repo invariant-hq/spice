@@ -13,6 +13,7 @@ open Mosaic
 let color_muted = Ansi.Color.grayscale ~level:14
 let color_faint = Ansi.Color.grayscale ~level:11
 let color_rule = Ansi.Color.grayscale ~level:8
+
 (* Synced by hand with Spice_tui.Theme.color_accent (Theme is private to
    spice_tui, so it cannot be shared); change both together. *)
 let color_accent = Ansi.Color.of_rgb 214 96 60

@@ -506,4 +506,3 @@ let render ?(submit_enabled = true) ?(list_open = false) ?(mode = Build) ?agent
         ];
       bottom_rule ~width ~rule_color;
     ]
-

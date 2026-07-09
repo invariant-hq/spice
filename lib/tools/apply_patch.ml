@@ -370,7 +370,8 @@ let plan_delete ~fs ~workspace ~max_bytes path =
 
 let patch_apply_error path error =
   Patch
-    (Printf.sprintf "%s: %s" (Workspace.Path.display path)
+    (Printf.sprintf "%s: %s"
+       (Workspace.Path.display path)
        (Patch.Update.Error.message error))
 
 let plan_update ~fs ~workspace ~max_bytes path move_to update =
@@ -429,9 +430,7 @@ let plan_operation ~fs ~workspace ~max_bytes = function
         (Workspace.path_at_cwd_root workspace path)
   | Patch.Operation.Update { path; move_to; update } ->
       let path = Workspace.path_at_cwd_root workspace path in
-      let move_to =
-        Option.map (Workspace.path_at_cwd_root workspace) move_to
-      in
+      let move_to = Option.map (Workspace.path_at_cwd_root workspace) move_to in
       plan_update ~fs ~workspace ~max_bytes path move_to update
 
 let plan ~fs ~workspace ~max_bytes input =

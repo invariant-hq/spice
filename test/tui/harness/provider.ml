@@ -63,7 +63,9 @@ let with_script ?(unordered = false) project ~script_lines f =
       "30";
     |]
   in
-  let argv = if unordered then Array.append argv [| "--unordered" |] else argv in
+  let argv =
+    if unordered then Array.append argv [| "--unordered" |] else argv
+  in
   let dev_null = Unix.openfile "/dev/null" [ Unix.O_RDWR ] 0 in
   let log_fd =
     Unix.openfile log [ Unix.O_CREAT; Unix.O_TRUNC; Unix.O_WRONLY ] 0o644

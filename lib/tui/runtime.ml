@@ -28,9 +28,7 @@ let host_error error =
 
 let load_host ~stdenv ?process_env (startup : App.startup) =
   let process_env =
-    match process_env with
-    | Some env -> env
-    | None -> Spice_host.Env.current ()
+    match process_env with Some env -> env | None -> Spice_host.Env.current ()
   in
   let cwd = Option.map Spice_path.Abs.to_string startup.App.cwd in
   match Spice_host.Config.load ~stdenv ~process_env ?cwd () with
@@ -187,13 +185,13 @@ let make_brief_loader ?sandbox_flag ~engaged ~stdenv ~clock ~host ~cwd () =
      the probe is skipped and the footer reports [Disconnected] rather than
      polling the registry each tick. *)
   let dune_health =
-    if engaged then (
+    if engaged then
       let dune =
         Spice_ocaml_dune.Rpc.Instance.create ~fs:(Eio.Stdenv.fs stdenv)
           ~net:(Eio.Stdenv.net stdenv) ~workspace ~sleep:(Eio.Time.sleep clock)
           ()
       in
-      fun () -> Spice_ocaml_dune.Rpc.Instance.build_health dune ~clock ())
+      fun () -> Spice_ocaml_dune.Rpc.Instance.build_health dune ~clock ()
     else fun () -> Spice_ocaml_dune.Rpc.Instance.Health.Disconnected
   in
   (* Lazy: the git spawn belongs to the first (asynchronous) brief load, not
@@ -1143,8 +1141,7 @@ let auth_record_of_logout ~title
       base Auth_panel.Removed
   | Error message -> base (Auth_panel.Failed message)
 
-let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env ()
-    =
+let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
   (* A caller-supplied backend owns its own I/O, so the TTY gate only guards
      the default terminal path. *)
   if Option.is_none matrix && not (is_interactive ()) then Error `No_tty
@@ -2056,7 +2053,7 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env ()
                               (App.live_event ~now:(Eio.Time.now clock) event))
                           document
                         |> Result.map (fun result ->
-                               result.Spice_host.Compactor.document))
+                            result.Spice_host.Compactor.document))
                       ()
                     |> Result.map_error Spice_protocol.Error.message
                     |> Result.map ignore
@@ -2262,7 +2259,8 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env ()
                       deliver
                         (App.auth_settled ~request
                            (auth_record_of_settled
-                              ~title:(model_provider_title provider) settled)))
+                              ~title:(model_provider_title provider)
+                              settled)))
           | App.Auth_browser_login { request; provider; method_id } ->
               run_login ~request ~provider (fun ~cancel events ->
                   Spice_host_builtin.Login.browser ~stdenv host ~provider
@@ -2283,7 +2281,8 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env ()
                   deliver
                     (App.auth_settled ~request
                        (auth_record_of_logout
-                          ~title:(model_provider_title provider) result)))
+                          ~title:(model_provider_title provider)
+                          result)))
           | App.Auth_cancel { request } ->
               perform (fun () -> resolve_auth_cancel request)
           | App.Auth_copy text -> Mosaic.Cmd.copy_to_clipboard text

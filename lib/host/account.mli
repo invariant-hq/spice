@@ -166,8 +166,7 @@ val status :
     credential is reported as missing; a resolved credential is reported as
     present without checking whether the provider will accept it. *)
 
-val connected :
-  t -> Spice_llm.Provider.t -> bool
+val connected : t -> Spice_llm.Provider.t -> bool
 (** [connected t provider] is whether a credential resolved for [provider] in
     [t]'s snapshot: passive {!status} phase [`Ready], [`Degraded], or
     [`Unchecked]. [`Missing], [`Blocked], and resolution failures read as
@@ -182,8 +181,8 @@ val connectivity :
   bool
 (** [connectivity ~stdenv host] is {!connected} over a freshly loaded snapshot,
     the one-line way to supply {!Models.choose}'s [connected] argument. A
-    snapshot load failure reads as nothing connected, so a broken store
-    degrades the choice to registry order rather than failing it. *)
+    snapshot load failure reads as nothing connected, so a broken store degrades
+    the choice to registry order rather than failing it. *)
 
 val names :
   t ->

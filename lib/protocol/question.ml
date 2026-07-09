@@ -77,12 +77,13 @@ module Request = struct
     Jsont.Object.map ~kind:"question request"
       (fun header question options multi ->
         Decode.or_error
-          (make ?header ~question ~options:(Stdlib.Option.value ~default:[] options)
+          (make ?header ~question
+             ~options:(Stdlib.Option.value ~default:[] options)
              ~multi ()))
     |> Jsont.Object.opt_mem "header" Jsont.string ~enc:header
     |> Jsont.Object.mem "question" Jsont.string ~enc:question
     |> Jsont.Object.opt_mem "options" (Jsont.list Option.jsont) ~enc:(fun t ->
-           match t.options with [] -> None | options -> Some options)
+        match t.options with [] -> None | options -> Some options)
     |> Jsont.Object.mem "multi" Jsont.bool ~dec_absent:false
          ~enc_omit:(fun multi -> not multi)
          ~enc:multi

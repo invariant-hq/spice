@@ -349,8 +349,7 @@ let%expect_test "rename on the home stage flashes the no-session guard" =
   Term.send t "nope";
   Term.send t Keys.enter;
   Term.wait t (Screen.has "no session to rename");
-  print_fact "guard flashed"
-    (Screen.has "no session to rename" (Term.screen t));
+  print_fact "guard flashed" (Screen.has "no session to rename" (Term.screen t));
   [%expect {| guard flashed: true |}]
 
 (* [--draft] seeds the composer without starting anything: the process stays on

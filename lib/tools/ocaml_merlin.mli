@@ -77,8 +77,8 @@ val resolve_program :
     or the passed-through prefix — which every subsequent query execs directly
     with no per-query dune engagement.
 
-    Resolution failure (only reachable from a warmed [dune tools exec] prefix) is
-    a typed {!resolution_error} the caller caches so Merlin queries do not
+    Resolution failure (only reachable from a warmed [dune tools exec] prefix)
+    is a typed {!resolution_error} the caller caches so Merlin queries do not
     re-probe (and re-engage dune under a now-held watch lock) per call. [env]
     defaults to the current process environment and supplies the [PATH] searched
     for a bare program name; [timeout_ms] bounds the warming invocation and

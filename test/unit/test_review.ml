@@ -75,7 +75,8 @@ let feature_construction_boundaries () =
   expect_error "context must be non-negative" Review.Error.Invalid_file
     (Review.Feature.File.make ~context:(-1) ~path:(rel "lib/a.ml")
        ~before:(Some "a\n") ~after:(Some "b\n") ());
-  expect_error "max edit distance must be non-negative" Review.Error.Invalid_file
+  expect_error "max edit distance must be non-negative"
+    Review.Error.Invalid_file
     (Review.Feature.File.make ~max_edit_distance:(-1) ~path:(rel "lib/a.ml")
        ~before:(Some "a\n") ~after:(Some "b\n") ());
   let a_first =
@@ -460,10 +461,11 @@ let navigation_jumps_and_wraps () =
   let review = Review.move_cursor review Review.Cursor.Last in
   expect_cursor "Last reaches the final stop" outside_cr review;
   let review = Review.move_cursor ~wrap:true review Review.Cursor.Next in
-  expect_cursor "Next wraps from the final stop to feature" Review.Cursor.feature
-    review;
+  expect_cursor "Next wraps from the final stop to feature"
+    Review.Cursor.feature review;
   let review = Review.move_cursor ~wrap:true review Review.Cursor.Previous in
-  expect_cursor "Previous wraps from feature to the final stop" outside_cr review
+  expect_cursor "Previous wraps from feature to the final stop" outside_cr
+    review
 
 (* Live protocol *)
 

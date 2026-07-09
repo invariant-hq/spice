@@ -51,7 +51,8 @@ let json_strings texts =
 let tool_call_line ~id ~call_id ~name ~arguments ~body_contains =
   Printf.sprintf
     {|{"expect":{"request_line":"POST /v1/responses HTTP/1.1","body_contains":[%s]},"response":{"id":%S,"status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-%s","call_id":%S,"name":%S,"arguments":%S}]}}|}
-    (json_strings body_contains) id call_id call_id name arguments
+    (json_strings body_contains)
+    id call_id call_id name arguments
 
 (* The held follow-up step: the model's request now carries the tool result, so
    it matches on [function_call_output]. The delay holds the turn in flight long
@@ -80,13 +81,16 @@ let board_late =
    the [┈] rule, running [◼] accent, pending [◻] default, done folded to the
    [… N done ▸] digest — and leaves the strip on settle, the settled [⏺ Todo(…)]
    block staying as the record (the mirror is chrome, the document is history). *)
-let%expect_test "the live board mirrors mid-flight and persists past settle while open" =
+let%expect_test
+    "the live board mirrors mid-flight and persists past settle while open" =
   Project.with_temp "next-todo-mirror" @@ fun project ->
   let todo =
     tool_call_line ~id:"r-m1" ~call_id:"c-m1" ~name:"todo_write"
       ~arguments:board_seven ~body_contains:[ "plan" ]
   in
-  let final = held_final ~id:"r-mf" ~delay_ms:6000 ~answer:"Planned the work." in
+  let final =
+    held_final ~id:"r-mf" ~delay_ms:6000 ~answer:"Planned the work."
+  in
   Provider.with_responses project [ todo; final ] @@ fun provider ->
   run project ~provider ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
   Term.wait t (Screen.has "dune:");
@@ -142,7 +146,9 @@ let%expect_test "a short terminal folds the pending rows to an overflow row" =
     tool_call_line ~id:"r-s1" ~call_id:"c-s1" ~name:"todo_write"
       ~arguments:board_seven ~body_contains:[ "plan" ]
   in
-  let final = held_final ~id:"r-sf" ~delay_ms:6000 ~answer:"Planned the work." in
+  let final =
+    held_final ~id:"r-sf" ~delay_ms:6000 ~answer:"Planned the work."
+  in
   Provider.with_responses project [ todo; final ] @@ fun provider ->
   run project ~provider ~env:reduced_motion ~rows:15 ~cols:80 @@ fun t ->
   Term.wait t (Screen.has "dune:");
@@ -174,7 +180,9 @@ let%expect_test "a very short terminal collapses the board to a count line" =
     tool_call_line ~id:"r-d1" ~call_id:"c-d1" ~name:"todo_write"
       ~arguments:board_seven ~body_contains:[ "plan" ]
   in
-  let final = held_final ~id:"r-df" ~delay_ms:6000 ~answer:"Planned the work." in
+  let final =
+    held_final ~id:"r-df" ~delay_ms:6000 ~answer:"Planned the work."
+  in
   Provider.with_responses project [ todo; final ] @@ fun provider ->
   run project ~provider ~env:reduced_motion ~rows:12 ~cols:80 @@ fun t ->
   Term.wait t (Screen.has "dune:");
@@ -207,7 +215,9 @@ let%expect_test "a replacement todo_write re-renders the latest board" =
     tool_call_line ~id:"r-r2" ~call_id:"c-r2" ~name:"todo_write"
       ~arguments:board_late ~body_contains:[ "function_call_output" ]
   in
-  let final = held_final ~id:"r-rf" ~delay_ms:6000 ~answer:"Re-planned the work." in
+  let final =
+    held_final ~id:"r-rf" ~delay_ms:6000 ~answer:"Re-planned the work."
+  in
   Provider.with_responses project [ todo1; todo2; final ] @@ fun provider ->
   run project ~provider ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
   Term.wait t (Screen.has "dune:");

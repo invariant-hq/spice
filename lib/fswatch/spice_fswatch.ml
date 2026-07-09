@@ -773,8 +773,8 @@ let watch ~sw ~clock ?backend ?(poll_interval = 0.25) ?(settle_delay = 0.05)
               in
               match ready with
               | `Stopped -> close w
-              | `Ready ->
+              | `Ready -> (
                   Option.iter (fun on_ready -> on_ready w) on_ready;
-                  (match iter w ~f with Ok () -> () | Error e -> on_error e)));
+                  match iter w ~f with Ok () -> () | Error e -> on_error e)));
       `Stop_daemon);
   stop

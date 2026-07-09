@@ -4,13 +4,11 @@
  ---------------------------------------------------------------------------*)
 
 open Windtrap
-
 module Auth = Spice_auth
 module Browser = Auth.OAuth2_authorization_code
 module Protocol = Spice_provider.Auth.Login.Protocol
 
-let read_body body =
-  Eio.Buf_read.(of_flow ~max_size:4096 body |> take_all)
+let read_body body = Eio.Buf_read.(of_flow ~max_size:4096 body |> take_all)
 
 let respond_string ~status ~body () =
   Cohttp_eio.Server.respond_string ~status ~body ()
@@ -66,7 +64,7 @@ let authorization_setup ~token_endpoint =
   let spec : Protocol.oauth2_authorization_code =
     {
       Protocol.authorization_client = client;
-      Protocol.authorization_endpoint = authorization_endpoint;
+      Protocol.authorization_endpoint;
       Protocol.authorization_token_endpoint = token_endpoint;
       Protocol.redirect_uri = Some redirect_uri;
       Protocol.authorization_scope = [];
@@ -78,13 +76,13 @@ let authorization_setup ~token_endpoint =
     {
       Browser.authorization;
       Browser.authorization_uri = Oauth2.Authorization.uri authorization;
-      Browser.redirect_uri = redirect_uri;
+      Browser.redirect_uri;
     }
   in
   let callback =
     Uri.of_string "http://localhost/callback?code=code-1&state=state-1"
   in
-  spec, started, callback
+  (spec, started, callback)
 
 let complete_secret env ~profile ~token_type =
   let observed_body = ref None in

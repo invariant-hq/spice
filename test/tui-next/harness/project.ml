@@ -83,15 +83,15 @@ let env_snapshot overrides =
   let inherited =
     Unix.environment () |> Array.to_list
     |> List.filter_map (fun item ->
-           match String.index_opt item '=' with
-           | None -> None
-           | Some eq ->
-               let name = String.sub item 0 eq in
-               let value =
-                 String.sub item (eq + 1) (String.length item - eq - 1)
-               in
-               if overridden name || leaks_dune name then None
-               else Some (name, value))
+        match String.index_opt item '=' with
+        | None -> None
+        | Some eq ->
+            let name = String.sub item 0 eq in
+            let value =
+              String.sub item (eq + 1) (String.length item - eq - 1)
+            in
+            if overridden name || leaks_dune name then None
+            else Some (name, value))
   in
   (* [Spice_host.Env.of_list]: later bindings replace earlier ones. *)
   Spice_host.Env.of_list (inherited @ overrides)

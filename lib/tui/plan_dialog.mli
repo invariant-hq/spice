@@ -27,8 +27,9 @@ val make : Spice_protocol.Plan.Proposal.t -> t
 type outcome =
   | Stay  (** Redraw; the dialog is still open (cursor move, body expand). *)
   | Approve of { accept_edits : bool }
-      (** Approve the plan. [accept_edits] additionally sets the approval posture
-          to accept-edits in the same stroke (03-ia's [approve + ⏵⏵]). *)
+      (** Approve the plan. [accept_edits] additionally sets the approval
+          posture to accept-edits in the same stroke (03-ia's [approve + ⏵⏵]).
+      *)
   | Adjust
       (** Reject with feedback: the typed text becomes the rejection reason. *)
   | Keep_planning

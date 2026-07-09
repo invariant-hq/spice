@@ -14,6 +14,7 @@ let color_rule = Ansi.Color.grayscale ~level:8
 let color_success = Ansi.Color.of_rgb 77 217 128
 let color_warning = Ansi.Color.of_rgb 235 180 76
 let color_error = Ansi.Color.of_rgb 255 95 95
+
 (* History-search is an input mode (03-ia-screens-overlays.md §Composer input
    modes): teal, L/C-matched to paprika like the frame mode colors. It touches
    only the ⌕ marker and its footer badge. *)
@@ -80,8 +81,8 @@ let waiting = "⋯"
    replaces the composer region below the transcript. *)
 let panel_boundary = "▔"
 
-let spinner_frames =
-  [| "⠋"; "⠙"; "⠹"; "⠸"; "⠼"; "⠴"; "⠦"; "⠧"; "⠇"; "⠏" |]
+let spinner_frames = [| "⠋"; "⠙"; "⠹"; "⠸"; "⠼"; "⠴"; "⠦"; "⠧"; "⠇"; "⠏" |]
+
 let mode_build = "⏵"
 let mode_plan = "⏸"
 let mode_review = "⏴"

@@ -10,12 +10,12 @@
     window, and any non-default permission/sandbox posture. The live facts
     (dune, worktree, CRs, last session) are the {!Home.Brief.t}; the two are
     kept apart because they refresh on different clocks (04-header-footer.md,
-    "Header vs footer"). Version, cwd, and posture are process-static; the
-    model facts track the session's turn binding — a /model pick or a login
-    that flips the derived default pushes a rebuilt snapshot, so the footer
-    never shows a model the next turn would not use. A banner already appended
-    to the transcript keeps the facts it recorded; it is a session-start
-    record, not a live readout.
+    "Header vs footer"). Version, cwd, and posture are process-static; the model
+    facts track the session's turn binding — a /model pick or a login that flips
+    the derived default pushes a rebuilt snapshot, so the footer never shows a
+    model the next turn would not use. A banner already appended to the
+    transcript keeps the facts it recorded; it is a session-start record, not a
+    live readout.
 
     The record is transparent: the surfaces that render it (banner, footer)
     construct their views directly from these fields, and the runtime is the one

@@ -105,7 +105,6 @@ let json_obj fields =
        fields)
 
 let json_list values = Jsont.Json.list values
-
 let string_schema = json_obj [ ("type", Jsont.Json.string "string") ]
 
 let decode_for expected jsont call =
@@ -134,9 +133,7 @@ module Wait = struct
     let jsont =
       Jsont.Object.map ~kind:"subagent wait" (fun runs ->
           Decode.or_error (make ~runs))
-      |> Jsont.Object.mem "runs"
-           (Jsont.list Spice_session.Id.jsont)
-           ~enc:runs
+      |> Jsont.Object.mem "runs" (Jsont.list Spice_session.Id.jsont) ~enc:runs
       |> Jsont.Object.error_unknown |> Jsont.Object.finish
   end
 
@@ -152,8 +149,7 @@ module Wait = struct
               ( "runs",
                 json_obj
                   [
-                    ("type", Jsont.Json.string "array");
-                    ("items", string_schema);
+                    ("type", Jsont.Json.string "array"); ("items", string_schema);
                   ] );
             ] );
         ("required", json_list [ Jsont.Json.string "runs" ]);
@@ -207,9 +203,7 @@ module Message = struct
     type t = { run : Spice_session.Id.t; message : string }
 
     let make ~run ~message =
-      let* () =
-        check_non_empty "subagent message must not be empty" message
-      in
+      let* () = check_non_empty "subagent message must not be empty" message in
       Ok { run; message }
 
     let run t = t.run
@@ -242,8 +236,7 @@ module Message = struct
       ]
 
   let tool =
-    Spice_llm.Tool.make ~name
-      ~description:Spice_prompts.Tools.message_subagent
+    Spice_llm.Tool.make ~name ~description:Spice_prompts.Tools.message_subagent
       ~input_schema:tool_schema ()
 
   let decode call = decode_for name Request.jsont call
@@ -254,16 +247,12 @@ module Message_parent = struct
     type t = { message : string }
 
     let make ~message =
-      let* () =
-        check_non_empty "parent message must not be empty" message
-      in
+      let* () = check_non_empty "parent message must not be empty" message in
       Ok { message }
 
     let message t = t.message
     let equal a b = a = b
-
-    let pp ppf t =
-      Format.fprintf ppf "@[<hov>{ message = %S }@]" t.message
+    let pp ppf t = Format.fprintf ppf "@[<hov>{ message = %S }@]" t.message
 
     let jsont =
       Jsont.Object.map ~kind:"parent message" (fun message ->
@@ -284,8 +273,7 @@ module Message_parent = struct
       ]
 
   let tool =
-    Spice_llm.Tool.make ~name
-      ~description:Spice_prompts.Tools.message_parent
+    Spice_llm.Tool.make ~name ~description:Spice_prompts.Tools.message_parent
       ~input_schema:tool_schema ()
 
   let decode call = decode_for name Request.jsont call

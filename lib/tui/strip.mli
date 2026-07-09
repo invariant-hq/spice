@@ -16,12 +16,12 @@
     scrollport — unlike the working line it never enters scrollback.
 
     The queue never captures esc (01-transcript.md §The status strip, revised
-    2026-07-08): esc always belongs to interrupt/force, so a wrong-direction turn
-    stops in one gesture even while a correction sits queued. The queue's own
-    edit key is [↑], which the row names as [(↑ edits)]: with the composer empty
-    and the queue non-empty, [↑] pops the newest queued prompt back for editing,
-    ahead of prompt-history recall. The shell owns that routing (see [app.ml]'s
-    [list_key]); this module only names the key in the row. *)
+    2026-07-08): esc always belongs to interrupt/force, so a wrong-direction
+    turn stops in one gesture even while a correction sits queued. The queue's
+    own edit key is [↑], which the row names as [(↑ edits)]: with the composer
+    empty and the queue non-empty, [↑] pops the newest queued prompt back for
+    editing, ahead of prompt-history recall. The shell owns that routing (see
+    [app.ml]'s [list_key]); this module only names the key in the row. *)
 
 val view : width:int -> verbose:bool -> queued:string list -> _ Mosaic.t list
 (** [view ~width ~verbose ~queued] is the strip's rows in spec order, or the

@@ -55,8 +55,8 @@ val protected_meta_component :
     workspace root, and [None] otherwise.
 
     The test is lexical: it does not require [path] to exist, so creating a
-    protected path that does not exist yet is still caught. {!Edit.io} uses it to
-    refuse write transitions against protected metadata. *)
+    protected path that does not exist yet is still caught. {!Edit.io} uses it
+    to refuse write transitions against protected metadata. *)
 
 val resolve :
   workspace:Spice_workspace.t ->

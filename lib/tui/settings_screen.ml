@@ -83,8 +83,8 @@ type ready = {
   facts : facts;
   tab : tab;
   filter : filter;
-  config_sel : int;  (* index into the visible config rows *)
-  skills_sel : int;  (* index into the visible skill rows *)
+  config_sel : int; (* index into the visible config rows *)
+  skills_sel : int; (* index into the visible skill rows *)
   sort : sort;
   editing : editing;
 }
@@ -120,7 +120,8 @@ let contains ~needle haystack =
    group title so the renderer can head a group when the title changes. *)
 let config_flat facts =
   List.concat_map
-    (fun (g : Config.group) -> List.map (fun r -> (g.Config.title, r)) g.Config.rows)
+    (fun (g : Config.group) ->
+      List.map (fun r -> (g.Config.title, r)) g.Config.rows)
     facts.config.Config.groups
 
 let config_visible ready =
@@ -165,9 +166,15 @@ let clamp_sel ready =
   let clamp count sel = if count = 0 then 0 else max 0 (min sel (count - 1)) in
   match ready.tab with
   | Config ->
-      { ready with config_sel = clamp (List.length (config_visible ready)) ready.config_sel }
+      {
+        ready with
+        config_sel = clamp (List.length (config_visible ready)) ready.config_sel;
+      }
   | Skills ->
-      { ready with skills_sel = clamp (List.length (skills_visible ready)) ready.skills_sel }
+      {
+        ready with
+        skills_sel = clamp (List.length (skills_visible ready)) ready.skills_sel;
+      }
   | Status | Usage -> ready
 
 let loaded facts t =
@@ -221,13 +228,19 @@ let move_config delta ready =
   match List.length (config_visible ready) with
   | 0 -> ready
   | count ->
-      { ready with config_sel = (((ready.config_sel + delta) mod count) + count) mod count }
+      {
+        ready with
+        config_sel = (((ready.config_sel + delta) mod count) + count) mod count;
+      }
 
 let move_skills delta ready =
   match List.length (skills_visible ready) with
   | 0 -> ready
   | count ->
-      { ready with skills_sel = (((ready.skills_sel + delta) mod count) + count) mod count }
+      {
+        ready with
+        skills_sel = (((ready.skills_sel + delta) mod count) + count) mod count;
+      }
 
 let move delta ready =
   match ready.tab with
@@ -250,9 +263,13 @@ let switch_tab dir ready =
      list may have shrunk (skills added/removed) while it was inactive, and only
      the active tab is reclamped on a facts refresh. The filter reset above means
      the clamp reads the unfiltered list. *)
-  clamp_sel { ready with tab = List.nth tabs j; filter = Closed; editing = Browsing }
+  clamp_sel
+    { ready with tab = List.nth tabs j; filter = Closed; editing = Browsing }
 
-let next_sort = function By_name -> By_state | By_state -> By_cost | By_cost -> By_name
+let next_sort = function
+  | By_name -> By_state
+  | By_state -> By_cost
+  | By_cost -> By_name
 
 let index_in options v =
   match List.find_index (String.equal v) options with Some i -> i | None -> 0
@@ -282,17 +299,21 @@ let update_config_keymap ready k =
   | Screen.Action Screen.Down -> (Ready (move_config 1 ready), Stay)
   | Screen.Action ((Screen.Left | Screen.Right) as a) -> (
       match selected_config ready with
-      | Some (_, { Config.value = Config.Enum { current; options }; field; _ }) ->
+      | Some (_, { Config.value = Config.Enum { current; options }; field; _ })
+        ->
           radio_step (dir_of a) ready ~field ~options ~current
       | _ -> (Ready (switch_tab (dir_of a) ready), Stay))
   | Screen.Action Screen.Enter -> (
       match selected_config ready with
-      | Some (_, { Config.value = Config.Managed _; _ }) -> (Ready ready, Open_model_panel)
+      | Some (_, { Config.value = Config.Managed _; _ }) ->
+          (Ready ready, Open_model_panel)
       | Some (_, { Config.value = Config.Toggle b; field; _ }) ->
-          (Ready ready, Write_field { field; value = Some (string_of_bool (not b)) })
+          ( Ready ready,
+            Write_field { field; value = Some (string_of_bool (not b)) } )
       | Some (_, { Config.value = Config.Text s; field; _ }) ->
           (Ready { ready with editing = Inputting { field; text = s } }, Stay)
-      | Some (_, { Config.value = Config.Enum { current; options }; field; _ }) ->
+      | Some (_, { Config.value = Config.Enum { current; options }; field; _ })
+        ->
           radio_step 1 ready ~field ~options ~current
       | None -> (Ready ready, Stay))
   | _ -> (Ready ready, Stay)
@@ -300,25 +321,32 @@ let update_config_keymap ready k =
 let update_choosing ready (field, options, cursor) k =
   let current = List.nth options cursor in
   match k with
-  | Screen.Action Screen.Escape -> (Ready { ready with editing = Browsing }, Stay)
+  | Screen.Action Screen.Escape ->
+      (Ready { ready with editing = Browsing }, Stay)
   | Screen.Action Screen.Left -> radio_step (-1) ready ~field ~options ~current
   | Screen.Action Screen.Right | Screen.Action Screen.Enter ->
       radio_step 1 ready ~field ~options ~current
-  | Screen.Action Screen.Up -> (Ready (move_config (-1) { ready with editing = Browsing }), Stay)
-  | Screen.Action Screen.Down -> (Ready (move_config 1 { ready with editing = Browsing }), Stay)
+  | Screen.Action Screen.Up ->
+      (Ready (move_config (-1) { ready with editing = Browsing }), Stay)
+  | Screen.Action Screen.Down ->
+      (Ready (move_config 1 { ready with editing = Browsing }), Stay)
   | _ -> (Ready ready, Stay)
 
 let update_inputting ready (field, text) k =
   match k with
-  | Screen.Action Screen.Escape -> (Ready { ready with editing = Browsing }, Stay)
+  | Screen.Action Screen.Escape ->
+      (Ready { ready with editing = Browsing }, Stay)
   | Screen.Action Screen.Enter ->
       let v = String.trim text in
       ( Ready { ready with editing = Browsing },
-        Write_field { field; value = (if String.equal v "" then None else Some v) } )
+        Write_field
+          { field; value = (if String.equal v "" then None else Some v) } )
   | Screen.Action Screen.Backspace ->
-      (Ready { ready with editing = Inputting { field; text = drop_last text } }, Stay)
+      ( Ready { ready with editing = Inputting { field; text = drop_last text } },
+        Stay )
   | Screen.Char ch ->
-      (Ready { ready with editing = Inputting { field; text = text ^ ch } }, Stay)
+      ( Ready { ready with editing = Inputting { field; text = text ^ ch } },
+        Stay )
   | _ -> (Ready ready, Stay)
 
 let update_status_keymap ready k =
@@ -341,7 +369,8 @@ let update_skills_keymap ready k =
   match k with
   | Screen.Action Screen.Up -> (Ready (move_skills (-1) ready), Stay)
   | Screen.Action Screen.Down -> (Ready (move_skills 1 ready), Stay)
-  | Screen.Char "t" -> (Ready (clamp_sel { ready with sort = next_sort ready.sort }), Stay)
+  | Screen.Char "t" ->
+      (Ready (clamp_sel { ready with sort = next_sort ready.sort }), Stay)
   | Screen.Action Screen.Enter -> (
       match selected_skill ready with
       | Some row -> (Ready ready, Toggle_skill row.Skills.name)
@@ -373,16 +402,19 @@ let update_filtering ready q k =
   | Screen.Action Screen.Escape -> (Ready { ready with filter = Closed }, Stay)
   | Screen.Action Screen.Backspace ->
       (Ready (clamp_sel { ready with filter = Open (drop_last q) }), Stay)
-  | Screen.Char c -> (Ready (clamp_sel { ready with filter = Open (q ^ c) }), Stay)
+  | Screen.Char c ->
+      (Ready (clamp_sel { ready with filter = Open (q ^ c) }), Stay)
   | Screen.Action Screen.Up -> (Ready (move (-1) ready), Stay)
   | Screen.Action Screen.Down -> (Ready (move 1 ready), Stay)
   | Screen.Action Screen.Enter -> (
       match ready.tab with
       | Config -> (
           match selected_config ready with
-          | Some (_, { Config.value = Config.Managed _; _ }) -> (Ready ready, Open_model_panel)
+          | Some (_, { Config.value = Config.Managed _; _ }) ->
+              (Ready ready, Open_model_panel)
           | Some (_, { Config.value = Config.Toggle b; field; _ }) ->
-              (Ready ready, Write_field { field; value = Some (string_of_bool (not b)) })
+              ( Ready ready,
+                Write_field { field; value = Some (string_of_bool (not b)) } )
           | _ -> (Ready ready, Stay))
       | Skills -> (
           match selected_skill ready with
@@ -397,7 +429,8 @@ let update (Key k) t =
       match k with Screen.Action Screen.Escape -> (t, Close) | _ -> (t, Stay))
   | Ready ready -> (
       match ready.editing with
-      | Choosing { field; options; cursor } -> update_choosing ready (field, options, cursor) k
+      | Choosing { field; options; cursor } ->
+          update_choosing ready (field, options, cursor) k
       | Inputting { field; text } -> update_inputting ready (field, text) k
       | Browsing -> (
           match ready.filter with
@@ -496,19 +529,23 @@ let config_row_view ~label_w ~selected ~editing (row : Config.row) =
     if selected then seg Theme.accent Theme.cursor else seg default_style "  "
   in
   let label_style = if selected then Theme.accent else default_style in
-  let label = cell label_w (seg label_style (pad_right label_w row.Config.label)) in
+  let label =
+    cell label_w (seg label_style (pad_right label_w row.Config.label))
+  in
   let value_children =
     match (selected, editing, row.Config.value) with
-    | true, Choosing { options; cursor; _ }, Config.Enum _ -> radio_view ~options ~cursor
-    | true, Inputting { text; _ }, Config.Text _ -> [ seg Theme.accent (text ^ "▏") ]
-    | _ ->
+    | true, Choosing { options; cursor; _ }, Config.Enum _ ->
+        radio_view ~options ~cursor
+    | true, Inputting { text; _ }, Config.Text _ ->
+        [ seg Theme.accent (text ^ "▏") ]
+    | _ -> (
         let vstyle =
           if selected then Theme.accent
           else if row.Config.is_default then Theme.muted
           else default_style
         in
         let base = [ seg vstyle (value_text row.Config.value) ] in
-        (match row.Config.danger with
+        match row.Config.danger with
         | Some note -> base @ [ seg Theme.warning ("  — " ^ note) ]
         | None -> base)
   in
@@ -525,7 +562,9 @@ let window ~budget ~selected rows =
   else
     let start = if selected < budget then 0 else selected - budget + 1 in
     let start = min start (n - budget) in
-    let shown = List.filteri (fun i _ -> i >= start && i < start + budget) rows in
+    let shown =
+      List.filteri (fun i _ -> i >= start && i < start + budget) rows
+    in
     (shown, n - start - budget)
 
 let widest_config_label facts =
@@ -549,7 +588,8 @@ let config_body ~rows ready =
         List.fold_left
           (fun (i, acc) (title, row) ->
             let prev_title =
-              if i = 0 then None else Some (fst (List.nth visible (offset + i - 1)))
+              if i = 0 then None
+              else Some (fst (List.nth visible (offset + i - 1)))
             in
             let header =
               if Some title = prev_title then []
@@ -558,13 +598,15 @@ let config_body ~rows ready =
             in
             let is_selected = offset + i = ready.config_sel in
             let line =
-              config_row_view ~label_w ~selected:is_selected ~editing:ready.editing row
+              config_row_view ~label_w ~selected:is_selected
+                ~editing:ready.editing row
             in
             (i + 1, acc @ header @ [ line ]))
           (0, []) shown
       in
       let tail =
-        if older > 0 then [ muted_line (Printf.sprintf "… +%d more" older) ] else []
+        if older > 0 then [ muted_line (Printf.sprintf "… +%d more" older) ]
+        else []
       in
       elements @ tail
 
@@ -583,17 +625,25 @@ let two_col ~width ~label_w ?(value_style = Theme.muted) label value =
 let status_body ~width ready =
   let rows = ready.facts.status.Status.rows in
   let label_w =
-    2 + List.fold_left (fun w (r : Status.fact) -> max w (String.length r.Status.label)) 0 rows
+    2
+    + List.fold_left
+        (fun w (r : Status.fact) -> max w (String.length r.Status.label))
+        0 rows
   in
-  List.map (fun (r : Status.fact) -> two_col ~width ~label_w r.Status.label r.Status.value) rows
+  List.map
+    (fun (r : Status.fact) ->
+      two_col ~width ~label_w r.Status.label r.Status.value)
+    rows
 
 let usage_body ~width ready =
   let u = ready.facts.usage in
   if not u.Usage.has_turns then [ muted_line "No turns yet in this session." ]
   else
     let pairs =
-      (("model", u.Usage.model)
-      :: List.map (fun (l : Usage.lane) -> (l.Usage.label, format_int l.Usage.tokens)) u.Usage.lanes)
+      ("model", u.Usage.model)
+      :: List.map
+           (fun (l : Usage.lane) -> (l.Usage.label, format_int l.Usage.tokens))
+           u.Usage.lanes
       @ [ ("cost", u.Usage.cost) ]
     in
     let label_w =
@@ -605,7 +655,8 @@ let usage_body ~width ready =
 let skills_row_view ~width ~selected (row : Skills.row) =
   let inner = max 1 (width - 4) in
   let cost_s =
-    if row.Skills.cost > 0 then Printf.sprintf "~%s tok" (format_int row.Skills.cost)
+    if row.Skills.cost > 0 then
+      Printf.sprintf "~%s tok" (format_int row.Skills.cost)
     else "—"
   in
   let state_w = 10 and source_w = 10 in
@@ -621,7 +672,8 @@ let skills_row_view ~width ~selected (row : Skills.row) =
     ~size:{ width = pct 100; height = px 1 }
     [
       cell cursor_cols
-        (if selected then seg Theme.accent Theme.cursor else seg default_style "  ");
+        (if selected then seg Theme.accent Theme.cursor
+         else seg default_style "  ");
       cell name_w (seg name_style (truncate_tail ~width:name_w row.Skills.name));
       cell state_w (seg Theme.muted (pad_right state_w row.Skills.state));
       cell source_w (seg Theme.muted (pad_right source_w row.Skills.source));
@@ -629,7 +681,8 @@ let skills_row_view ~width ~selected (row : Skills.row) =
     ]
 
 let skills_body ~width ~rows ready =
-  if not ready.facts.skills.Skills.available then [ muted_line "Skills are disabled." ]
+  if not ready.facts.skills.Skills.available then
+    [ muted_line "Skills are disabled." ]
   else
     match skills_visible ready with
     | [] -> (
@@ -652,7 +705,10 @@ let skills_body ~width ~rows ready =
                       [
                         box ~flex_shrink:0. ~padding:(padding_lrtb 4 2 0 0)
                           ~size:{ width = pct 100; height = px 1 }
-                          [ seg Theme.faint (truncate_tail ~width:(max 1 (width - 6)) d) ];
+                          [
+                            seg Theme.faint
+                              (truncate_tail ~width:(max 1 (width - 6)) d);
+                          ];
                       ]
                   | _ -> []
                 else []
@@ -661,7 +717,8 @@ let skills_body ~width ~rows ready =
             (0, []) shown
         in
         let tail =
-          if older > 0 then [ muted_line (Printf.sprintf "… +%d more" older) ] else []
+          if older > 0 then [ muted_line (Printf.sprintf "… +%d more" older) ]
+          else []
         in
         elements @ tail
 
@@ -674,7 +731,8 @@ let body ~width ~rows ready =
 
 let content ~width ~rows t =
   match t with
-  | Loading { tab } -> [ tab_row tab; blank_row; muted_line "⠋ loading settings…" ]
+  | Loading { tab } ->
+      [ tab_row tab; blank_row; muted_line "⠋ loading settings…" ]
   | Load_error message -> [ error_line message ]
   | Ready ready -> tab_row ready.tab :: blank_row :: body ~width ~rows ready
 
@@ -699,7 +757,8 @@ let filter_line t =
   | Ready ready -> (
       match ready.filter with
       | Closed -> None
-      | Open q -> Some { Screen.query = q; matches = active_visible_count ready })
+      | Open q ->
+          Some { Screen.query = q; matches = active_visible_count ready })
   | Loading _ | Load_error _ -> None
 
 let hint t =
@@ -714,11 +773,21 @@ let hint t =
           | Open _ -> [ "↑↓ select"; "esc clear filter" ]
           | Closed -> (
               match ready.tab with
-              | Config -> [ "↵ edit"; "↑↓ move"; "←→ tab/value"; "/ filter"; "esc back" ]
+              | Config ->
+                  [
+                    "↵ edit"; "↑↓ move"; "←→ tab/value"; "/ filter"; "esc back";
+                  ]
               | Status -> [ "c copy id"; "←→ tab"; "esc back" ]
               | Usage -> [ "←→ tab"; "esc back" ]
               | Skills ->
-                  [ "↵ toggle"; "t sort"; "↑↓ move"; "←→ tab"; "/ filter"; "esc back" ])))
+                  [
+                    "↵ toggle";
+                    "t sort";
+                    "↑↓ move";
+                    "←→ tab";
+                    "/ filter";
+                    "esc back";
+                  ])))
 
 let view ~frame ~width ~rows t =
   Screen.view ~frame ~name:"settings" ~fact:(fact t) ~filter:(filter_line t)

@@ -224,7 +224,9 @@ let login_contracts () =
   is_true ~msg:"no methods defaults to not required"
     (not (Auth.required (Auth.make ())));
   is_true ~msg:"optional auth keeps its methods"
-    (not (Auth.required (Auth.make ~required:false ~login:[ Login.api_key () ] ())));
+    (not
+       (Auth.required
+          (Auth.make ~required:false ~login:[ Login.api_key () ] ())));
   expect_invalid_arg "required auth must declare a method" (fun () ->
       Auth.make ~required:true ())
 

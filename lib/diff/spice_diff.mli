@@ -41,8 +41,7 @@ module Label : sig
 
       This checks only diff header structure. It does not make [label] safe for
       terminals, logs, or prompts; use {!render} in [`Display] mode for display
-      escaping.
-  *)
+      escaping. *)
 
   val escaped : string -> t
   (** [escaped label] is a valid label for arbitrary display text [label].
@@ -141,12 +140,12 @@ module Hunk : sig
       ranges touch or overlap are merged, matching {!render}'s grouping. *)
 
   module Line : sig
+    (** The type for line roles within a hunk. Removals precede additions within
+        each change block, matching {!Hunk.lines} and rendered output. *)
     type kind =
       | Context  (** An unchanged line present in both text states. *)
       | Added  (** A line present only in the after text. *)
       | Removed  (** A line present only in the before text. *)
-    (** The type for line roles within a hunk. Removals precede additions within
-        each change block, matching {!Hunk.lines} and rendered output. *)
 
     type t
     (** The type for one hunk line. *)

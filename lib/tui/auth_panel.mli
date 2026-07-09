@@ -3,18 +3,19 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-(** The provider login / logout panel (09-auth.md): a staged drill-down over
-    the shared panel form — provider picker, method picker, then one of three
+(** The provider login / logout panel (09-auth.md): a staged drill-down over the
+    shared panel form — provider picker, method picker, then one of three
     protocol surfaces (a masked api-key entry, a browser flow panel, a
     device-code flow panel) — settling to a transcript record the shell appends.
 
-    A mini-Elm surface (doc/plans/tui-next-surfaces.md, doc/plans/tui-next-auth.md):
-    the shell holds {!t}, routes keys through {!key}, folds the resulting {!msg}
-    with {!update} — which yields the next {!t} and an {!event} the shell
-    interprets — and renders {!view} through {!Panel.view}. The panel reads no
-    host, clock, or environment: the provider facts arrive as {!provider_entry}
-    values the runtime assembles once ({!providers_loaded}), and the async
-    protocol progress arrives as {!challenge} / {!browser_opened} folds.
+    A mini-Elm surface (doc/plans/tui-next-surfaces.md,
+    doc/plans/tui-next-auth.md): the shell holds {!t}, routes keys through
+    {!key}, folds the resulting {!msg} with {!update} — which yields the next
+    {!t} and an {!event} the shell interprets — and renders {!view} through
+    {!Panel.view}. The panel reads no host, clock, or environment: the provider
+    facts arrive as {!provider_entry} values the runtime assembles once
+    ({!providers_loaded}), and the async protocol progress arrives as
+    {!challenge} / {!browser_opened} folds.
 
     This module is UI-pure. It owns the flow's shape, navigation, and view, but
     never opens a browser, polls, sleeps, or touches the credential store — the
@@ -32,7 +33,8 @@ type provider_entry = {
       *)
   display_name : string;  (** The picker label ([OpenAI], [Anthropic], …). *)
   logins : Spice_provider.Auth.Login.t list;
-      (** The provider's declared login methods; empty for a no-auth provider. *)
+      (** The provider's declared login methods; empty for a no-auth provider.
+      *)
   env : string list;
       (** The env var names that supply a credential for the provider. *)
   phase : Spice_account.phase;
@@ -44,10 +46,9 @@ type provider_entry = {
       (** The redacted last-four of the resolved credential, [None] for none or
           for short material. *)
 }
-(** One provider row, assembled by the runtime from
-    [Spice_host.Host.providers], [Spice_host.Account.status], and
-    [Spice_provider.Auth.*]. Carries no secret — only display-safe passive
-    facts. *)
+(** One provider row, assembled by the runtime from [Spice_host.Host.providers],
+    [Spice_host.Account.status], and [Spice_provider.Auth.*]. Carries no secret
+    — only display-safe passive facts. *)
 
 (** Whether the panel drives a login or a logout drill-down. *)
 type mode = Login | Logout
@@ -73,10 +74,12 @@ type outcome =
   | Env_active of string
       (** A logout removed the store credential but an env var still supplies
           one. *)
-  | Failed of string  (** Nothing persisted; the display-safe failure message. *)
+  | Failed of string
+      (** Nothing persisted; the display-safe failure message. *)
 
 type record = {
-  provider_title : string;  (** The provider display name for the record head. *)
+  provider_title : string;
+      (** The provider display name for the record head. *)
   outcome : outcome;  (** The settled outcome. *)
   acct_fingerprint : string option;
       (** The redacted account fingerprint, when one exists. *)
@@ -90,9 +93,9 @@ type record = {
 (** {1:surface The surface} *)
 
 type t
-(** The panel state: the current stage of the drill-down (loading, a load
-    error, a picker, the masked api-key entry, a browser / device flow panel, a
-    working line, or the logout empty state) plus the loaded entries and mode. *)
+(** The panel state: the current stage of the drill-down (loading, a load error,
+    a picker, the masked api-key entry, a browser / device flow panel, a working
+    line, or the logout empty state) plus the loaded entries and mode. *)
 
 type msg
 (** A key routed to the panel, opaque; produced by {!key}. *)
@@ -102,9 +105,14 @@ type msg
     {!started}. *)
 type event =
   | Stay  (** Remain open with the updated state. *)
-  | Close  (** Esc out of the provider picker (or the empty logout): close and
-              restore the composer + draft unchanged. *)
-  | Begin_api_key of { provider : Spice_llm.Provider.t; method_id : string; key : string }
+  | Close
+      (** Esc out of the provider picker (or the empty logout): close and
+          restore the composer + draft unchanged. *)
+  | Begin_api_key of {
+      provider : Spice_llm.Provider.t;
+      method_id : string;
+      key : string;
+    }
       (** Submit an api-key login: the runtime validates [key] at its edge and
           saves-then-checks. The panel is now in its working stage. *)
   | Begin_browser of { provider : Spice_llm.Provider.t; method_id : string }
@@ -130,14 +138,15 @@ type event =
 val loading : mode:mode -> ?provider:string -> unit -> t
 (** [loading ~mode ?provider ()] is the panel just opened, before its provider
     entries arrive: {!view} renders a muted loading line. [provider] is the
-    optional argument of [/login <provider>] / [/logout <provider>], which
-    skips the provider picker once the entries load ({!providers_loaded}). *)
+    optional argument of [/login <provider>] / [/logout <provider>], which skips
+    the provider picker once the entries load ({!providers_loaded}). *)
 
 val key : Matrix.Input.Key.event -> msg option
-(** [key ev] is the panel's message for [ev], or [None] for a key it ignores
-    (so it dies in the modal shell). The classification is uniform ({!Panel.classify});
-    the stage-dependent interpretation lives in {!update} — a printable narrows
-    a picker's filter but appends to the masked buffer in the api-key stage. *)
+(** [key ev] is the panel's message for [ev], or [None] for a key it ignores (so
+    it dies in the modal shell). The classification is uniform
+    ({!Panel.classify}); the stage-dependent interpretation lives in {!update} —
+    a printable narrows a picker's filter but appends to the masked buffer in
+    the api-key stage. *)
 
 val update : msg -> t -> t * event
 (** [update msg t] folds one key. In a picker: printables narrow the filter,
@@ -161,8 +170,8 @@ val providers_loaded : (provider_entry list, string) result -> t -> t * event
     load-error line; [Ok entries] opens the provider picker, or — for a
     [/login <provider>] / [/logout <provider>] fast path — resolves the named
     provider and emits its {!event} directly (a picker for a many-connected
-    logout, {!Begin_logout} for a single, {!Close} for an empty logout,
-    {!Flash} for an unknown or no-auth provider). *)
+    logout, {!Begin_logout} for a single, {!Close} for an empty logout, {!Flash}
+    for an unknown or no-auth provider). *)
 
 val started : request:int -> t -> t
 (** [started ~request t] stamps the just-entered flow stage (browser / device /
@@ -190,12 +199,13 @@ val browser_opened : request:int -> t -> t
 val browser_open_failed : request:int -> t -> t
 (** [browser_open_failed ~request t] marks the browser flow's auto-open as
     failed (a "Could not open a browser automatically" line surfaces under the
-    link, and enter retries), when [request] matches; otherwise [t] unchanged. *)
+    link, and enter retries), when [request] matches; otherwise [t] unchanged.
+*)
 
 val tick : t -> t
 (** [tick t] advances a waiting flow panel's elapsed counter and device
-    countdown by one second; a no-op in every other stage. Only the spinner
-    cell animates — the URL and code rows stay static for copyability. *)
+    countdown by one second; a no-op in every other stage. Only the spinner cell
+    animates — the URL and code rows stay static for copyability. *)
 
 val ticking : t -> bool
 (** [ticking t] is [true] while a browser / device flow panel is waiting, so the

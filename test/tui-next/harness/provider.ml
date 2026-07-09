@@ -106,16 +106,16 @@ let sse_body item =
   let deltas =
     chunk_text item.text
     |> List.map (fun chunk ->
-           Printf.sprintf
-             "event: response.output_text.delta\ndata: \
-              {\"type\":\"response.output_text.delta\",\"delta\":%S}\n\n"
-             chunk)
+        Printf.sprintf
+          "event: response.output_text.delta\n\
+           data: {\"type\":\"response.output_text.delta\",\"delta\":%S}\n\n"
+          chunk)
     |> String.concat ""
   in
   let terminal =
     Printf.sprintf
-      "event: response.completed\ndata: \
-       {\"type\":\"response.completed\",\"response\":%s}\n\n"
+      "event: response.completed\n\
+       data: {\"type\":\"response.completed\",\"response\":%s}\n\n"
       (completion_json item)
   in
   deltas ^ terminal
@@ -149,7 +149,8 @@ let read_request buf =
                  (String.lowercase_ascii (String.sub line 0 i))
                  "content-length" ->
             int_of_string_opt
-              (String.trim (String.sub line (i + 1) (String.length line - i - 1)))
+              (String.trim
+                 (String.sub line (i + 1) (String.length line - i - 1)))
         | _ -> None)
       headers
     |> Option.value ~default:0
@@ -161,8 +162,8 @@ let read_request buf =
 
 let check_expectation index item ~request_line ~body =
   if not (String.equal request_line "POST /v1/responses HTTP/1.1") then
-    Util.failf "provider: request %d line %S, expected POST /v1/responses"
-      index request_line;
+    Util.failf "provider: request %d line %S, expected POST /v1/responses" index
+      request_line;
   List.iter
     (fun fragment ->
       if not (Util.contains body fragment) then

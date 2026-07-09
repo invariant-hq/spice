@@ -26,9 +26,7 @@ open Tui_harness
 
 let reduced_motion = [ ("SPICE_REDUCED_MOTION", "1") ]
 let print_fact = Util.print_fact
-
-let run ?env ?rows ?cols project f =
-  Term.run ?env ?rows ?cols project f
+let run ?env ?rows ?cols project f = Term.run ?env ?rows ?cols project f
 
 (* The deterministic history path under the harness's isolated config home. *)
 let history_path project =

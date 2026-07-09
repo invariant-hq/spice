@@ -137,8 +137,7 @@ module Call_tests = struct
       | Call.Goal _ -> Call.Kind.equal kind Call.Kind.Goal
       | Call.Subagent _ -> Call.Kind.equal kind Call.Kind.Subagent
       | Call.Subagent_wait _ -> Call.Kind.equal kind Call.Kind.Subagent_wait
-      | Call.Subagent_cancel _ ->
-          Call.Kind.equal kind Call.Kind.Subagent_cancel
+      | Call.Subagent_cancel _ -> Call.Kind.equal kind Call.Kind.Subagent_cancel
       | Call.Subagent_message _ ->
           Call.Kind.equal kind Call.Kind.Subagent_message
       | Call.Subagent_message_parent _ ->
@@ -665,7 +664,9 @@ module Artifacts_tests = struct
             (ok "start" (Subagent_run.start ~started_at:(time 20) (a_run ())))))
 
   let run_cancel () =
-    let started = ok "start" (Subagent_run.start ~started_at:(time 20) (a_run ())) in
+    let started =
+      ok "start" (Subagent_run.start ~started_at:(time 20) (a_run ()))
+    in
     let cancelled =
       ok "cancel" (Subagent_run.cancel ~cancelled_at:(time 30) started)
     in
@@ -682,7 +683,8 @@ module Artifacts_tests = struct
                started)));
     (* A queued run can be cancelled directly, like fail. *)
     let queued_cancel =
-      ok "cancel queued" (Subagent_run.cancel ~cancelled_at:(time 15) (a_run ()))
+      ok "cancel queued"
+        (Subagent_run.cancel ~cancelled_at:(time 15) (a_run ()))
     in
     is_true ~msg:"queued run cancels"
       (String.equal
@@ -732,8 +734,7 @@ module Artifacts_tests = struct
           (Option.is_none (Subagent_run.usage run));
         match Subagent_run.status run with
         | Subagent_run.Status.Completed { summary; _ } ->
-            is_true ~msg:"legacy summary survives"
-              (String.equal summary "done")
+            is_true ~msg:"legacy summary survives" (String.equal summary "done")
         | _ -> failf "legacy run decoded to the wrong status")
 
   (* Goal *)
@@ -903,13 +904,11 @@ module Artifacts_tests = struct
     round_trip ~msg:"question jsont round-trips" ~equal:Question.Request.equal
       Question.Request.jsont request;
     (* Structured options round-trip and a bare question stays free-text. *)
-    is_error "empty option label"
-      (Question.Option.make ~label:"" ());
+    is_error "empty option label" (Question.Option.make ~label:"" ());
     let opt label = ok "option" (Question.Option.make ~label ()) in
     let structured =
       ok "structured"
-        (Question.Request.make ~header:"Pick one"
-           ~question:"Which runner?"
+        (Question.Request.make ~header:"Pick one" ~question:"Which runner?"
            ~options:[ opt "dune"; opt "alcotest" ]
            ~multi:true ())
     in
@@ -1100,7 +1099,8 @@ module Boundary_tests = struct
   let pending_of_outcome () =
     let of_call call =
       let waiting = Session.Waiting.host_tool ~turn:turn_id call in
-      Pending.of_outcome (Outcome.Waiting { waiting; call = Call.classify call })
+      Pending.of_outcome
+        (Outcome.Waiting { waiting; call = Call.classify call })
     in
     (match of_call ask_call with
     | Some (Pending.Question { turn; call_id; _ }) ->

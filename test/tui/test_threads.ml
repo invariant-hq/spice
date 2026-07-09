@@ -31,12 +31,12 @@ let run ?env ?rows ?cols ?provider project f =
 let spawn_line =
   {|{"expect":{"body_contains":["delegate"],"body_not_contains":["launched"]},"response":{"id":"resp-spawn","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-spawn","call_id":"spawn-1","name":"spawn_subagent","arguments":"{\"role\":\"explore\",\"task\":\"survey the code\"}"}]}}|}
 
-let%expect_test "a spawned child shows the agents count and settles as a parent notice" =
+let%expect_test
+    "a spawned child shows the agents count and settles as a parent notice" =
   Project.with_temp "next-threads-spawn" @@ fun project ->
   (* Detached-child settle otherwise wakes the idle parent for another turn; the
      phase-1 gate wants just the settle notice, so disable the wake. *)
-  Project.write project ".spice/config.json"
-    {|{"run":{"subagent_wake":false}}|};
+  Project.write project ".spice/config.json" {|{"run":{"subagent_wake":false}}|};
   (* The parent's follow-up step, after the launch ack folds into its request. *)
   let parent_done =
     Provider.response_line ~id:"resp-parent-done" ~body_contains:[ "launched" ]
@@ -63,7 +63,8 @@ let%expect_test "a spawned child shows the agents count and settles as a parent 
   print_fact "footer shows one live agent" (Screen.has "* 1 agent" running);
   (* The below-footer switcher strip renders [main] plus the child row. *)
   print_fact "switcher strip shows the main row" (Screen.has "◯ main" running);
-  print_fact "switcher strip shows the child role" (Screen.has "Explore" running);
+  print_fact "switcher strip shows the child role"
+    (Screen.has "Explore" running);
   (* The child settles: its line lands once in the parent transcript, in the
      spec grammar (● Agent "<task>" finished · facts — 02-tools §Subagents), and
      the live count clears. *)
@@ -91,10 +92,10 @@ let%expect_test "a spawned child shows the agents count and settles as a parent 
 let spawn_three_line =
   {|{"expect":{"body_contains":["delegate"],"body_not_contains":["launched"]},"response":{"id":"resp-s3","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"i1","call_id":"c1","name":"spawn_subagent","arguments":"{\"role\":\"explore\",\"task\":\"map the config loader\"}"},{"type":"function_call","id":"i2","call_id":"c2","name":"spawn_subagent","arguments":"{\"role\":\"explore\",\"task\":\"scan the test callers\"}"},{"type":"function_call","id":"i3","call_id":"c3","name":"spawn_subagent","arguments":"{\"role\":\"verify\",\"task\":\"run the suite\"}"}]}}|}
 
-let%expect_test "three children in one turn show the count and three strip rows" =
+let%expect_test "three children in one turn show the count and three strip rows"
+    =
   Project.with_temp "next-threads-multi" @@ fun project ->
-  Project.write project ".spice/config.json"
-    {|{"run":{"subagent_wake":false}}|};
+  Project.write project ".spice/config.json" {|{"run":{"subagent_wake":false}}|};
   let parent_done =
     Provider.response_line ~id:"resp-m-done" ~body_contains:[ "launched" ]
       ~body_not_contains:[] ~answer:"Delegated three."
@@ -151,10 +152,10 @@ let row_of needle screen =
    [◯ main] sits above the footer's [dune:] segment when it lives in the pane,
    below it when it lives in the below-footer strip (the narrow case the other
    tests drive at <110 cols). *)
-let%expect_test "a wide terminal hosts the switcher in the side pane, above the footer" =
+let%expect_test
+    "a wide terminal hosts the switcher in the side pane, above the footer" =
   Project.with_temp "next-threads-pane" @@ fun project ->
-  Project.write project ".spice/config.json"
-    {|{"run":{"subagent_wake":false}}|};
+  Project.write project ".spice/config.json" {|{"run":{"subagent_wake":false}}|};
   let parent_done =
     Provider.response_line ~id:"resp-p-done" ~body_contains:[ "launched" ]
       ~body_not_contains:[] ~answer:"Delegated."
@@ -200,10 +201,11 @@ let%expect_test "a wide terminal hosts the switcher in the side pane, above the 
    the budget honored it renders inside the slice; without the fix it overflows
    off the bottom and is clipped. Facts, not a golden: the elapsed clock is
    noisy. *)
-let%expect_test "wide short: the pane agents glance folds to its budget, keeping the browse hint" =
+let%expect_test
+    "wide short: the pane agents glance folds to its budget, keeping the \
+     browse hint" =
   Project.with_temp "next-threads-pane-short" @@ fun project ->
-  Project.write project ".spice/config.json"
-    {|{"run":{"subagent_wake":false}}|};
+  Project.write project ".spice/config.json" {|{"run":{"subagent_wake":false}}|};
   let parent_done =
     Provider.response_line ~id:"resp-ps-done" ~body_contains:[ "launched" ]
       ~body_not_contains:[] ~answer:"Delegated three."
@@ -261,10 +263,10 @@ let spawn_long_line =
     {|{"expect":{"body_contains":["delegate"],"body_not_contains":["launched"]},"response":{"id":"resp-spawn2","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-spawn2","call_id":"spawn-2","name":"spawn_subagent","arguments":"{\"role\":\"explore\",\"task\":\"%s\"}"}]}}|}
     long_task
 
-let%expect_test "a long tool-header argument truncates with an ellipsis, not a raw clip" =
+let%expect_test
+    "a long tool-header argument truncates with an ellipsis, not a raw clip" =
   Project.with_temp "next-threads-header-clip" @@ fun project ->
-  Project.write project ".spice/config.json"
-    {|{"run":{"subagent_wake":false}}|};
+  Project.write project ".spice/config.json" {|{"run":{"subagent_wake":false}}|};
   let parent_done =
     Provider.response_line ~id:"resp-h-done" ~body_contains:[ "launched" ]
       ~body_not_contains:[] ~answer:"Delegated."
@@ -273,7 +275,8 @@ let%expect_test "a long tool-header argument truncates with an ellipsis, not a r
     Provider.response_line ~id:"resp-h-child" ~body_contains:[ "Inspect" ]
       ~body_not_contains:[] ~answer:"Done."
   in
-  Provider.with_responses_unordered project [ spawn_long_line; parent_done; child ]
+  Provider.with_responses_unordered project
+    [ spawn_long_line; parent_done; child ]
   @@ fun provider ->
   run project ~provider ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
   Term.wait t (Screen.has "dune:");
@@ -295,10 +298,11 @@ let%expect_test "a long tool-header argument truncates with an ellipsis, not a r
 (* The switcher focus (doc/plans/tui-next-threads.md §2.2): on an empty draft [↓]
    engages the strip, [↑/↓] walk it, [esc] releases. Drill-in ([↵]) is a later
    phase, so the strip is browse-only and shows no [enter to open] hint. *)
-let%expect_test "the switcher strip engages, walks, and releases on the empty-draft arrows" =
+let%expect_test
+    "the switcher strip engages, walks, and releases on the empty-draft arrows"
+    =
   Project.with_temp "next-threads-focus" @@ fun project ->
-  Project.write project ".spice/config.json"
-    {|{"run":{"subagent_wake":false}}|};
+  Project.write project ".spice/config.json" {|{"run":{"subagent_wake":false}}|};
   let parent_done =
     Provider.response_line ~id:"resp-f-done" ~body_contains:[ "launched" ]
       ~body_not_contains:[] ~answer:"Delegated."
@@ -351,7 +355,8 @@ let%expect_test "the switcher strip engages, walks, and releases on the empty-dr
    On a resume the attached session id is the RESUMED id, but the shell's
    [session_id] is never re-attributed to it, so every thread event is dropped
    and nothing renders below the footer — exactly what Thibaut saw driving live. *)
-let%expect_test "a resumed session's persisted running run shows in the switcher" =
+let%expect_test
+    "a resumed session's persisted running run shows in the switcher" =
   Project.with_temp "next-threads-resume" @@ fun project ->
   Seed.prompt_session_titled project "ses_res" ~title:"resume target"
     ~prompt:"hello from the past";
@@ -387,10 +392,10 @@ let%expect_test "a resumed session's persisted running run shows in the switcher
    the count and strip never appeared and the settle notice never landed, exactly
    the reported symptom. This drives the live [owns_run] path (not the artifact
    load), so both gates are pinned against resume. *)
-let%expect_test "a live spawn in a resumed session reaches the switcher and settles" =
+let%expect_test
+    "a live spawn in a resumed session reaches the switcher and settles" =
   Project.with_temp "next-threads-resume-live" @@ fun project ->
-  Project.write project ".spice/config.json"
-    {|{"run":{"subagent_wake":false}}|};
+  Project.write project ".spice/config.json" {|{"run":{"subagent_wake":false}}|};
   Seed.prompt_session_titled project "ses_live" ~title:"resume target"
     ~prompt:"hello from the past";
   let parent_done =
@@ -421,7 +426,8 @@ let%expect_test "a live spawn in a resumed session reaches the switcher and sett
   let running = Term.screen t in
   print_fact "footer counts the resumed session's live spawn"
     (Screen.has "* 1 agent" running);
-  print_fact "switcher strip shows the child role" (Screen.has "Explore" running);
+  print_fact "switcher strip shows the child role"
+    (Screen.has "Explore" running);
   Term.wait t (Screen.has {|Agent "survey the code" finished|});
   let settled = Term.screen t in
   print_fact "settled notice lands in the resumed parent transcript"

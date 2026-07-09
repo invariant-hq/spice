@@ -20,8 +20,8 @@
     - the {b focused browse} ([selected = Some i]): [↓] stepped in, so the strip
       expands in place and windows over the whole ordered list around row [i]
       with [↑ N]/[↓ N more] seam rows, the window height derived from
-      [rows_avail] like {!Model_panel}. The selected row wears the [❯] cursor and
-      an [enter to open] hint.
+      [rows_avail] like {!Model_panel}. The selected row wears the [❯] cursor
+      and an [enter to open] hint.
 
     It is a pure view: the shell owns the row order, the selection, and all key
     routing (empty-draft [↓]/[↑]/[↵]/[esc], the composer non-modality) — this
@@ -68,19 +68,19 @@ val view :
     the strip is honestly browse-only (the honest-hint rule).
 
     [on_mouse i ev] is attached to row [i] (the absolute index in [rows], the
-    same index [selected]/[hovered] use), so the shell maps a click to that row's
-    run; it returns [None] for events it ignores (a wheel then bubbles to the
-    transcript, the wheel-always-scrolls law). [hovered] is the absolute index the
-    pointer is over, lighting that row like a selection but without moving the
-    [❯] cursor. Both default to no mouse behaviour.
+    same index [selected]/[hovered] use), so the shell maps a click to that
+    row's run; it returns [None] for events it ignores (a wheel then bubbles to
+    the transcript, the wheel-always-scrolls law). [hovered] is the absolute
+    index the pointer is over, lighting that row like a selection but without
+    moving the [❯] cursor. Both default to no mouse behaviour.
 
     [selected = None] is the glance: up to the first three rows, then a
     [… N more (↓ to browse)] overflow row when [rows] is longer — the block
-    height bounded by [rows_avail], so the hint replaces content rows rather than
-    overflowing when the budget is tight. [selected = Some i] is the browse: the
-    whole list windowed around row [i] — height bounded by [rows_avail] — with
-    [↑ N more]/[↓ N more] seams past the window edges, the [i]th row carrying the
-    [❯] cursor and an [enter to open] hint.
+    height bounded by [rows_avail], so the hint replaces content rows rather
+    than overflowing when the budget is tight. [selected = Some i] is the
+    browse: the whole list windowed around row [i] — height bounded by
+    [rows_avail] — with [↑ N more]/[↓ N more] seams past the window edges, the
+    [i]th row carrying the [❯] cursor and an [enter to open] hint.
 
     [width] is the terminal column count; each row spans it and its task
     pre-truncates in OCaml so no row wraps (the flex-truncate quirk). *)

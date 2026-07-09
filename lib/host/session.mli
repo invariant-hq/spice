@@ -113,12 +113,12 @@ val with_terminal_observed :
   hooks ->
   hooks
 (** [with_terminal_observed terminal hooks] adds a callback run once when
-    execution reaches a terminal outcome, receiving the same [(document, outcome)]
-    pair {!Runner.execute} returns plus [~observe], the run's event sink, passed
-    by the interpreter at fire time rather than captured at composition time.
-    Successive combinators self-chain: the prior terminal callback runs before
-    [terminal]. Load-bearing: the end-of-run mutation checkpoint records through
-    it. *)
+    execution reaches a terminal outcome, receiving the same
+    [(document, outcome)] pair {!Runner.execute} returns plus [~observe], the
+    run's event sink, passed by the interpreter at fire time rather than
+    captured at composition time. Successive combinators self-chain: the prior
+    terminal callback runs before [terminal]. Load-bearing: the end-of-run
+    mutation checkpoint records through it. *)
 
 val with_cancelled : (unit -> bool) -> hooks -> hooks
 (** [with_cancelled cancelled hooks] adds the cancellation signal the
@@ -142,10 +142,10 @@ val store : stdenv:Eio_unix.Stdenv.base -> Host.t -> Spice_session_store.t
 val store_error : Spice_session_store.Error.t -> Spice_protocol.Error.t
 (** [store_error error] flattens a store error into the host's single protocol
     error: not-found, conflict, and corrupt/io storage errors keep their
-    protocol shapes; wrapped pure session errors use the id carried by the
-    store error, and unrepairable invariants flatten to
-    {!Spice_protocol.Error.Internal}. This is the one
-    mapping every store consumer shares; frontends define no second one. *)
+    protocol shapes; wrapped pure session errors use the id carried by the store
+    error, and unrepairable invariants flatten to
+    {!Spice_protocol.Error.Internal}. This is the one mapping every store
+    consumer shares; frontends define no second one. *)
 
 val load :
   Spice_session_store.t ->
@@ -417,8 +417,8 @@ val save_title :
     Delete, archive, and restore are pure {!Spice_session} lifecycle mutations;
     these verbs pair each with the store save the caller would otherwise repeat,
     exactly as {!save_title} does for a title write. They are the non-attached
-    path: an attached session must route its mutation through {!Live.write} so it
-    serializes with the drain and cannot lose the on-disk revision to a
+    path: an attached session must route its mutation through {!Live.write} so
+    it serializes with the drain and cannot lose the on-disk revision to a
     concurrent turn save. *)
 
 val delete :
@@ -437,9 +437,9 @@ val archive :
   Spice_session_store.Document.t ->
   (Spice_session_store.Document.t, Spice_protocol.Error.t) result
 (** [archive ~store document] marks [document]'s session archived and saves it,
-    returning the saved document. Archiving an archived session is idempotent. An
-    active turn refuses with {!Spice_protocol.Error.Active_turn_exists}; a deleted
-    session refuses with {!Spice_protocol.Error.Deleted}. *)
+    returning the saved document. Archiving an archived session is idempotent.
+    An active turn refuses with {!Spice_protocol.Error.Active_turn_exists}; a
+    deleted session refuses with {!Spice_protocol.Error.Deleted}. *)
 
 val restore :
   store:Spice_session_store.t ->

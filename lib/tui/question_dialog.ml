@@ -30,8 +30,7 @@ let build ~header ~question ~options ~multi =
   }
 
 let of_request request =
-  build
-    ~header:(Q.Request.header request)
+  build ~header:(Q.Request.header request)
     ~question:(Q.Request.question request)
     ~options:(Q.Request.options request)
     ~multi:(Q.Request.multi request)
@@ -91,7 +90,8 @@ let blank = box ~flex_shrink:0. ~size:{ width = pct 100; height = px 1 } []
 let option_row t i option =
   let selected = Option_list.selected t.nav = i in
   let checkbox =
-    if t.multi then if t.checked.(i) then Option_list.Checked else Option_list.Unchecked
+    if t.multi then
+      if t.checked.(i) then Option_list.Checked else Option_list.Unchecked
     else Option_list.No_box
   in
   let label_style = if selected then Theme.accent else Theme.muted in
@@ -117,13 +117,18 @@ let custom_row t =
     [
       text ~style ~wrap:`None cursor;
       text ~style ~wrap:`None
-        (string_of_int (i + 1) ^ ". " ^ Theme.own_answer ^ " type your own answer");
+        (string_of_int (i + 1)
+        ^ ". " ^ Theme.own_answer ^ " type your own answer");
     ]
 
 let view ~width t =
   let header =
     match t.header with
-    | Some h -> [ box ~padding:indent ~flex_shrink:0. [ text ~style:Theme.accent ~wrap:`Word h ] ]
+    | Some h ->
+        [
+          box ~padding:indent ~flex_shrink:0.
+            [ text ~style:Theme.accent ~wrap:`Word h ];
+        ]
     | None -> []
   in
   let question_row =
@@ -140,11 +145,14 @@ let view ~width t =
     match t.flash with
     | None -> []
     | Some message ->
-        [ box ~padding:indent ~flex_shrink:0. [ text ~style:Theme.warning ~wrap:`None message ] ]
+        [
+          box ~padding:indent ~flex_shrink:0.
+            [ text ~style:Theme.warning ~wrap:`None message ];
+        ]
   in
   let content = header @ [ question_row; blank; options ] @ flash in
   (* The top rule is accent, not the plain [rule] gray: a decision dialog is
      spice asking, and the accent rule is its single piece of chrome (07-dialogs
      §Shared anatomy, §Theme usage; 00-overview §One rule idiom). *)
-  Panel.view ~frame:Theme.color_accent ~name:"question" ~filter:"" ~hint:(hint t)
-    ~width ~content
+  Panel.view ~frame:Theme.color_accent ~name:"question" ~filter:""
+    ~hint:(hint t) ~width ~content

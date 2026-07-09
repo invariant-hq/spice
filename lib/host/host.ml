@@ -153,12 +153,12 @@ module Error = struct
     let id = Spice_llm.Provider.id provider in
     [
       Printf.sprintf
-        "providers.%s.base_url is set to %s, but the model id is still validated \
-         against the built-in %s catalog"
+        "providers.%s.base_url is set to %s, but the model id is still \
+         validated against the built-in %s catalog"
         id base_url id;
-      "for a self-hosted OpenAI-compatible server (llama.cpp, vLLM, LM Studio), \
-       use the ollama provider: set providers.ollama.base_url and model \
-       ollama/<id>";
+      "for a self-hosted OpenAI-compatible server (llama.cpp, vLLM, LM \
+       Studio), use the ollama provider: set providers.ollama.base_url and \
+       model ollama/<id>";
     ]
 
   let hints = function

@@ -40,7 +40,8 @@ let md_style_thinking : Markdown.style =
   | Heading _ | Strong | Task_marker ->
       Ansi.Style.make ~fg:Theme.color_muted ~bold:true ()
   | Emphasis | Blockquote -> Theme.thinking
-  | Strikethrough -> Ansi.Style.make ~fg:Theme.color_muted ~strikethrough:true ()
+  | Strikethrough ->
+      Ansi.Style.make ~fg:Theme.color_muted ~strikethrough:true ()
   | Thematic_break | Table_border -> Theme.rule
   | Conceal_punctuation -> Theme.faint
   | Default | Code_span | Code_block | Link | Image | List_marker -> Theme.muted

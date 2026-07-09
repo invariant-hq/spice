@@ -88,12 +88,11 @@ module Update : sig
           (** Update-application mismatch.
 
               [Missing_context line] means the exact context line was not found
-              at or after the current search position. [Missing_lines] means
-              the chunk's exact [old_lines] sequence was not found.
+              at or after the current search position. [Missing_lines] means the
+              chunk's exact [old_lines] sequence was not found.
               [Missing_insertion_point] means an insertion-only chunk could not
               be placed. [end_of_file] records whether [*** End of File]
-              constrained the failed match or insertion.
-          *)
+              constrained the failed match or insertion. *)
 
     type t
     (** Update-application error. *)
@@ -106,9 +105,9 @@ module Update : sig
     (** [mismatch e] is the exact application mismatch for [e]. *)
 
     val message : t -> string
-    (** [message e] is a human-readable diagnostic. The wording is for UI,
-        logs, and model-facing tool errors; callers should branch on
-        {!mismatch} rather than parse the message. *)
+    (** [message e] is a human-readable diagnostic. The wording is for UI, logs,
+        and model-facing tool errors; callers should branch on {!mismatch}
+        rather than parse the message. *)
 
     val pp : Format.formatter -> t -> unit
     (** [pp ppf e] formats [e] for diagnostics. It prints {!message}[ e]. *)

@@ -51,9 +51,9 @@ val view :
   dune:Spice_ocaml_dune.Rpc.Instance.Health.t ->
   width:int ->
   _ Mosaic.t
-(** [view ?posture ?input_mode snapshot ~dune ~width] renders the
-    footer at [width] columns. With no optional arguments it is the idle fact
-    row (the pre-existing call [view snapshot ~dune ~width] is unchanged).
+(** [view ?posture ?input_mode snapshot ~dune ~width] renders the footer at
+    [width] columns. With no optional arguments it is the idle fact row (the
+    pre-existing call [view snapshot ~dune ~width] is unchanged).
 
     - [posture] defaults to {!Ask} and, when set, draws the pill leftmost. It
       participates in the width budget; when the pill, cwd, and hint cannot
@@ -69,9 +69,9 @@ val view :
       mode takeover hides the facts entirely.
     - [home_badge] defaults to none. When set (a drilled-in thread's footer,
       03-ia §Agent threads), it claims the right slot with the way-home badge in
-      [accent] — e.g. [⏴ @explore · esc for main] — ahead of the [? for shortcuts]
-      hint, which it replaces. An input mode takeover still wins the slot, but
-      those never coexist with a drilled-in thread.
+      [accent] — e.g. [⏴ @explore · esc for main] — ahead of the
+      [? for shortcuts] hint, which it replaces. An input mode takeover still
+      wins the slot, but those never coexist with a drilled-in thread.
     - [account_absent] defaults to [false]. When [true] (no provider connected),
       a loud [! not logged in · /login] leads the left segment and is never
       dropped, the optional facts degrading around it (09-auth.md §9). Only the

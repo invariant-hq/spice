@@ -13,9 +13,7 @@ open Tui_harness
 
 let reduced_motion = [ ("SPICE_REDUCED_MOTION", "1") ]
 let print_fact = Util.print_fact
-
-let run ?env ?rows ?cols project f =
-  Term.run ?env ?rows ?cols project f
+let run ?env ?rows ?cols project f = Term.run ?env ?rows ?cols project f
 
 (* A hard newline (shift+enter / ctrl+j) grows the frame in place; the "❯ "
    marker sits on the first visual row only, wrapped and hard-newline rows

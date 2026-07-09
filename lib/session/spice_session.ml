@@ -136,11 +136,11 @@ let delete t =
     match require_no_active_turn t with
     | Error _ as error -> error
     | Ok () ->
-      Ok
-        {
-          t with
-          metadata = Metadata.with_status Metadata.Status.Deleted t.metadata;
-        }
+        Ok
+          {
+            t with
+            metadata = Metadata.with_status Metadata.Status.Deleted t.metadata;
+          }
 
 let fork ~id ?title ~cwd ~created_at t =
   match require_not_deleted t with
@@ -362,8 +362,7 @@ module Run = struct
         invalid_config
           (Printf.sprintf "max_steps must be positive, got %d" max_steps);
       match Tool.Catalog.make tools with
-      | Error error ->
-          invalid_config (Tool.Error.message error)
+      | Error error -> invalid_config (Tool.Error.message error)
       | Ok tools ->
           validate_executable_declarations tools;
           validate_host_tool_names tools host_tools;
@@ -576,8 +575,7 @@ module Run = struct
   let tool_claim_id turn_id call =
     Tool_claim.Id.of_string
       ("tool_exec:"
-      ^ Spice_digest.key ~length:16
-          ~domain:"spice.session.tool_claim.v1"
+      ^ Spice_digest.key ~length:16 ~domain:"spice.session.tool_claim.v1"
           [ Turn.Id.to_string turn_id; Llm.Tool.Call.id call ])
 
   let request_permission session turn_id call request_index review =

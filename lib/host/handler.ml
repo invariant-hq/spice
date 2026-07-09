@@ -205,8 +205,7 @@ let child ~cancelled:_ _document call =
                 (name ^ " is not available in a subagent session.")))
 
 let defaults ~fs ~root ~now ~mode ~spawn ~wait ~cancel ~message ~cancelled
-    document call
-    =
+    document call =
   match Spice_protocol.Call.classify call with
   | None -> Ok None
   (* A question parks the turn on the answerable question boundary; the loop

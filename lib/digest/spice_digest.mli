@@ -17,8 +17,7 @@
     input is responsible for its own domain separation; {!key} performs
     length-framed domain and field encoding for derived identifiers. This module
     is deterministic and pure, but it is not an authentication boundary and does
-    not provide keyed authentication.
-*)
+    not provide keyed authentication. *)
 
 (** {1:types Types} *)
 
@@ -94,10 +93,10 @@ module Identity : sig
   module Parse_error : sig
     (** Identity parse errors. *)
 
+    (** The type for identity parse errors. *)
     type t =
       | Invalid_identity
           (** Any violation of the canonical identity grammar. *)
-    (** The type for identity parse errors. *)
 
     val message : t -> string
     (** [message e] is a human-readable diagnostic for [e]. It is not stable

@@ -13,9 +13,7 @@ open Tui_harness
 
 let reduced_motion = [ ("SPICE_REDUCED_MOTION", "1") ]
 let print_fact = Util.print_fact
-
-let run ?env ?rows ?cols project f =
-  Term.run ?env ?rows ?cols project f
+let run ?env ?rows ?cols project f = Term.run ?env ?rows ?cols project f
 
 (* Typing "/" on the empty draft opens the palette on the whole catalog: the
    five-slot window shows the head rows in display order with the seam row
@@ -29,8 +27,7 @@ let%expect_test "slash opens the palette on the catalog" =
   print_fact "clear row" (Screen.has "/clear" (Term.screen t));
   print_fact "fork row" (Screen.has "/fork" (Term.screen t));
   print_fact "model row" (Screen.has "/model" (Term.screen t));
-  [%expect
-    {|
+  [%expect {|
     clear row: true
     fork row: true
     model row: true|}]
@@ -47,7 +44,8 @@ let%expect_test "filtering narrows and backspace past the slash closes" =
   print_fact "narrowed to quit" (Screen.lacks "/model" (Term.screen t));
   Term.send t "zz";
   Term.wait t (Screen.has "no matching commands");
-  print_fact "empty filter notes" (Screen.has "no matching commands" (Term.screen t));
+  print_fact "empty filter notes"
+    (Screen.has "no matching commands" (Term.screen t));
   Term.send t Keys.backspace;
   Term.send t Keys.backspace;
   Term.send t Keys.backspace;
@@ -55,7 +53,8 @@ let%expect_test "filtering narrows and backspace past the slash closes" =
   Term.send t Keys.backspace;
   Term.send t Keys.backspace;
   Term.wait t (Screen.lacks "/model");
-  print_fact "closed once the slash is gone" (Screen.lacks "/model" (Term.screen t));
+  print_fact "closed once the slash is gone"
+    (Screen.lacks "/model" (Term.screen t));
   [%expect
     {|
     narrowed to quit: true
@@ -74,8 +73,7 @@ let%expect_test "esc closes the palette and clears the input" =
   Term.wait t (fun s -> Screen.lacks "/quit" s && Screen.has "message spice" s);
   print_fact "palette gone" (Screen.lacks "/quit" (Term.screen t));
   print_fact "draft cleared" (Screen.has "message spice" (Term.screen t));
-  [%expect
-    {|
+  [%expect {|
     palette gone: true
     draft cleared: true|}]
 

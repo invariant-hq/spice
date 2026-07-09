@@ -59,7 +59,6 @@ module Motion = struct
   let pour_len = Array.length Theme.pour_frames
   let hold_frames = 4
   let cycle_len = pour_len + hold_frames
-
   let init ~reduced = if reduced then Static else Pouring 0
   let freeze _ = Static
   let animating = function Static -> false | Pouring _ -> true
@@ -187,8 +186,7 @@ let notice_block ~width lines =
       ~size:{ width = auto; height = px 1 }
       [
         seg Theme.accent "▎ ";
-        box
-          ~flex_direction:Flex_direction.Row
+        box ~flex_direction:Flex_direction.Row
           ~size:{ width = px content; height = px 1 }
           runs;
       ]
@@ -289,8 +287,8 @@ let workspace_block ~width ~rows (brief : Brief.t) =
     dune_row brief.Brief.dune
     :: (when_ brief.Brief.account_absent [ account_row ]
        @ (match brief.Brief.worktree with
-          | Some s -> [ worktree_row s ]
-          | None -> [])
+         | Some s -> [ worktree_row s ]
+         | None -> [])
        @ when_ (rows >= 18)
            (match brief.Brief.crs with Some c -> [ crs_row c ] | None -> [])
        @ when_ (rows >= 20)
@@ -352,7 +350,7 @@ let workspace_rows ~rows (brief : Brief.t) =
   + (if brief.Brief.account_absent then 1 else 0)
   + present brief.Brief.worktree
   + (if rows >= 18 then present brief.Brief.crs else 0)
-  + (if rows >= 20 then present brief.Brief.session else 0)
+  + if rows >= 20 then present brief.Brief.session else 0
 
 let workspace_section_height ~rows = function
   | None -> 1 + 1 (* blank · the loading spinner *)
@@ -373,7 +371,8 @@ let stage ~snapshot ~brief ~notice ~motion ~composer ~width ~rows =
      composer is absent regardless of height (doc/plans/tui-next-surfaces.md
      §Panel geometry). *)
   let composer_shown =
-    (match composer with Some _ -> true | None -> false) && rows >= composer_floor
+    (match composer with Some _ -> true | None -> false)
+    && rows >= composer_floor
   in
   (* The notice can ride above a panel, so it does not depend on the composer; it
      is the first section to shed below [stage_block_floor]. The workspace facts
@@ -383,7 +382,9 @@ let stage ~snapshot ~brief ~notice ~motion ~composer ~width ~rows =
   let show_notice = notice <> [] && rows >= stage_block_floor in
   let show_workspace = composer_shown && rows >= stage_block_floor in
   let show_warning = composer_shown && rows >= warning_floor in
-  let notice_h = if show_notice then notice_section_height ~width notice else 0 in
+  let notice_h =
+    if show_notice then notice_section_height ~width notice else 0
+  in
   (* Pin the brand's top offset so it holds its centered idle position when a panel
      or the help sheet grows from below — the drop is the shell's one sanctioned
      jump (12-home.md §Layout, §The drop). The offset is a single px box computed
@@ -394,7 +395,8 @@ let stage ~snapshot ~brief ~notice ~motion ~composer ~width ~rows =
      transition. Only the bottom stays a grow spacer, absorbing the slack (and the
      overlay). *)
   let idle_workspace_h =
-    if rows >= stage_block_floor then workspace_section_height ~rows brief else 0
+    if rows >= stage_block_floor then workspace_section_height ~rows brief
+    else 0
   in
   let idle_warning_h =
     match brief with
@@ -407,7 +409,9 @@ let stage ~snapshot ~brief ~notice ~motion ~composer ~width ~rows =
     + idle_warning_h
   in
   let top_gap = max 0 ((budget - idle_content) / 2) in
-  let notice = if show_notice then Some (notice_block ~width notice) else None in
+  let notice =
+    if show_notice then Some (notice_block ~width notice) else None
+  in
   let composer =
     if composer_shown then Option.map (composer_inset ~width) composer else None
   in
@@ -436,9 +440,7 @@ let stage ~snapshot ~brief ~notice ~motion ~composer ~width ~rows =
     (List.concat
        [
          [
-           box ~flex_shrink:0.
-             ~size:{ width = pct 100; height = px top_gap }
-             [];
+           box ~flex_shrink:0. ~size:{ width = pct 100; height = px top_gap } [];
            Banner.home snapshot ~rows:(Motion.lockup_rows motion);
          ];
          below notice;

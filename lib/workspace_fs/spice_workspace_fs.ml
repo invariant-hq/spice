@@ -63,9 +63,7 @@ let protected_meta_component ~workspace path =
   let abs = Workspace.Path.abs path in
   List.find_map
     (fun root ->
-      match
-        Spice_path.Abs.relativize ~root:(Workspace.Root.dir root) abs
-      with
+      match Spice_path.Abs.relativize ~root:(Workspace.Root.dir root) abs with
       | None -> None
       | Some rel -> (
           match Spice_path.Rel.components rel with

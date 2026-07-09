@@ -82,11 +82,11 @@ val make :
     the HTTPS transport the host does not own — the TLS stack lives in the
     binary package, not this library.
 
-    [anchors] is the caller-owned anchored-edit resolver; anchors span turns,
-    so the owner creating a catalog per turn contract must inject one resolver
-    per run — like [dune], per-run state travels in, it is not manufactured
-    here. Absent, the edit tools run unanchored and the catalog is
-    byte-identical to an unanchored run.
+    [anchors] is the caller-owned anchored-edit resolver; anchors span turns, so
+    the owner creating a catalog per turn contract must inject one resolver per
+    run — like [dune], per-run state travels in, it is not manufactured here.
+    Absent, the edit tools run unanchored and the catalog is byte-identical to
+    an unanchored run.
 
     [dune] is the shared workspace Dune RPC instance backing the OCaml Dune
     tools; it should be the same instance the notice producers watch, so tool

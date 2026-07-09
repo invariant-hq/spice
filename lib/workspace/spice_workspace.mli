@@ -75,8 +75,7 @@ val root_path : t -> Path.t
     that need a workspace-level directory rather than the current directory. *)
 
 val cwd_root_path : t -> Path.t
-(** [cwd_root_path workspace] is the root path at the root containing
-    {!cwd}. *)
+(** [cwd_root_path workspace] is the root path at the root containing {!cwd}. *)
 
 val path_at_cwd_root : t -> Spice_path.Rel.t -> Path.t
 (** [path_at_cwd_root workspace rel] is [rel] below {!cwd_root_path}. *)
@@ -124,8 +123,8 @@ val resolve_string : t -> string -> (Path.t, Resolve_error.t) result
     raw product/user input boundaries. Prefer {!Path.append}, {!make_path}, or
     {!import_abs} when the caller already has typed path syntax.
 
-    Errors with {!Resolve_error.Invalid_input} if [input] is malformed or
-    cannot be parsed as a relative or absolute path. Errors with
+    Errors with {!Resolve_error.Invalid_input} if [input] is malformed or cannot
+    be parsed as a relative or absolute path. Errors with
     {!Resolve_error.Outside_workspace} if [input] parses successfully but is
     outside every admitted root after resolution against {!cwd}. *)
 

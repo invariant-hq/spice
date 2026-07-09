@@ -101,7 +101,7 @@ type t
     time. {!close} is idempotent and may be called from another fiber. *)
 
 type backend = [ `Native | `Polling ]
-  (** Active wakeup backend.
+(** Active wakeup backend.
 
     [`Native] wakes from native filesystem notifications. [`Polling] wakes on a
     timer. Both backends produce snapshot diffs, and no platform-specific native

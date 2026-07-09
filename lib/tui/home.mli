@@ -16,15 +16,15 @@
 
 (** The live workspace facts the stage reflects (12-home.md §Liveness).
 
-    A pure data record: the facts the runtime assembles from the host's
-    watchers (dune health, the worktree glance, CR counts, the newest session)
-    on a short cadence while the home stage is showing, and stops refreshing at
-    the drop. It is the runtime↔shell wire type for the workspace facts, rendered
-    by the home stage and, after the drop, by the wide-terminal side panel's idle
-    glance (doc/plans/tui-next-side-panel.md). The shell holds [t option]: [None] until
-    the first load lands (the stage shows a loading spinner), [Some] thereafter
-    — a transiently failing refresh keeps the last known facts rather than
-    reverting to empties.
+    A pure data record: the facts the runtime assembles from the host's watchers
+    (dune health, the worktree glance, CR counts, the newest session) on a short
+    cadence while the home stage is showing, and stops refreshing at the drop.
+    It is the runtime↔shell wire type for the workspace facts, rendered by the
+    home stage and, after the drop, by the wide-terminal side panel's idle
+    glance (doc/plans/tui-next-side-panel.md). The shell holds [t option]:
+    [None] until the first load lands (the stage shows a loading spinner),
+    [Some] thereafter — a transiently failing refresh keeps the last known facts
+    rather than reverting to empties.
 
     Ages are formatted here (formatting is the TUI's); the underlying facts are
     the host's. *)
@@ -32,15 +32,16 @@ module Brief : sig
   type session = {
     id : Spice_session.Id.t;
         (** The session an empty-draft [↵] resumes directly (12-home.md
-            §Keybindings); not rendered — the recognition surface is the title. *)
+            §Keybindings); not rendered — the recognition surface is the title.
+        *)
     title : string;
         (** The session's display title — never a raw id: an untitled session
             falls back to its first-prompt preview, then to ["untitled"]
             (12-home.md §Workspace block). *)
     age : string;  (** The relative age of its last update (e.g. ["2h ago"]). *)
   }
-  (** The type for the newest resumable session, rendered as the [session]
-      fact. *)
+  (** The type for the newest resumable session, rendered as the [session] fact.
+  *)
 
   type t = {
     dune : Spice_ocaml_dune.Rpc.Instance.Health.t;
@@ -67,9 +68,8 @@ module Brief : sig
 
   val relative_age : now:Spice_session.Time.t -> Spice_session.Time.t -> string
   (** [relative_age ~now t] is [t]'s age relative to [now] as a terse label:
-      ["just now"], ["3m ago"], ["2h ago"], ["4d ago"], ["2w ago"],
-      ["5mo ago"], or ["1y ago"]. A [t] after [now] (clock skew) reads
-      ["just now"]. *)
+      ["just now"], ["3m ago"], ["2h ago"], ["4d ago"], ["2w ago"], ["5mo ago"],
+      or ["1y ago"]. A [t] after [now] (clock skew) reads ["just now"]. *)
 end
 
 (** The lockup animation state (08-brand.md §Motion). *)
@@ -92,9 +92,9 @@ module Motion : sig
       — the first-keystroke transition (12-home.md §Liveness). Idempotent. *)
 
   val animating : t -> bool
-  (** [animating t] is [true] while a frame timer is warranted (the pour looping)
-      — [false] once frozen or when reduced motion holds it static, so no timer
-      runs after the freeze. *)
+  (** [animating t] is [true] while a frame timer is warranted (the pour
+      looping) — [false] once frozen or when reduced motion holds it static, so
+      no timer runs after the freeze. *)
 
   val lockup_rows : t -> string list
   (** [lockup_rows t] is the two lockup rows at the current frame: the wordmark
@@ -124,21 +124,20 @@ val stage :
     and its supporting lines muted) when non-empty, the inset [composer] at the
     visual center — hidden when [composer] is [None], as when a panel takes the
     region below (doc/plans/tui-next-surfaces.md §Panel geometry) — and the
-    workspace block centered as a unit directly beneath it.
-    [brief] is [None] until the first
-    workspace load lands — the block is then a single muted spinner line rather
-    than a blank region — and [Some] thereafter; the one dangerous-config
-    [warning] renders as the stage's single loud line below the block. [width]
-    and [rows] drive the session-title truncation and the short-terminal
-    bottom-up shedding of the workspace facts.
+    workspace block centered as a unit directly beneath it. [brief] is [None]
+    until the first workspace load lands — the block is then a single muted
+    spinner line rather than a blank region — and [Some] thereafter; the one
+    dangerous-config [warning] renders as the stage's single loud line below the
+    block. [width] and [rows] drive the session-title truncation and the
+    short-terminal bottom-up shedding of the workspace facts.
 
     The brand's top offset is pinned to its centered idle position — a single px
-    gap computed from [rows] against a composer-independent idle content height —
-    so the lockup holds still when a panel or the help sheet grows from below
+    gap computed from [rows] against a composer-independent idle content height
+    — so the lockup holds still when a panel or the help sheet grows from below
     rather than jumping upward (12-home.md §Layout); the workspace block and the
     warning belong to the idle stage, so they drop while a panel owns the region
-    below, leaving the pinned brand and notice above it. Under height pressure the
-    stage sheds top-down so the footer (the shell's own row) always renders: the
-    notice and workspace fold below 16 rows, the warning a little later, and the
-    composer only under 10 rows, surviving longest with the footer (12-home.md
-    §States). *)
+    below, leaving the pinned brand and notice above it. Under height pressure
+    the stage sheds top-down so the footer (the shell's own row) always renders:
+    the notice and workspace fold below 16 rows, the warning a little later, and
+    the composer only under 10 rows, surviving longest with the footer
+    (12-home.md §States). *)

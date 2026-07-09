@@ -125,8 +125,8 @@ type event =
       *)
   | Blank_submitted
       (** [↵] on a blank draft — nothing to send, the draft is unchanged. The
-          shell owns what a blank submit means (the home's ↵-resume,
-          12-home.md §Keybindings). *)
+          shell owns what a blank submit means (the home's ↵-resume, 12-home.md
+          §Keybindings). *)
   | Draft_saved of Draft.History_entry.t
       (** A non-empty draft was discarded and should be appended to prompt
           history. *)
@@ -160,10 +160,10 @@ val render :
       completions law is enforced one level up: the shell intercepts the
       [Submit] message while a list is open, so ↵ activates the list and never
       sends the draft.
-    - [list_open] widens the pre-default key interception (defaults to
-      [false]): while [true], ↑/↓ (and ctrl+p/n) and tab are swallowed and
-      surface as {!List_key} for the shell to route. ↑/↓ also surface on a
-      single-line draft while closed — the prompt-history walk.
+    - [list_open] widens the pre-default key interception (defaults to [false]):
+      while [true], ↑/↓ (and ctrl+p/n) and tab are swallowed and surface as
+      {!List_key} for the shell to route. ↑/↓ also surface on a single-line
+      draft while closed — the prompt-history walk.
     - [mode] colors the frame ([Build] gray, else the mode color) and chips the
       top rule; defaults to [Build].
     - [agent] renders a filled chip at the right of the top rule and heats a

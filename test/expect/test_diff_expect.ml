@@ -301,7 +301,8 @@ let%expect_test "display mode escapes unsafe text" =
 let%expect_test "display mode escapes C1 controls" =
   let unsafe_label = Diff.Label.of_string "bad\128\155\159.txt" in
   let unsafe_text = "safe\128\155\159\n" in
-  print_diff [ Diff.File_change.create ~label:unsafe_label ~contents:unsafe_text ];
+  print_diff
+    [ Diff.File_change.create ~label:unsafe_label ~contents:unsafe_text ];
   [%expect
     {|
     --- /dev/null

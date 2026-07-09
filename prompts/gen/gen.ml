@@ -85,7 +85,9 @@ let duplicate_consumed_metadata_key keys =
         if is_consumed_metadata_key key && List.exists (String.equal key) seen
         then Some key
         else
-          let seen = if is_consumed_metadata_key key then key :: seen else seen in
+          let seen =
+            if is_consumed_metadata_key key then key :: seen else seen
+          in
           loop seen keys
   in
   loop [] keys

@@ -179,10 +179,9 @@ let bind_client ~sw ~stdenv host choice =
   let model = Model_choice.model choice in
   match provider_client ~sw ~stdenv host model with
   | Error (Spice_host.Host.Error.Missing_credential _)
-    when (match Spice_host.Reason.source (Model_choice.reason choice) with
+    when match Spice_host.Reason.source (Model_choice.reason choice) with
          | Spice_host.Reason.Derived _ -> true
-         | Spice_host.Reason.Explicit _ | Spice_host.Reason.Config _ -> false)
-    ->
+         | Spice_host.Reason.Explicit _ | Spice_host.Reason.Config _ -> false ->
       Error
         (`Runtime
            (Spice_diagnostic.to_string
@@ -475,9 +474,8 @@ let render_timeline ~json ~session_id event =
   | Spice_protocol.Event.Turn_finished _
   | Spice_protocol.Event.Assistant_delta _
   | Spice_protocol.Event.Reasoning_delta _
-  | Spice_protocol.Event.Usage_updated _
-  | Spice_protocol.Event.Model_started _ | Spice_protocol.Event.Model_artifact _
-  | Spice_protocol.Event.Tool_updated _
+  | Spice_protocol.Event.Usage_updated _ | Spice_protocol.Event.Model_started _
+  | Spice_protocol.Event.Model_artifact _ | Spice_protocol.Event.Tool_updated _
   | Spice_protocol.Event.Notices_injected _ ->
       ()
 
@@ -662,7 +660,10 @@ let assemble ?cwd_override_abs ?skills:preloaded_skills ~sw ~stdenv ~json ~store
         in
         let hooks =
           if goal_driven then hooks
-          else Host_session.with_terminal_observed (fun ~observe:_ _ -> stop_dune ()) hooks
+          else
+            Host_session.with_terminal_observed
+              (fun ~observe:_ _ -> stop_dune ())
+              hooks
         in
         match
           after_save json
@@ -994,8 +995,8 @@ let goal_execution_error = function
   | Spice_host.Artifacts.Error.Corrupt_file { path; message }
   | Spice_host.Artifacts.Error.Io { path; message } ->
       Spice_protocol.Error.Storage { path; message }
-  | (Spice_host.Artifacts.Error.Not_found _ | Spice_host.Artifacts.Error.Conflict _)
-    as error ->
+  | ( Spice_host.Artifacts.Error.Not_found _
+    | Spice_host.Artifacts.Error.Conflict _ ) as error ->
       Spice_protocol.Error.Internal (Spice_host.Artifacts.Error.message error)
 
 let goal_verb_result = function
@@ -1042,22 +1043,22 @@ let goal_resume_invocation ~session =
 let goal_json_fields goal =
   [
     ("goal_id", Jsont.Json.string (Goal.Id.to_string (Goal.id goal)));
-    ( "status",
-      Jsont.Json.string (Goal.Status.to_string (Goal.status goal)) );
+    ("status", Jsont.Json.string (Goal.Status.to_string (Goal.status goal)));
     ("objective", Jsont.Json.string (Goal.objective goal));
     ("tokens_used", Jsont.Json.int (Goal.tokens_used goal));
     ("time_used_ms", Jsont.Json.int (Goal.time_used_ms goal));
     ("continuation_turns", Jsont.Json.int (Goal.continuation_turns goal));
   ]
-  @ (match Goal.token_budget goal with
-    | None -> []
-    | Some budget ->
-        [
-          ("token_budget", Jsont.Json.int budget);
-          ( "tokens_remaining",
-            Jsont.Json.int (Option.value (Goal.remaining_tokens goal) ~default:0)
-          );
-        ])
+  @
+  match Goal.token_budget goal with
+  | None -> []
+  | Some budget ->
+      [
+        ("token_budget", Jsont.Json.int budget);
+        ( "tokens_remaining",
+          Jsont.Json.int (Option.value (Goal.remaining_tokens goal) ~default:0)
+        );
+      ]
 
 (* One typed event per goal transition: the event name is the status the goal
    just entered. [goal.set] and [goal.objective_updated] are emitted at their
@@ -1090,8 +1091,7 @@ let print_goal_trailer ~json ~session goal =
             stderr_printf "spice: goal completed with %d of %d budget tokens\n"
               (Goal.tokens_used goal) budget)
     | Goal.Status.Cleared -> ()
-    | Goal.Status.Paused | Goal.Status.Blocked _ | Goal.Status.Budget_limited
-      ->
+    | Goal.Status.Paused | Goal.Status.Blocked _ | Goal.Status.Budget_limited ->
         stderr_printf "spice: resume the goal with: %s\n"
           (goal_resume_invocation ~session)
 
@@ -1138,9 +1138,7 @@ let drive_goal ~stdenv ~store ~json ~unattended ~mode ~max_steps
   in
   let rec exec runtime document command =
     let before_goal = goal_before () in
-    let before =
-      Session.Metrics.of_session (Store.Document.session document)
-    in
+    let before = Session.Metrics.of_session (Store.Document.session document) in
     let started = monotonic_now stdenv in
     let result =
       resolve_unattended ~unattended runtime
@@ -1172,8 +1170,8 @@ let drive_goal ~stdenv ~store ~json ~unattended ~mode ~max_steps
         let tokens = Goal_run.turn_tokens ~before ~after in
         let active_ms = duration_ms ~started stdenv in
         match
-          Goal_run.settle ~fs ~root ~now:(now stdenv) ~document ~outcome
-            ~tokens ~active_ms
+          Goal_run.settle ~fs ~root ~now:(now stdenv) ~document ~outcome ~tokens
+            ~active_ms
         with
         | Error error -> Error (goal_execution_error error)
         | Ok after_goal -> (
@@ -1285,8 +1283,7 @@ let start json raw_id title model reasoning_effort workflow_mode permission_mode
      in
      let* () =
        match (goal_objective, workflow_mode) with
-       | Some _, Some (Spice_protocol.Mode.Plan | Spice_protocol.Mode.Review)
-         ->
+       | Some _, Some (Spice_protocol.Mode.Plan | Spice_protocol.Mode.Review) ->
            usage "--goal requires build mode"
        | _ -> Ok ()
      in
@@ -1322,9 +1319,8 @@ let start json raw_id title model reasoning_effort workflow_mode permission_mode
        | Some objective ->
            let fs, root = goal_store_paths ~stdenv ~store in
            goal_verb_result
-             (Goal_run.set_goal ~fs ~root ~id:(fresh_goal_id stdenv)
-                ~session:id ~objective ?token_budget:goal_budget
-                ~now:(now stdenv) ())
+             (Goal_run.set_goal ~fs ~root ~id:(fresh_goal_id stdenv) ~session:id
+                ~objective ?token_budget:goal_budget ~now:(now stdenv) ())
            |> Result.map Option.some
      in
      let* ({ model; cwd; stop_dune; permission_of; _ } as runtime) =
@@ -1505,15 +1501,13 @@ let continue json model reasoning_effort workflow_mode permission_mode
              (match action with
              | Reply { id = permission; answer; message } ->
                  drive_goal ~stdenv ~store ~json
-                   ~unattended:
-                     (effective_unattended host permission_unattended)
+                   ~unattended:(effective_unattended host permission_unattended)
                    ~mode ~max_steps ~reasoning_request runtime document
                    (Spice_protocol.Command.Reply
                       { permission; answer; via = None; message })
              | Answer_question { pending; text } ->
                  drive_goal ~stdenv ~store ~json
-                   ~unattended:
-                     (effective_unattended host permission_unattended)
+                   ~unattended:(effective_unattended host permission_unattended)
                    ~mode ~max_steps ~reasoning_request runtime document
                    (Spice_protocol.Command.Answer
                       {
@@ -1523,8 +1517,7 @@ let continue json model reasoning_effort workflow_mode permission_mode
                       })
              | Finish { id; result } ->
                  drive_goal ~stdenv ~store ~json
-                   ~unattended:
-                     (effective_unattended host permission_unattended)
+                   ~unattended:(effective_unattended host permission_unattended)
                    ~mode ~max_steps ~reasoning_request runtime document
                    (Spice_protocol.Command.Finish_tool (id, result))))
      in
@@ -1558,7 +1551,8 @@ let goal_reply json model reasoning_effort workflow_mode permission_mode
      match verb with
      | `Pause ->
          let* goal =
-           goal_verb_result (Goal_run.pause_goal ~fs ~root ~session:id ~now:verb_now)
+           goal_verb_result
+             (Goal_run.pause_goal ~fs ~root ~session:id ~now:verb_now)
          in
          print_goal_event ~json ~type_:"goal.paused" id goal;
          if not json then
@@ -1567,7 +1561,8 @@ let goal_reply json model reasoning_effort workflow_mode permission_mode
          Ok Success
      | `Clear ->
          let* goal =
-           goal_verb_result (Goal_run.clear_goal ~fs ~root ~session:id ~now:verb_now)
+           goal_verb_result
+             (Goal_run.clear_goal ~fs ~root ~session:id ~now:verb_now)
          in
          print_goal_event ~json ~type_:"goal.cleared" id goal;
          Ok Success
@@ -1604,7 +1599,9 @@ let goal_reply json model reasoning_effort workflow_mode permission_mode
              Ok Success
          | Session.Run.Phase.Idle ->
              let max_steps = effective_max_steps host max_steps in
-             let reasoning_request = effective_reasoning host reasoning_effort in
+             let reasoning_request =
+               effective_reasoning host reasoning_effort
+             in
              let* ({ model; stop_dune; permission_of; _ } as runtime) =
                assemble ~sw ~stdenv ~json ~store ~session_id:id host ~mode
                  ~model ~reasoning_request ~permission_mode ~sandbox ~max_steps
@@ -1777,9 +1774,9 @@ let reply_cli json model reasoning_effort workflow_mode permission_mode
            | _, Some _ -> usage "--goal-budget requires --resume-goal"
          in
          Ok
-           (goal_reply json model reasoning_effort workflow_mode
-              permission_mode permission_unattended sandbox max_steps cwd
-              overrides reply_last session_id verb goal_budget)
+           (goal_reply json model reasoning_effort workflow_mode permission_mode
+              permission_unattended sandbox max_steps cwd overrides reply_last
+              session_id verb goal_budget)
      | None ->
          let* () =
            match goal_budget with
@@ -1809,8 +1806,7 @@ let reply_cli json model reasoning_effort workflow_mode permission_mode
 
 (* Command line *)
 
-let json =
-  Cli_arg.json_flag ~doc:"Print JSONL execution events." ()
+let json = Cli_arg.json_flag ~doc:"Print JSONL execution events." ()
 
 let id =
   Arg.(
@@ -2021,8 +2017,7 @@ let max_steps =
     & opt (some int) None
     & info [ "max-steps" ] ~docv:"N" ~doc:"Maximum model/tool steps.")
 
-let cwd =
-  Cli_arg.cwd ()
+let cwd = Cli_arg.cwd ()
 
 let goal_objective =
   Arg.(
@@ -2113,8 +2108,7 @@ let resume_cli json last model reasoning_effort workflow_mode permission_mode
              (resume json model reasoning_effort workflow_mode permission_mode
                 permission_unattended sandbox max_steps cwd overrides id prompt))
 
-let last =
-  Cli_arg.last_flag ~doc:"Resume the newest session in this cwd." ()
+let last = Cli_arg.last_flag ~doc:"Resume the newest session in this cwd." ()
 
 let resume_first =
   Arg.(

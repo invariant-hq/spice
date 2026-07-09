@@ -15,8 +15,8 @@
 
     Nothing display-unsafe crosses this interface. No secret, token,
     authorization code, or verifier appears in {!event} or {!settled}; settled
-    facts are the account phase, source, and fingerprint views frontends
-    already render. *)
+    facts are the account phase, source, and fingerprint views frontends already
+    render. *)
 
 (** {1:events Progress events} *)
 
@@ -37,12 +37,12 @@ type event =
 
 type settled =
   | Checked of Spice_account.t
-      (** The secret is persisted and the post-save provider check ran;
-          the account is the checked view. *)
+      (** The secret is persisted and the post-save provider check ran; the
+          account is the checked view. *)
   | Unchecked of { account : Spice_account.t option; reason : string }
       (** The secret is persisted but the provider check could not run for
-          [reason]; [account] is the passive (never-checked) view when one
-          could be read. *)
+          [reason]; [account] is the passive (never-checked) view when one could
+          be read. *)
   | Failed of string
       (** Nothing was persisted. The message is display-safe and, for browser
           callback timeouts and network failures, already carries the
@@ -82,11 +82,11 @@ val browser :
   ?cancel:unit Eio.Promise.t ->
   (event -> unit) ->
   settled
-(** [browser ~stdenv host ~provider ~method_id ?name ?cancel events] drives
-    the OAuth2 authorization-code flow: it emits {!Browser_url}, binds the
-    local callback and emits {!Listening}, awaits the redirect for up to 300
-    seconds, exchanges the callback for a secret (using the provider's token
-    profile), and settles through the {!save} policy. [method_id] must name an
+(** [browser ~stdenv host ~provider ~method_id ?name ?cancel events] drives the
+    OAuth2 authorization-code flow: it emits {!Browser_url}, binds the local
+    callback and emits {!Listening}, awaits the redirect for up to 300 seconds,
+    exchanges the callback for a secret (using the provider's token profile),
+    and settles through the {!save} policy. [method_id] must name an
     authorization-code login. *)
 
 val device :
@@ -101,14 +101,14 @@ val device :
 (** [device ~stdenv host ~provider ~method_id ?name ?cancel events] drives a
     device-code flow — standard OAuth2 or a provider flow (currently
     ["openai_chatgpt"]) — emitting {!Device_challenge} and polling at the
-    protocol's cadence until the authorization settles, expires, or is
-    rejected, then settles through the {!save} policy. [method_id] must name a
-    device-code login. *)
+    protocol's cadence until the authorization settles, expires, or is rejected,
+    then settles through the {!save} policy. [method_id] must name a device-code
+    login. *)
 
 type logout = {
   env_still_active : string option;
-      (** The environment variable still supplying a credential for the
-          provider after removal, which logout cannot clear. *)
+      (** The environment variable still supplying a credential for the provider
+          after removal, which logout cannot clear. *)
 }
 
 val logout :

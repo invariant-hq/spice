@@ -820,9 +820,7 @@ let title =
     & info [ "title" ] ~docv:"TITLE" ~doc:"Session title.")
 
 let session_id_pos doc = Cli_arg.session_pos ~doc ()
-
-let last_flag =
-  Cli_arg.last_flag ()
+let last_flag = Cli_arg.last_flag ()
 
 let child_id =
   Arg.(
@@ -897,11 +895,8 @@ let new_title =
     & pos 1 (some string) None
     & info [] ~docv:"TITLE" ~doc:"New session title.")
 
-let model =
-  Cli_arg.model_opt ()
-
-let cwd =
-  Cli_arg.cwd ()
+let model = Cli_arg.model_opt ()
+let cwd = Cli_arg.cwd ()
 
 let yes =
   Arg.(value & flag & info [ "yes" ] ~doc:"Confirm the destructive operation.")

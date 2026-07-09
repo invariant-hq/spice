@@ -30,8 +30,7 @@ let reduced_motion = [ ("SPICE_REDUCED_MOTION", "1") ]
    header is the post-submit signal. Enter is a separate write (the atomic-enter
    pty artifact). *)
 let run ?provider ?(cols = 80) project f =
-  Term.run ?provider ~rows:24 ~cols ~env:reduced_motion
-    project f
+  Term.run ?provider ~rows:24 ~cols ~env:reduced_motion project f
 
 (* [/review] is an implemented, argument-taking command ([target]), so the slash
    palette intercepts Enter and SEEDS the draft "/review " (Palette.activate
@@ -48,8 +47,7 @@ let open_review t =
   Term.send t Keys.enter;
   Term.wait t (Screen.has "Review")
 
-let sample_code =
-  "let alpha = 1\nlet beta = 2\nlet gamma = 33\nlet delta = 4\n"
+let sample_code = "let alpha = 1\nlet beta = 2\nlet gamma = 33\nlet delta = 4\n"
 
 let%expect_test "review screen marks, approves, and persists" =
   Project.with_git_fixture "review-screen" @@ fun project ->
@@ -205,7 +203,9 @@ let%expect_test "review screen edits and removes a CR" =
     Term.send t Keys.enter;
     Term.wait t (Screen.has "CR added") );
   print_fact "CR present after add"
-    (Util.contains (Project.read project "lib/code.ml") "(* CR: rename gamma *)");
+    (Util.contains
+       (Project.read project "lib/code.ml")
+       "(* CR: rename gamma *)");
   ( run project @@ fun t ->
     open_review t;
     Term.wait t (Screen.has "CR: rename gamma");
@@ -213,13 +213,15 @@ let%expect_test "review screen edits and removes a CR" =
     Term.wait t (Screen.has "❯ CR");
     Term.send t "d";
     Term.wait t (Screen.has "CR removed");
-    print_fact "remove notice shown" (Screen.has "CR removed" (Term.screen t)) );
+    print_fact "remove notice shown" (Screen.has "CR removed" (Term.screen t))
+  );
   print_fact "CR gone after remove"
     (not
        (Util.contains
           (Project.read project "lib/code.ml")
           "(* CR: rename gamma *)"));
-  [%expect {|CR present after add: true
+  [%expect
+    {|CR present after add: true
 remove notice shown: true
 CR gone after remove: true|}]
 
@@ -321,7 +323,8 @@ let%expect_test "commenting a deletion hunk lands at the deletion site" =
     (Util.contains source "\n  (* CR fix: keep this *)\n  kept\n");
   print_fact "hunk comment not inserted at top"
     (not (String.starts_with ~prefix:"(* CR fix: keep this *)" source));
-  [%expect {|settle notice shown: true
+  [%expect
+    {|settle notice shown: true
 hunk comment indented like the block: true
 hunk comment not inserted at top: true|}]
 
@@ -351,8 +354,7 @@ back on the home stage: true|}]
 let%expect_test "spice review launches onto the screen and its close quits" =
   Project.with_git_fixture "review-launch" @@ fun project ->
   Project.write project "lib/code.ml" sample_code;
-  Term.run project ~rows:24 ~cols:80 ~env:reduced_motion
-    ~command:[ "review" ]
+  Term.run project ~rows:24 ~cols:80 ~env:reduced_motion ~command:[ "review" ]
     ~ready:(Screen.has "0/1 reviewed")
   @@ fun t ->
   print_fact "review screen at launch"
@@ -417,7 +419,8 @@ let%expect_test "approving then editing stales the verdict" =
     Term.wait t (Screen.has "0/1 reviewed · approved");
     print_fact "fresh reapproval persisted"
       (Screen.has "0/1 reviewed · approved" (Term.screen t)) );
-  [%expect {|fresh approval is not stale: true
+  [%expect
+    {|fresh approval is not stale: true
 verdict staled after edit: true
 stale approval toggles to fresh approval: true
 fresh reapproval persisted: true|}]
@@ -563,7 +566,8 @@ let%expect_test "a malformed CR comment renders as a problem row" =
     (Screen.has "! CR body must not be empty" (Term.screen t));
   print_fact "CR source line shown in the diff"
     (Screen.has "(* CR: *)" (Term.screen t));
-  [%expect {|malformed CR problem row: true
+  [%expect
+    {|malformed CR problem row: true
 CR source line shown in the diff: true|}]
 
 (* The static goodbye lockup's second row (Theme.lockup), reprinted on exit. *)

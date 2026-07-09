@@ -85,7 +85,8 @@ let truncate_columns ~width s =
      with Exit -> ());
     Buffer.contents buf ^ ellipsis
 
-let record_row style s = box ~size:{ width = auto; height = px 1 } [ seg style s ]
+let record_row style s =
+  box ~size:{ width = auto; height = px 1 } [ seg style s ]
 
 (* The transcript record (04-header-footer.md §Banner record): the two-row frozen
    lockup in {!Theme.accent} on the left, and a top-aligned right column with the
@@ -104,7 +105,8 @@ let record (snapshot : Snapshot.t) ~width =
   let right_width = max 8 (inner_width - lockup_width - record_gap) in
   let facts =
     truncate_columns ~width:right_width
-      (snapshot.Snapshot.version ^ Theme.separator ^ Snapshot.model_line snapshot)
+      (snapshot.Snapshot.version ^ Theme.separator
+      ^ Snapshot.model_line snapshot)
   in
   let cwd =
     Path_display.middle_truncate ~width:right_width

@@ -633,9 +633,7 @@ let best_backend_constructs () =
 
 let with_native_watcher ?(poll_interval = 0.01) root f =
   with_eio @@ fun ~sw ~clock ->
-  match
-    Fswatch.make ~sw ~clock ~backend:`Native ~poll_interval ~root ()
-  with
+  match Fswatch.make ~sw ~clock ~backend:`Native ~poll_interval ~root () with
   | Ok watcher -> f ~sw ~clock watcher
   | Error (Error.Backend_unavailable _) ->
       skip ~reason:"native backend unavailable" ()
@@ -667,9 +665,7 @@ let native_wakeup_observes_nested_create () =
   write_file (path root "dir/file") "file";
   match next_timeout ~clock ~timeout:1.0 watcher with
   | Some actual ->
-      events
-        [ ev Event.Created "dir"; ev Event.Created "dir/file" ]
-        actual
+      events [ ev Event.Created "dir"; ev Event.Created "dir/file" ] actual
   | None -> failf "native watcher closed unexpectedly"
 
 let () =

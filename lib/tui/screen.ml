@@ -121,7 +121,9 @@ let blank_row = box ~flex_shrink:0. ~size:{ width = pct 100; height = px 1 } []
 
 let view ~frame ~name ~fact ~filter ~hint ~width ~content =
   let filter_rows =
-    match filter with Some f -> [ filter_row f; blank_row ] | None -> [ blank_row ]
+    match filter with
+    | Some f -> [ filter_row f; blank_row ]
+    | None -> [ blank_row ]
   in
   box ~key:"screen" ~flex_direction:Flex_direction.Column ~flex_shrink:0.
     ~size:{ width = pct 100; height = auto }

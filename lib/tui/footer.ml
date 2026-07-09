@@ -132,7 +132,10 @@ let idle_facts (snapshot : Snapshot.t) ~dune ~width ~pill_width ~agents
   let agents = agents_fact agents in
   let sep_cols = 3 in
   let model_cols = sep_cols + String.length model in
-  let dune_cols = sep_cols + 7 (* [dune: X] *) in
+  let dune_cols =
+    sep_cols + 7
+    (* [dune: X] *)
+  in
   let agents_cols =
     match agents with Some s -> sep_cols + display_width s | None -> 0
   in
@@ -148,18 +151,19 @@ let idle_facts (snapshot : Snapshot.t) ~dune ~width ~pill_width ~agents
   in
   let nudge_cols =
     if account_absent then
-      display_width "! not logged in" + sep_cols + display_width "/login"
-      + sep_cols
+      display_width "! not logged in"
+      + sep_cols + display_width "/login" + sep_cols
     else 0
   in
   let reserved ~has_hint ~keep_model ~keep_agents ~keep_dune ~keep_context =
-    2 (* indent *) + pill_width + 2 (* right pad *) + 1 (* min spacer *)
+    2 (* indent *) + pill_width
+    + 2 (* right pad *) + 1 (* min spacer *)
     + nudge_cols
     + (if has_hint then display_width "? for shortcuts" + 1 else 0)
     + (if keep_model then model_cols else 0)
     + (if keep_agents then agents_cols else 0)
     + (if keep_dune then dune_cols else 0)
-    + (if keep_context then context_cols else 0)
+    + if keep_context then context_cols else 0
   in
   let has_hint =
     width
@@ -171,8 +175,7 @@ let idle_facts (snapshot : Snapshot.t) ~dune ~width ~pill_width ~agents
      Each decision folds in the ones already made, so the checks walk the drop
      order and stop at the richest set that fits. *)
   let fits ~keep_model ~keep_agents ~keep_dune ~keep_context =
-    width
-    - reserved ~has_hint ~keep_model ~keep_agents ~keep_dune ~keep_context
+    width - reserved ~has_hint ~keep_model ~keep_agents ~keep_dune ~keep_context
     >= cwd_leaf
   in
   let keep_context =
@@ -184,7 +187,9 @@ let idle_facts (snapshot : Snapshot.t) ~dune ~width ~pill_width ~agents
   let keep_agents =
     fits ~keep_model:true ~keep_agents:true ~keep_dune ~keep_context
   in
-  let keep_model = fits ~keep_model:true ~keep_agents ~keep_dune ~keep_context in
+  let keep_model =
+    fits ~keep_model:true ~keep_agents ~keep_dune ~keep_context
+  in
   let budget =
     max 3
       (width
@@ -203,9 +208,10 @@ let idle_facts (snapshot : Snapshot.t) ~dune ~width ~pill_width ~agents
     @ (match agents with
       | Some s when keep_agents -> [ sep; seg Theme.muted s ]
       | _ -> [])
-    @ (if keep_dune then [ sep; seg Theme.muted "dune: "; seg glyph_style glyph ]
+    @ (if keep_dune then
+         [ sep; seg Theme.muted "dune: "; seg glyph_style glyph ]
        else [])
-    @ (match context with Some c when keep_context -> [ sep; c ] | _ -> [])
+    @ match context with Some c when keep_context -> [ sep; c ] | _ -> []
   in
   (facts, has_hint)
 
@@ -223,7 +229,8 @@ let view ?(posture = Ask) ?input_mode ?agents ?home_badge
   let left, has_hint =
     match input_mode with
     | Some mode -> ([ seg Theme.faint (input_mode_hint mode) ], false)
-    | None -> idle_facts snapshot ~dune ~width ~pill_width ~agents ~account_absent
+    | None ->
+        idle_facts snapshot ~dune ~width ~pill_width ~agents ~account_absent
   in
   let right =
     match input_mode with
@@ -236,7 +243,8 @@ let view ?(posture = Ask) ?input_mode ?agents ?home_badge
            hint — the badge is the escape affordance and must never drop. *)
         match home_badge with
         | Some badge -> [ seg Theme.accent badge ]
-        | None -> if has_hint then [ seg Theme.faint "? for shortcuts" ] else [])
+        | None -> if has_hint then [ seg Theme.faint "? for shortcuts" ] else []
+        )
   in
   let spacer =
     box ~flex_grow:1. ~flex_shrink:1. ~size:{ width = auto; height = px 1 } []

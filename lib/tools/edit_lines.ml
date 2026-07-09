@@ -98,8 +98,7 @@ module Input = struct
           Some (Anchor.to_string anchor)
       | Replace_edit { range = Range.Between (_, anchor); _ } ->
           Some (Anchor.to_string anchor)
-      | Insert_before_edit _ | Insert_after_edit _ ->
-          None
+      | Insert_before_edit _ | Insert_after_edit _ -> None
 
     let text = function
       | Replace_edit { text; _ }

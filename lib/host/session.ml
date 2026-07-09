@@ -108,8 +108,7 @@ let store ~stdenv host =
 let store_error = Session_loop.of_store
 
 let load store id =
-  Spice_session_store.load store id
-  |> Result.map_error Session_loop.of_store
+  Spice_session_store.load store id |> Result.map_error Session_loop.of_store
 
 let save store document session =
   Spice_session_store.save store document session
@@ -393,7 +392,10 @@ let save_title ~store ~title document =
    {!Live.write}. *)
 let lifecycle mutate ~store document =
   let session = Spice_session_store.Document.session document in
-  match mutate session |> Result.map_error (session_error ~id:(Spice_session.id session)) with
+  match
+    mutate session
+    |> Result.map_error (session_error ~id:(Spice_session.id session))
+  with
   | Error _ as error -> error
   | Ok session -> save store document session
 

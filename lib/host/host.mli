@@ -52,8 +52,8 @@ module Error : sig
         (** A registered provider does not declare the referenced model. [field]
             is the config field that named it, if the reference came from
             configuration. [known] are the provider's declared model ids, for
-            hints. [base_url] is the provider's configured base-URL override when
-            one is set: the model id is still checked against the built-in
+            hints. [base_url] is the provider's configured base-URL override
+            when one is set: the model id is still checked against the built-in
             catalog, so an override points the diagnostic at the
             OpenAI-compatible [ollama] provider for self-hosted servers rather
             than at catalog typos. Recovery: fix the model reference, or use the

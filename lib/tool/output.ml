@@ -11,7 +11,8 @@ let reject_empty fn field value =
 let decode_invalid_arg f =
   match f () with
   | value -> value
-  | exception Invalid_argument message -> Jsont.Error.msg Jsont.Meta.none message
+  | exception Invalid_argument message ->
+      Jsont.Error.msg Jsont.Meta.none message
 
 type value = Value : 'a Type.Id.t * 'a -> value
 

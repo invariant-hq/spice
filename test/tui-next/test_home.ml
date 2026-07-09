@@ -13,7 +13,8 @@ let%expect_test "home boots to a stable frame" =
   Tui.run ~name:"home-boot" @@ fun t ->
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |
 03 |
 04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
@@ -44,7 +45,8 @@ let%expect_test "typing lands in the composer" =
   Tui.keys t "hello spice";
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |
 03 |
 04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
@@ -75,7 +77,8 @@ let%expect_test "virtual time advances the idle animation deterministically" =
   Tui.settle t;
   Tui.advance t 1.0;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |
 03 |
 04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀  ·

@@ -118,17 +118,17 @@ val start :
     anchored-edit resolver and roots the mutation store and workflow artifacts;
     [cwd_override] is the run-directory fallback for {!Context.eio_cwd}.
 
-    Subagent children run through the assembled {!jobs} registry; a surface
-    that renders child progress live subscribes with {!Jobs.subscribe}. The
-    headless path simply does not subscribe and runs children silently.
+    Subagent children run through the assembled {!jobs} registry; a surface that
+    renders child progress live subscribes with {!Jobs.subscribe}. The headless
+    path simply does not subscribe and runs children silently.
 
     Errors are {!Host.Error.t}: {!Host.Error.Workspace} from context loading,
     and skill-load failures. *)
 
 val jobs : t -> Jobs.t
-(** [jobs t] is the subagent run registry the assembled handler spawns
-    through. Surfaces subscribe to it for identity-tagged child progress and
-    settlement events; its children run on [start]'s [sw]. *)
+(** [jobs t] is the subagent run registry the assembled handler spawns through.
+    Surfaces subscribe to it for identity-tagged child progress and settlement
+    events; its children run on [start]'s [sw]. *)
 
 val stop : t -> unit
 (** [stop t] stops [t]'s notice producers and the Dune RPC instance they own.
@@ -148,24 +148,23 @@ val runner :
 (** [runner t ~mode ~model ~client] derives the interpreter for one turn
     contract over the assembled workspace.
 
-    It extends the context prelude with [mode]'s messages, builds the
-    {!Toolset} catalog for [model] filtered by [mode]'s
-    {!Spice_protocol.Contract}, assembles the {!Spice_session.Run.Config},
-    derives the compaction policy from [model], and constructs the interpreter
-    over the run's store and [client] whose host-tool dispatch is
-    {!Handler.defaults} — with subagent spawning owned here, children bound to
-    this contract's [client] — and whose hooks are the assembled
-    notice-injection and mutation-evidence recording. Compose extra {!Session}
-    hooks onto the result with {!Runner.with_hooks}, or hand it to
-    {!Live.attach} / {!Live.set_runner}.
+    It extends the context prelude with [mode]'s messages, builds the {!Toolset}
+    catalog for [model] filtered by [mode]'s {!Spice_protocol.Contract},
+    assembles the {!Spice_session.Run.Config}, derives the compaction policy
+    from [model], and constructs the interpreter over the run's store and
+    [client] whose host-tool dispatch is {!Handler.defaults} — with subagent
+    spawning owned here, children bound to this contract's [client] — and whose
+    hooks are the assembled notice-injection and mutation-evidence recording.
+    Compose extra {!Session} hooks onto the result with {!Runner.with_hooks}, or
+    hand it to {!Live.attach} / {!Live.set_runner}.
 
-    [client] is the credentialed client the caller resolved for [model] from
-    the current credential store; re-deriving at each turn is how a login or a
-    model switch takes effect mid-session. The derivation is cheap — pure
-    assembly over the loaded workspace — and starts no producer. The turn
-    submitted to the derived interpreter declares the same [mode] and [model]
-    (see {!Spice_session.Turn.make}); the caller stamps both from the values it
-    binds here.
+    [client] is the credentialed client the caller resolved for [model] from the
+    current credential store; re-deriving at each turn is how a login or a model
+    switch takes effect mid-session. The derivation is cheap — pure assembly
+    over the loaded workspace — and starts no producer. The turn submitted to
+    the derived interpreter declares the same [mode] and [model] (see
+    {!Spice_session.Turn.make}); the caller stamps both from the values it binds
+    here.
 
     Errors are {!Host.Error.t}: {!Host.Error.Instructions} from prelude
     construction. *)

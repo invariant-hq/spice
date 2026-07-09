@@ -32,7 +32,8 @@ let lockup_row = "▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂"
    session was created on the first submit, so the goodbye names how to reopen it
    ([spice resume ID]). The generated id is not asserted — only the stable lockup
    and the copy-pasteable command prefix. *)
-let%expect_test "quitting after a conversation prints the lockup and resume hint" =
+let%expect_test
+    "quitting after a conversation prints the lockup and resume hint" =
   Project.with_temp "next-exit-session" @@ fun project ->
   let answer = "The retry logic backs off exponentially." in
   Provider.with_openai project ~answer ~body_contains:[ "retry" ]
@@ -58,7 +59,8 @@ let%expect_test "quitting after a conversation prints the lockup and resume hint
 (* Quitting from the prelude with no conversation mirrors the old TUI's
    no-session exit: the lockup prints, but there is no session to resume, so no
    resume hint. *)
-let%expect_test "quitting from the prelude prints the lockup with no resume hint" =
+let%expect_test
+    "quitting from the prelude prints the lockup with no resume hint" =
   Project.with_temp "next-exit-prelude" @@ fun project ->
   run project ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
   Term.wait t (Screen.has "dune:");

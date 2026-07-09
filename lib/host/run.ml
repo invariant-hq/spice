@@ -88,8 +88,7 @@ let launched_subagent_text ~child spawn =
   "subagent " ^ role ^ " launched (session "
   ^ Spice_session.Id.to_string child
   ^ "). It runs detached: its result will arrive as a notice. Call \
-     wait_subagents with this session id when your next step needs the \
-     result."
+     wait_subagents with this session id when your next step needs the result."
 
 let child_interrupt_message ~reason ~cancelled =
   match reason with
@@ -237,8 +236,7 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
       ^ Spice_session.Id.to_string child
       ^ ")"
     in
-    Spice_protocol.Notice.make ~source:"subagents" ~severity ~title
-      ~body:detail
+    Spice_protocol.Notice.make ~source:"subagents" ~severity ~title ~body:detail
       ~key:("subagent-run:" ^ Spice_session.Id.to_string child)
       ()
   in
@@ -337,8 +335,8 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
           ("message delivered to subagent (session "
           ^ Spice_session.Id.to_string
               (Spice_protocol.Subagent.Message.Request.run request)
-          ^ "); it will see it at its next step. If it finishes without \
-             acting on it, message again to resume it.")
+          ^ "); it will see it at its next step. If it finishes without acting \
+             on it, message again to resume it.")
     | Ok `Resumed ->
         Ok
           ("subagent resumed with your message (session "

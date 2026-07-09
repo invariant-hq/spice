@@ -23,19 +23,19 @@ val run :
   ?process_env:Spice_host.Env.t ->
   unit ->
   (outcome, [ `No_tty | `Runtime of string ]) result
-(** [run ~stdenv ~startup ()] runs the TUI in the current
-    terminal. [`No_tty] reports an unsupported or non-interactive terminal;
-    [`Runtime message] reports a recoverable bootstrap failure.
+(** [run ~stdenv ~startup ()] runs the TUI in the current terminal. [`No_tty]
+    reports an unsupported or non-interactive terminal; [`Runtime message]
+    reports a recoverable bootstrap failure.
 
-    The optional arguments swap the runtime's environment for an alternate
-    one — a headless backend, a virtual clock, a pinned process environment —
-    and default to the production wiring:
-    - [clock] is the clock every runtime timestamp, sleep, and session-id
-      mint reads. Defaults to [Eio.Stdenv.clock stdenv].
+    The optional arguments swap the runtime's environment for an alternate one —
+    a headless backend, a virtual clock, a pinned process environment — and
+    default to the production wiring:
+    - [clock] is the clock every runtime timestamp, sleep, and session-id mint
+      reads. Defaults to [Eio.Stdenv.clock stdenv].
     - [matrix] is the terminal backend. Defaults to [Matrix_eio.create] over
       [stdenv]'s TTY; supplying one skips the interactive-TTY gate, since the
       backend owns its own I/O.
-    - [probe] is forwarded to {!Mosaic.run}: it receives the runtime
-      quiescence probe before the loop starts.
+    - [probe] is forwarded to {!Mosaic.run}: it receives the runtime quiescence
+      probe before the loop starts.
     - [process_env] is the environment snapshot host configuration reads.
       Defaults to {!Spice_host.Env.current}. *)

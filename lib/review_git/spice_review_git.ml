@@ -182,15 +182,12 @@ let untracked_token t paths =
     (fun rel ->
       let text = Spice_path.Rel.to_string rel in
       add_frame buffer text;
-      (match
-         Eio.Path.load
-           (Eio.Path.( / ) fs (Filename.concat t.root text))
-       with
+      match Eio.Path.load (Eio.Path.( / ) fs (Filename.concat t.root text)) with
       | contents ->
           add_frame buffer
             (Spice_digest.Identity.to_string
                (Spice_digest.Identity.of_contents contents))
-      | exception _ -> add_frame buffer "absent"))
+      | exception _ -> add_frame buffer "absent")
     paths;
   Buffer.contents buffer
 
@@ -200,11 +197,11 @@ let fingerprint t ~base =
   | Ok output -> (
       match untracked_paths t with
       | Error _ as error -> error
-          | Ok untracked ->
-              Ok
-                (Spice_digest.key ~length:64
-                   ~domain:"spice.review_git.fingerprint.v1"
-                   [ output; untracked_token t untracked ]))
+      | Ok untracked ->
+          Ok
+            (Spice_digest.key ~length:64
+               ~domain:"spice.review_git.fingerprint.v1"
+               [ output; untracked_token t untracked ]))
 
 (* Changed paths from [--name-status -z]: NUL-separated
    [status, path, status, path, ...] records, unquoted. Renames are disabled
@@ -534,6 +531,7 @@ let glance_if_changed t ~base ~known =
 
 module Records = struct
   let dir root = Filename.concat root (Filename.concat ".spice" "reviews")
+
   let key ~base =
     Spice_digest.key ~length:16 ~domain:"spice.review_git.worktree-record.v1"
       [ base ]

@@ -56,7 +56,9 @@ let json_member key = function
 
 let primary_arg json =
   let keys =
-    [ "path"; "file_path"; "file"; "command"; "query"; "pattern"; "url"; "name" ]
+    [
+      "path"; "file_path"; "file"; "command"; "query"; "pattern"; "url"; "name";
+    ]
   in
   match
     List.find_map (fun k -> Option.bind (json_member k json) json_string) keys
@@ -158,8 +160,8 @@ let argument_of_call call =
   | "message_parent" -> "parent"
   | _ -> primary_arg input
 
-let block_of_call ?argument call ~dot ~summary ?(facts = []) ?(disclosable = false)
-    ?(detail = Tool_block.Summary) () =
+let block_of_call ?argument call ~dot ~summary ?(facts = [])
+    ?(disclosable = false) ?(detail = Tool_block.Summary) () =
   let argument =
     match argument with Some a -> a | None -> argument_of_call call
   in
@@ -212,8 +214,7 @@ let update_summary ~additions ~deletions =
   | 0, 0 -> "unchanged"
   | a, 0 -> Printf.sprintf "Added %d %s" a (noun a)
   | 0, d -> Printf.sprintf "Removed %d %s" d (noun d)
-  | a, d ->
-      Printf.sprintf "Added %d %s, removed %d %s" a (noun a) d (noun d)
+  | a, d -> Printf.sprintf "Added %d %s, removed %d %s" a (noun a) d (noun d)
 
 let observed_text o = Option.value ~default:"" (Spice_edit.Observed.text o)
 
@@ -274,7 +275,9 @@ let create_block call output =
         match List.rev lines with "" :: tl -> List.rev tl | _ -> lines
       in
       block_of_call call ~dot:Tool_block.Ok
-        ~summary:(Printf.sprintf "Wrote %s" (count (List.length lines) ~one:"line" ~many:"lines"))
+        ~summary:
+          (Printf.sprintf "Wrote %s"
+             (count (List.length lines) ~one:"line" ~many:"lines"))
         ~detail:(Tool_block.preview ~take:`First ~cap:4 lines)
         ()
 
@@ -283,9 +286,9 @@ let read_block call output =
   let summary =
     match Spice_tools.Read_file.Output.of_tool_output output with
     | None -> "Read"
-    | Some out ->
+    | Some out -> (
         let open Spice_tools.Read_file.Output in
-        (match out with
+        match out with
         | Read r -> "Read " ^ count r.returned_lines ~one:"line" ~many:"lines"
         | Unchanged _ -> "unchanged"
         | Listing l -> count l.total_entries ~one:"entry" ~many:"entries")
@@ -302,9 +305,13 @@ let search_block call name output =
       | None -> "Search"
       | Some o ->
           "Found "
-          ^ count (Spice_tools.Glob.Output.total_files o) ~one:"file" ~many:"files"
+          ^ count
+              (Spice_tools.Glob.Output.total_files o)
+              ~one:"file" ~many:"files"
     else if String.equal name "ocaml_search_expressions" then
-      match Spice_tools.Ocaml_search_expressions.Output.of_tool_output output with
+      match
+        Spice_tools.Ocaml_search_expressions.Output.of_tool_output output
+      with
       | None -> "Search"
       | Some o ->
           let n = Spice_tools.Ocaml_search_expressions.Output.total_results o in
@@ -313,7 +320,9 @@ let search_block call name output =
             let files =
               List.sort_uniq String.compare
                 (List.map
-                   (fun (f : Spice_tools.Ocaml_search_expressions.Output.finding) ->
+                   (fun (f :
+                          Spice_tools.Ocaml_search_expressions.Output.finding)
+                      ->
                      Spice_workspace.Path.display
                        (Spice_ocaml.Location.path
                           f.Spice_tools.Ocaml_search_expressions.Output.location))
@@ -325,10 +334,10 @@ let search_block call name output =
     else
       match Spice_tools.Search_text.Output.of_tool_output output with
       | None -> "Search"
-      | Some o ->
+      | Some o -> (
           let open Spice_tools.Search_text.Output in
           let n = returned_results o in
-          (match result o with
+          match result o with
           | Files _ -> "Found " ^ count n ~one:"file" ~many:"files"
           | Matches spans ->
               Printf.sprintf "Found %s across %s"
@@ -351,7 +360,7 @@ let stream_text = function
 let shell_block call output =
   match Spice_tools.Shell.Output.of_tool_output output with
   | None -> block_of_call call ~dot:Tool_block.Ok ~summary:"done" ()
-  | Some o ->
+  | Some o -> (
       let secs =
         Printf.sprintf "%ds" (Spice_tools.Shell.Output.duration_ms o / 1000)
       in
@@ -371,7 +380,7 @@ let shell_block call output =
           ()
       in
       let open Spice_tools.Shell.Output in
-      (match Spice_tools.Shell.Output.status o with
+      match Spice_tools.Shell.Output.status o with
       | Exited 0 ->
           block_of_call call ~dot:Tool_block.Ok ~summary:"done" ~facts:[ secs ]
             ~disclosable:true ()
@@ -451,11 +460,13 @@ let diagnostics_block call output =
       let diags =
         List.map snd (Spice_tools.Ocaml_dune_diagnostics.Output.diagnostics o)
       in
-      if diags = [] then block_of_call call ~dot:Tool_block.Ok ~summary:"clean" ()
+      if diags = [] then
+        block_of_call call ~dot:Tool_block.Ok ~summary:"clean" ()
       else
         let is sev d = Spice_ocaml.Diagnostic.severity d = sev in
         let errors =
-          List.length (List.filter (is Spice_ocaml.Diagnostic.Severity.Error) diags)
+          List.length
+            (List.filter (is Spice_ocaml.Diagnostic.Severity.Error) diags)
         in
         let warnings =
           List.length
@@ -481,9 +492,7 @@ let diagnostics_block call output =
           in
           loc ^ first_line (Spice_ocaml.Diagnostic.message d)
         in
-        let dot =
-          if errors = 0 then Tool_block.Warned else Tool_block.Failed
-        in
+        let dot = if errors = 0 then Tool_block.Warned else Tool_block.Failed in
         block_of_call call ~dot ~summary
           ~detail:(Tool_block.preview ~take:`First ~cap:3 (List.map row diags))
           ()
@@ -524,7 +533,8 @@ let definition_block call output =
   | None -> block_of_call call ~dot:Tool_block.Ok ~summary:"done" ()
   | Some o -> (
       match Spice_tools.Ocaml_find_definitions.Output.definitions o with
-      | [] -> block_of_call call ~dot:Tool_block.Warned ~summary:"no definition" ()
+      | [] ->
+          block_of_call call ~dot:Tool_block.Warned ~summary:"no definition" ()
       | defs ->
           let def = List.hd defs in
           let summary =
@@ -534,7 +544,9 @@ let definition_block call output =
           let facts =
             match defs with
             | _ :: _ :: _ ->
-                [ count (List.length defs) ~one:"definition" ~many:"definitions" ]
+                [
+                  count (List.length defs) ~one:"definition" ~many:"definitions";
+                ]
             | _ -> []
           in
           block_of_call call ~dot:Tool_block.Ok ~summary ~facts ())
@@ -586,7 +598,7 @@ let eval_stream_text = function
 let eval_block call output =
   match Spice_tools.Ocaml_eval.Output.of_tool_output output with
   | None -> block_of_call call ~dot:Tool_block.Ok ~summary:"done" ()
-  | Some o ->
+  | Some o -> (
       let secs =
         Printf.sprintf "%ds" (Spice_tools.Ocaml_eval.Output.duration_ms o / 1000)
       in
@@ -606,7 +618,7 @@ let eval_block call output =
           ()
       in
       let open Spice_tools.Ocaml_eval.Output in
-      (match Spice_tools.Ocaml_eval.Output.status o with
+      match Spice_tools.Ocaml_eval.Output.status o with
       | Exited 0 ->
           block_of_call call ~dot:Tool_block.Ok ~summary:"done" ~facts:[ secs ]
             ~disclosable:true ()
@@ -751,7 +763,9 @@ let question_block call result =
    UPSTREAM GAP: the results carry no structured timing or settled-agent
    outcome, and the inputs name the session run id, not the friendly [@role]. *)
 let host_error_summary result ~fallback =
-  let t = String.trim (String.concat " " (Spice_llm.Tool.Result.texts result)) in
+  let t =
+    String.trim (String.concat " " (Spice_llm.Tool.Result.texts result))
+  in
   if t = "" then fallback else first_line t
 
 (* Message (message_subagent / message_parent): the delivered message quotes in
@@ -858,7 +872,6 @@ let of_tool_finished claim result =
              (host-handled); the board is decoded from the call input. *)
           | Tool_block.Todo, _ -> todo_finished_block call
           | _ -> block_of_call call ~dot:Tool_block.Ok ~summary:"done" ()))
-
 
 (* ── Settling a host-tool call to its document block ──────────────────────── *)
 

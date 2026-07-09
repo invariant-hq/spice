@@ -8,11 +8,12 @@
     (11-review.md).
 
     A persistent two-pane split — a directory-grouped nav on the left, the
-    selected file's diff on the right, a full-height rule between — following the
-    panel contract (rule, header, hint) but waiving the one-column law for this
-    surface. This module is the pure view plus the focus transitions the
+    selected file's diff on the right, a full-height rule between — following
+    the panel contract (rule, header, hint) but waiving the one-column law for
+    this surface. This module is the pure view plus the focus transitions the
     component calls; key routing and effects live in the component. The state is
-    exposed concretely so the component reads its orientation fields directly. *)
+    exposed concretely so the component reads its orientation fields directly.
+*)
 
 (** The focused pane. [Queue] is nav focus, [Diff] is diff focus. The names
     predate the split and are kept because the component is wired to them. *)
@@ -87,6 +88,7 @@ val loading_view : ?width:int -> ?height:int -> unit -> _ Mosaic.t
 (** [loading_view ()] is the rule + [Review  computing…] header held while the
     first snapshot loads, so the frame does not pop in. *)
 
-val error_view : ?width:int -> ?height:int -> message:string -> unit -> _ Mosaic.t
+val error_view :
+  ?width:int -> ?height:int -> message:string -> unit -> _ Mosaic.t
 (** [error_view ~message ()] is the rule + [Review] header + a [! message] error
     line + an [esc close] affordance (the load-failure state). *)

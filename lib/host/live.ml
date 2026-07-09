@@ -135,11 +135,11 @@ let drain t command =
     let settled =
       try
         `Settled
-          (Eio.Switch.run @@ fun sw ->
-           t.drain_cancel <- Some sw;
-           Fun.protect
-             ~finally:(fun () -> t.drain_cancel <- None)
-             (fun () -> Runner.execute t.runner t.document command))
+          ( Eio.Switch.run @@ fun sw ->
+            t.drain_cancel <- Some sw;
+            Fun.protect
+              ~finally:(fun () -> t.drain_cancel <- None)
+              (fun () -> Runner.execute t.runner t.document command) )
       with Force_interrupt | Eio.Cancel.Cancelled Force_interrupt -> `Forced
     in
     match settled with
@@ -278,8 +278,8 @@ let submit t command =
       t.front <- command :: t.front
   | Spice_protocol.Command.Start _ | Spice_protocol.Command.Resume
   | Spice_protocol.Command.Reply _ | Spice_protocol.Command.Answer _
-  | Spice_protocol.Command.Resolve_plan _
-  | Spice_protocol.Command.Finish_tool _ ->
+  | Spice_protocol.Command.Resolve_plan _ | Spice_protocol.Command.Finish_tool _
+    ->
       t.back <- command :: t.back);
   Eio.Condition.broadcast t.signal
 

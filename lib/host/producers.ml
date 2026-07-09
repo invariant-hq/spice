@@ -154,13 +154,7 @@ let start ~sw ~stdenv host ~inbox ~workspace ~cwd ~root () =
         ~build:dune_build ~sw ~clock:(Eio.Stdenv.clock stdenv) ~inbox ~dune
     else ignore
   in
-  {
-    dune;
-    project_source;
-    merlin_program;
-    stop_fswatch;
-    before_request;
-  }
+  { dune; project_source; merlin_program; stop_fswatch; before_request }
 
 let dune t = t.dune
 let project_source t = t.project_source

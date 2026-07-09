@@ -625,6 +625,6 @@ module Project_source : sig
         error is {!Describe_error}.
 
       [cancelled] is forwarded to [describe] in the {!No_watch} path. It is not
-      consulted before [refresh_status] and is not used when a visible watch lets
-      [get] serve or reject from the snapshot alone. *)
+      consulted before [refresh_status] and is not used when a visible watch
+      lets [get] serve or reject from the snapshot alone. *)
 end

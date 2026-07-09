@@ -79,6 +79,6 @@ val response :
     before [response] returns.
 
     [on_event] observes each live {!Stream.Event.t} in stream order before the
-    terminal response, for callers that render streaming progress. Omitting it is
-    exactly {!Stream.collect}: no event is observed and the collected response is
-    unchanged, so a non-observing caller sees identical behavior. *)
+    terminal response, for callers that render streaming progress. Omitting it
+    is exactly {!Stream.collect}: no event is observed and the collected
+    response is unchanged, so a non-observing caller sees identical behavior. *)

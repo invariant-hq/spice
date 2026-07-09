@@ -117,5 +117,5 @@ val web_fetch_https : unit -> Spice_tools.Web_fetch.https
 module Login = Login
 (** Interactive login and logout: method resolution, endpoint rerooting, the
     browser and device-code protocol drives, and the shared persist-then-check
-    settling policy. Frontends render {!Login.event}s and {!Login.settled}
-    facts and decide when to open a browser. *)
+    settling policy. Frontends render {!Login.event}s and {!Login.settled} facts
+    and decide when to open a browser. *)

@@ -44,7 +44,8 @@ let open_screen t =
   Term.send t "/sessions";
   Term.wait t (Screen.has "/sessions");
   Term.send t Keys.enter;
-  Term.wait t (fun s -> Screen.has "▔▔▔▔" s && Screen.lacks "loading sessions" s);
+  Term.wait t (fun s ->
+      Screen.has "▔▔▔▔" s && Screen.lacks "loading sessions" s);
   Term.send t Keys.tab;
   Term.wait t (Screen.has "f fork")
 
@@ -111,8 +112,8 @@ let%expect_test "the / filter narrows the rows with a match count" =
   Project.with_temp "screen-filter" @@ fun project ->
   seed_prompt_session project "ses_1" ~title:"parser streaming fix"
     ~prompt:"one" ~updated_at_ms:(now_ms ());
-  seed_prompt_session project "ses_2" ~title:"config gadt rework"
-    ~prompt:"two" ~updated_at_ms:(days_ago 1);
+  seed_prompt_session project "ses_2" ~title:"config gadt rework" ~prompt:"two"
+    ~updated_at_ms:(days_ago 1);
   seed_prompt_session project "ses_3" ~title:"review layer wiring"
     ~prompt:"three" ~updated_at_ms:(days_ago 2);
   run project ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
@@ -124,7 +125,8 @@ let%expect_test "the / filter narrows the rows with a match count" =
   let s = Term.screen t in
   print_fact "matching row kept" (Screen.has "config gadt rework" s);
   print_fact "non-matching rows dropped"
-    (Screen.lacks "parser streaming fix" s && Screen.lacks "review layer wiring" s);
+    (Screen.lacks "parser streaming fix" s
+    && Screen.lacks "review layer wiring" s);
   print_fact "match count shown" (Screen.has "1 match" s);
   [%expect
     {|
@@ -192,8 +194,7 @@ let%expect_test "a non-d key cancels the delete confirmation" =
   Term.wait t (Screen.lacks "press d again");
   print_fact "row restored" (Screen.has "stays put" (Term.screen t));
   print_fact "still on the screen" (Screen.has "f fork" (Term.screen t));
-  [%expect
-    {|
+  [%expect {|
     row restored: true
     still on the screen: true |}]
 
@@ -243,8 +244,8 @@ let%expect_test "tab carries the panel filter to the screen" =
   (* The filtered-out title must belong to the OLDER session: the stage's
      [session "<newest>"] line stays on screen above the panel, so a
      [Screen.lacks] wait on the newest title can never succeed. *)
-  seed_prompt_session project "ses_1" ~title:"parser streaming fix" ~prompt:"one"
-    ~updated_at_ms:(days_ago 1);
+  seed_prompt_session project "ses_1" ~title:"parser streaming fix"
+    ~prompt:"one" ~updated_at_ms:(days_ago 1);
   seed_prompt_session project "ses_2" ~title:"config gadt rework" ~prompt:"two"
     ~updated_at_ms:(now_ms ());
   run project ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->

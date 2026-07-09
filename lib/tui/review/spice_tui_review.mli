@@ -3,49 +3,49 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-(** The review screen as a self-contained TEA component (doc/ui-design/11-review.md,
-    doc/plans/tui-next-review.md).
+(** The review screen as a self-contained TEA component
+    (doc/ui-design/11-review.md, doc/plans/tui-next-review.md).
 
-    [Spice_tui_review] is the whole review surface: the two-pane nav+diff
-    split, the line cursor, marks and verdict, the CR compose dialog, and the
+    [Spice_tui_review] is the whole review surface: the two-pane nav+diff split,
+    the line cursor, marks and verdict, the CR compose dialog, and the
     live-refresh orchestration — packaged so the tui-next shell embeds it as one
     {!Spice_tui}-side [Screen] variant.
 
-    The component is {e inert}: it holds review state and folds messages into new
-    state, but performs no effect itself. Every filesystem read, snapshot load,
-    persistence write, worktree watch, source-comment mutation, clock sleep, and
-    agent submission is described as an {!Effect.t} the runtime runs; the runtime
-    feeds results back as messages. This mirrors {!Spice_review.Live}: the pure
-    state machine decides {e when} to reload and {e how} to fold results, the
-    runtime does the work.
+    The component is {e inert}: it holds review state and folds messages into
+    new state, but performs no effect itself. Every filesystem read, snapshot
+    load, persistence write, worktree watch, source-comment mutation, clock
+    sleep, and agent submission is described as an {!Effect.t} the runtime runs;
+    the runtime feeds results back as messages. This mirrors
+    {!Spice_review.Live}: the pure state machine decides {e when} to reload and
+    {e how} to fold results, the runtime does the work.
 
     {1 Embedding contract}
 
     The shell wires the component as a mini-Elm screen
     (doc/plans/tui-next-surfaces.md): a [surface] variant holding {!t}; a key
-    router calling {!key} (uniform [msg option] — the screen owns its keyboard, so
-    an unclaimed key dies and ctrl+c stays the shell's global chord); {!update}
-    yielding the next {!t} and an {!event} the shell interprets ({!Stay} forwards
-    the effects, {!Close} returns to chat, {!Task_spice} submits the agent review
-    turn); and {!view} with an [inject] tagging the component's messages into the
-    shell's message type. {!create} starts the open flow; the runtime builds the
-    asynchronous completion messages below. *)
+    router calling {!key} (uniform [msg option] — the screen owns its keyboard,
+    so an unclaimed key dies and ctrl+c stays the shell's global chord);
+    {!update} yielding the next {!t} and an {!event} the shell interprets
+    ({!Stay} forwards the effects, {!Close} returns to chat, {!Task_spice}
+    submits the agent review turn); and {!view} with an [inject] tagging the
+    component's messages into the shell's message type. {!create} starts the
+    open flow; the runtime builds the asynchronous completion messages below. *)
 
 (** {1 Effects} *)
 
 type request = int
 (** The type for runtime-request tokens on {!Effect.Snapshot}: a completion must
-    echo the token it was issued with so stale results are ignored. The component
-    owns and increments this counter. Live-protocol requests use
+    echo the token it was issued with so stale results are ignored. The
+    component owns and increments this counter. Live-protocol requests use
     {!Spice_review.Live.Request.t} instead. *)
 
 module Effect : sig
   (** The effects the runtime runs on the component's behalf; each carries the
-      request token its completion must echo, and is fed back through the matching
-      message constructor.
+      request token its completion must echo, and is fed back through the
+      matching message constructor.
 
-      Unlike the old TUI, this has no [Closed]/[Submit_agent_review] cases: those
-      are shell decisions carried by {!event}, not effects. *)
+      Unlike the old TUI, this has no [Closed]/[Submit_agent_review] cases:
+      those are shell decisions carried by {!event}, not effects. *)
 
   type t =
     | Snapshot of { request : request; base_spec : string option }
@@ -179,6 +179,6 @@ val key : t -> Matrix.Input.Key.event -> msg option
 (** {1 View} *)
 
 val view : ?width:int -> ?height:int -> inject:(msg -> 'a) -> t -> 'a Mosaic.t
-(** [view ~inject t] renders the review at the given terminal size. [inject] tags
-    the component's own messages (nav/line clicks) into the shell's message type;
-    the shell wires nothing else. *)
+(** [view ~inject t] renders the review at the given terminal size. [inject]
+    tags the component's own messages (nav/line clicks) into the shell's message
+    type; the shell wires nothing else. *)

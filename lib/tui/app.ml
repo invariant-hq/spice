@@ -1125,8 +1125,8 @@ let dispatch_command ?(argument = None) command t =
                   in
                   (t, [ Rename_session { id; title } ])
               | None -> (set_draft (Command.slash command ^ " ") t, []))
-          | Some _ | None ->
-              ({ t with flash = Some "no session to rename" }, []))
+          | Some _ | None -> ({ t with flash = Some "no session to rename" }, [])
+          )
       | Command.Toggle_verbose -> (
           (* Flip the ctrl+o expand lens — the same [chat.expanded] the key
              flips, so the command and the key cannot drift — and record it:
@@ -2112,7 +2112,8 @@ let update msg t =
       | Chat chat ->
           let transcript =
             Transcript.append chat.transcript
-              (Transcript.Notice (Notice.Event ("compaction failed: " ^ message)))
+              (Transcript.Notice
+                 (Notice.Event ("compaction failed: " ^ message)))
           in
           ({ t with phase = Chat { chat with transcript } }, [])
       | Prelude -> (t, []))
@@ -2332,7 +2333,8 @@ let update msg t =
   (* An unchanged push keeps the model physically equal, so memoized renders
      stay valid; only real fact movement re-renders the footer. *)
   | Snapshot_refreshed snapshot ->
-      ((if Snapshot.equal snapshot t.snapshot then t else { t with snapshot }), [])
+      ( (if Snapshot.equal snapshot t.snapshot then t else { t with snapshot }),
+        [] )
   | Auth_panel_msg m -> (
       match t.surface with
       | Panel (Auth panel) ->

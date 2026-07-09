@@ -524,8 +524,9 @@ let hunk_add_anchor review ~path hunk =
       Option.map
         (fun line -> (path, line))
         (worktree_line review ~path side line)
-  | Some (Spice_review.Scope.Feature | Spice_review.Scope.File _
-         | Spice_review.Scope.Hunk _)
+  | Some
+      ( Spice_review.Scope.Feature | Spice_review.Scope.File _
+      | Spice_review.Scope.Hunk _ )
   | None ->
       Some (path, Spice_diff.Hunk.new_start hunk)
 
@@ -596,9 +597,7 @@ let parse_draft draft =
    with. Line/column may shift as CRs are added or removed above, so they are not
    part of the identity. *)
 let same_occurrence a b =
-  Spice_path.Rel.equal
-    (Spice_cr.Occurrence.path a)
-    (Spice_cr.Occurrence.path b)
+  Spice_path.Rel.equal (Spice_cr.Occurrence.path a) (Spice_cr.Occurrence.path b)
   && Spice_digest.Identity.equal
        (Spice_cr.Occurrence.digest a)
        (Spice_cr.Occurrence.digest b)
@@ -747,7 +746,8 @@ let update msg t =
       | Loading _ | Failed _ | Open _ -> stay (t, []))
   | Fs_changed now -> (
       match t with
-      | Open screen -> stay (live_step screen (Spice_review.Live.Fs_changed { now }))
+      | Open screen ->
+          stay (live_step screen (Spice_review.Live.Fs_changed { now }))
       | Loading _ | Failed _ -> stay (t, []))
   | Tick (request, now) -> (
       match t with
@@ -773,7 +773,8 @@ let update msg t =
           let screen =
             { screen with panel = Review_panel.clear_notice screen.panel }
           in
-          stay (set screen (Spice_review.move_cursor (screen_review screen) move))
+          stay
+            (set screen (Spice_review.move_cursor (screen_review screen) move))
       | Loading _ | Failed _ -> stay (t, []))
   | Line_moved direction -> (
       match t with
@@ -797,7 +798,8 @@ let update msg t =
           let panel = Review_panel.toggle_focus screen.panel in
           let screen = { screen with panel } in
           match panel.Review_panel.depth with
-          | Review_panel.Diff -> stay (set screen (seed_line (screen_review screen)))
+          | Review_panel.Diff ->
+              stay (set screen (seed_line (screen_review screen)))
           | Review_panel.Queue -> stay (Open screen, []))
       | Loading _ | Failed _ -> stay (t, []))
   | Nav_clicked cursor -> (
@@ -883,13 +885,17 @@ let update msg t =
   | Help_toggled -> (
       match t with
       | Open screen ->
-          stay (Open { screen with panel = Review_panel.toggle_help screen.panel }, [])
+          stay
+            ( Open { screen with panel = Review_panel.toggle_help screen.panel },
+              [] )
       | Loading _ | Failed _ -> stay (t, []))
   | Context_toggled -> (
       match t with
       | Open screen ->
           stay
-            (Open { screen with panel = Review_panel.toggle_context screen.panel }, [])
+            ( Open
+                { screen with panel = Review_panel.toggle_context screen.panel },
+              [] )
       | Loading _ | Failed _ -> stay (t, []))
   | Save_failed message -> (
       match t with
@@ -940,7 +946,8 @@ let update msg t =
                             (Review_compose.Edit { occurrence = occ; ordinal })
                           ~draft))
               | None ->
-                  stay (notify screen ~text:"select a CR to edit" ~warning:false))
+                  stay
+                    (notify screen ~text:"select a CR to edit" ~warning:false))
           | `Resolve -> (
               match cursor_cr review with
               | Some (index, occ) -> (
@@ -967,25 +974,34 @@ let update msg t =
                       | Error error ->
                           stay
                             (notify screen
-                               ~text:(Format.asprintf "%a" Spice_cr.Error.pp error)
+                               ~text:
+                                 (Format.asprintf "%a" Spice_cr.Error.pp error)
                                ~warning:true))
                   | Error _ ->
                       stay
                         (notify screen
                            ~text:
-                             "a malformed CR cannot be resolved; edit or remove it"
+                             "a malformed CR cannot be resolved; edit or \
+                              remove it"
                            ~warning:true))
               | None ->
                   stay
-                    (notify screen ~text:"select a CR to resolve" ~warning:false)))
+                    (notify screen ~text:"select a CR to resolve" ~warning:false)
+              ))
       | Loading _ | Failed _ -> stay (t, []))
-  | Compose_char c -> stay (map_compose t (fun compose -> Review_compose.append compose c))
+  | Compose_char c ->
+      stay (map_compose t (fun compose -> Review_compose.append compose c))
   | Compose_backspace -> stay (map_compose t Review_compose.backspace)
   | Compose_cancelled -> (
       match t with
       | Open screen ->
           stay
-            (Open { screen with panel = Review_panel.set_compose screen.panel None }, [])
+            ( Open
+                {
+                  screen with
+                  panel = Review_panel.set_compose screen.panel None;
+                },
+              [] )
       | Loading _ | Failed _ -> stay (t, []))
   | Compose_submitted -> (
       match t with
@@ -1039,7 +1055,8 @@ let update msg t =
                     Review_panel.set_compose screen.panel
                       (Some (Review_compose.with_problem compose stale))
                 | None ->
-                    Review_panel.set_notice screen.panel ~text:stale ~warning:true
+                    Review_panel.set_notice screen.panel ~text:stale
+                      ~warning:true
               in
               stay (Open { screen with panel; pending_notice = None }, [])
           | `Failed message ->
@@ -1118,7 +1135,8 @@ let key t (data : Key.event) : msg option =
     | Key.Escape -> Some Compose_cancelled
     | Key.Enter | Key.Line_feed | Key.KP_enter -> Some Compose_submitted
     | Key.Backspace -> Some Compose_backspace
-    | Key.Char c when plain_text_key data -> Some (Compose_char (utf8_of_uchar c))
+    | Key.Char c when plain_text_key data ->
+        Some (Compose_char (utf8_of_uchar c))
     | _ -> None
   else
     (* Movement is focus-aware: the nav steps review units, the diff pane steps

@@ -41,10 +41,7 @@ let module_name_label label =
     else valid_rest label.[i] && loop (i + 1)
   in
   String.length label > 0
-  &&
-  match label.[0] with
-  | 'A' .. 'Z' -> loop 1
-  | _ -> false
+  && match label.[0] with 'A' .. 'Z' -> loop 1 | _ -> false
 
 module Position = struct
   type t = { line : int; column : int }

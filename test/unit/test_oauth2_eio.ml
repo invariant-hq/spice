@@ -299,8 +299,8 @@ let test_send_forwards_basic_auth_header env () =
         ~body:{|{"access_token":"access-123","token_type":"Bearer"}|} ())
     (fun ~sw ~base_uri ->
       let oauth_client =
-        Oauth2.Client.make ~id:"basic-client" ~auth:(`Secret_basic "basic-secret")
-          ()
+        Oauth2.Client.make ~id:"basic-client"
+          ~auth:(`Secret_basic "basic-secret") ()
       in
       let request =
         Oauth2.Grant.client_credentials ()

@@ -278,7 +278,8 @@ let print_edit_lines_decode label json =
     match Edit_lines.Input.decode json with
     | Error _ -> "error"
     | Ok input ->
-        Printf.sprintf "ok path=%s edits=%d" (Edit_lines.Input.path input)
+        Printf.sprintf "ok path=%s edits=%d"
+          (Edit_lines.Input.path input)
           (List.length (Edit_lines.Input.edits input))
   in
   Printf.printf "%s: %s\n" label status
@@ -287,7 +288,8 @@ let print_edit_lines_constructor label f =
   let status =
     match f () with
     | input ->
-        Printf.sprintf "ok path=%s edits=%d" (Edit_lines.Input.path input)
+        Printf.sprintf "ok path=%s edits=%d"
+          (Edit_lines.Input.path input)
           (List.length (Edit_lines.Input.edits input))
     | exception Invalid_argument message -> "error " ^ message
   in
@@ -620,13 +622,7 @@ let%expect_test "apply_patch preserves BOM and CRLF line endings" =
   with_fixture @@ fun ~root ~outside:_ ~fs ~workspace ->
   let input =
     apply_input
-      (patch
-         [
-           "*** Update File: bom-crlf.txt";
-           "@@";
-           "-alpha";
-           "+ALPHA";
-         ])
+      (patch [ "*** Update File: bom-crlf.txt"; "@@"; "-alpha"; "+ALPHA" ])
   in
   run_apply ~fs ~workspace input;
   print_disk root "bom-crlf.txt";

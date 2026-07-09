@@ -272,8 +272,9 @@ let print_login_settled host ~provider_decl ~name ~method_id settled =
               (* The provider in hand just logged in: it alone reads as
                  connected, so the freshly connected default wins exactly when
                  no configured selection names another provider. *)
-              selected_model_for ~connected:(Llm_provider.equal provider) host
-                provider
+              selected_model_for
+                ~connected:(Llm_provider.equal provider)
+                host provider
             with
             | Some (selector, _) ->
                 Printf.sprintf "spice run --model %s \"...\"" selector
@@ -322,8 +323,8 @@ let print_login_events () =
               stdout_printf "Could not open browser automatically.\n"
         | Some _ | None -> ());
         stdout_printf "Waiting for authorization (300s timeout)...\n"
-    | Spice_host_builtin.Login.Device_challenge { url; user_code; expires_in = _ }
-      ->
+    | Spice_host_builtin.Login.Device_challenge
+        { url; user_code; expires_in = _ } ->
         stdout_printf "Go to: %s\n" (Uri.to_string url);
         stdout_printf "Enter code: %s\n" user_code;
         stdout_printf
@@ -613,8 +614,9 @@ let status_row ~sw ~stdenv host accounts ?name ~refresh provider_decl =
               account;
               store_names;
               selected_model =
-                selected_model_for ~connected:(Account.connected accounts) host
-                  provider;
+                selected_model_for
+                  ~connected:(Account.connected accounts)
+                  host provider;
             })
 
 let status_rows ~sw ~stdenv host accounts ?name ~refresh providers =
@@ -733,8 +735,8 @@ let status json name refresh provider_filter =
                               rows |> List.map provider_json |> json_list );
                             ( "summary",
                               summary_json
-                                ~connected:(Account.connected accounts) host
-                                rows );
+                                ~connected:(Account.connected accounts)
+                                host rows );
                           ])))
               else (
                 print_storage ();

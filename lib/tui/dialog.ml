@@ -15,7 +15,6 @@ type form =
    [Custom] carries the question form because its emptiness rule differs (a plan
    adjust or a deny may submit empty; a custom answer may not). *)
 type feedback = Deny | Adjust | Custom
-
 type t = { pending : pending; form : form; feedback : feedback option }
 
 let of_pending ~owner boundary =
@@ -32,7 +31,9 @@ let of_pending ~owner boundary =
         | Some text -> Some (Question (Question_dialog.of_text text))
         | None -> None)
   in
-  Option.map (fun form -> { pending = { owner; boundary }; form; feedback = None }) form
+  Option.map
+    (fun form -> { pending = { owner; boundary }; form; feedback = None })
+    form
 
 let pending t = t.pending
 let borrowed t = Option.is_some t.feedback
@@ -86,7 +87,8 @@ let key ev t =
                 echo;
               } )
       | Permission_dialog.Deny ->
-          ({ t with feedback = Some Deny }, Borrow { placeholder = deny_placeholder }))
+          ( { t with feedback = Some Deny },
+            Borrow { placeholder = deny_placeholder } ))
   | Plan d -> (
       let d, outcome = Plan_dialog.key ev d in
       let t = { t with form = Plan d } in
@@ -102,11 +104,15 @@ let key ev t =
               {
                 resolution =
                   Resolve_plan
-                    { decision = Spice_protocol.Plan.Decision.Approve; accept_edits };
+                    {
+                      decision = Spice_protocol.Plan.Decision.Approve;
+                      accept_edits;
+                    };
                 echo;
               } )
       | Plan_dialog.Adjust ->
-          ({ t with feedback = Some Adjust }, Borrow { placeholder = adjust_placeholder })
+          ( { t with feedback = Some Adjust },
+            Borrow { placeholder = adjust_placeholder } )
       | Plan_dialog.Keep_planning ->
           ( t,
             Resolve
@@ -114,7 +120,8 @@ let key ev t =
                 resolution =
                   Resolve_plan
                     {
-                      decision = Spice_protocol.Plan.Decision.Reject { reason = None };
+                      decision =
+                        Spice_protocol.Plan.Decision.Reject { reason = None };
                       accept_edits = false;
                     };
                 echo = "kept planning";
@@ -127,7 +134,8 @@ let key ev t =
       | Question_dialog.Answer text ->
           (t, Resolve { resolution = Answer { text }; echo = "answered" })
       | Question_dialog.Custom ->
-          ({ t with feedback = Some Custom }, Borrow { placeholder = custom_placeholder })
+          ( { t with feedback = Some Custom },
+            Borrow { placeholder = custom_placeholder } )
       | Question_dialog.Flash message -> (t, Flash message))
 
 (* --- Borrow lifecycle --- *)

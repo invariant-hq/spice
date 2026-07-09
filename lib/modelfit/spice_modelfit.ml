@@ -183,7 +183,8 @@ let max_context ?(kv_dtype = F16) ~budget model =
       let tokens =
         Float.to_int (float available /. kv_bytes_per_token kv_dtype model)
       in
-      if tokens < 1 then None else Some (Int.min tokens (Model.max_context model))
+      if tokens < 1 then None
+      else Some (Int.min tokens (Model.max_context model))
 
 let verdict ?(kv_dtype = F16) ?(context = default_context) ~budget model =
   if context <= 0 then
@@ -268,8 +269,9 @@ module Gguf = struct
     need cursor 8;
     let value = String.get_int64_le cursor.data cursor.pos in
     cursor.pos <- cursor.pos + 8;
-    if Int64.compare value 0L < 0
-       || Int64.compare value (Int64.of_int max_int) > 0
+    if
+      Int64.compare value 0L < 0
+      || Int64.compare value (Int64.of_int max_int) > 0
     then malformed "64-bit value out of range";
     Int64.to_int value
 

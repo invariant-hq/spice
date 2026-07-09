@@ -16,8 +16,7 @@ let of_string s =
   else s
 
 let deterministic_line ~path ~number ~text =
-  Spice_digest.key ~length:12
-    ~domain:"spice.tools.anchor.line.v1"
+  Spice_digest.key ~length:12 ~domain:"spice.tools.anchor.line.v1"
     [ W.Path.display path; string_of_int number; text ]
 
 module Source = struct

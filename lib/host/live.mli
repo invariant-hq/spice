@@ -78,12 +78,12 @@ val submit : t -> Spice_protocol.Command.t -> unit
     runs the command on the caller's fiber.
 
     A submitted {!Spice_protocol.Command.Interrupt} is {b cooperative}: it only
-    flips the flag the runner samples, so it settles at the next step boundary or
-    [cancelled] poll. An in-flight step blocked in a wait that reaches neither —
-    a stalled provider stream read, a tool that never polls its [cancelled] —
-    holds the single drain fiber, and the queued interrupt cannot run until that
-    {!Runner.execute} returns, so a cooperative interrupt can lag indefinitely.
-    {!force_interrupt} is the escalation for that case. *)
+    flips the flag the runner samples, so it settles at the next step boundary
+    or [cancelled] poll. An in-flight step blocked in a wait that reaches
+    neither — a stalled provider stream read, a tool that never polls its
+    [cancelled] — holds the single drain fiber, and the queued interrupt cannot
+    run until that {!Runner.execute} returns, so a cooperative interrupt can lag
+    indefinitely. {!force_interrupt} is the escalation for that case. *)
 
 val force_interrupt : ?reason:string -> t -> unit
 (** [force_interrupt t] hard-cancels the in-flight step and settles the active
@@ -93,23 +93,23 @@ val force_interrupt : ?reason:string -> t -> unit
     Where a submitted {!Spice_protocol.Command.Interrupt} only flips the sampled
     flag, [force_interrupt] additionally cancels the cancellation scope the
     current drain runs under: a provider stream blocked in an {!Eio} flow read
-    unwinds through structured cancellation, and — because a
-    [run_in_systhread] tool wait is uncancellable — the same flag it raises wakes
-    a [cancelled]-polling tool so that wait completes too. The unwound drain
-    reports nothing; the still-active turn is then finished from the last durable
-    document with synthesized interrupted results for every open call, settling
-    the {b exactly one} {!on_settled} result a cooperative interrupt would have —
-    delivered now rather than at a safe point. Queued commands are {b preserved}
-    exactly as a submitted interrupt preserves them.
+    unwinds through structured cancellation, and — because a [run_in_systhread]
+    tool wait is uncancellable — the same flag it raises wakes a
+    [cancelled]-polling tool so that wait completes too. The unwound drain
+    reports nothing; the still-active turn is then finished from the last
+    durable document with synthesized interrupted results for every open call,
+    settling the {b exactly one} {!on_settled} result a cooperative interrupt
+    would have — delivered now rather than at a safe point. Queued commands are
+    {b preserved} exactly as a submitted interrupt preserves them.
 
     Force is Live-only and out of band: it is not a {!Spice_protocol.Command.t},
     because it preempts an in-flight fiber rather than enqueuing work — there is
     no wire form. It is non-blocking and cannot itself hang: it schedules the
     cancellation and returns on the caller's fiber without awaiting the unwind,
-    and the flag it raises guarantees even an uncancellable systhread wait exits.
-    With no drain in flight it degrades to a cooperative interrupt (flag plus a
-    queued {!Spice_protocol.Command.Interrupt}); with no active turn at all it is
-    a no-op. [reason] labels the synthesized [Interrupted] outcome. *)
+    and the flag it raises guarantees even an uncancellable systhread wait
+    exits. With no drain in flight it degrades to a cooperative interrupt (flag
+    plus a queued {!Spice_protocol.Command.Interrupt}); with no active turn at
+    all it is a no-op. [reason] labels the synthesized [Interrupted] outcome. *)
 
 val amend :
   t ->
@@ -146,10 +146,10 @@ val write :
   (Spice_session_store.Document.t, Spice_protocol.Error.t) result
 (** [write ?live ~store ~session ~f ()] runs the saving edit [f] against
     [session]'s document: through {!amend} when [live] is that session's
-    attachment (serialized with in-flight turn saves), else against a fresh
-    load from [store]. The single home of the attached-or-direct write duality
-    — a surface holding an optional attachment does not branch on it. [f]
-    performs the store save itself, exactly as {!amend} requires. *)
+    attachment (serialized with in-flight turn saves), else against a fresh load
+    from [store]. The single home of the attached-or-direct write duality — a
+    surface holding an optional attachment does not branch on it. [f] performs
+    the store save itself, exactly as {!amend} requires. *)
 
 val events : t -> (Spice_protocol.Event.t -> unit) -> unit
 (** [events t handler] subscribes [handler] to [t]'s event stream.
@@ -183,14 +183,14 @@ val on_settled :
     {!Spice_protocol.Error.Provider} or storage failure reaches the surface to
     be rendered and to reset its run state. Keeping {!Spice_protocol.Error.t}
     off the event stream keeps it a pure rendering vocabulary. Subscriber
-    exceptions are isolated as in {!events}. Each delivered result is the drain's
-    settled outcome — [Ok (document, outcome)] for a successful blocked or
-    finished drain, [Error _] for a failed one. Surfaces match a blocked
+    exceptions are isolated as in {!events}. Each delivered result is the
+    drain's settled outcome — [Ok (document, outcome)] for a successful blocked
+    or finished drain, [Error _] for a failed one. Surfaces match a blocked
     outcome's classified call to render permission and host-tool prompts, and
-    render [Error _] as a run failure. An errored drain does not flush the queue:
-    subsequent commands drain normally and fail on their own terms if the session
-    state no longer supports them (e.g. a continuation whose boundary is gone
-    returns its own {!Spice_protocol.Error.t}). *)
+    render [Error _] as a run failure. An errored drain does not flush the
+    queue: subsequent commands drain normally and fail on their own terms if the
+    session state no longer supports them (e.g. a continuation whose boundary is
+    gone returns its own {!Spice_protocol.Error.t}). *)
 
 val document : t -> Spice_session_store.Document.t
 (** [document t] is the latest saved document — the current attachment state,

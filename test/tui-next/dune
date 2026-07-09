@@ -18,7 +18,6 @@
    (run ./test_home.exe)
    (diff? test_home.ml test_home.ml.corrected))))
 
-
 (rule
  (alias runtest)
  (deps test_turn.exe)
@@ -26,5 +25,3 @@
   (progn
    (run ./test_turn.exe)
    (diff? test_turn.ml test_turn.ml.corrected))))
-
-

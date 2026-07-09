@@ -124,7 +124,8 @@ let output_json_projection () =
   let structured_json = json_object [ ("ok", Json.bool true) ] in
   let output =
     Tool.Output.make ~text:"done" ~json:structured_json ~truncated:true
-      ~value:(Tool.Output.pack int_id 42) ()
+      ~value:(Tool.Output.pack int_id 42)
+      ()
   in
   let projected = encode Tool.Output.jsont output in
   equal bool ~msg:"encoded projection has durable fields" true

@@ -34,7 +34,6 @@ type verb =
   | Other of string
 
 type dot = Running | Ok | Failed | Warned | Awaiting
-
 type diff_file = { label : string; patch : Mosaic.Diff.Patch.t }
 type todo_status = Done | Active | Pending
 type todo_item = { status : todo_status; content : string }
@@ -119,7 +118,8 @@ let clip ~max s =
    flex fallback for the one caller without a width (the shell running header). *)
 let header_argument ~width ~verb argument =
   if argument = "" then argument
-  else clip ~max:(Stdlib.max 4 (width - (String.length (label verb) + 4))) argument
+  else
+    clip ~max:(Stdlib.max 4 (width - (String.length (label verb) + 4))) argument
 
 let header verb ~argument ~dot =
   let name = seg Theme.bold (label verb) in
@@ -159,7 +159,7 @@ let result ?(disclosable = false) ~summary ~facts () =
           box ~flex_direction:Flex_direction.Row
             ~size:{ width = pct 100; height = auto }
             (text ~style:Theme.muted ~wrap:`Word ~flex_shrink:1. summary
-             :: (facts @ disc));
+            :: (facts @ disc));
         ];
     ]
 
@@ -195,7 +195,10 @@ let more_row count =
      mechanism it belongs to. *)
   box ~flex_direction:Flex_direction.Row ~padding:preview_pad
     ~size:{ width = pct 100; height = px 1 }
-    [ seg Theme.faint (Printf.sprintf "… +%d lines %s" count Theme.disclosure_closed) ]
+    [
+      seg Theme.faint
+        (Printf.sprintf "… +%d lines %s" count Theme.disclosure_closed);
+    ]
 
 let preview_view ~width lines overflow =
   (* Preview rows indent 6 columns and never wrap, so a long content line clips
@@ -251,9 +254,7 @@ let todo_view ~width items =
   (* Done items fold to one [… N done ▸] row so the running and pending work
      stays visible (02-tools.md §Todo block); the running and pending rows keep
      their order. *)
-  let done_count =
-    List.length (List.filter (fun i -> i.status = Done) items)
-  in
+  let done_count = List.length (List.filter (fun i -> i.status = Done) items) in
   let active = List.filter (fun i -> i.status <> Done) items in
   (* Rows indent 6 and carry a 2-column glyph, then the content, which never
      wraps — clip it so a long task line never runs off the edge. *)
@@ -261,7 +262,10 @@ let todo_view ~width items =
   let row glyph style content =
     box ~flex_direction:Flex_direction.Row ~padding:preview_pad
       ~size:{ width = pct 100; height = px 1 }
-      [ seg style (glyph ^ " "); text ~style ~wrap:`None (clip ~max:content_budget content) ]
+      [
+        seg style (glyph ^ " ");
+        text ~style ~wrap:`None (clip ~max:content_budget content);
+      ]
   in
   let active_rows =
     List.map

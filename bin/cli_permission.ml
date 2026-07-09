@@ -215,11 +215,8 @@ let remove rule_id from cwd =
 
 (* Command line *)
 
-let json_flag =
-  Cli_arg.json_flag ~doc:"Print rules as JSON." ()
-
-let cwd =
-  Cli_arg.cwd ~doc:"Run as if invoked from DIR." ()
+let json_flag = Cli_arg.json_flag ~doc:"Print rules as JSON." ()
+let cwd = Cli_arg.cwd ~doc:"Run as if invoked from DIR." ()
 
 let rule_id_arg =
   CArg.(

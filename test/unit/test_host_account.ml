@@ -16,7 +16,6 @@ module Source = Credential.Source
 let openai = Llm.Provider.make "openai"
 let api = Llm.Model.Api.make "responses"
 let model = Llm.Model.make ~provider:openai ~api ~id:"gpt-test"
-
 let source_value = testable ~pp:Source.pp ~equal:Source.equal ()
 
 let ok msg = function
@@ -34,8 +33,7 @@ let provider_decl =
       ~login:[ Provider.Auth.Login.api_key () ]
       ()
   in
-  Provider.make openai ~auth
-    [ Provider.Model.make model () ]
+  Provider.make openai ~auth [ Provider.Model.make model () ]
 
 let registry =
   ok "registry"
@@ -71,12 +69,10 @@ let process_credentials_shadow_environment () =
     ]
   in
   let accounts =
-    Spice_host.Account.load ~stdenv ~process host
-    |> account_ok "account load"
+    Spice_host.Account.load ~stdenv ~process host |> account_ok "account load"
   in
   let credential =
-    Spice_host.Account.credential accounts openai
-    |> account_ok "credential"
+    Spice_host.Account.credential accounts openai |> account_ok "credential"
   in
   equal (option source_value) ~msg:"process source wins" (Some Source.process)
     (Option.map Credential.source credential)

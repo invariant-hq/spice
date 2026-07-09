@@ -16,5 +16,6 @@ val render : color:bool -> session:Spice_session.Id.t option -> string
     prints the lockup alone, mirroring the old TUI's no-session exit.
 
     [color] toggles the {!Theme.accent} and {!Theme.muted} ANSI styling; [false]
-    emits plain text for [NO_COLOR] and non-color terminals. The result opens and
-    closes with a blank line and ends in a newline, ready to write verbatim. *)
+    emits plain text for [NO_COLOR] and non-color terminals. The result opens
+    and closes with a blank line and ends in a newline, ready to write verbatim.
+*)

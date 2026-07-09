@@ -25,23 +25,23 @@ let gguf_model_error =
   testable ~pp:Fit.Gguf.Model_error.pp
     ~equal:(fun a b ->
       match (a, b) with
-      | Fit.Gguf.Model_error.Missing_metadata { key = a },
-        Fit.Gguf.Model_error.Missing_metadata { key = b } ->
+      | ( Fit.Gguf.Model_error.Missing_metadata { key = a },
+          Fit.Gguf.Model_error.Missing_metadata { key = b } ) ->
           String.equal a b
-      | Fit.Gguf.Model_error.Missing_any_metadata { keys = a },
-        Fit.Gguf.Model_error.Missing_any_metadata { keys = b } ->
+      | ( Fit.Gguf.Model_error.Missing_any_metadata { keys = a },
+          Fit.Gguf.Model_error.Missing_any_metadata { keys = b } ) ->
           List.equal String.equal a b
-      | Fit.Gguf.Model_error.Invalid_metadata { key = a },
-        Fit.Gguf.Model_error.Invalid_metadata { key = b } ->
+      | ( Fit.Gguf.Model_error.Invalid_metadata { key = a },
+          Fit.Gguf.Model_error.Invalid_metadata { key = b } ) ->
           String.equal a b
-      | Fit.Gguf.Model_error.Invalid_head_dimensions { architecture = a },
-        Fit.Gguf.Model_error.Invalid_head_dimensions { architecture = b } ->
+      | ( Fit.Gguf.Model_error.Invalid_head_dimensions { architecture = a },
+          Fit.Gguf.Model_error.Invalid_head_dimensions { architecture = b } ) ->
           String.equal a b
-      | ( Fit.Gguf.Model_error.Missing_metadata _
-        | Fit.Gguf.Model_error.Missing_any_metadata _
-        | Fit.Gguf.Model_error.Invalid_metadata _
-        | Fit.Gguf.Model_error.Invalid_head_dimensions _ ),
-        _ ->
+      | ( ( Fit.Gguf.Model_error.Missing_metadata _
+          | Fit.Gguf.Model_error.Missing_any_metadata _
+          | Fit.Gguf.Model_error.Invalid_metadata _
+          | Fit.Gguf.Model_error.Invalid_head_dimensions _ ),
+          _ ) ->
           false)
     ()
 
@@ -130,8 +130,7 @@ let budget_for_tokens tokens = (8 * gib) + overhead + (tokens * 128 * 1024)
 
 let max_context_boundaries () =
   let model = reference () in
-  equal (option int) ~msg:"zero budget" None
-    (Fit.max_context ~budget:0 model);
+  equal (option int) ~msg:"zero budget" None (Fit.max_context ~budget:0 model);
   equal (option int) ~msg:"minimum int budget" None
     (Fit.max_context ~budget:min_int model);
   equal (option int) ~msg:"weights alone over budget" None
@@ -276,10 +275,11 @@ let gguf_rejects_non_divisible_embedding_heads () =
       (fun b -> kv_u32 b "tiny.attention.head_count_kv" 1);
     ]
   in
-  equal (result int gguf_model_error) ~msg:"non-divisible embedding/head_count"
+  equal
+    (result int gguf_model_error)
+    ~msg:"non-divisible embedding/head_count"
     (Error
-       (Fit.Gguf.Model_error.Invalid_head_dimensions
-          { architecture = "tiny" }))
+       (Fit.Gguf.Model_error.Invalid_head_dimensions { architecture = "tiny" }))
     (Result.map Fit.Model.head_dim
        (Fit.Gguf.model ~weights_bytes:gib (expect_gguf (gguf kvs))))
 
@@ -334,16 +334,19 @@ let gguf_rejects_oversized_u64 () =
   b_u64 buf 0;
   b_u64 buf 1;
   b_u64_raw buf 0x4000000000000000L;
-  equal (result (option string) gguf_error) ~msg:"oversized key length"
+  equal
+    (result (option string) gguf_error)
+    ~msg:"oversized key length"
     (Error (Fit.Gguf.Error.Malformed "64-bit value out of range"))
     (Result.map Fit.Gguf.name (Fit.Gguf.of_prefix (Buffer.contents buf)))
 
 let gguf_missing_keys () =
   let no_layers = List.filteri (fun i _ -> i <> 2) qwen_kvs in
-  equal (result int gguf_model_error) ~msg:"missing block_count"
+  equal
+    (result int gguf_model_error)
+    ~msg:"missing block_count"
     (Error
-       (Fit.Gguf.Model_error.Missing_metadata
-          { key = "qwen3moe.block_count" }))
+       (Fit.Gguf.Model_error.Missing_metadata { key = "qwen3moe.block_count" }))
     (Result.map Fit.Model.n_kv_layers
        (Fit.Gguf.model ~weights_bytes:gib (expect_gguf (gguf no_layers))));
   expect_invalid_arg "weights must be positive" (fun () ->

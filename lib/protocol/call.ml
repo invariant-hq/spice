@@ -111,9 +111,8 @@ let answerable_question = function
   | Question request -> Some (Question.Request.question request)
   | Invalid { name; error } when String.equal name Question.name ->
       Some ("Invalid question: " ^ error)
-  | Plan _ | Todo _ | Goal _ | Subagent _ | Subagent_wait _
-  | Subagent_cancel _ | Subagent_message _ | Subagent_message_parent _
-  | Invalid _ ->
+  | Plan _ | Todo _ | Goal _ | Subagent _ | Subagent_wait _ | Subagent_cancel _
+  | Subagent_message _ | Subagent_message_parent _ | Invalid _ ->
       None
 
 let plan_proposal = function

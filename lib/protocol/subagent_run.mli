@@ -20,8 +20,8 @@ module Usage : sig
   (** Child run outcome facts, recorded at the terminal transition.
 
       Facts of a run spice owns — ledger state, not a derived cache
-      (doc/plans/subagent-tui.md §8.2). Absent on runs recorded before the
-      facts existed. *)
+      (doc/plans/subagent-tui.md §8.2). Absent on runs recorded before the facts
+      existed. *)
 
   type t = { prompt_tokens : int; completion_tokens : int; tool_uses : int }
   (** The type for child run usage. All counts are non-negative; decoding
@@ -34,17 +34,17 @@ module Usage : sig
   (** [pp] formats [t] for diagnostics. *)
 
   val jsont : t Jsont.t
-  (** [jsont] maps usage to a JSON object; negative counts are a decode
-      error. *)
+  (** [jsont] maps usage to a JSON object; negative counts are a decode error.
+  *)
 end
 
 module Status : sig
   (** Subagent run lifecycle status.
 
       {!Queued} is the initial state. {!Running} and {!Blocked} are
-      non-terminal. {!Completed}, {!Failed}, and {!Cancelled} are terminal.
-      The enclosing run transitions enforce the lifecycle graph. Terminal
-      statuses carry the run's {!Usage.t} when the recorder had it. *)
+      non-terminal. {!Completed}, {!Failed}, and {!Cancelled} are terminal. The
+      enclosing run transitions enforce the lifecycle graph. Terminal statuses
+      carry the run's {!Usage.t} when the recorder had it. *)
 
   type t = private
     | Queued
@@ -82,8 +82,8 @@ module Status : sig
     ?usage:Usage.t ->
     unit ->
     (t, string) result
-  (** [completed ~completed_at ~summary ?usage ()] is a completed status.
-      Errors when [summary] is empty. *)
+  (** [completed ~completed_at ~summary ?usage ()] is a completed status. Errors
+      when [summary] is empty. *)
 
   val failed :
     failed_at:Spice_session.Time.t ->
@@ -197,26 +197,22 @@ val fail :
   ?usage:Usage.t ->
   t ->
   (t, string) result
-(** [fail ~failed_at ~message ?usage t] marks a queued, running, or blocked
-    run failed. Errors on empty [message], a terminal [t], or a time before
+(** [fail ~failed_at ~message ?usage t] marks a queued, running, or blocked run
+    failed. Errors on empty [message], a terminal [t], or a time before
     {!created_at} [t]. *)
 
 val cancel :
-  cancelled_at:Spice_session.Time.t ->
-  ?usage:Usage.t ->
-  t ->
-  (t, string) result
+  cancelled_at:Spice_session.Time.t -> ?usage:Usage.t -> t -> (t, string) result
 (** [cancel ~cancelled_at ?usage t] marks a queued, running, or blocked run
     cancelled. Errors on a terminal [t] or a time before {!created_at} [t]. *)
 
 val resume : resumed_at:Spice_session.Time.t -> t -> (t, string) result
 (** [resume ~resumed_at t] marks a blocked or terminal run running again: a
-    message resumed the settled child session (doc/plans/subagent-tui.md
-    §5.6). The one deliberate backward edge in the otherwise forward-only
-    lifecycle; the run keeps its identity because the run key is the child
-    session, and the next terminal transition re-records usage over the
-    whole session. Errors on a queued or running [t], or a time before
-    {!created_at} [t]. *)
+    message resumed the settled child session (doc/plans/subagent-tui.md §5.6).
+    The one deliberate backward edge in the otherwise forward-only lifecycle;
+    the run keeps its identity because the run key is the child session, and the
+    next terminal transition re-records usage over the whole session. Errors on
+    a queued or running [t], or a time before {!created_at} [t]. *)
 
 val usage : t -> Usage.t option
 (** [usage t] is the terminal usage record, when [t] settled with one. *)

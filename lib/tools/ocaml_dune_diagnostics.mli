@@ -12,8 +12,8 @@
     endpoint discovery and the latest-known Dune diagnostic store.
 
     The tool does not own or start a Dune process. It only connects when a
-    matching Dune RPC endpoint is already visible in the registry. If no endpoint
-    is visible, the tool fails as unavailable. *)
+    matching Dune RPC endpoint is already visible in the registry. If no
+    endpoint is visible, the tool fails as unavailable. *)
 
 val name : string
 (** Stable tool name, ["ocaml_dune_diagnostics"]. *)

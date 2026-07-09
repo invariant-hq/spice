@@ -443,11 +443,7 @@ let apply_response_appended response t =
               if String.is_empty text then turn.final_text else Some text
             in
             let turn =
-              {
-                turn with
-                response_count = turn.response_count + 1;
-                final_text;
-              }
+              { turn with response_count = turn.response_count + 1; final_text }
             in
             let replay_usage =
               match Spice_llm.Response.usage response with

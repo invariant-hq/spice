@@ -3,9 +3,9 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-(** The screen form: the shared chrome every screen wears, and the key reader the
-    filter law classifies against (03-ia-screens-overlays.md §The three forms,
-    §The filter law).
+(** The screen form: the shared chrome every screen wears, and the key reader
+    the filter law classifies against (03-ia-screens-overlays.md §The three
+    forms, §The filter law).
 
     A screen owns the whole region — it is not a panel below a boundary. Its
     anatomy is one drawing: a top rule carrying the screen's name as a filled
@@ -69,8 +69,8 @@ val view :
   content:'a Mosaic.t list ->
   'a Mosaic.t
 (** [view ~frame ~name ~fact ~filter ~hint ~width ~content] is the screen shell.
-    The top rule spans [width] in [frame]: [── ] then the [name] as a filled chip
-    ({!Theme.chip}), dashes filling to a right-aligned muted [fact], then a
+    The top rule spans [width] in [frame]: [── ] then the [name] as a filled
+    chip ({!Theme.chip}), dashes filling to a right-aligned muted [fact], then a
     trailing [ ──] (the [── [sessions] ──…── 12 sessions ──] grammar). When
     [filter] is [Some], a bare filter line follows — an accent ["/"], the
     [query], then the [matches] count faint — with no rule, no cursor, and no

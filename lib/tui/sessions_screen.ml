@@ -33,13 +33,12 @@ type ready = {
   rows : row list;
   filter : filter;
   editing : editing;
-  selected : int;  (* index into the visible (filtered) rows *)
+  selected : int; (* index into the visible (filtered) rows *)
 }
 
 (* The filter text and selection a [tab] promotion carries from the panel, held
    until the rows load and it can be applied. *)
 type pending = { query : string; select : Spice_session.Id.t option }
-
 type t = Loading of pending | Load_error of string | Ready of ready
 type msg = Key of Screen.key
 
@@ -85,7 +84,9 @@ let clamp ready =
 
 let select_id id ready =
   match
-    List.find_index (fun row -> Spice_session.Id.equal row.id id) (visible ready)
+    List.find_index
+      (fun row -> Spice_session.Id.equal row.id id)
+      (visible ready)
   with
   | Some i -> { ready with selected = i }
   | None -> clamp ready
@@ -93,24 +94,33 @@ let select_id id ready =
 let loaded rows t =
   match t with
   | Loading pending ->
-      let filter = if String.equal pending.query "" then Closed else Open pending.query in
+      let filter =
+        if String.equal pending.query "" then Closed else Open pending.query
+      in
       let ready = { rows; filter; editing = Browsing; selected = 0 } in
       Ready
         (match pending.select with
         | Some id -> select_id id ready
         | None -> clamp ready)
-  | Load_error _ -> Ready (clamp { rows; filter = Closed; editing = Browsing; selected = 0 })
+  | Load_error _ ->
+      Ready (clamp { rows; filter = Closed; editing = Browsing; selected = 0 })
   | Ready ready -> Ready (clamp { ready with rows; editing = Browsing })
 
 let key ev =
-  match Screen.classify ev with Screen.Action Screen.Other -> None | k -> Some (Key k)
+  match Screen.classify ev with
+  | Screen.Action Screen.Other -> None
+  | k -> Some (Key k)
 
 let selected_row ready = List.nth_opt (visible ready) ready.selected
 
 let move delta ready =
   match List.length (visible ready) with
   | 0 -> ready
-  | count -> { ready with selected = (((ready.selected + delta) mod count) + count) mod count }
+  | count ->
+      {
+        ready with
+        selected = (((ready.selected + delta) mod count) + count) mod count;
+      }
 
 (* Drop the last UTF-8 scalar, walking back over continuation bytes so a
    multibyte narrow or rename deletes whole, not half a codepoint. *)
@@ -130,12 +140,14 @@ let resume ready =
 
 let update_renaming ready text k =
   match k with
-  | Screen.Action Screen.Escape -> (Ready { ready with editing = Browsing }, Stay)
+  | Screen.Action Screen.Escape ->
+      (Ready { ready with editing = Browsing }, Stay)
   | Screen.Action Screen.Enter -> (
       let title = String.trim text in
       match (String.equal title "", selected_row ready) with
       | false, Some row ->
-          (Ready { ready with editing = Browsing }, Rename { id = row.id; title })
+          ( Ready { ready with editing = Browsing },
+            Rename { id = row.id; title } )
       | _ -> (Ready { ready with editing = Browsing }, Stay))
   | Screen.Action Screen.Backspace ->
       (Ready { ready with editing = Renaming (drop_last text) }, Stay)
@@ -159,10 +171,13 @@ let update_browsing_open ready q k =
   | Screen.Action Screen.Up -> (Ready (move (-1) ready), Stay)
   | Screen.Action Screen.Down -> (Ready (move 1 ready), Stay)
   | Screen.Action Screen.Backspace ->
-      (Ready (clamp { ready with filter = Open (drop_last q); selected = 0 }), Stay)
-  | Screen.Char c -> (Ready (clamp { ready with filter = Open (q ^ c); selected = 0 }), Stay)
-  | Screen.Action (Screen.Tab | Screen.Left | Screen.Right | Screen.Page_up | Screen.Page_down | Screen.Other)
-    ->
+      ( Ready (clamp { ready with filter = Open (drop_last q); selected = 0 }),
+        Stay )
+  | Screen.Char c ->
+      (Ready (clamp { ready with filter = Open (q ^ c); selected = 0 }), Stay)
+  | Screen.Action
+      ( Screen.Tab | Screen.Left | Screen.Right | Screen.Page_up
+      | Screen.Page_down | Screen.Other ) ->
       (Ready ready, Stay)
 
 let update_browsing_closed ready k =
@@ -184,8 +199,10 @@ let update_browsing_closed ready k =
       match selected_row ready with
       | Some _ -> (Ready { ready with editing = Confirming_delete }, Stay)
       | None -> (Ready ready, Stay))
-  | Screen.Char _ | Screen.Action (Screen.Tab | Screen.Left | Screen.Right | Screen.Page_up | Screen.Page_down | Screen.Backspace | Screen.Other)
-    ->
+  | Screen.Char _
+  | Screen.Action
+      ( Screen.Tab | Screen.Left | Screen.Right | Screen.Page_up
+      | Screen.Page_down | Screen.Backspace | Screen.Other ) ->
       (Ready ready, Stay)
 
 let update (Key k) t =
@@ -205,7 +222,6 @@ let update (Key k) t =
 
 let default_style = Ansi.Style.default
 let cursor_cols = 2
-
 let plural n s = if n = 1 then s else s ^ "s"
 
 let muted_line s =
@@ -219,7 +235,12 @@ let error_line s =
     [ seg Theme.error (Theme.problem ^ s) ]
 
 let group_header group =
-  let label = match group with Today -> "today" | This_week -> "this week" | Older -> "older" in
+  let label =
+    match group with
+    | Today -> "today"
+    | This_week -> "this week"
+    | Older -> "older"
+  in
   box ~flex_shrink:0. ~padding:(padding_lrtb 2 2 0 0)
     ~size:{ width = pct 100; height = px 1 }
     [ seg Theme.muted label ]
@@ -238,14 +259,22 @@ let row_view ~width ~selected ~editing row =
       box ~background:Theme.color_hover_bg ~flex_shrink:0.
         ~padding:(padding_lrtb 2 2 0 0)
         ~size:{ width = pct 100; height = px 1 }
-        [ seg Theme.warning (Printf.sprintf "delete \"%s\"? press d again · esc cancel" row.title) ]
+        [
+          seg Theme.warning
+            (Printf.sprintf "delete \"%s\"? press d again · esc cancel"
+               row.title);
+        ]
   | _ ->
-      let detail = Printf.sprintf "  %s · %d %s" row.age row.turns (plural row.turns "turn") in
+      let detail =
+        Printf.sprintf "  %s · %d %s" row.age row.turns
+          (plural row.turns "turn")
+      in
       let detail_w = String.length detail in
       let title_w = max 1 (inner - cursor_cols - detail_w) in
       let title_child =
         match (selected, editing) with
-        | true, Renaming text -> seg Theme.accent (truncate_tail ~width:title_w (text ^ "▏"))
+        | true, Renaming text ->
+            seg Theme.accent (truncate_tail ~width:title_w (text ^ "▏"))
         | _ -> seg default_style (truncate_tail ~width:title_w row.title)
       in
       let background = if selected then Some Theme.color_hover_bg else None in
@@ -254,7 +283,8 @@ let row_view ~width ~selected ~editing row =
         ~size:{ width = pct 100; height = px 1 }
         [
           cell cursor_cols
-            (if selected then seg Theme.accent Theme.cursor else seg default_style "  ");
+            (if selected then seg Theme.accent Theme.cursor
+             else seg default_style "  ");
           cell title_w title_child;
           cell detail_w (seg Theme.muted detail);
         ]
@@ -268,14 +298,16 @@ let expansion_rows row =
     match row.preview with
     | Some p when String.trim p <> "" ->
         [
-          box ~flex_shrink:0. ~padding:indent ~size:{ width = pct 100; height = px 1 }
+          box ~flex_shrink:0. ~padding:indent
+            ~size:{ width = pct 100; height = px 1 }
             [ seg Theme.faint (Theme.cursor ^ p) ];
         ]
     | _ -> []
   in
   let facts =
     let lineage = match row.lineage with Some l -> " · ↳ " ^ l | None -> "" in
-    box ~flex_shrink:0. ~padding:indent ~size:{ width = pct 100; height = px 1 }
+    box ~flex_shrink:0. ~padding:indent
+      ~size:{ width = pct 100; height = px 1 }
       [ seg Theme.muted (row.cwd ^ lineage) ]
   in
   echo @ [ facts ]
@@ -289,7 +321,9 @@ let window ~budget ~selected rows =
   else
     let start = if selected < budget then 0 else selected - budget + 1 in
     let start = min start (n - budget) in
-    let shown = List.filteri (fun i _ -> i >= start && i < start + budget) rows in
+    let shown =
+      List.filteri (fun i _ -> i >= start && i < start + budget) rows
+    in
     (shown, n - start - budget)
 
 let rows_view ~width ~rows ready visible =
@@ -306,22 +340,28 @@ let rows_view ~width ~rows ready visible =
   let _, elements =
     List.fold_left
       (fun (i, acc) row ->
-        let prev_group = if i = 0 then None else Some (List.nth visible (offset + i - 1)).group in
+        let prev_group =
+          if i = 0 then None else Some (List.nth visible (offset + i - 1)).group
+        in
         let header =
           if Some row.group = prev_group then []
           else if i = 0 then [ group_header row.group ]
           else [ blank_row; group_header row.group ]
         in
         let is_selected = offset + i = ready.selected in
-        let row_line = row_view ~width ~selected:is_selected ~editing:ready.editing row in
+        let row_line =
+          row_view ~width ~selected:is_selected ~editing:ready.editing row
+        in
         let expansion =
-          if is_selected && ready.editing = Browsing then expansion_rows row else []
+          if is_selected && ready.editing = Browsing then expansion_rows row
+          else []
         in
         (i + 1, acc @ header @ (row_line :: expansion)))
       (0, []) shown
   in
   let tail =
-    if older > 0 then [ muted_line (Printf.sprintf "… +%d older" older) ] else []
+    if older > 0 then [ muted_line (Printf.sprintf "… +%d older" older) ]
+    else []
   in
   elements @ tail
 
@@ -350,7 +390,8 @@ let filter_line t =
   | Ready ready -> (
       match ready.filter with
       | Closed -> None
-      | Open q -> Some { Screen.query = q; matches = List.length (visible ready) })
+      | Open q ->
+          Some { Screen.query = q; matches = List.length (visible ready) })
 
 let hint t =
   match t with
@@ -363,7 +404,14 @@ let hint t =
           match ready.filter with
           | Open _ -> [ "↵ resume"; "↑↓ select"; "esc clear filter" ]
           | Closed ->
-              [ "↵ resume"; "f fork"; "r rename"; "d delete"; "/ filter"; "esc back" ]))
+              [
+                "↵ resume";
+                "f fork";
+                "r rename";
+                "d delete";
+                "/ filter";
+                "esc back";
+              ]))
 
 let view ~frame ~width ~rows t =
   Screen.view ~frame ~name:"sessions" ~fact:(fact t) ~filter:(filter_line t)

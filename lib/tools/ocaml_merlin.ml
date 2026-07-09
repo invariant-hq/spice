@@ -177,8 +177,8 @@ let warm_dev_tool ~cwd ~env ~timeout_ms ~tool ~configured =
   match warm.Process.shell_status with
   | Process.Shell_failed_to_start message ->
       Error (Warm_failed ("could not start dune: " ^ message))
-  | Process.Shell_exited _ | Process.Shell_signaled _ | Process.Shell_timed_out _
-  | Process.Shell_cancelled -> (
+  | Process.Shell_exited _ | Process.Shell_signaled _
+  | Process.Shell_timed_out _ | Process.Shell_cancelled -> (
       match find_dev_tool_binary ~cwd ~tool with
       | Some bin -> Ok [ bin ]
       | None ->

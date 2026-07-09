@@ -27,9 +27,7 @@ open Tui_harness
    logout); the other providers stay unconnected for the not-connected rows. *)
 let env = [ ("SPICE_REDUCED_MOTION", "1"); ("OPENAI_API_KEY", "test-key-abcd") ]
 let print_fact = Util.print_fact
-
-let run ?rows ?cols project f =
-  Term.run ~env ?rows ?cols project f
+let run ?rows ?cols project f = Term.run ~env ?rows ?cols project f
 
 (* Open the login flow via [/login] from the home stage: the palette filters to
    the command, Enter runs it (separate write), and we wait for the provider
@@ -133,7 +131,8 @@ let%expect_test "api-key input masks the buffer; esc walks the ladder" =
     (Screen.has "Choose a provider to authenticate." (Term.screen t));
   Term.send t Keys.escape;
   Term.wait t (Screen.has "message spice");
-  print_fact "esc -> composer restored" (Screen.has "message spice" (Term.screen t));
+  print_fact "esc -> composer restored"
+    (Screen.has "message spice" (Term.screen t));
   [%expect
     {|
     empty-key flash: true

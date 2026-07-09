@@ -148,8 +148,7 @@ let pure_creates_and_deletes_count_lines_directly () =
   let deleted =
     Diff.File_change.delete ~label:(label "deleted.txt") ~contents
   in
-  equal_stats "pure stats" ~files:2 ~additions:line_count
-    ~deletions:line_count
+  equal_stats "pure stats" ~files:2 ~additions:line_count ~deletions:line_count
     (Diff.stats_of_changes [ created; deleted ]);
   let diff = Diff.render ~context:0 [ created; deleted ] in
   equal_stats "pure rendered stats" ~files:2 ~additions:line_count
@@ -238,7 +237,8 @@ let limited_render_counts_omitted_files_without_omitted_lines () =
   let pure_distance_limited =
     Diff.render ~limits:distance_limits
       [
-        Diff.File_change.create ~label:(label "create-rewrite.txt")
+        Diff.File_change.create
+          ~label:(label "create-rewrite.txt")
           ~contents:"a\nb\n";
       ]
   in
@@ -352,8 +352,7 @@ let hunks_saturate_huge_context () =
   equal int ~msg:"huge context new_start" 1 (Diff.Hunk.new_start hunk);
   equal int ~msg:"huge context new_count" 3 (Diff.Hunk.new_count hunk);
   equal (list string) ~msg:"huge context keeps full file"
-    [ " a"; "-b"; "+B"; " c" ]
-    (hunk_line_texts hunk)
+    [ " a"; "-b"; "+B"; " c" ] (hunk_line_texts hunk)
 
 let hunks_mark_pure_insertions () =
   let hunks =

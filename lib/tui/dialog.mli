@@ -4,8 +4,8 @@
  ---------------------------------------------------------------------------*)
 
 (** The decision-dialog family — one surface over the permission, plan, and
-    question forms (03-ia-screens-overlays.md §Dialogs, doc/plans/tui-next-dialog-seam.md
-    §6).
+    question forms (03-ia-screens-overlays.md §Dialogs,
+    doc/plans/tui-next-dialog-seam.md §6).
 
     A dialog opens on a blocked turn's {!Spice_protocol.Pending.t} boundary,
     tagged with the owner it must answer through, and renders one of the three
@@ -50,8 +50,9 @@ type resolution =
       decision : Spice_protocol.Plan.Decision.t;
       accept_edits : bool;
     }
-      (** A plan decision — {!Spice_protocol.Command.Resolve_plan}; [accept_edits]
-          asks the shell to also set the approval posture in the same stroke. *)
+      (** A plan decision — {!Spice_protocol.Command.Resolve_plan};
+          [accept_edits] asks the shell to also set the approval posture in the
+          same stroke. *)
 
 (** What folding a key asks the shell to do — the surface's outcome vocabulary
     the shell interprets (doc/plans/tui-next-surfaces.md §The three forms). *)

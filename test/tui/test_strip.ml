@@ -32,7 +32,8 @@ let run ?env ?rows ?cols ?provider project f =
    does NOT reach the provider until the first turn settles, and then it drains
    and runs its own turn. The first turn is held open by a server delay so the
    queued row is observable before it drains. *)
-let%expect_test "a submit during a turn queues in the strip and drains on settle" =
+let%expect_test
+    "a submit during a turn queues in the strip and drains on settle" =
   Project.with_temp "next-strip-queue" @@ fun project ->
   let held =
     Provider.delayed_response_line ~delay_ms:2500 ~id:"resp-strip-held"

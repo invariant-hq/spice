@@ -28,12 +28,8 @@ let print_fact = Util.print_fact
 
 (* The right-arrow escape the shared Keys module does not carry. *)
 let right = "\027[C"
-
-let run ?rows ?cols project f =
-  Term.run ~env ?rows ?cols project f
-
-let user_config project =
-  Project.root project ^ ".xdg/config/spice/config.json"
+let run ?rows ?cols project f = Term.run ~env ?rows ?cols project f
+let user_config project = Project.root project ^ ".xdg/config/spice/config.json"
 
 let read_config project =
   let path = user_config project in
@@ -59,7 +55,8 @@ let%expect_test "model panel opens grouped, with the current mark and effort" =
   open_model t;
   print_fact "model chip present" (Screen.has "model" (Term.screen t));
   print_fact "openai group present" (Screen.has "OpenAI" (Term.screen t));
-  print_fact "hoisted default row" (Screen.has "Default (recommended)" (Term.screen t));
+  print_fact "hoisted default row"
+    (Screen.has "Default (recommended)" (Term.screen t));
   print_fact "current mark present" (Screen.has "✓" (Term.screen t));
   print_fact "effort line present" (Screen.has "Medium effort" (Term.screen t));
   Screen.print ~project (Term.screen t);
@@ -105,7 +102,8 @@ let%expect_test "type-to-filter narrows the catalog" =
   Term.wait t (fun s -> Screen.has "Opus" s && Screen.lacks "GPT-5.5" s);
   print_fact "opus rows kept" (Screen.has "Opus" (Term.screen t));
   print_fact "gpt rows dropped" (Screen.lacks "GPT-5.5" (Term.screen t));
-  print_fact "alias gone once typing" (Screen.lacks "Default (recommended)" (Term.screen t));
+  print_fact "alias gone once typing"
+    (Screen.lacks "Default (recommended)" (Term.screen t));
   Screen.print ~project (Term.screen t);
   [%expect
     {|
@@ -145,7 +143,8 @@ let%expect_test "arrows adjust effort and track the default marker" =
   run project ~rows:24 ~cols:80 @@ fun t ->
   open_model t;
   Term.wait t (Screen.has "Medium effort (default)");
-  print_fact "default effort marked" (Screen.has "Medium effort (default)" (Term.screen t));
+  print_fact "default effort marked"
+    (Screen.has "Medium effort (default)" (Term.screen t));
   (* Right raises within the supported ramp to High — above the default, so the
      [(default)] marker clears. The scale is monotonic: no separate "provider
      default" stop, so [→] never drops to the lowest level first. *)
@@ -156,7 +155,8 @@ let%expect_test "arrows adjust effort and track the default marker" =
   (* Left returns to the model default, restoring the marker. *)
   Term.send t Keys.left;
   Term.wait t (Screen.has "Medium effort (default)");
-  print_fact "default marker restored" (Screen.has "Medium effort (default)" (Term.screen t));
+  print_fact "default marker restored"
+    (Screen.has "Medium effort (default)" (Term.screen t));
   [%expect
     {|
     default effort marked: true
@@ -179,7 +179,8 @@ let%expect_test "select persists the model and effort, then closes" =
   Term.wait t (Screen.has "model set to");
   print_fact "confirmation flashed" (Screen.has "model set to" (Term.screen t));
   print_fact "composer restored" (Screen.has "message spice" (Term.screen t));
-  print_fact "panel chrome gone" (Screen.lacks "Default (recommended)" (Term.screen t));
+  print_fact "panel chrome gone"
+    (Screen.lacks "Default (recommended)" (Term.screen t));
   print_fact "model written to user config"
     (contains (read_config project) "model"
     && contains (read_config project) "gpt-5.5");
@@ -200,12 +201,15 @@ let%expect_test "digit jump-picks a visible model" =
   Project.with_temp "model-digit" @@ fun project ->
   run project ~rows:24 ~cols:80 @@ fun t ->
   open_model t;
-  print_fact "default selected initially" (Screen.has "❯ Default (recommended)" (Term.screen t));
+  print_fact "default selected initially"
+    (Screen.has "❯ Default (recommended)" (Term.screen t));
   (* [2] moves the cursor to the second slot (the first concrete model). *)
   Term.send t "2";
   Term.wait t (Screen.lacks "❯ Default (recommended)");
-  print_fact "cursor moved off default" (Screen.lacks "❯ Default (recommended)" (Term.screen t));
-  print_fact "panel still open" (Screen.has "Default (recommended)" (Term.screen t));
+  print_fact "cursor moved off default"
+    (Screen.lacks "❯ Default (recommended)" (Term.screen t));
+  print_fact "panel still open"
+    (Screen.has "Default (recommended)" (Term.screen t));
   [%expect
     {|
     default selected initially: true
@@ -224,13 +228,15 @@ let%expect_test "esc from a settings-opened panel restores the screen" =
   (* The config tab opens with the cursor on the managed Model row. *)
   Term.send t Keys.enter;
   Term.wait t (Screen.has "Default (recommended)");
-  print_fact "panel opened from settings" (Screen.has "Default (recommended)" (Term.screen t));
+  print_fact "panel opened from settings"
+    (Screen.has "Default (recommended)" (Term.screen t));
   Term.send t Keys.escape;
   Term.wait t (Screen.has "Model & reasoning");
   print_fact "settings screen restored"
     (Screen.has "Model & reasoning" (Term.screen t)
     && Screen.has "config" (Term.screen t));
-  print_fact "panel chrome gone" (Screen.lacks "Default (recommended)" (Term.screen t));
+  print_fact "panel chrome gone"
+    (Screen.lacks "Default (recommended)" (Term.screen t));
   [%expect
     {|
     panel opened from settings: true
@@ -249,7 +255,8 @@ let%expect_test "no-auth local models are not locked" =
   Term.wait t (Screen.has "DeepSeek V4 Flash");
   let s = Term.screen t in
   print_fact "deepseek row present" (Screen.has "DeepSeek V4 Flash" s);
-  print_fact "not locked (no log-in affordance)" (Screen.lacks "log in to use" s);
+  print_fact "not locked (no log-in affordance)"
+    (Screen.lacks "log in to use" s);
   [%expect
     {|
     deepseek row present: true
@@ -265,7 +272,8 @@ let%expect_test "a pick updates the rendered model facts" =
   Project.with_temp "model-pick-refresh" @@ fun project ->
   run project ~rows:24 ~cols:80 @@ fun t ->
   Term.wait t (Screen.has "dev · openai/gpt-5.5");
-  print_fact "launch model line" (Screen.has "dev · openai/gpt-5.5" (Term.screen t));
+  print_fact "launch model line"
+    (Screen.has "dev · openai/gpt-5.5" (Term.screen t));
   open_model t;
   (* Filter to GPT-5.4 and confirm the highlighted row. *)
   Term.send t "gpt-5.4";

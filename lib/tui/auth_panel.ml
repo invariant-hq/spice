@@ -121,6 +121,7 @@ let loading ~mode ?provider () =
   { mode; requested = provider; entries = []; stage = Loading }
 
 let empty_pick = { query = ""; selected = 0 }
+
 let fresh_panel entry =
   {
     fp_entry = entry;
@@ -140,8 +141,7 @@ let requires_auth entry =
   not (List.is_empty entry.logins && List.is_empty entry.env)
 
 let connected entry =
-  requires_auth entry
-  && match entry.phase with `Missing -> false | _ -> true
+  requires_auth entry && match entry.phase with `Missing -> false | _ -> true
 
 let entry_rank entry =
   if not (requires_auth entry) then 3
@@ -195,7 +195,17 @@ let method_entries entry pick =
 (* {1 Confirm — provider / method selection} *)
 
 let enter_api_key entry login t =
-  ( { t with stage = Api_key { ak_entry = entry; ak_login = login; ak_buffer = ""; ak_flash = None } },
+  ( {
+      t with
+      stage =
+        Api_key
+          {
+            ak_entry = entry;
+            ak_login = login;
+            ak_buffer = "";
+            ak_flash = None;
+          };
+    },
     Stay )
 
 let confirm_method entry login t =
@@ -224,7 +234,10 @@ let confirm_provider entry t =
         ({ t with stage = Method_pick { entry; pick = empty_pick } }, Stay)
 
 let begin_logout entry t =
-  ( { t with stage = Working { entry; request = None; label = "removing credential…" } },
+  ( {
+      t with
+      stage = Working { entry; request = None; label = "removing credential…" };
+    },
     Begin_logout { provider = entry.provider } )
 
 (* {1 Post-load transition} *)
@@ -253,7 +266,9 @@ let on_providers_loaded entries t =
               connected
           with
           | Some entry -> begin_logout entry t
-          | None -> ({ t with stage = Logout_empty }, Flash (id ^ " is not connected")))
+          | None ->
+              ({ t with stage = Logout_empty }, Flash (id ^ " is not connected"))
+          )
       | None, [] -> ({ t with stage = Logout_empty }, Close)
       | None, [ entry ] -> begin_logout entry t
       | None, _ -> ({ t with stage = Provider_pick empty_pick }, Stay))
@@ -269,7 +284,7 @@ let clamp count selected = selected |> max 0 |> min (max 0 (count - 1))
 
 let apply_offset ~wrap count selected offset =
   if count = 0 then 0
-  else if wrap then ((selected + offset) mod count + count) mod count
+  else if wrap then (((selected + offset) mod count) + count) mod count
   else clamp count (selected + offset)
 
 let nav_provider offset ~wrap t pick =
@@ -307,7 +322,9 @@ let confirm t =
   match t.stage with
   | Provider_pick pick -> (
       let entries = pick_entries t pick in
-      match List.nth_opt entries (clamp (List.length entries) pick.selected) with
+      match
+        List.nth_opt entries (clamp (List.length entries) pick.selected)
+      with
       | None -> (t, Stay)
       | Some entry -> (
           match t.mode with
@@ -345,11 +362,16 @@ let strip_newlines text =
 
 let submit_api_key entry login state t =
   if String.equal (String.trim state.ak_buffer) "" then
-    ({ t with stage = Api_key { state with ak_flash = Some "enter a key" } }, Stay)
+    ( { t with stage = Api_key { state with ak_flash = Some "enter a key" } },
+      Stay )
   else
     ( { t with stage = Working { entry; request = None; label = "saving key…" } },
       Begin_api_key
-        { provider = entry.provider; method_id = Login.id login; key = state.ak_buffer } )
+        {
+          provider = entry.provider;
+          method_id = Login.id login;
+          key = state.ak_buffer;
+        } )
 
 (* {1 Esc ladder} *)
 
@@ -369,15 +391,18 @@ let back t =
   | Method_pick _ -> (back_to_provider t, Stay)
   | Api_key { ak_entry; _ } -> (back_from_protocol ak_entry t, Stay)
   | Working _ -> (t, Stay)
-  | Browser panel | Device panel ->
+  | Browser panel | Device panel -> (
       let t = back_from_protocol panel.fp_entry t in
-      (match panel.fp_request with
+      match panel.fp_request with
       | Some request -> (t, Cancel { request })
       | None -> (t, Stay))
 
 (* {1 Update} *)
 
-let key ev = match Panel.classify ev with Panel.Action Panel.Other -> None | k -> Some (Key k)
+let key ev =
+  match Panel.classify ev with
+  | Panel.Action Panel.Other -> None
+  | k -> Some (Key k)
 
 let flow_copy_target (stage : stage) =
   match stage with
@@ -390,26 +415,51 @@ let update (Key k) t =
   | Api_key state -> (
       match k with
       | Panel.Action Panel.Escape -> back t
-      | Panel.Action Panel.Enter -> submit_api_key state.ak_entry state.ak_login state t
+      | Panel.Action Panel.Enter ->
+          submit_api_key state.ak_entry state.ak_login state t
       | Panel.Action Panel.Backspace ->
-          ( { t with stage = Api_key { state with ak_buffer = drop_last_scalar state.ak_buffer; ak_flash = None } },
+          ( {
+              t with
+              stage =
+                Api_key
+                  {
+                    state with
+                    ak_buffer = drop_last_scalar state.ak_buffer;
+                    ak_flash = None;
+                  };
+            },
             Stay )
-      | Panel.Printable s -> ({ t with stage = Api_key (api_key_append s state) }, Stay)
-      | Panel.Digit d -> ({ t with stage = Api_key (api_key_append (string_of_int d) state) }, Stay)
-      | Panel.Action (Panel.Tab | Panel.Left | Panel.Right | Panel.Up | Panel.Down | Panel.Ctrl_d | Panel.Other) ->
+      | Panel.Printable s ->
+          ({ t with stage = Api_key (api_key_append s state) }, Stay)
+      | Panel.Digit d ->
+          ( { t with stage = Api_key (api_key_append (string_of_int d) state) },
+            Stay )
+      | Panel.Action
+          ( Panel.Tab | Panel.Left | Panel.Right | Panel.Up | Panel.Down
+          | Panel.Ctrl_d | Panel.Other ) ->
           (t, Stay))
   | Browser _ | Device _ -> (
       match k with
       | Panel.Action Panel.Escape -> back t
       | Panel.Printable "c" -> (
           match flow_copy_target t.stage with
-          | Some s -> ({ t with stage = (match t.stage with Browser p -> Browser { p with fp_copied = true } | Device p -> Device { p with fp_copied = true } | s -> s) }, Copy s)
+          | Some s ->
+              ( {
+                  t with
+                  stage =
+                    (match t.stage with
+                    | Browser p -> Browser { p with fp_copied = true }
+                    | Device p -> Device { p with fp_copied = true }
+                    | s -> s);
+                },
+                Copy s )
           | None -> (t, Stay))
       | Panel.Action Panel.Enter -> (
           (* The browser flow's explicit open (09-auth §6); device-code has no
              open (the browser is on another device). *)
           match t.stage with
-          | Browser { fp_url = Some url; fp_opened = false; _ } -> (t, Open_url url)
+          | Browser { fp_url = Some url; fp_opened = false; _ } ->
+              (t, Open_url url)
           | _ -> (t, Stay))
       | _ -> (t, Stay))
   | Working _ -> (t, Stay)
@@ -431,18 +481,30 @@ let update (Key k) t =
             let count =
               match t.stage with
               | Provider_pick pick -> List.length (pick_entries t pick)
-              | Method_pick { entry; pick } -> List.length (method_entries entry pick)
+              | Method_pick { entry; pick } ->
+                  List.length (method_entries entry pick)
               | _ -> 0
             in
             if d >= 1 && d <= count then
               confirm
                 (match t.stage with
-                | Provider_pick pick -> { t with stage = Provider_pick { pick with selected = d - 1 } }
-                | Method_pick { entry; pick } -> { t with stage = Method_pick { entry; pick = { pick with selected = d - 1 } } }
+                | Provider_pick pick ->
+                    {
+                      t with
+                      stage = Provider_pick { pick with selected = d - 1 };
+                    }
+                | Method_pick { entry; pick } ->
+                    {
+                      t with
+                      stage =
+                        Method_pick
+                          { entry; pick = { pick with selected = d - 1 } };
+                    }
                 | _ -> t)
             else (t, Stay)
           else (with_query (query t ^ string_of_int d) t, Stay)
-      | Panel.Action (Panel.Left | Panel.Right | Panel.Ctrl_d | Panel.Other) -> (t, Stay))
+      | Panel.Action (Panel.Left | Panel.Right | Panel.Ctrl_d | Panel.Other) ->
+          (t, Stay))
 
 (* {1 Async folds} *)
 
@@ -470,21 +532,28 @@ let map_flow request f t =
 
 let challenge ~request (c : challenge) t =
   match c with
-  | Browser_url url -> map_flow request (fun p -> { p with fp_url = Some url }) t
+  | Browser_url url ->
+      map_flow request (fun p -> { p with fp_url = Some url }) t
   | Device_challenge { url; user_code; expires_in } ->
       map_flow request
         (fun p ->
-          { p with fp_url = Some url; fp_user_code = Some user_code; fp_remaining = Some expires_in })
+          {
+            p with
+            fp_url = Some url;
+            fp_user_code = Some user_code;
+            fp_remaining = Some expires_in;
+          })
         t
 
 let browser_opened ~request t =
-  map_flow request (fun p -> { p with fp_opened = true; fp_open_failed = false }) t
+  map_flow request
+    (fun p -> { p with fp_opened = true; fp_open_failed = false })
+    t
 
 let browser_open_failed ~request t =
   map_flow request (fun p -> { p with fp_open_failed = true }) t
 
-let ticking t =
-  match t.stage with Browser _ | Device _ -> true | _ -> false
+let ticking t = match t.stage with Browser _ | Device _ -> true | _ -> false
 
 let tick t =
   let bump p =
@@ -503,7 +572,8 @@ let accepts_paste t = match t.stage with Api_key _ -> true | _ -> false
 
 let paste text t =
   match t.stage with
-  | Api_key state -> { t with stage = Api_key (api_key_append (strip_newlines text) state) }
+  | Api_key state ->
+      { t with stage = Api_key (api_key_append (strip_newlines text) state) }
   | _ -> t
 
 (* {1 View} *)
@@ -511,7 +581,6 @@ let paste text t =
 let default_style = Ansi.Style.default
 let hidden = { x = Overflow.Hidden; y = Overflow.Hidden }
 let check = "✓"
-
 let blank_row = box ~flex_shrink:0. ~size:{ width = pct 100; height = px 1 } []
 
 let pad_row nodes =
@@ -541,7 +610,9 @@ let list_row ~selected ~selectable ~label ~detail ~mark =
     match detail with "" -> [] | d -> [ seg Theme.muted d ]
   in
   let mark_nodes =
-    match mark with None -> [] | Some (glyph, style) -> [ seg style ("  " ^ glyph) ]
+    match mark with
+    | None -> []
+    | Some (glyph, style) -> [ seg style ("  " ^ glyph) ]
   in
   let background = if selected then Some Theme.color_hover_bg else None in
   box ?background ~flex_shrink:0. ~flex_direction:Flex_direction.Row
@@ -572,11 +643,17 @@ let provider_detail (entry : provider_entry) =
             [ fingerprint_label entry.fingerprint; source_word entry.source ]
         in
         let joined = String.concat Theme.separator facts in
-        let with_phase word = if joined = "" then word else word ^ Theme.separator ^ joined in
+        let with_phase word =
+          if joined = "" then word else word ^ Theme.separator ^ joined
+        in
         match entry.phase with
-        | `Blocked -> (with_phase "blocked", Some (String.trim Theme.problem, Theme.error))
-        | `Degraded -> (with_phase "degraded", Some (String.trim Theme.problem, Theme.warning))
-        | `Missing | `Unchecked | `Ready -> (joined, Some (check, Theme.success)))
+        | `Blocked ->
+            (with_phase "blocked", Some (String.trim Theme.problem, Theme.error))
+        | `Degraded ->
+            ( with_phase "degraded",
+              Some (String.trim Theme.problem, Theme.warning) )
+        | `Missing | `Unchecked | `Ready -> (joined, Some (check, Theme.success))
+        )
     | Some (Source.Env name) -> ("env " ^ name, None)
     | Some Source.Process -> ("process", None)
     | None -> ("not connected", None)
@@ -603,8 +680,13 @@ let windowed ~rows ~selected rows_list =
   let count = List.length rows_list in
   let limit = window_limit rows in
   let start, length = window ~limit ~selected ~count in
-  let visible = List.filteri (fun i _ -> i >= start && i < start + length) rows_list in
-  let above = if start > 0 then [ muted_line ("↑ " ^ string_of_int start ^ " more") ] else [] in
+  let visible =
+    List.filteri (fun i _ -> i >= start && i < start + length) rows_list
+  in
+  let above =
+    if start > 0 then [ muted_line ("↑ " ^ string_of_int start ^ " more") ]
+    else []
+  in
   let below =
     if start + length < count then
       [ muted_line ("↓ " ^ string_of_int (count - start - length) ^ " more") ]
@@ -632,7 +714,7 @@ let provider_pick_content ~rows t pick =
           entries
         |> windowed ~rows ~selected
   in
-  (muted_line subtitle :: blank_row :: rows_list)
+  muted_line subtitle :: blank_row :: rows_list
 
 let method_pick_content ~rows entry pick =
   let logins = method_entries entry pick in
@@ -644,12 +726,14 @@ let method_pick_content ~rows entry pick =
         List.mapi
           (fun i login ->
             list_row ~selected:(i = selected) ~selectable:true
-              ~label:(Login.label login) ~detail:(method_description login) ~mark:None)
+              ~label:(Login.label login) ~detail:(method_description login)
+              ~mark:None)
           logins
         |> windowed ~rows ~selected
   in
-  (bold_line ("Log in to " ^ entry.display_name)
-   :: muted_line "Choose how to sign in." :: blank_row :: rows_list)
+  bold_line ("Log in to " ^ entry.display_name)
+  :: muted_line "Choose how to sign in."
+  :: blank_row :: rows_list
 
 (* The masked composer borrow (09-auth §5): every buffered scalar renders as one
    bullet; the buffer is never drawn as text. *)
@@ -659,13 +743,18 @@ let bullets buffer =
   String.concat "" (List.init !count (fun _ -> "•"))
 
 let rule_line width =
-  line ~style:Theme.rule (String.concat "" (List.init (max 0 (width - 4)) (fun _ -> "─")))
+  line ~style:Theme.rule
+    (String.concat "" (List.init (max 0 (width - 4)) (fun _ -> "─")))
 
 let api_key_content ~width state =
   let env_note =
     match state.ak_entry.source with
     | Some (Source.Env var) ->
-        [ muted_line ("Detected " ^ var ^ " in the environment; saving a key here takes precedence.") ]
+        [
+          muted_line
+            ("Detected " ^ var
+           ^ " in the environment; saving a key here takes precedence.");
+        ]
     | _ -> []
   in
   let input_line =
@@ -674,10 +763,12 @@ let api_key_content ~width state =
   let hint_line =
     match state.ak_flash with
     | Some flash -> faint_line flash
-    | None -> faint_line "enter save · esc back · paste works · your key is not shown"
+    | None ->
+        faint_line "enter save · esc back · paste works · your key is not shown"
   in
   [
-    line ~style:Theme.accent ("Paste your " ^ state.ak_entry.display_name ^ " API key");
+    line ~style:Theme.accent
+      ("Paste your " ^ state.ak_entry.display_name ^ " API key");
     muted_line "Stored locally in the auth store; never displayed again.";
   ]
   @ env_note
@@ -691,7 +782,9 @@ let waiting_row p =
   pad_row
     [
       seg Theme.running (spinner_frame p.fp_elapsed ^ " ");
-      seg Theme.muted (Printf.sprintf "Waiting for authorization… (%ds · esc to cancel)" p.fp_elapsed);
+      seg Theme.muted
+        (Printf.sprintf "Waiting for authorization… (%ds · esc to cancel)"
+           p.fp_elapsed);
     ]
 
 (* Display-column length over UTF-8 (every glyph the URL row draws is one column
@@ -744,32 +837,49 @@ let browser_content ~width p =
     match p.fp_url with
     | None -> [ muted_line "Preparing the authorization link…" ]
     | Some url ->
-        [ muted_line "Or open this link yourself:"; blank_row;
-          url_row ~width url p.fp_copied ]
+        [
+          muted_line "Or open this link yourself:";
+          blank_row;
+          url_row ~width url p.fp_copied;
+        ]
   in
   (* [open_browser] could not spawn a browser (a headless or remote host): say so
      under the link, which sits just above, so the flow is not stranded on
      "Press enter…" (09-auth.md §States). Enter still retries. *)
   let failure_nodes =
     if p.fp_open_failed && not p.fp_opened then
-      [ blank_row;
+      [
+        blank_row;
         line ~style:Theme.warning
-          "Could not open a browser automatically — open the link above." ]
+          "Could not open a browser automatically — open the link above.";
+      ]
     else []
   in
-  [ bold_line ("Log in to " ^ p.fp_entry.display_name ^ " · browser"); blank_row; open_line ]
+  [
+    bold_line ("Log in to " ^ p.fp_entry.display_name ^ " · browser");
+    blank_row;
+    open_line;
+  ]
   @ url_nodes @ failure_nodes
-  @ [ blank_row; waiting_row p; blank_row;
-      faint_line "On a remote or headless machine? Press esc and choose device code." ]
+  @ [
+      blank_row;
+      waiting_row p;
+      blank_row;
+      faint_line
+        "On a remote or headless machine? Press esc and choose device code.";
+    ]
 
 let duration_text seconds =
-  if seconds >= 60 then Printf.sprintf "%dm %02ds" (seconds / 60) (seconds mod 60)
+  if seconds >= 60 then
+    Printf.sprintf "%dm %02ds" (seconds / 60) (seconds mod 60)
   else Printf.sprintf "%ds" seconds
 
 let device_content ~width p =
   let expiry =
     match p.fp_remaining with
-    | Some remaining -> Printf.sprintf "2. Enter this code (expires in %s):" (duration_text remaining)
+    | Some remaining ->
+        Printf.sprintf "2. Enter this code (expires in %s):"
+          (duration_text remaining)
     | None -> "2. Enter this code:"
   in
   let code_row =
@@ -780,9 +890,11 @@ let device_content ~width p =
           ~padding:(padding_lrtb 2 2 0 0)
           ~size:{ width = pct 100; height = px 1 }
           [
-            text ~style:Theme.accent ~wrap:`None ~selectable:true ~flex_shrink:0. ("   " ^ code);
+            text ~style:Theme.accent ~wrap:`None ~selectable:true
+              ~flex_shrink:0. ("   " ^ code);
             box ~flex_grow:1. [];
-            seg Theme.faint ((if p.fp_copied then "copied" else "c  copy") ^ "  ");
+            seg Theme.faint
+              ((if p.fp_copied then "copied" else "c  copy") ^ "  ");
           ]
   in
   let url_nodes =
@@ -790,12 +902,24 @@ let device_content ~width p =
     | None -> [ muted_line "   requesting the link…" ]
     | Some url -> [ url_row ~width url p.fp_copied ]
   in
-  [ bold_line ("Log in to " ^ p.fp_entry.display_name ^ " · device code"); blank_row;
-    muted_line "1. Open this link and sign in:"; blank_row ]
+  [
+    bold_line ("Log in to " ^ p.fp_entry.display_name ^ " · device code");
+    blank_row;
+    muted_line "1. Open this link and sign in:";
+    blank_row;
+  ]
   @ url_nodes
-  @ [ blank_row; muted_line expiry; blank_row; code_row; blank_row;
-      muted_line "Device codes are a common phishing target. Never share this code.";
-      blank_row; waiting_row p ]
+  @ [
+      blank_row;
+      muted_line expiry;
+      blank_row;
+      code_row;
+      blank_row;
+      muted_line
+        "Device codes are a common phishing target. Never share this code.";
+      blank_row;
+      waiting_row p;
+    ]
 
 let chip_name = function Login -> "log in" | Logout -> "log out"
 

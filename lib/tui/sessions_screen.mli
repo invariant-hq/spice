@@ -8,22 +8,22 @@
     expanding, with the [f]/[r]/[d] verbs and the [/] filter.
 
     A mini-Elm surface (doc/plans/tui-next-surfaces.md): the shell holds [t],
-    routes keys through {!key}, folds the resulting {!msg} with {!update} — which
-    yields the next [t] and an {!event} the shell interprets — and renders
+    routes keys through {!key}, folds the resulting {!msg} with {!update} —
+    which yields the next [t] and an {!event} the shell interprets — and renders
     {!view}. The screen reads no clock, config, or host; the runtime loads its
     rows and delivers them with {!loaded}, ages and recency groups already
     computed (formatting and bucketing are the TUI's; the facts are the host's,
     §Host seams).
 
     Resume, fork, rename, and delete are outcomes the shell carries out against
-    the host and reports back by reloading the rows: {!Resume} and {!Fork} attach
-    a session; {!Rename} and {!Delete} mutate through the host lifecycle verbs
-    ({!Spice_host.Session.save_title}, {!Spice_host.Session.delete}). Rename and
-    delete confirm {e in place} — the row becomes an inline input or its own
-    confirmation — so no composer borrow is involved.
+    the host and reports back by reloading the rows: {!Resume} and {!Fork}
+    attach a session; {!Rename} and {!Delete} mutate through the host lifecycle
+    verbs ({!Spice_host.Session.save_title}, {!Spice_host.Session.delete}).
+    Rename and delete confirm {e in place} — the row becomes an inline input or
+    its own confirmation — so no composer borrow is involved.
 
-    The wide-width transcript pane (03-ia §Sessions, ~100+ cols) is deferred: the
-    screen renders the narrow layout at every width this iteration
+    The wide-width transcript pane (03-ia §Sessions, ~100+ cols) is deferred:
+    the screen renders the narrow layout at every width this iteration
     (doc/plans/tui-next-surfaces.md §Sequencing 2, wide pane stubbed). *)
 
 (** A row's recency bucket, computed by the runtime from the last-update time
@@ -37,8 +37,8 @@ type row = {
       (** The display title ({!Spice_protocol.Session_summary.display_title}),
           never a raw id. *)
   age : string;
-      (** The relative age of the last update, formatted by the runtime
-          (mirrors {!Home.Brief.relative_age}). *)
+      (** The relative age of the last update, formatted by the runtime (mirrors
+          {!Home.Brief.relative_age}). *)
   turns : int;
       (** The conversational turn count
           ({!Spice_protocol.Session_summary.turns}), rendered as the row's
@@ -60,12 +60,12 @@ type row = {
   group : group;  (** The recency bucket this row renders under. *)
 }
 (** One browse row. The runtime builds these from
-    {!Spice_protocol.Session_summary.t}; the screen groups, filters, expands, and
-    renders them. *)
+    {!Spice_protocol.Session_summary.t}; the screen groups, filters, expands,
+    and renders them. *)
 
 type t
-(** The screen state: loading, a store-error line, or loaded rows with the filter
-    line, the selection, and any in-place rename/delete affordance. *)
+(** The screen state: loading, a store-error line, or loaded rows with the
+    filter line, the selection, and any in-place rename/delete affordance. *)
 
 type msg
 (** A key routed to the screen, opaque; produced by {!key}. *)
@@ -90,10 +90,10 @@ val loading : t
 
 val promoted : filter:string -> select:Spice_session.Id.t option -> t
 (** [promoted ~filter ~select] is the screen opened by [tab] from the
-    quick-switch panel, carrying the panel's [filter] text and [select]ed session
-    over (03-ia §Sessions, "filter + selection carried over"). It starts loading;
-    {!loaded} applies [filter] (opening the filter line when non-empty) and moves
-    the selection to [select]'s row. *)
+    quick-switch panel, carrying the panel's [filter] text and [select]ed
+    session over (03-ia §Sessions, "filter + selection carried over"). It starts
+    loading; {!loaded} applies [filter] (opening the filter line when non-empty)
+    and moves the selection to [select]'s row. *)
 
 val loaded : row list -> t -> t
 (** [loaded rows t] folds the runtime-loaded [rows] into [t]. From a loading or
@@ -114,13 +114,14 @@ val key : Matrix.Input.Key.event -> msg option
 val update : msg -> t -> t * event
 (** [update msg t] folds one key under the filter law (03-ia §The filter law):
 
-    - {b Browsing, filter closed.} Letters are the keymap — [/] opens the filter,
-      [f] yields {!Fork}, [r] enters the inline rename, [d] enters the inline
-      delete confirmation; [↑]/[↓] move the selection (wrapping); [↵] yields
-      {!Resume}; esc yields {!Close}.
-    - {b Browsing, filter open.} Every printable narrows and resets the selection
-      to the top; backspace shortens it; [↑]/[↓] and [↵] act on the filtered
-      rows; esc closes the filter (the ladder's first rung) without leaving.
+    - {b Browsing, filter closed.} Letters are the keymap — [/] opens the
+      filter, [f] yields {!Fork}, [r] enters the inline rename, [d] enters the
+      inline delete confirmation; [↑]/[↓] move the selection (wrapping); [↵]
+      yields {!Resume}; esc yields {!Close}.
+    - {b Browsing, filter open.} Every printable narrows and resets the
+      selection to the top; backspace shortens it; [↑]/[↓] and [↵] act on the
+      filtered rows; esc closes the filter (the ladder's first rung) without
+      leaving.
     - {b Renaming.} Printables and backspace edit the inline title; [↵] yields
       {!Rename} of the trimmed non-empty title (empty cancels); esc cancels.
     - {b Confirming delete.} A second [d] yields {!Delete}; any other key (esc
@@ -132,11 +133,11 @@ val view : frame:Mosaic.Ansi.Color.t -> width:int -> rows:int -> t -> _ Mosaic.t
 (** [view ~frame ~width ~rows t] renders the screen through {!Screen.view},
     [frame] tinting the top rule and the [sessions] chip and the fact naming the
     session count. Rows group under muted recency headers ([today] / [this week]
-    / [older]); the selected row wears the [❯] accent cursor and a hover tint and
-    expands to a faint first-prompt echo and a facts line (cwd, plus [↳ fork of
-    …] when forked); an inline rename replaces the selected title with the typed
-    input, an inline delete replaces the row with its confirmation. [rows] bounds
-    the visible window — sessions past the budget collapse into a muted [… +N
-    older] tail, the selection kept in view. The muted loading, empty, no-match,
-    and error lines each stand in for the content when there are no rows to show.
-*)
+    / [older]); the selected row wears the [❯] accent cursor and a hover tint
+    and expands to a faint first-prompt echo and a facts line (cwd, plus
+    [↳ fork of …] when forked); an inline rename replaces the selected title
+    with the typed input, an inline delete replaces the row with its
+    confirmation. [rows] bounds the visible window — sessions past the budget
+    collapse into a muted [… +N older] tail, the selection kept in view. The
+    muted loading, empty, no-match, and error lines each stand in for the
+    content when there are no rows to show. *)

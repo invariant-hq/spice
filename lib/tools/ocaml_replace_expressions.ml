@@ -434,11 +434,7 @@ let build_frags site_texts =
           | Some e ->
               Ok
                 (( hole,
-                   {
-                     fr_raw = raw;
-                     fr_ast = e;
-                     fr_atomic = is_atomic raw e;
-                   } )
+                   { fr_raw = raw; fr_ast = e; fr_atomic = is_atomic raw e } )
                 :: frags)
           | None -> Error hole))
     (Ok []) site_texts
@@ -504,7 +500,8 @@ let rec verify_file ~path source sites =
   match
     Grep.parse_implementation ~filename:(Workspace.Path.display path) after
   with
-  | Error error -> Error (`Rewrite_unparsable (Grep.Parse_error.to_string error))
+  | Error error ->
+      Error (`Rewrite_unparsable (Grep.Parse_error.to_string error))
   | Ok structure ->
       let spans = expr_spans structure in
       let failing =

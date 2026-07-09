@@ -73,8 +73,9 @@ let mkdir_p path =
 
 let write_file path content =
   let output = open_out_bin path in
-  Fun.protect ~finally:(fun () -> close_out output) (fun () ->
-      output_string output content)
+  Fun.protect
+    ~finally:(fun () -> close_out output)
+    (fun () -> output_string output content)
 
 let capture_request capture index request =
   write_file
@@ -101,7 +102,8 @@ let json_escape s =
 (* One [chat.completion.chunk] SSE data line carrying [delta]. *)
 let sse_delta delta =
   Printf.sprintf
-    "data: {\"id\":\"chatcmpl-fixture\",\"object\":\"chat.completion.chunk\",\"model\":\"fixture\",\"choices\":[{\"index\":0,\"delta\":%s,\"finish_reason\":null}]}\n\n"
+    "data: \
+     {\"id\":\"chatcmpl-fixture\",\"object\":\"chat.completion.chunk\",\"model\":\"fixture\",\"choices\":[{\"index\":0,\"delta\":%s,\"finish_reason\":null}]}\n\n"
     delta
 
 let sse_body reply =
@@ -130,7 +132,11 @@ let write_all fd text =
 
 let http_head ~content_type ~content_length =
   Printf.sprintf
-    "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\nConnection: close\r\n\r\n"
+    "HTTP/1.1 200 OK\r\n\
+     Content-Type: %s\r\n\
+     Content-Length: %d\r\n\
+     Connection: close\r\n\
+     \r\n"
     content_type content_length
 
 let respond_health client =

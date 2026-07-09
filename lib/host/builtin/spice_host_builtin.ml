@@ -625,7 +625,10 @@ let ollama_adapter =
               ~bearer:(fun ~token ->
                 Ok (Some (Spice_llm_ollama.Credential.bearer token)))
               ~oauth:(fun
-                  ~access_token:_ ~refresh_token:_ ~expires_at:_ ~account_id:_
+                  ~access_token:_
+                  ~refresh_token:_
+                  ~expires_at:_
+                  ~account_id:_
                 ->
                 Error
                   (Spice_host.Host.Error.Unsupported_credential
@@ -635,7 +638,7 @@ let ollama_adapter =
                      }))
       in
       match (config, credential) with
-      | Error _ as error, _ | _, (Error _ as error) -> error
+      | (Error _ as error), _ | _, (Error _ as error) -> error
       | Ok config, Ok credential ->
           Ok (Spice_llm_ollama.client ~sw ~env:stdenv ~config ?credential ()))
     ()

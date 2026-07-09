@@ -157,8 +157,9 @@ let configured_choice t ~field selector origin =
      a custom endpoint; annotate the unknown-model failure with that override so
      the diagnostic points at the OpenAI-compatible [ollama] route rather than at
      catalog typos. *)
-  | Error (Host.Error.Unknown_model { provider; model; field = error_field; known; base_url = _ })
-    ->
+  | Error
+      (Host.Error.Unknown_model
+         { provider; model; field = error_field; known; base_url = _ }) ->
       let base_url =
         Config.Models.provider_base_url
           (Config.models (Host.config t))
