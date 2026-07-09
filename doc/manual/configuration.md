@@ -16,6 +16,23 @@ Values are resolved in increasing precedence:
 5. `SPICE_*` environment overrides.
 6. Runtime overrides, such as run flags (`--model`, `--sandbox`, ...).
 
+Project config and project skills resolve from the nearest ancestor containing
+`.git`; the execution cwd remains the exact directory requested by the user.
+Initializing either project config file maintains an exact
+`config.local.json` entry in `.spice/.gitignore` while preserving other lines.
+Do not ignore the whole `.spice/` directory if shared config or skills are
+committed.
+
+Storage roots are independent of these config layers and cannot be redirected
+by project files:
+
+- `SPICE_CONFIG_HOME`: user-authored config plus auth and trust stores;
+- `SPICE_DATA_HOME`: durable sessions, workflow artifacts, and workspace state;
+- `SPICE_STATE_HOME`: machine-local prompt history, logs, and crash reports.
+
+On Unix, data and state fall back through `XDG_DATA_HOME`/`XDG_STATE_HOME` to
+`~/.local/share/spice`/`~/.local/state/spice`.
+
 Project layers load without a trust decision. They are reduced to a
 workspace-safe allowlist; permission rules and authority-bearing keys are
 ignored, and budget values may tighten but not widen values selected outside

@@ -121,7 +121,8 @@ The core review loop is:
   agent turn;
 - press `?` for the complete review key table.
 
-Marks and verdicts persist under `.spice/reviews/`. They are tied to content:
+Marks and verdicts persist in the global data home's workspace state. They are
+tied to content:
 surviving marks carry across a refresh, changed scopes become stale or
 unreviewed, and an approval for older content is shown as stale rather than
 silently remaining fresh. The screen watches the worktree while it is open and

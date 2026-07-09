@@ -5,12 +5,18 @@ conversation, the tool calls, and the workspace changes the agent made.
 
 ## Storage
 
-Sessions persist per workspace under `.spice/` at the workspace root
-(`sessions/`, plus `subagents/` and `todos/`). The directory is created with
-`0700` permissions; add `.spice/` to your project's `.gitignore`.
-Session documents are stored under
-`.spice/sessions/<percent-escaped-session-id>/session.json`; use
-`spice session export` for the supported JSON form.
+Sessions are global durable data, not project files. On Unix they default to
+`$XDG_DATA_HOME/spice` (or `~/.local/share/spice`); `SPICE_DATA_HOME` overrides
+the complete root. Session documents live at
+`sessions/<percent-escaped-session-id>/session.json`, while plans remain
+standalone at `plans/<session-id>/<plan-id>.json`. Todos, goals, subagent
+records, blobs, and workspace checkpoint/review state are sibling stores.
+Directories use `0700` and files use `0600`; use `spice session export` for the
+supported session JSON form.
+
+The project `.spice/` directory is reserved for inputs that may be shared with
+the repository: `config.json`, the gitignored `config.local.json`, and project
+skills. Ordinary runs do not create project-local session state.
 
 Finished sessions get a best-effort auto-generated title using the small
 model. Set `SPICE_AUTO_TITLE=0` to disable.
@@ -25,6 +31,8 @@ spice resume SESSION              # open the TUI on a session by id
 
 Commands that take a session id accept a unique id prefix. Where supported,
 `--last` targets the newest session in the current working directory.
+An explicit id can be used from any directory; continuation executes in the
+canonical cwd recorded by the session. An explicit `--cwd` must match it.
 
 ## Lifecycle commands
 
