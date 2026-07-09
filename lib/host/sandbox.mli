@@ -269,3 +269,17 @@ val mutating_tools : Effective.t -> bool
     {!Mode.Read_only}: a read-only run's catalog must not contain built-in
     mutating tools, so the run cannot mutate the workspace through them either.
     Pass it to the catalog builder's [mutating] parameter. *)
+
+val enforces_workspace_write : Effective.t -> bool
+(** [enforces_workspace_write effective] is [true] iff [effective] is a
+    workspace-write sandbox whose backend can enforce the confinement: the mode
+    is {!Mode.Workspace_write} and its enforcement evidence is not
+    {!Spice_sandbox.Evidence.Refused}.
+
+    It is the single predicate run assembly uses to decide whether the
+    permission posture may credit the sandbox
+    ({!Spice_host.Permission.Run.with_sandbox_backing}): only under an enforcing
+    workspace-write confinement is a command's blast radius bounded to the
+    writable set. Read-only, danger-full-access, and declared-external postures
+    return [false], so a run without that confinement keeps reviewing
+    commands. *)

@@ -375,3 +375,9 @@ let mutating_tools effective =
   | Mode.Read_only -> false
   | Mode.Workspace_write | Mode.Danger_full_access | Mode.External_sandbox ->
       true
+
+let enforces_workspace_write effective =
+  match effective.Effective.mode with
+  | Mode.Workspace_write ->
+      Result.is_ok (Effective.backend_available effective)
+  | Mode.Read_only | Mode.Danger_full_access | Mode.External_sandbox -> false

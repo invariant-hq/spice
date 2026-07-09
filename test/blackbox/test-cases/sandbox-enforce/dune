@@ -8,6 +8,11 @@
   (= %{system} macosx)))
 
 (cram
+ (applies_to sandbox-backed-default)
+ (enabled_if
+  (= %{system} macosx)))
+
+(cram
  (applies_to linux-bubblewrap)
  (enabled_if
   (and

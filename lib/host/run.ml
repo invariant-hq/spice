@@ -144,7 +144,17 @@ let plan ~workspace ~sandbox ~permission () =
      before [start] loads any credential. On success the posture is readable. *)
   match Sandbox.gate sandbox with
   | Error _ as error -> error
-  | Ok () -> Ok { Plan.workspace; sandbox; permission }
+  | Ok () ->
+      (* An enforcing workspace-write sandbox bounds a command's and a
+         workspace edit's blast radius, so the posture credits it here — where
+         both facts meet — rather than prompting for operations the sandbox
+         already contains. *)
+      let permission =
+        Permission.Run.with_sandbox_backing
+          ~sandbox_backed:(Sandbox.enforces_workspace_write sandbox)
+          permission
+      in
+      Ok { Plan.workspace; sandbox; permission }
 
 (* The run *)
 

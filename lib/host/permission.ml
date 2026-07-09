@@ -57,6 +57,28 @@ module Preset = struct
         ]
     | Bypass -> [ Spice_permission.Policy.Rule.allow_all_dangerously ]
 
+  let sandbox_backed_rules t =
+    let allow_workspace op =
+      Spice_permission.Policy.Rule.allow
+        (Spice_permission.Policy.Match.path ~op
+           Spice_permission.Policy.Match.Path.workspace)
+    in
+    let allow_command =
+      Spice_permission.Policy.Rule.allow
+        (Spice_permission.Policy.Match.command
+           Spice_permission.Policy.Match.Command.any)
+    in
+    match t with
+    | Default ->
+        [
+          allow_workspace `Create;
+          allow_workspace `Modify;
+          allow_workspace `Delete;
+          allow_command;
+        ]
+    | Accept_edits -> [ allow_command ]
+    | Plan | Bypass -> []
+
   let equal = ( = )
   let pp ppf t = Format.pp_print_string ppf (to_string t)
 end
@@ -87,7 +109,11 @@ module Run = struct
     rule : Spice_permission.Policy.Rule.t;
   }
 
-  type 'src t = { preset : Preset.t; rows : 'src row list }
+  type 'src t = {
+    preset : Preset.t;
+    preset_source : 'src;
+    rows : 'src row list;
+  }
 
   let annotate source rule = { id = rule_id rule; source; rule }
 
@@ -110,7 +136,19 @@ module Run = struct
   let make ~preset:(preset_source, preset) ~durable () =
     let durable = List.concat_map layer_rows durable in
     let preset_rows = List.map (annotate preset_source) (Preset.rules preset) in
-    { preset; rows = durable @ preset_rows }
+    { preset; preset_source; rows = durable @ preset_rows }
+
+  (* Sandbox-backed rows evaluate after every existing row: durable config and
+     the preset's own rules decide first, and the sandbox credit is the last
+     word before an access falls through to review. They carry the preset's own
+     provenance so [find] and [denial_message] read them as preset rows. *)
+  let with_sandbox_backing ~sandbox_backed t =
+    if not sandbox_backed then t
+    else
+      let extra =
+        List.map (annotate t.preset_source) (Preset.sandbox_backed_rules t.preset)
+      in
+      { t with rows = t.rows @ extra }
 
   let preset t = t.preset
   let rows t = t.rows

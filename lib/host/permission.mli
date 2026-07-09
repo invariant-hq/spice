@@ -59,6 +59,23 @@ module Preset : sig
       reviewed, or denied; they are not sandboxes and grant no runtime
       capabilities. *)
 
+  val sandbox_backed_rules : t -> Spice_permission.Policy.Rule.t list
+  (** [sandbox_backed_rules t] are the extra rules [t] gains when the run's
+      sandbox enforces workspace-write confinement, appended after {!rules} by
+      {!Run.with_sandbox_backing}.
+
+      Under an enforcing workspace-write sandbox a command's blast radius is
+      bounded to the writable set and a native workspace edit is already
+      contained, so the review that {!rules} would otherwise require adds
+      friction without safety. [Default] gains workspace creates, modifies,
+      deletes, and commands; [Accept_edits] already allows the workspace writes
+      and gains only commands; [Plan] and [Bypass] gain nothing — [Plan] keeps
+      steering to the read-only tools and [Bypass] already allows everything.
+
+      Escalation requests (the shell tool's [shell.escalate] custom access) are
+      not command accesses, so they stay unmatched and escaping the sandbox
+      still needs review. *)
+
   val equal : t -> t -> bool
   (** [equal a b] is [true] iff [a] and [b] are the same preset. *)
 
@@ -145,6 +162,18 @@ module Run : sig
       Raises [Invalid_argument] if a single [durable] layer names the same rule
       twice (equal {!rule_id}). Callers own user-input validation; the raise
       guards the programmer contract that layers arrive deduplicated. *)
+
+  val with_sandbox_backing : sandbox_backed:bool -> 'src t -> 'src t
+  (** [with_sandbox_backing ~sandbox_backed t] is [t] extended with its preset's
+      {!Preset.sandbox_backed_rules} when [sandbox_backed] is [true], and [t]
+      unchanged otherwise.
+
+      The added rows carry the preset's provenance and evaluate after every
+      existing row, so durable configuration and the preset's own rules still
+      decide first. Run assembly derives [sandbox_backed] from the resolved
+      sandbox — {!Spice_host.Sandbox.enforces_workspace_write} — so it is [true]
+      only for an enforcing workspace-write sandbox: a run with no confinement
+      never allows commands without review. *)
 
   val preset : 'src t -> Preset.t
   (** [preset t] is the selected permission preset. *)
