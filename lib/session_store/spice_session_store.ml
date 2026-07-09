@@ -347,20 +347,28 @@ let create store session =
           Log.debug (fun m -> m "session created id=%a" Spice_session.Id.pp id);
           Ok (Document.make ~session ~revision:(revision_of_bytes text)))
 
-let check_document_session document session =
+let check_document_session ~path document session =
   let document_id = Document.id document in
   let session_id = Spice_session.id session in
-  if Spice_session.Id.equal document_id session_id then ()
+  if Spice_session.Id.equal document_id session_id then Ok ()
   else
-    invalid_arg
-      (Format.asprintf "session id %a does not match document id %a"
-         Spice_session.Id.pp session_id Spice_session.Id.pp document_id)
+    (* An id mismatch means the in-memory document and the session it should
+       carry have diverged — a consistency fault, reported as an error rather
+       than raised so a stray save cannot tear down its caller. *)
+    Error
+      (Error.Corrupt
+         {
+           path;
+           message =
+             Format.asprintf "session id %a does not match document id %a"
+               Spice_session.Id.pp session_id Spice_session.Id.pp document_id;
+         })
 
 let save store document session =
-  check_document_session document session;
   with_sessions_lock store (fun () ->
       let id = Spice_session.id session in
       let path = session_path store id in
+      let* () = check_document_session ~path document session in
       match path_kind store path with
       | Error _ as error -> error
       | Ok `Missing -> Error (Error.Not_found id)

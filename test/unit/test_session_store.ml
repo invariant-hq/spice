@@ -127,12 +127,17 @@ let list_rejects_non_positive_limit () =
     (fun () -> Store.list store ~limit:(-3) ())
 
 (* [save] pairs a document with a session; supplying a session for a different
-   id is a programmer error, not a recoverable conflict. *)
+   id is a consistency fault, surfaced as an error rather than raised so a stray
+   save never tears down its caller. *)
 let save_rejects_id_mismatch () =
   with_store "mismatch" @@ fun ~root_path:_ store ->
   let document = ok_or_fail (Store.create store (make_session "a")) in
-  raises_invalid_arg "session id b does not match document id a" (fun () ->
-      Store.save store document (make_session "b"))
+  match Store.save store document (make_session "b") with
+  | Error (Store.Error.Corrupt { message; _ }) ->
+      equal string ~msg:"the mismatch names both ids"
+        "session id b does not match document id a" message
+  | Ok _ -> failf "saving a mismatched session should fail"
+  | Error error -> failf "unexpected error: %a" Store.Error.pp error
 
 let save_after_removed_document_is_not_found () =
   with_store "save-removed" @@ fun ~root_path store ->
