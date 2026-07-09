@@ -330,16 +330,7 @@ let compact_with ~save ~model ~policy ~observe ~after_save ~cancelled ?request
       let compaction =
         Spice_session.Compaction.make ~reason ~summary ~transcript:replacement
           ~model:(Spice_llm.Response.model response)
-          ~tokens
-            (* A context-overflow retry drops the oldest inputs, so the count
-               actually summarized is the submitted list, not the partition's
-               original span; the retained tail is unchanged by a drop. *)
-          ~range:
-            (Spice_session.Compaction.Range.make
-               ~summarized_messages:(List.length submitted)
-               ~retained_tail_messages:
-                 (Spice_session.Compaction.Range.retained_tail_messages
-                    (Partition.range partition)))
+          ~tokens ~range:(Partition.range partition)
           ()
       in
       let event = Spice_session.Event.compaction_installed compaction in

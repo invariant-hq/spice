@@ -180,6 +180,10 @@ and the summary is retried within the bounded retry policy.
   "dropped_messages":1
   $ grep -c '"type":"compaction.installed"' trim-retry.out
   1
+  $ grep -o '"summarized_messages":2' trim-retry.out
+  "summarized_messages":2
+  $ grep -o '"retained_tail_messages":3' trim-retry.out
+  "retained_tail_messages":3
 
 A pressure-compaction summary failure fails the turn with a structured error
 and installs nothing: no silent fallback to the un-compacted request.
