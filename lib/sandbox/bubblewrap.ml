@@ -110,6 +110,13 @@ let bind_read_only root = [ "--ro-bind-try"; path root; path root ]
 let bind_writable root = [ "--bind"; path root; path root ]
 let existing root = Sys.file_exists (path root)
 
+(* The whole host root is bound read-only, so every [PATH] directory — including
+   a [$HOME]-based toolchain such as [~/.opam/<switch>/bin] — is readable and its
+   binaries are executable inside the sandbox. This full-read policy is what keeps
+   a user's [dune]/[ocamlmerlin] reachable under confinement. A future restricted
+   read mode must preserve the principle it rests on: any [PATH] directory holding
+   a required toolchain binary has to be a readable root, or confined commands
+   lose the toolchain. *)
 let filesystem_args policy =
   let roots = List.filter existing (Confinement.writable_roots policy) in
   let carveouts = Confinement.write_carveouts policy in
