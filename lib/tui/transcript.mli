@@ -3,7 +3,7 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-(** The transcript document (01-transcript.md §Base grammar).
+(** The transcript document.
 
     Everything said and done, top to bottom: a stream of settled blocks. Blocks
     arrive already settled — there is no replay flag and no filtering pass, so a
@@ -16,12 +16,12 @@
     {!Notice.t} values, not their own block kinds. *)
 type block =
   | Banner of Snapshot.t
-      (** The session-start banner record (04-header-footer.md §Banner record):
-          the frozen brand lockup and the session facts, rendered by
-          {!Banner.record}. It heads the document as the first block the shell
-          appends at the drop and scrolls away with the conversation — there is
-          no sticky header. It carries its own framing margin, so {!view} adds
-          no blank after it (the margin is that one blank, never doubled). *)
+      (** The session-start banner record: the frozen brand lockup and session
+          facts rendered by {!Banner.record}. It heads the document as the first
+          block the shell appends and scrolls away with the conversation — there
+          is no sticky header. It carries its own framing margin, so {!view}
+          adds no blank after it (the margin is that one blank, never doubled).
+      *)
   | User of string
       (** A full-width [user]-background block: [❯ ] muted, text default, no
           markdown, wrapped lines hanging at column 2. *)
@@ -55,20 +55,19 @@ val append : t -> block -> t
 
     - a {!Notice.Failure} whose [message] and [next_step] match the last block
       (also a failure) bumps that block's collapse count, dropping the incoming
-      one's own count (01-transcript.md §Notices, failure class);
-    - a same-source {!Notice.Data} replaces the previous data notice
-      (01-transcript.md §Data notices);
+      one's own count;
+    - a same-source {!Notice.Data} replaces the previous data notice so watcher
+      updates coalesce;
     - a {!Tool} whose verb is {!Tool_block.Todo} — the todo board — replaces the
-      previous board so two [todo_write]s in a row show one board (02-tools.md
-      §Todo block).
+      previous board so two [todo_write]s in a row show one board.
 
     Every other block appends verbatim. *)
 
 val user_block : string -> _ Mosaic.t
 (** [user_block value] renders one {!User} block in isolation — the full-width
-    user-background row (01-transcript.md §User message). The live tail reuses
-    it to echo a submitted-but-not-yet-started prompt identically to its
-    eventual settled document block. *)
+    user-background row. The live tail reuses it to echo a
+    submitted-but-not-yet-started prompt identically to its eventual settled
+    document block. *)
 
 val view : ?expanded:bool -> width:int -> t -> _ Mosaic.t
 (** [view ~width t] renders the document at [width] columns. [expanded] (default
@@ -76,10 +75,10 @@ val view : ?expanded:bool -> width:int -> t -> _ Mosaic.t
     body. Visibility is the caller's decision — the view never decides what to
     hide.
 
-    Spacing follows the base grammar (01-transcript.md §Base grammar): one blank
-    line between top-level blocks, none before the first. A {!Banner} block
-    carries its own framing margin, so the blank that would follow it is dropped
-    — the banner's margin is that one blank, never doubled.
+    Spacing follows the document grammar: one blank line between top-level
+    blocks, none before the first. A {!Banner} block carries its own framing
+    margin, so the blank that would follow it is dropped — the banner's margin
+    is that one blank, never doubled.
 
     [width] flows to {!Banner.record}, which pre-truncates its facts to it in
     OCaml (Mosaic's [truncate:true] measures at the previous layout width —

@@ -125,10 +125,11 @@ independently sufficient causes. Each teaches a law; guard them by name:
 
 Still open, by design: the transcript mounts every settled block in one
 scroll box, so a dirty frame is O(session). Windowing the document (mount
-the visible tail, extend on scroll-up) needs a design pass over
-`doc/ui-design/01-transcript.md` scroll/seam semantics before anyone codes
-it. Since frames now only happen on real dirt, this is a cost multiplier,
-not a standing burn.
+the visible tail, extend on scroll-up) needs a design pass over the viewport
+contract in `lib/tui/scrollport.mli`: sticky-bottom behavior, one-shot reveals,
+and preserving replay seams and scroll position while blocks mount and unmount.
+Since frames now only happen on real dirt, this is a cost multiplier, not a
+standing burn.
 
 ## Measuring the render loop
 

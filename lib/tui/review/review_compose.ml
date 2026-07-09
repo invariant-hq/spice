@@ -3,8 +3,8 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-(* The CR compose dialog (11-review.md §CR compose): a plain filled ~60-column
-   box — muted title, a painted single-line draft with an accent cursor glyph,
+(* The CR compose dialog is a plain filled ~60-column box: a muted title, a
+   painted single-line draft with an accent cursor glyph,
    and an error line — no rules or border. The panel floats it over the center of
    the dimmed panes. The draft carries the CR grammar itself; parsing happens on
    submit (in the component), and parse or write problems render as a [!] line

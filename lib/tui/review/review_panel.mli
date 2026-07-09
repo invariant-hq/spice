@@ -4,8 +4,7 @@
  ---------------------------------------------------------------------------*)
 
 (** The review screen frame: the two-pane split, header, bottom legend, help
-    table, and the view-local orientation the component folds keys into
-    (11-review.md).
+    table, and the view-local orientation the component folds keys into.
 
     A persistent two-pane split — a directory-grouped nav on the left, the
     selected file's diff on the right, a full-height rule between — following

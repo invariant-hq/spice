@@ -3,8 +3,7 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-(** The review screen as a self-contained TEA component
-    (doc/ui-design/11-review.md, doc/plans/tui-next-review.md).
+(** The review screen as a self-contained TEA component.
 
     [Spice_tui_review] is the whole review surface: the two-pane nav+diff split,
     the line cursor, marks and verdict, the CR compose dialog, and the
@@ -21,15 +20,15 @@
 
     {1 Embedding contract}
 
-    The shell wires the component as a mini-Elm screen
-    (doc/plans/tui-next-surfaces.md): a [surface] variant holding {!t}; a key
-    router calling {!key} (uniform [msg option] — the screen owns its keyboard,
-    so an unclaimed key dies and ctrl+c stays the shell's global chord);
-    {!update} yielding the next {!t} and an {!event} the shell interprets
-    ({!Stay} forwards the effects, {!Close} returns to chat, {!Task_spice}
-    submits the agent review turn); and {!view} with an [inject] tagging the
-    component's messages into the shell's message type. {!create} starts the
-    open flow; the runtime builds the asynchronous completion messages below. *)
+    The shell embeds a [surface] variant holding
+    {!t], routes keys through
+    {!key}, folds messages through {!update},
+    interprets the resulting {!event}, and tags {!view}'s messages through
+    [inject]. The review owns its keyboard, so an unclaimed key is discarded;
+    ctrl+c remains the shell's global chord. {!Stay} forwards effects, {!Close}
+    returns to chat, and {!Task_spice} submits the agent review turn. {!create}
+    starts the open flow; the runtime builds the asynchronous completion
+    messages below. *)
 
 (** {1 Effects} *)
 
@@ -44,8 +43,8 @@ module Effect : sig
       request token its completion must echo, and is fed back through the
       matching message constructor.
 
-      Unlike the old TUI, this has no [Closed]/[Submit_agent_review] cases:
-      those are shell decisions carried by {!event}, not effects. *)
+      Closing and submitting an agent review are shell decisions carried by
+      {!event}, not effects. *)
 
   type t =
     | Snapshot of { request : request; base_spec : string option }

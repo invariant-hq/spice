@@ -4,7 +4,7 @@
  ---------------------------------------------------------------------------*)
 
 (** The review diff pane: the selected file's unified diff with a scope line
-    above it, inside a scroll box (11-review.md §Diff pane).
+    above it, inside a scroll box.
 
     Each hunk is its own node so mixed files quiet hunk by hunk; the cursor's
     hunk/line carries the gutter cursor (accent when the diff pane holds focus,

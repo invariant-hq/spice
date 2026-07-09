@@ -5,10 +5,9 @@
 
 open Mosaic
 
-(* Color roles (00-overview.md §Color roles). Values track tui-next's Theme:
-   [color_accent] is paprika, the one brand hue; [success]/[warning]/[error] are
-   outcome colors and mean nothing else; [muted]/[faint] are secondary/tertiary
-   text; [rule] is horizontal rules. *)
+(* Values track tui-next's Theme: [color_accent] is paprika, the one brand hue;
+   [success]/[warning]/[error] are outcome colors and mean nothing else;
+   [muted]/[faint] are secondary/tertiary text; [rule] is horizontal rules. *)
 
 let color_muted = Ansi.Color.grayscale ~level:14
 let color_faint = Ansi.Color.grayscale ~level:11
@@ -21,8 +20,8 @@ let color_success = Ansi.Color.of_rgb 77 217 128
 let color_warning = Ansi.Color.of_rgb 235 180 76
 let color_error = Ansi.Color.of_rgb 255 95 95
 
-(* Opaque backdrop for the compose dialog — the review screen's one sanctioned
-   filled surface (11-review.md). Dark enough to sit over the dimmed panes. *)
+(* Opaque backdrop for the compose dialog — the review screen's one filled
+   surface. Dark enough to sit over the dimmed panes. *)
 let color_overlay = Ansi.Color.grayscale ~level:2
 
 (* Text styles. *)
@@ -36,8 +35,7 @@ let success = Ansi.Style.make ~fg:color_success ~bold:true ()
 let warning = Ansi.Style.make ~fg:color_warning ~bold:true ()
 let error = Ansi.Style.make ~fg:color_error ~bold:true ()
 
-(* Glyphs (00-overview.md §Glyph vocabulary). [cursor_blank] keeps unselected
-   rows aligned with [cursor] rows. *)
+(* [cursor_blank] keeps unselected rows aligned with [cursor] rows. *)
 
 let cursor = "❯ "
 let cursor_blank = "  "
@@ -86,7 +84,7 @@ let pad_right width value =
 (* Diff themes. [diff_theme] matches the transcript's diff rendering so every
    diff in spice reads the same; [diff_quieted] is the reviewed-scope variant,
    which drops the add/del backgrounds and mutes the signs so settled content
-   stops shouting (11-review.md §File diff). *)
+   stops shouting. *)
 
 let color_diff_add_bg = Ansi.Color.of_rgb 16 64 32
 let color_diff_del_bg = Ansi.Color.of_rgb 72 24 32

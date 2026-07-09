@@ -7,8 +7,7 @@
    CR comments always visible as children beneath it. Path-ordered (dirs then
    files sorted); one level of `▾ <dir>` grouping, no nested collapsing. The
    diff pane shows whatever the model cursor selects; this pane renders that
-   selection and, when [on_click] is supplied, emits a cursor target per row.
-   See doc/ui-design/11-review.md §Proposed design. *)
+   selection and, when [on_click] is supplied, emits a cursor target per row. *)
 
 (* {1 Model reading} *)
 

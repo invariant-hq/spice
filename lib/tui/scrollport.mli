@@ -3,14 +3,14 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-(** The transcript viewport (01-transcript.md §Seam replay, scroll, spacing).
+(** The transcript viewport.
 
     The one sanctioned wrapper over {!Mosaic.scroll_box}: a sticky-bottom
     viewport that follows new content, never takes keyboard focus, and renders
-    no scrollbar at any overflow (01-transcript.md §Seam replay, scroll,
-    spacing: the transcript shows position through content alone, never a bar).
-    The scroll-box workarounds the transcript needs live here alone, each named
-    at its call site — no other surface reaches for them. *)
+    no scrollbar at any overflow. The transcript shows position through content
+    alone, never a bar. The scroll-box workarounds the transcript needs live
+    here alone, each named at its call site — no other surface reaches for them.
+*)
 
 val view :
   ?key:string ->

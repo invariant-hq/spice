@@ -7,13 +7,10 @@
     helpers, and diff themes.
 
     This is the review sub-library's local realization of the spice design
-    language (doc/ui-design/00-overview.md, 11-review.md). It duplicates the
-    language rather than sharing {!Spice_tui.Theme}, which is a private module
-    of the [spice_tui] library and so unreachable from this separate library —
-    the same reason the old [lib/tui/review] carries its own [style.ml]
-    (doc/plans/tui-next-review.md §divergence 5). The constant values are kept
-    in sync with tui-next's [Theme] by convention; deliberate changes travel
-    through the docs to both. *)
+    language. It duplicates the language rather than sharing {!Spice_tui.Theme},
+    which is private to the [spice_tui] library and unreachable from this
+    separate library. The constant values are kept in sync with [Theme] by
+    convention; a deliberate color or glyph change must update both modules. *)
 
 (** {1:colors Color roles} *)
 
@@ -45,7 +42,7 @@ val color_error : Mosaic.Ansi.Color.t
 
 val color_overlay : Mosaic.Ansi.Color.t
 (** [color_overlay] is the opaque backdrop of the compose dialog — the review
-    screen's one sanctioned filled surface (11-review.md §CR compose). *)
+    screen's one filled surface. *)
 
 (** {1:styles Text styles} *)
 

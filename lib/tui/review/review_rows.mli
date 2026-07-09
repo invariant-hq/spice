@@ -4,7 +4,7 @@
  ---------------------------------------------------------------------------*)
 
 (** The review nav pane: a directory-grouped tree of changed files, each file's
-    CR comments always visible as children beneath it (11-review.md §Nav pane).
+    CR comments always visible as children beneath it.
 
     Path-ordered (directories then files sorted), one level of [▾ <dir>]
     grouping with no nested collapsing. The pane renders the selection the model

@@ -8,7 +8,7 @@
    hunk by hunk; the selected hunk carries the gutter cursor (accent when the
    diff pane holds focus, muted otherwise), and each node reports its scope to
    [on_hunk_click]. A CR anchored outside any hunk gets a synthesized
-   context-only view. See doc/ui-design/11-review.md §Diff pane. *)
+   context-only view. *)
 
 (* {1 Patch construction} *)
 

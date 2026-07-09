@@ -7,12 +7,11 @@
    persistent two-pane split — a directory-grouped nav on the left, the selected
    file's diff on the right, a full-height rule between — following the panel
    contract (rule, header, hint) but deliberately waiving the one-column law for
-   this surface (doc/ui-design/11-review.md). Focus (nav or diff) decides which
-   pane the movement keys drive and where the accent cursor renders. Below 80
-   columns the split degrades to a single focused pane. The model's cursor is
-   the selection; this state holds only view-local orientation. Key routing and
-   effects are wired elsewhere; this module is the view plus the pure focus
-   transitions the router calls.
+   this surface. Focus (nav or diff) decides which pane the movement keys drive
+   and where the accent cursor renders. Below 80 columns the split degrades to a
+   single focused pane. The model's cursor is the selection; this state holds
+   only view-local orientation. Key routing and effects are wired elsewhere;
+   this module is the view plus the pure focus transitions the router calls.
 
    [depth] names the focused pane: [Queue] is nav focus, [Diff] is diff focus.
    The names predate the split and are kept because the component is wired to
@@ -270,11 +269,10 @@ let compose_anchor state =
               Spice_cr.Occurrence.line occurrence ))
 
 (* The composer is a compact opaque dialog floating over the center of the
-   dimmed panes — a deliberate dialog for this screen (11-review.md), against
-   06/07's no-floating-modals default. Absolutely positioned with an explicit
-   inset computed from the dialog's fixed size, so both panes keep their full
-   height behind it. The input is app-owned and painted, so the dialog carries
-   no interactive widget. *)
+   dimmed panes. It is absolutely positioned with an inset computed from the
+   dialog's fixed size, so both panes keep their full height behind it. The
+   input is app-owned and painted, so the dialog carries no interactive widget.
+*)
 let dialog_overlay ~width ~height compose review =
   let dialog_w = Review_compose.dialog_width in
   let dialog_h = Review_compose.height compose in

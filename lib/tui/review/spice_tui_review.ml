@@ -409,8 +409,8 @@ let space_scope review =
 
 (* {2 Live refresh} *)
 
-(* A refresh notice says what changed, per 11-review.md: unit and CR deltas,
-   and whether the refresh staled the verdict (the one warning case). *)
+(* A refresh notice says what changed: unit and CR deltas, and whether the
+   refresh staled the verdict (the one warning case). *)
 let refresh_staled ~before ~after =
   match
     (Spice_review.verdict_freshness before, Spice_review.verdict_freshness after)
@@ -561,9 +561,8 @@ let add_anchor review =
                   Some (path, 1))
           | None -> None))
 
-(* Grammar-in-the-draft (11-review.md §CR compose): explicit CR/XCR text is
-   parsed verbatim, a leading handle-colon addresses a recipient, and a bare
-   body becomes [CR: body]. *)
+(* Explicit CR/XCR text is parsed verbatim, a leading handle-colon addresses a
+   recipient, and a bare body becomes [CR: body]. *)
 let explicit_cr_draft text =
   let starts_token token =
     String.equal text token
@@ -1044,10 +1043,9 @@ let update msg t =
           let screen = { screen with live } in
           match outcome with
           | `Stale ->
-              (* The worktree moved under the edit/resolve/remove (11-review.md
-                 §States "Refresh mid-composition"): say so and keep the draft —
-                 [with_problem] leaves it intact — so the reviewer re-targets it,
-                 mirroring the [`Failed] fold. *)
+              (* The worktree moved under the edit/resolve/remove: say so and
+                 keep the draft — [with_problem] leaves it intact — so the
+                 reviewer re-targets it, mirroring the [`Failed] fold. *)
               let stale = "CR changed on disk — review it again" in
               let panel =
                 match screen.panel.Review_panel.compose with

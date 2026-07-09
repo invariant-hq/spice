@@ -3,17 +3,16 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-(** The CR compose dialog: a compact opaque box floating over the dimmed panes
-    (11-review.md §CR compose).
+(** The CR compose dialog: a compact opaque box floating over the dimmed panes.
 
     The dialog holds a single-line [draft] carrying the CR grammar itself
     (parsing happens on submit, in the component). Unlike the old TUI, the input
     is {e app-owned and painted}, not a native [Mosaic.input]: the review screen
     owns its keyboard wholly (no native widget, no key passthrough), so the
     component folds printables and backspace into the draft with {!append} and
-    {!backspace} and this module paints a cursor glyph at the insertion point
-    (doc/plans/tui-next-review.md §divergence 3). A parse or write problem
-    renders as a [! …] line under the input with the draft preserved. *)
+    {!backspace}, and this module paints a cursor glyph at the insertion point.
+    A parse or write problem renders as a [! …] line under the input with the
+    draft preserved. *)
 
 (** The type for what the compose targets. *)
 type target =

@@ -5,9 +5,10 @@
 
 (** Alternate-screen terminal UI for Spice.
 
-    The interactive TUI behind the default [spice] command (design docs in
-    doc/ui-design; genesis as the tui-next rewrite in doc/plans/tui-next.md).
-    The previous generation is parked, unbuilt, under [_tui_old/]. *)
+    This is the interactive product behind the default [spice] command,
+    [spice resume], and [spice review]. Construct startup input with
+    {!Startup.make}; {!run} owns the alternate-screen lifetime and restores the
+    normal terminal before returning. *)
 
 module Startup : sig
   (** TUI startup configuration.
