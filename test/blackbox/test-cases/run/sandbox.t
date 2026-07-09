@@ -146,7 +146,7 @@ seam pins the backend; the platform line is host-dependent and normalized.
 sandbox explain reports the policy a run would apply, including protected
 metadata and environment stripping facts, without secret values.
 
-  $ _SPICE_TEST_SANDBOX_UNAVAILABLE=1 SPICE_SANDBOX_MODE=workspace-write FAKE_PROVIDER_TOKEN=tok-value spice sandbox explain --cwd "$PWD" | sed -E 's/^writable=.*/writable=$ROOTS/; s/^backend=.*/backend=$BACKEND/; s/environment=inherited [0-9]+, stripped [0-9]+/environment=inherited $N, stripped $M/'
+  $ _SPICE_TEST_SANDBOX_UNAVAILABLE=1 SPICE_SANDBOX_MODE=workspace-write FAKE_PROVIDER_TOKEN=tok-value spice sandbox explain --cwd "$PWD" | sed -E 's/^writable=.*/writable=$ROOTS/; s/^backend=.*/backend=$BACKEND/; s/environment=inherited [0-9]+, stripped [0-9]+/environment=inherited $N, stripped $M/; s/^toolchain=.*/toolchain=$TOOLCHAIN/'
   workspace=.
   mode=workspace-write (config)
   require=enforced
@@ -156,6 +156,7 @@ metadata and environment stripping facts, without secret values.
   writable=$ROOTS
   protected=.git,.spice,./.spice,./xdg-config/spice
   environment=inherited $N, stripped $M
+  toolchain=$TOOLCHAIN
   origin sandbox.mode=env SPICE_SANDBOX_MODE
 
 Spice's own config home is among the protected paths (the cram fixture

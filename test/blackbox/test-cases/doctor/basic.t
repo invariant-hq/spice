@@ -3,7 +3,7 @@ credential for the selected model's provider, auth fails and the exit code
 says so; everything else is healthy in a fresh workspace.
 
   $ git init -q .
-  $ SPICE_MODEL=openai/gpt-5.5 spice doctor
+  $ SPICE_MODEL=openai/gpt-5.5 spice doctor | sed -E 's|^  dune: .*|  dune: $DUNE|'
   config: ok
   auth: fail
     openai: missing (selected model provider); run `spice auth login openai`
@@ -14,6 +14,8 @@ says so; everything else is healthy in a fresh workspace.
     ollama: ready
   local engine: warn
     spice-test-llama-server was not found on PATH; install llama.cpp (for example: brew install llama.cpp) or configure an explicit server binary
+  ocaml toolchain: ok
+    dune: $DUNE
   sandbox: ok
     mode=danger-full-access origin=config backend=none not_requested network=enabled
   sessions: ok
@@ -24,7 +26,7 @@ says so; everything else is healthy in a fresh workspace.
 
 With a credential present, doctor is clean and exits zero.
 
-  $ OPENAI_API_KEY=test-key SPICE_MODEL=openai/gpt-5.5 spice doctor
+  $ OPENAI_API_KEY=test-key SPICE_MODEL=openai/gpt-5.5 spice doctor | sed -E 's|^  dune: .*|  dune: $DUNE|'
   config: ok
   auth: ok
     openai: unchecked (selected model provider); run `spice auth status openai --refresh`
@@ -35,6 +37,8 @@ With a credential present, doctor is clean and exits zero.
     ollama: ready
   local engine: warn
     spice-test-llama-server was not found on PATH; install llama.cpp (for example: brew install llama.cpp) or configure an explicit server binary
+  ocaml toolchain: ok
+    dune: $DUNE
   sandbox: ok
     mode=danger-full-access origin=config backend=none not_requested network=enabled
   sessions: ok

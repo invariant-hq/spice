@@ -214,6 +214,31 @@ let sessions_check ~stdenv host =
             :: corrupt_lines;
         }
 
+(* The OCaml tools spawn [dune] from the inherited environment; surfacing its
+   resolution (or the rungs checked) here catches a launch context that lost
+   the toolchain before a session trips over it. Absence is a warning, not a
+   failure: spice serves non-OCaml projects too. *)
+let toolchain_check host =
+  let workspace_root =
+    match Spice_host.workspace host with
+    | Error _ -> None
+    | Ok workspace -> (
+        match Spice_workspace.roots workspace with
+        | root :: _ ->
+            Some (Spice_path.Abs.to_string (Spice_workspace.Root.dir root))
+        | [] -> None)
+  in
+  let toolchain =
+    Spice_ocaml_toolchain.discover ~env:(Unix.environment ()) ~workspace_root
+  in
+  let detail = Spice_ocaml_toolchain.describe toolchain ~program:"dune" in
+  let verdict =
+    match Spice_ocaml_toolchain.find toolchain "dune" with
+    | Some _ -> Pass
+    | None -> Warn
+  in
+  { name = "ocaml toolchain"; verdict; details = [ detail ] }
+
 let project_config_check host =
   let config = Spice_host.Host.config host in
   match Spice_host.Config.warnings config with
@@ -258,6 +283,7 @@ let doctor json cwd =
           config_check ~stdenv (Spice_host.Host.config host);
           auth_check ~sw ~stdenv host;
           local_engine_check ();
+          toolchain_check host;
           sandbox_check host;
           sessions_check ~stdenv host;
           project_config_check host;

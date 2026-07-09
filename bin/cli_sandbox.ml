@@ -187,6 +187,22 @@ let policy_facts effective =
   | Sandbox.Spec.Confined policy -> Some policy
   | Sandbox.Spec.Unconfined | Sandbox.Spec.Declared_external -> None
 
+(* The confined mount keeps the whole host readable (see [readable=] below), so
+   a missing toolchain is never the sandbox's doing; this line shows where
+   [dune] resolves from — or which rungs were checked — so the two failure
+   classes are told apart at a glance. *)
+let toolchain_status workspace =
+  let workspace_root =
+    match Spice_workspace.roots workspace with
+    | root :: _ ->
+        Some (Spice_path.Abs.to_string (Spice_workspace.Root.dir root))
+    | [] -> None
+  in
+  let toolchain =
+    Spice_ocaml_toolchain.discover ~env:(Unix.environment ()) ~workspace_root
+  in
+  Spice_ocaml_toolchain.describe toolchain ~program:"dune"
+
 let explain_text host workspace effective =
   let status = Effective.status effective in
   stdout_printf "workspace=.\n";
@@ -217,6 +233,7 @@ let explain_text host workspace effective =
   | None -> ()
   | Some (kept, stripped) ->
       stdout_printf "environment=inherited %d, stripped %d\n" kept stripped);
+  stdout_printf "toolchain=%s\n" (toolchain_status workspace);
   stdout_printf "origin sandbox.mode=%s\n" (mode_origin_detail host effective)
 
 let explain_json host workspace effective =
@@ -286,6 +303,7 @@ let explain_json host workspace effective =
                        (fun value -> Jsont.Json.string value)
                        Sandbox.Env.stripped_patterns) );
               ] );
+      ("toolchain", Jsont.Json.string (toolchain_status workspace));
       ( "origins",
         json_obj
           [

@@ -38,6 +38,7 @@
   spice_diagnostic
   spice_digest
   spice_ocaml_dune
+  spice_ocaml_toolchain
   spice_prompts
   spice_diff
   spice_edit
