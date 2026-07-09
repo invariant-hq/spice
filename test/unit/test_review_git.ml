@@ -11,12 +11,18 @@ let expect_ok msg = function
   | Ok value -> value
   | Error error -> failf "%s: %a" msg Git.Error.pp error
 
+let expect_string_ok msg = function
+  | Ok value -> value
+  | Error message -> failf "%s: %s" msg message
+
 let write dir path contents =
   let abs = Filename.concat dir path in
   let parent = Filename.dirname abs in
   if not (Sys.file_exists parent) then Unix.mkdir parent 0o755;
   Out_channel.with_open_bin abs (fun oc ->
       Out_channel.output_string oc contents)
+
+let rel path = Spice_path.Rel.of_string_exn path
 
 let with_repo f =
   Eio_main.run @@ fun env ->
@@ -52,6 +58,26 @@ let mutate_worktree ~dir ~git =
   write dir "untracked.txt" "joins the review as an addition\n";
   write dir ".spice/state.json" "{}";
   git [ "add"; "new.ml"; "bin.dat" ]
+
+let review_record () =
+  let before = Some "let x = 1\n" in
+  let after = Some "let x = 2\n" in
+  let file =
+    match
+      Review.Feature.File.make ~path:(rel "lib/record.ml") ~before ~after ()
+    with
+    | Ok file -> file
+    | Error error -> failf "file: %a" Review.Error.pp error
+  in
+  let feature = Review.Feature.v ~base:"base" ~tip:"WORKTREE" [ file ] in
+  let review = Review.v ~feature ~crs:[] in
+  let scope = Review.Scope.File (rel "lib/record.ml") in
+  let review =
+    match Review.mark_reviewed review scope with
+    | Ok review -> Review.approve review
+    | Error error -> failf "mark: %a" Review.Error.pp error
+  in
+  (Review.Persist.of_review review, review, scope)
 
 let discovery_and_base_resolution () =
   with_repo @@ fun ~proc ~fs ~dir ~git:_ ->
@@ -300,6 +326,44 @@ let glance_short_circuits_when_unchanged () =
         (not (String.equal reloaded.Git.fingerprint first.Git.fingerprint))
   | `Unchanged -> failf "a changed worktree must reload"
 
+let records_save_load_and_prune () =
+  with_repo @@ fun ~proc:_ ~fs ~dir ~git:_ ->
+  let record, review, scope = review_record () in
+  let key = Git.Records.key ~base:"base" in
+  expect_string_ok "save record" (Git.Records.save ~fs ~root:dir ~key record);
+  let loaded =
+    match Git.Records.load ~fs ~root:dir ~key with
+    | Some record -> record
+    | None -> failf "expected saved record"
+  in
+  let restored =
+    Review.Persist.restore loaded
+      (Review.v ~feature:(Review.feature review) ~crs:[])
+  in
+  is_true ~msg:"loaded record restores the mark"
+    (Review.is_reviewed restored scope);
+  is_true ~msg:"loaded record restores approval"
+    (match Review.verdict_freshness restored with
+    | `Approved -> true
+    | `Pending | `Stale -> false);
+  let store_dir = Filename.concat dir (Filename.concat ".spice" "reviews") in
+  write dir
+    (Filename.concat (Filename.concat ".spice" "reviews") (key ^ ".json"))
+    "{not valid json";
+  is_true ~msg:"corrupt records load as absent"
+    (Option.is_none (Git.Records.load ~fs ~root:dir ~key));
+  for i = 0 to 24 do
+    let key = Printf.sprintf "record-%02d" i in
+    expect_string_ok ("save " ^ key)
+      (Git.Records.save ~fs ~root:dir ~key record)
+  done;
+  let json_records =
+    Sys.readdir store_dir |> Array.to_list
+    |> List.filter (fun name -> Filename.check_suffix name ".json")
+  in
+  equal int ~msg:"record store keeps the newest twenty files" 20
+    (List.length json_records)
+
 let () =
   run "spice.review_git"
     [
@@ -314,4 +378,5 @@ let () =
       test "fingerprints and load_if_changed" fingerprints_and_load_if_changed;
       test "untracked content moves fingerprint with preserved mtime"
         untracked_content_moves_fingerprint_with_preserved_mtime;
+      test "records save load and prune" records_save_load_and_prune;
     ]
