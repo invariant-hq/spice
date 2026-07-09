@@ -1,7 +1,10 @@
 (cram
  (applies_to :whole_subtree)
  (shell bash)
- (deps %{bin:spice} ../bin/spice_fake_provider_server.exe)
+ (deps
+  %{bin:spice}
+  ../bin/spice_fake_provider_server.exe
+  ../bin/spice_fake_chat_server.exe)
  (setup_scripts ../setup-script.sh)
  (conflict_markers error)
  (timeout 30))

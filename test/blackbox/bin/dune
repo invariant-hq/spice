@@ -2,3 +2,8 @@
  (name spice_fake_provider_server)
  (modules spice_fake_provider_server)
  (libraries jsont jsont.bytesrw unix))
+
+(executable
+ (name spice_fake_chat_server)
+ (modules spice_fake_chat_server)
+ (libraries unix))

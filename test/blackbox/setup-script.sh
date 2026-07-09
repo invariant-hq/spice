@@ -12,6 +12,7 @@ unset SPICE_MAX_STEPS
 unset SPICE_MODEL
 unset SPICE_OPENAI_AUTH_BASE_URL
 unset SPICE_OPENAI_BASE_URL
+unset SPICE_OLLAMA_BASE_URL
 unset SPICE_PERMISSION_MODE
 unset SPICE_SANDBOX_BACKEND
 unset SPICE_SANDBOX_REQUIRE
@@ -116,6 +117,32 @@ start_fake_openai () {
   export OPENAI_API_KEY=test-key
   export SPICE_MODEL=openai/gpt-5.5
   export SPICE_OPENAI_BASE_URL="http://127.0.0.1:$(cat "$port_file")/v1"
+}
+
+# Point the Ollama provider (Spice's OpenAI-compatible chat-completions client)
+# at a local chat-completions fixture. Sets an arbitrary model id -- the daemon
+# owns the model set, so any id resolves. Auth stays the caller's choice: the
+# bare daemon needs none, a key-protected one takes OLLAMA_API_KEY. The base URL
+# is the daemon root; the provider appends /v1/chat/completions.
+start_fake_ollama () {
+  local reply="${1:-ollama compat reply}"
+  local capture="${2:-capture}"
+  local port_file="${3:-ollama-port}"
+  local model="${4:-ollama/my-llama-model}"
+  local server
+
+  server="$(find_up bin/spice_fake_chat_server.exe)"
+  mkdir -p "$capture"
+  rm -f "$port_file"
+
+  "$server" --capture "$capture" --port-file "$port_file" --reply "$reply" \
+    --accept-timeout "${SPICE_FAKE_PROVIDER_ACCEPT_TIMEOUT:-3}" &
+  SPICE_FAKE_PROVIDER_PID=$!
+  export SPICE_FAKE_PROVIDER_PID
+
+  wait_for_file "$port_file"
+  export SPICE_MODEL="$model"
+  export SPICE_OLLAMA_BASE_URL="http://127.0.0.1:$(cat "$port_file")"
 }
 
 trap cleanup_fake_server EXIT

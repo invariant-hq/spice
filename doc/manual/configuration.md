@@ -95,3 +95,61 @@ spice models select MODEL [--small] [--project | --project-local]
 Provider credentials are managed separately by `spice auth`; see
 `spice auth --help`. Credentials resolve from provider environment variables
 first, then the auth store at `~/.config/spice/auth.json`.
+
+## OpenAI-compatible servers (llama.cpp, vLLM, LM Studio, Ollama)
+
+The `ollama` provider is Spice's client for the OpenAI **chat-completions**
+wire protocol (`POST /v1/chat/completions`). That protocol is what Ollama's
+`/v1` endpoint speaks, and it is also what self-hosted servers such as
+llama.cpp (`llama-server`), vLLM, and LM Studio expose. Point the provider at
+any of them and it works the same way.
+
+Two facts make this the right provider for a custom server:
+
+- The daemon owns the model set. Spice declares no built-in Ollama models, so
+  **any** model id you configure resolves — no catalog entry required. Put the
+  exact id the server serves in `model`, prefixed with `ollama/`.
+- Authentication is optional. A bare local daemon needs none; a key-protected
+  deployment takes an API key that Spice sends as a bearer authorization header.
+
+Do **not** point `providers.openai.base_url` at such a server. The `openai`
+provider speaks the OpenAI **Responses** API (`POST /v1/responses`), which
+llama.cpp and friends do not implement, and its model id is validated against
+the built-in OpenAI catalog. Use the `ollama` provider instead.
+
+Configure the base URL as the server **root** (the provider appends
+`/v1/chat/completions`):
+
+```sh
+spice config set providers.ollama.base_url http://your-server:8080
+spice config set model ollama/your-model-id
+```
+
+or per shell, without writing to config:
+
+```sh
+export SPICE_OLLAMA_BASE_URL=http://your-server:8080
+export SPICE_MODEL=ollama/your-model-id
+```
+
+For a key-protected server, supply the key with either the environment
+variable
+
+```sh
+export OLLAMA_API_KEY=your-key
+```
+
+or the auth store:
+
+```sh
+spice auth login ollama --api-key-stdin   # reads the key from stdin
+```
+
+The stored form writes `~/.config/spice/auth.json`:
+
+```json
+{"version":1,"credentials":{"ollama":{"default":{"kind":"api_key","api_key":"your-key"}}}}
+```
+
+Model discovery is not implemented: Spice does not call the server's
+`GET /v1/models`, so the model id is always taken from configuration.

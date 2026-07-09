@@ -564,9 +564,9 @@ val load :
     [SPICE_REASONING], [SPICE_MAX_STEPS], [SPICE_PERMISSION_MODE] (which rejects
     [bypass]), [SPICE_PERMISSION_UNATTENDED], [SPICE_SANDBOX_MODE],
     [SPICE_SANDBOX_REQUIRE], [SPICE_SHELL], [SPICE_OPENAI_BASE_URL],
-    [SPICE_ANTHROPIC_BASE_URL], [SPICE_CONFIG], and config-home variables used
-    to find user config and the credential store. Empty environment settings are
-    ignored.
+    [SPICE_ANTHROPIC_BASE_URL], [SPICE_OLLAMA_BASE_URL], [SPICE_CONFIG], and
+    config-home variables used to find user config and the credential store.
+    Empty environment settings are ignored.
 
     [cwd] defaults to the Eio current working directory and must name an
     existing directory. [store_root] defaults to [".spice"] under the resolved

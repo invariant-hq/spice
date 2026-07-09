@@ -50,6 +50,9 @@ Environment variables have higher precedence for reads.
   $ SPICE_OPENAI_BASE_URL=https://env.example/v1 spice config get providers.openai.base_url
   https://env.example/v1
 
+  $ SPICE_OLLAMA_BASE_URL=http://127.0.0.1:8080 spice config get providers.ollama.base_url
+  http://127.0.0.1:8080
+
 Environment overrides are not persisted by edits.
 
   $ SPICE_MODEL=openai/env-model spice config set small_model openai/gpt-5.4-mini

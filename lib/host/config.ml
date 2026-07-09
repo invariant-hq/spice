@@ -1617,16 +1617,18 @@ let validate_layer_path ~stdenv ?(strict = false) path =
     | Ok json -> validate_layer_json path ~strict json
 
 (* The environment layer is one fold over the field list; the provider base URL
-   family contributes its two wired providers. Each variable parses with its
-   field's environment parser, so per-variable error wording lives on the field
-   description. *)
+   family contributes its wired providers -- the cloud endpoints a user may
+   proxy plus the OpenAI-compatible [ollama] endpoint a self-hosted server
+   (llama.cpp, vLLM, LM Studio) is reached through. Each variable parses with
+   its field's environment parser, so per-variable error wording lives on the
+   field description. *)
 let env_named_layers getenv =
   let env_fields =
     with_provider_family
       (List.map
          (fun id ->
            Field.Any (Field.Provider_base_url (Spice_llm.Provider.make id)))
-         [ "openai"; "anthropic" ])
+         [ "openai"; "anthropic"; "ollama" ])
   in
   let* layers =
     List.fold_left
