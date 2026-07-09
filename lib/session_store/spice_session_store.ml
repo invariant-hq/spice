@@ -238,6 +238,12 @@ let tmp_path store path =
   ^ string_of_int (Unix.getpid ())
   ^ "." ^ stamp ^ "." ^ string_of_int !tmp_counter
 
+let cleanup_tmp store tmp =
+  try Eio.Path.unlink (fs_path store tmp)
+  with exn ->
+    Log.debug (fun m ->
+        m "tmp cleanup failed path=%s exn=%s" tmp (Printexc.to_string exn))
+
 let now store = store.now () |> Spice_session.Time.of_unix_seconds_float
 
 let touch_for_save store path session =
@@ -317,25 +323,13 @@ let write_document store path text =
   | () -> (
       match fsync_path store tmp with
       | Error _ as error ->
-          let () =
-            try Eio.Path.unlink (fs_path store tmp)
-            with exn ->
-              Log.debug (fun m ->
-                  m "tmp cleanup failed path=%s exn=%s" tmp
-                    (Printexc.to_string exn))
-          in
+          cleanup_tmp store tmp;
           error
       | Ok () -> (
           match Eio.Path.rename (fs_path store tmp) (fs_path store path) with
           | () -> fsync_path store dir
           | exception exn ->
-              let () =
-                try Eio.Path.unlink (fs_path store tmp)
-                with exn ->
-                  Log.debug (fun m ->
-                      m "tmp cleanup failed path=%s exn=%s" tmp
-                        (Printexc.to_string exn))
-              in
+              cleanup_tmp store tmp;
               Error (Error.Io { path; message = Printexc.to_string exn })))
 
 let create store session =
