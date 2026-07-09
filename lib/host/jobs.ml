@@ -537,6 +537,15 @@ let wait ?(cancelled = fun () -> false) t child =
   in
   await ()
 
+let drain ?cancelled t =
+  let entries = List.rev t.entries in
+  List.iter
+    (fun (child, entry) ->
+      match Eio.Promise.peek entry.settled with
+      | Some _ -> ()
+      | None -> ignore (wait ?cancelled t child : _ result))
+    entries
+
 let cancel t child =
   let* entry = find t child in
   match Eio.Promise.peek entry.settled with

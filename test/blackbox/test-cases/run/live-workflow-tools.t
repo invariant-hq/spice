@@ -63,7 +63,7 @@ first request, so the fake server matches script items by content.
 
   $ cat > subagent.jsonl <<'JSONL'
   > {"expect":{"body_contains":["\"name\":\"spawn_subagent\""],"body_not_contains":["subagent explore launched"]},"response":{"id":"resp-subagent","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-subagent","call_id":"subagent-1","name":"spawn_subagent","arguments":"{\"role\":\"explore\",\"task\":\"Map host workflow UI\"}"}]}}
-  > {"expect":{"body_contains":["Map host workflow UI"],"body_not_contains":["subagent explore launched"]},"response":{"id":"resp-subagent-child","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"child exploration findings"}]}]}}
+  > {"expect":{"body_contains":["Role: explore","Map host workflow UI"],"body_not_contains":["subagent explore launched"]},"response":{"id":"resp-subagent-child","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"child exploration findings"}]}]}}
   > {"expect":{"body_contains":["function_call_output","subagent-1","subagent explore launched"]},"response":{"id":"resp-subagent-final","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Delegated."}]}]}}
   > JSONL
   $ SPICE_FAKE_PROVIDER_UNORDERED=1 start_fake_openai subagent.jsonl subagent-capture subagent-port
@@ -92,7 +92,7 @@ child's findings in the same turn.
 
   $ cat > subagent-wait.jsonl <<'JSONL'
   > {"expect":{"body_contains":["\"name\":\"wait_subagents\""],"body_not_contains":["subagent explore launched"]},"response":{"id":"resp-w-spawn","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-w-spawn","call_id":"subagent-w1","name":"spawn_subagent","arguments":"{\"role\":\"explore\",\"task\":\"Survey the run ledger\"}"}]}}
-  > {"expect":{"body_contains":["Survey the run ledger"]},"response":{"id":"resp-w-child","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ledger survey findings"}]}]}}
+  > {"expect":{"body_contains":["Role: explore","Survey the run ledger"]},"response":{"id":"resp-w-child","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ledger survey findings"}]}]}}
   > {"expect":{"body_contains":["subagent explore launched (session wait-run-sub-subagent-w1)"]},"response":{"id":"resp-w-wait","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-w-wait","call_id":"wait-1","name":"wait_subagents","arguments":"{\"runs\":[\"wait-run-sub-subagent-w1\"]}"}]}}
   > {"expect":{"body_contains":["subagent explore completed","ledger survey findings"]},"response":{"id":"resp-w-final","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Waited."}]}]}}
   > JSONL
@@ -111,10 +111,10 @@ and a second wait collects the completed run.
 
   $ cat > subagent-ask.jsonl <<'JSONL'
   > {"expect":{"body_contains":["\"name\":\"message_subagent\""],"body_not_contains":["subagent explore launched"]},"response":{"id":"resp-a-spawn","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-a-spawn","call_id":"ask-1","name":"spawn_subagent","arguments":"{\"role\":\"explore\",\"task\":\"Check the config default\"}"}]}}
-  > {"expect":{"body_contains":["Check the config default","\"name\":\"message_parent\""],"body_not_contains":["wait_subagents"]},"response":{"id":"resp-a-child-ask","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-a-q","call_id":"q-1","name":"message_parent","arguments":"{\"message\":\"shared or worktree?\"}"}]}}
+  > {"expect":{"body_contains":["Role: explore","Check the config default","\"name\":\"message_parent\""],"body_not_contains":["wait_subagents"]},"response":{"id":"resp-a-child-ask","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-a-q","call_id":"q-1","name":"message_parent","arguments":"{\"message\":\"shared or worktree?\"}"}]}}
   > {"expect":{"body_contains":["subagent explore launched (session ask-run-sub-ask-1)"],"body_not_contains":["child session asked"]},"response":{"id":"resp-a-wait1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-a-w1","call_id":"w-1","name":"wait_subagents","arguments":"{\"runs\":[\"ask-run-sub-ask-1\"]}"}]}}
   > {"expect":{"body_contains":["child session asked: shared or worktree?"]},"response":{"id":"resp-a-reply","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-a-m","call_id":"m-1","name":"message_subagent","arguments":"{\"run\":\"ask-run-sub-ask-1\",\"message\":\"Shared is the default.\"}"}]}}
-  > {"expect":{"body_contains":["Shared is the default.","function_call_output"],"body_not_contains":["wait_subagents"]},"response":{"id":"resp-a-child-done","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Config default is shared."}]}]}}
+  > {"expect":{"body_contains":["Role: explore","Shared is the default.","function_call_output"],"body_not_contains":["wait_subagents"]},"response":{"id":"resp-a-child-done","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Config default is shared."}]}]}}
   > {"expect":{"body_contains":["subagent resumed with your message"]},"response":{"id":"resp-a-wait2","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-a-w2","call_id":"w-2","name":"wait_subagents","arguments":"{\"runs\":[\"ask-run-sub-ask-1\"]}"}]}}
   > {"expect":{"body_contains":["subagent explore completed","Config default is shared."]},"response":{"id":"resp-a-final","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Answered."}]}]}}
   > JSONL

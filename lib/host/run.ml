@@ -359,6 +359,7 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
     |> Session.with_notices
          ~before_request:(Producers.before_request producers)
          notices
+    |> Session.with_terminal_observed (fun ~observe:_ _ -> Jobs.drain jobs)
     |> Mutations.hook mutations
   in
   (* The per-turn derivation: everything the turn's contract — mode, model,
@@ -424,10 +425,8 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
     in
     (* Child-run orchestration: the child config derives from the parent env,
        and the {!Jobs} registry owns minting, the run ledger, the child Live
-       attachment, and settlement. The spawn handler awaits each run
-       immediately, so the model-visible semantics match the historical inline
-       child run; detachment drops the wait, not this assembly. A child binds
-       this contract's [client] for its whole run. *)
+       attachment, settlement, and process-exit draining. A child binds this
+       contract's [client] for its whole run. *)
     let child_run_config role =
       let contract = Spice_protocol.Subagent.Role.contract role in
       let parent_policy =

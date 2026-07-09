@@ -15,12 +15,11 @@
     ledger is the durable record. Registry state lives and dies with the switch
     passed to {!create} — nothing here is persisted beyond the ledger writes.
 
-    Today every spawn is awaited immediately by the spawning handler ({!spawn}
-    then {!wait}), so observable semantics match the historical inline child
-    run: one child at a time, the parent turn blocked while it runs, a blocked
-    child settling the wait with its blocker. Detachment (spec §5.3) removes the
-    immediate wait and re-reads a {!Blocked} child as an escalation, not the
-    machinery below. *)
+    Spawns are detached from the parent turn: {!spawn} returns once the child is
+    launched, and the parent model can continue or explicitly call {!wait}. A
+    CLI process still owns the child fibers, so callers that are about to tear
+    down the registry must call {!drain} to let unsettled children persist their
+    terminal or blocked ledger state first. *)
 
 type t
 (** The type for a session tree's run registry. *)
@@ -148,6 +147,14 @@ val wait :
     Blocking is cooperative: child drains progress while the caller waits. A
     settlement is final for its episode; a {!message}- or {!answer}-resumed run
     settles again and [wait] observes the new settlement. *)
+
+val drain : ?cancelled:(unit -> bool) -> t -> unit
+(** [drain ?cancelled t] waits for every run that is unsettled when [drain]
+    starts. It is the process-teardown companion to detached spawning: child
+    fibers live under the registry switch, so draining gives them a chance to
+    write their completed, blocked, failed, or cancelled ledger state before the
+    switch closes. Unknown-run errors are impossible for the captured registry
+    entries and are ignored. *)
 
 val cancel : t -> Spice_session.Id.t -> (unit, string) result
 (** [cancel t run] cancels [run]: an unsettled run gets an interrupt on its
