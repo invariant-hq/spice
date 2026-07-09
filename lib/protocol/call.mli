@@ -6,36 +6,14 @@
 (** Host-tool call classification.
 
     Every host tool — {!Question}, {!Plan}, {!Todo}, {!Goal}, {!Subagent} —
-    exposes the same {!HOST_TOOL} shape, so a surface learns it once.
-    {!classify} decodes an arbitrary model tool call into the single {!t} sum,
-    replacing the string matching against tool names that each consumer carried.
+    declares a stable name, a model-visible tool, and a decoder. {!classify}
+    dispatches across that closed set and decodes an arbitrary model tool call
+    into the single {!t} sum, replacing the string matching against tool names
+    that each consumer carried.
 
     Classification never fails: a call that targets a known host tool but
     carries an undecodable payload becomes {!Invalid}, so the boundary can
     surface a model-visible correction rather than dropping the call. *)
-
-(** The shape shared by every host tool.
-
-    A host tool declares a model-visible {!tool} under a stable {!name} and
-    {!decode}s a matching call into its request type. Decoding validates shape
-    and invariants through the type's smart constructor — the single validation
-    path — and reports failures as a diagnostic string, which becomes the
-    model-visible tool-result text. *)
-module type HOST_TOOL = sig
-  type request
-  (** The type for a decoded, validated request. *)
-
-  val name : string
-  (** [name] is the model-visible tool name. *)
-
-  val tool : Spice_llm.Tool.t
-  (** [tool] is the model-visible tool declaration. *)
-
-  val decode : Spice_llm.Tool.Call.t -> (request, string) result
-  (** [decode call] decodes [call]'s input as a {!request}. Errors with a
-      diagnostic when [call] does not target {!name} or its payload fails shape
-      or invariant validation. *)
-end
 
 module Kind : sig
   (** The payload-free enumeration of the built-in host tools.

@@ -10,9 +10,9 @@
     and eventual result, and the child runs in its own {!Spice_session.t}. The
     run record linking parent to child lives in {!Subagent_run}.
 
-    This module satisfies {!Call.HOST_TOOL} with {!Spawn.t} as its request.
-    Construction is pure and reports invariant failures as diagnostic strings.
-*)
+    {!tool} declares the spawn request and {!decode} validates it as a
+    {!Spawn.t}. Construction is pure and reports invariant failures as
+    diagnostic strings. *)
 
 module Role : sig
   (** Child session roles.
@@ -104,8 +104,8 @@ module Wait : sig
 
       Spawning is detached; calling this tool after spawn is the explicit
       synchronous composition. It waits for the named run settlements without
-      changing their execution or ownership. This module satisfies
-      {!Call.HOST_TOOL} with {!Request.t} as its request. *)
+      changing their execution or ownership. {!decode} validates calls as
+      {!Request.t} values. *)
 
   module Request : sig
     type t
@@ -145,8 +145,8 @@ module Cancel : sig
   (** The [cancel_subagent] host tool: interrupt one run.
 
       A cancelled run settles with the ledger's [Cancelled] status — a neutral
-      outcome, not a failure. This module satisfies {!Call.HOST_TOOL} with
-      {!Request.t} as its request. *)
+      outcome, not a failure. {!decode} validates calls as {!Request.t}
+      values. *)
 
   module Request : sig
     type t
@@ -187,8 +187,8 @@ module Message : sig
       the message immediately before its next model request; a child parked on a
       [message_parent] ask resumes with the message as that call's result; a
       settled child resumes with a new turn on the same child session and run
-      identity — resume, not respawn. This module satisfies {!Call.HOST_TOOL}
-      with {!Request.t} as its request. *)
+      identity — resume, not respawn. {!decode} validates calls as {!Request.t}
+      values. *)
 
   module Request : sig
     type t
@@ -235,8 +235,8 @@ module Message_parent : sig
       call parks the child turn on its waiting boundary — the child's analogue
       of [ask_user], pointed at the parent — and the run registry surfaces the
       message as a notice with a wake; the reply, a parent [message_subagent] or
-      a drill-in user message, resumes the turn as this call's result. This
-      module satisfies {!Call.HOST_TOOL} with {!Request.t} as its request. *)
+      a drill-in user message, resumes the turn as this call's result.
+      {!decode} validates calls as {!Request.t} values. *)
 
   module Request : sig
     type t

@@ -10,8 +10,7 @@
     model-visible tool result; there is no separate durable question artifact.
 
     Use {!decode} to validate an [ask_user] call and {!answer_text} to produce
-    the text stored in the answering tool result. This module satisfies
-    {!Call.HOST_TOOL} with {!Request.t} as its request. *)
+    the text stored in the answering tool result. *)
 
 module Option : sig
   (** One presented answer choice for a structured question. *)

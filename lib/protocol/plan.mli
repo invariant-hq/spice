@@ -10,11 +10,11 @@
     host-tool results, while this value records the approval boundary Plan mode
     imposes.
 
-    A model proposes a plan through the {!Call.HOST_TOOL} surface ({!tool},
-    {!decode}); the host saves it {!Status.Proposed} and the turn blocks. A user
-    decision drives it through the transitions {!approve}, {!reject}, and
-    {!supersede}. Construction and transitions are pure and report invariant
-    failures as diagnostic strings. *)
+    A model proposes a plan through {!tool}; {!decode} validates the request,
+    the host saves it {!Status.Proposed}, and the turn blocks. A user decision
+    drives it through the transitions {!approve}, {!reject}, and {!supersede}.
+    Construction and transitions are pure and report invariant failures as
+    diagnostic strings. *)
 
 module Id : sig
   (** Non-empty stable plan identifiers. *)

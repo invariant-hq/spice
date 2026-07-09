@@ -9,11 +9,10 @@
     {!Spice_session} transcript state and should not be reconstructed from
     assistant prose.
 
-    The model-facing tool replaces the whole checked list for a session in one
-    call; this module satisfies {!Call.HOST_TOOL} with {!type:t} — the
-    replacement list — as its request. Host code composes {!Item.t} values into
-    a checked list with {!make}. Construction reports invariant failures as
-    diagnostic strings. *)
+    The model-facing {!tool} replaces the whole checked list for a session in
+    one call. {!decode} validates the replacement as a {!type:t}; host code
+    composes {!Item.t} values into a checked list with {!make}. Construction
+    reports invariant failures as diagnostic strings. *)
 
 module Id : sig
   (** Non-empty stable todo identifiers. *)

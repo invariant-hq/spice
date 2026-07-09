@@ -3,14 +3,6 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-module type HOST_TOOL = sig
-  type request
-
-  val name : string
-  val tool : Spice_llm.Tool.t
-  val decode : Spice_llm.Tool.Call.t -> (request, string) result
-end
-
 module Kind = struct
   type t =
     | Question

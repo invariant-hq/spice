@@ -12,8 +12,8 @@
 
     At most one goal exists per session; storage owns that key scheme. The user
     owns the lifecycle verbs — {!set}, {!edit}, {!pause}, {!resume}, {!clear} —
-    and the model owns exactly one claim through the {!Call.HOST_TOOL} surface
-    ({!tool}, {!decode}): an {!Update.t} reporting the goal complete or blocked,
+    and the model owns exactly one claim through {!tool}: an {!Update.t}
+    reporting the goal complete or blocked, validated with {!decode} and
     applied with {!apply}. Construction and transitions are pure and report
     invariant failures as diagnostic strings. *)
 
