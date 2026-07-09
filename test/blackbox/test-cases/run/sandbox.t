@@ -44,6 +44,21 @@ requirement; the message names the config that accepts it.
   next: set sandbox.require=enforced-or-external to accept the declared boundary, or choose an enforceable mode
   [1]
 
+With sandbox.require=enforced-or-external, the declared external boundary is
+accepted and shell results carry declared_external evidence.
+
+  $ cat > external-run.jsonl <<'JSONL'
+  > {"expect":{"body_contains":["external prompt","\"name\":\"shell\""]},"response":{"id":"resp-external-1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-external","call_id":"call-external","name":"shell","arguments":"{\"command\":\"printf external-ok\"}"}]}}
+  > {"expect":{"body_contains":["function_call_output","call-external","declared_external","external-ok"]},"response":{"id":"resp-external-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"external final"}]}]}}
+  > JSONL
+  $ start_fake_openai external-run.jsonl external-capture external-port
+  $ SPICE_SANDBOX_REQUIRE=enforced-or-external spice run --cwd "$PWD" --json --permission-mode bypass --sandbox external-sandbox --id external-run "external prompt" | sed -n '/"type":"run.started"/p; s/.*\("sandbox":{"kind":"declared_external"}\).*/\1/p; s/.*\("final_text":"external final"\).*/\1/p'
+  spice: session saved; resume with: spice resume 'external-run'
+  {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"external-sandbox","origin":"flag","require":"enforced-or-external","network":"external","backend":"external","enforcement":"declared"}}
+  "sandbox":{"kind":"declared_external"}
+  "final_text":"external final"
+  $ wait_fake_server
+
 An unavailable backend fails restricted runs upfront. The
 private test seam forces the unavailable state deterministically on every
 platform.
