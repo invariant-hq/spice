@@ -23,10 +23,10 @@ type t = {
   phase : Spice_session.Run.Phase.t;  (** Current run phase. *)
   event_count : int;  (** Number of stored session events. *)
   turns : int;
-      (** Number of terminal turns in the session — the conversational
-          round-count a session list renders ("age · turns"), distinct from the
-          finer-grained {!field:event_count}. Derived from
-          {!Spice_session.State.turns}. *)
+      (** Number of accepted turns in the session, including an active
+          unfinished turn. This is the conversational round-count a session
+          list renders ("age · turns"), distinct from the finer-grained
+          {!field:event_count}. Derived from {!Spice_session.State.turns}. *)
   active_turn : Spice_session.Turn.Id.t option;
       (** Active turn identifier, if the session is not idle. *)
   cwd : Spice_path.Abs.t;  (** Session working directory. *)

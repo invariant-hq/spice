@@ -102,7 +102,8 @@ val name : string
 
 val tool : Spice_llm.Tool.t
 (** [tool] is the model-visible question tool declaration. Its input schema
-    requires exactly a [question] string. *)
+    requires a non-empty [question], accepts optional non-empty [header],
+    [options], and [multi] fields, and rejects unknown properties. *)
 
 val decode : Spice_llm.Tool.Call.t -> (Request.t, string) result
 (** [decode call] decodes [call]'s input as a question request. Errors with a
@@ -110,5 +111,7 @@ val decode : Spice_llm.Tool.Call.t -> (Request.t, string) result
     request validation. *)
 
 val answer_text : string -> (string, string) result
-(** [answer_text text] is the model-visible tool-result text for answer [text].
-    Errors when [text] is empty. *)
+(** [answer_text text] is ["User answered: " ^ text], the canonical
+    model-visible tool-result projection used by {!Command.Answer}. Errors when
+    [text] is empty. The wording is presentation text, not a parsing contract.
+*)

@@ -1281,7 +1281,8 @@ module Summary_tests = struct
       (Some "Refactor the parser please.") summary.Summary.preview;
     equal (option string) ~msg:"revision is None for synthetic rows" None
       (Option.map Session.Revision.to_string summary.Summary.revision);
-    equal int ~msg:"event count reflects the log" 1 summary.Summary.event_count
+    equal int ~msg:"event count reflects the log" 1 summary.Summary.event_count;
+    equal int ~msg:"started active turn counts as a turn" 1 summary.Summary.turns
 
   let revision_is_carried () =
     let summary =
@@ -1519,6 +1520,65 @@ module Event_tests = struct
       ~msg:"a prior turn's host tools do not classify a later turn's calls" []
       (host_calls (Event.of_session session))
 
+  let replay_degrades_tool_failure_status () =
+    let execution =
+      Session.Tool_claim.Started.make
+        ~id:(Session.Tool_claim.Id.of_string "claim-failed")
+        ~turn:(turn_id "turn-1") ~call:read_call
+    in
+    let finished =
+      Session.Tool_claim.Finished.make
+        ~id:(Session.Tool_claim.Started.id execution)
+        ~output:(Some (Spice_tool.Output.make ~text:"partial evidence" ()))
+        (Llm.Tool.Result.text ~error:true read_call "cancelled upstream")
+    in
+    let session =
+      Session.create
+        ~id:(Session.Id.of_string "session-tool-failure")
+        ~cwd ~created_at:(time 1) ()
+    in
+    let events =
+      [
+        Session.Event.turn_started (turn ~host_tools:[] ());
+        Session.Event.response_appended (response (assistant_call read_call));
+        Session.Event.tool_claim_started execution;
+        Session.Event.tool_claim_finished finished;
+      ]
+    in
+    let session =
+      List.fold_left
+        (fun session event ->
+          match Session.Log.append event session with
+          | Ok session -> session
+          | Error error ->
+              failf "tool-failure event append failed: %a" Session.Error.pp
+                error)
+        session events
+    in
+    match
+      List.find_map
+        (function Event.Tool_finished { result; _ } -> Some result | _ -> None)
+        (Event.of_session session)
+    with
+    | None -> failf "replay omitted the finished tool"
+    | Some result ->
+        (match Spice_tool.Result.status result with
+        | Spice_tool.Result.Failed
+            { kind = `Failed; message = "cancelled upstream"; metadata = None }
+          ->
+            ()
+        | Spice_tool.Result.Completed ->
+            failf "replayed error became completed"
+        | Spice_tool.Result.Interrupted _ ->
+            failf "replay unexpectedly preserved interrupted status"
+        | Spice_tool.Result.Failed { kind; message; _ } ->
+            failf "replayed failure was %s: %s"
+              (Spice_tool.Result.failure_to_string kind)
+              message);
+        equal (option string) ~msg:"replay retains stored erased output"
+          (Some "partial evidence")
+          (Option.map Spice_tool.Output.text (Spice_tool.Result.output result))
+
   let live_only_events_are_not_durable () =
     let request =
       match
@@ -1548,6 +1608,8 @@ module Event_tests = struct
         test "host call kind is classified" host_call_kind_is_classified;
         test "host tool recognition is turn-local"
           host_tool_recognition_is_turn_local;
+        test "replay degrades tool failure status"
+          replay_degrades_tool_failure_status;
         test "live-only events are not durable" live_only_events_are_not_durable;
       ]
 end

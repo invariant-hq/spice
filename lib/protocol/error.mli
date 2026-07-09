@@ -10,7 +10,7 @@
     saves documents. Constructors are grouped by caller recovery path, not by
     source library. *)
 
-(** The type for a recoverable session execution error. *)
+(** The type for a session execution error. *)
 type t =
   | Conflict of {
       id : Spice_session.Id.t;

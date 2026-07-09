@@ -8,7 +8,8 @@
     A progress value tags a child session's own {!Event.t} with the identity of
     the run that produced it, so a surface tracking several concurrent children
     — including same-role siblings and nested grandchildren — can attribute
-    every event to its run (doc/plans/subagent-tui.md §8.2).
+    every event to its exact child run rather than relying on role or arrival
+    order.
 
     Progress is in-process rendering vocabulary only: it is never persisted. The
     durable record of a run is {!Subagent_run}; the child's own session log

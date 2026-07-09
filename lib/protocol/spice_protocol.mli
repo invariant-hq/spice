@@ -5,11 +5,18 @@
 
 (** The pure language a spice session speaks.
 
-    [spice_protocol] is what a client may ask of a session ({!Command.t}), what
-    it says back ({!Event.t}, {!Outcome.t}, {!Error.t}), and the vocabulary
-    those messages carry. The narrow waist is the dual pair {!Command.t} /
-    {!Event.t} — the ingress and egress sums; every other module is payload
-    vocabulary reachable from a command, an event, or the settle result.
+    [spice_protocol] has three public seams:
+
+    - execution requests and results: {!Command}, {!Event}, {!Outcome},
+      {!Pending}, and {!Error};
+    - host-workflow vocabulary with independent artifact lifecycles:
+      {!Question}, {!Plan}, {!Todo}, {!Goal}, {!Subagent}, {!Subagent_run},
+      {!Call}, {!Mode}, and {!Contract};
+    - presentation and replay projections: {!Session_summary},
+      {!Subagent_progress}, and {!Event.of_session}.
+
+    These seams compose, but workflow artifacts are not merely command/event
+    payloads: hosts persist and transition them through their own boundaries.
 
     The library is pure: it links no transport, no store, and no effectful
     engine. It carries no wire codecs — there is no transport yet to validate

@@ -102,8 +102,9 @@ end
 module Wait : sig
   (** The [wait_subagents] host tool: block for named runs' results.
 
-      With detached spawning, spawn-then-wait is the synchronous mode
-      (doc/plans/subagent-tui.md decision 8). This module satisfies
+      Spawning is detached; calling this tool after spawn is the explicit
+      synchronous composition. It waits for the named run settlements without
+      changing their execution or ownership. This module satisfies
       {!Call.HOST_TOOL} with {!Request.t} as its request. *)
 
   module Request : sig
@@ -185,9 +186,9 @@ module Message : sig
       Delivery is owned by the run registry and is instant: a running child sees
       the message immediately before its next model request; a child parked on a
       [message_parent] ask resumes with the message as that call's result; a
-      settled child resumes with a new turn — resume, not respawn
-      (doc/plans/subagent-tui.md decision 17). This module satisfies
-      {!Call.HOST_TOOL} with {!Request.t} as its request. *)
+      settled child resumes with a new turn on the same child session and run
+      identity — resume, not respawn. This module satisfies {!Call.HOST_TOOL}
+      with {!Request.t} as its request. *)
 
   module Request : sig
     type t

@@ -70,18 +70,18 @@ val prelude_messages : t -> Spice_llm.Message.t list
 
 val host_tools : t -> Call.Kind.t list
 (** [host_tools t] are the host-handled tool kinds offered to a root turn in
-    mode [t]: question always; todo, goal, and subagent for {!Build}; plan and
-    subagent for {!Plan}; subagent for {!Review}. The goal kind is further
-    conditioned on the session's goal status at request assembly — the offer
-    here is the mode ceiling, not the per-turn catalog. Map through
-    {!Call.Kind.tool} for the model-visible declarations. *)
+    mode [t]. Every mode offers question plus subagent spawn, wait, cancel, and
+    message coordination. {!Build} additionally offers todo and goal;
+    {!Plan} additionally offers plan; {!Review} has no mode-specific addition.
+    The goal kind is further conditioned on the session's goal status at
+    request assembly — the offer here is the mode ceiling, not the per-turn
+    catalog. Map through {!Call.Kind.tool} for model-visible declarations. *)
 
 val all_host_tools : Spice_llm.Tool.t list
-(** [all_host_tools] is the union of {!host_tools} over all modes — the
-    recognition set for saved-session projections, which must classify any
-    host-handled call a turn could have been offered regardless of the mode that
-    created it. It is {!Call.Kind.all} mapped through {!Call.Kind.tool}. See
-    {!Call.classify}. *)
+(** [all_host_tools] is the complete built-in recognition set across root and
+    child contexts. It includes child-only [message_parent], so it is broader
+    than the union of root {!host_tools} catalogs. It is {!Call.Kind.all} mapped
+    through {!Call.Kind.tool}. See {!Call.classify}. *)
 
 val allows_role : t -> Subagent.Role.t -> bool
 (** [allows_role mode role] is [true] iff a root turn in [mode] may spawn a

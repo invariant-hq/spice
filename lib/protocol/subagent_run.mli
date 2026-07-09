@@ -226,11 +226,11 @@ val cancel :
 
 val resume : resumed_at:Spice_session.Time.t -> t -> (t, string) result
 (** [resume ~resumed_at t] marks a blocked or terminal run running again: a
-    message resumed the settled child session (doc/plans/subagent-tui.md §5.6).
-    The one deliberate backward edge in the otherwise forward-only lifecycle;
-    the run keeps its identity because the run key is the child session, and the
-    next terminal transition re-records usage over the whole session. Errors on
-    a queued or running [t], or a time before {!updated_at} [t]. *)
+    message resumed the settled child session. The one deliberate backward edge
+    in the otherwise forward-only lifecycle keeps the existing run identity and
+    child session; the next terminal transition re-records usage over the whole
+    session. Errors on a queued or running [t], or a time before {!updated_at}
+    [t]. *)
 
 val usage : t -> Usage.t option
 (** [usage t] is the terminal usage record, when [t] settled with one. *)

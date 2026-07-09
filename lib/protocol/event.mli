@@ -12,14 +12,13 @@
 
     Events split into two kinds:
 
-    - {b durable} events mirror saved session facts. They are emitted during a
-      live run only after their underlying session events are saved, and the
-      same values are produced by {!of_session} from a saved document. The two
-      agree up to {!Host_call} folding: a live run emits {!Host_call} twice per
-      answered call (pending then resolved), while {!of_session} emits the
-      resolved one only, so the durable subsequence of the live stream equals
-      {!of_session} after replacing each pending {!Host_call} with its
-      same-call-id resolved emission. See the cardinality note on {!of_session}.
+    - {b durable} event kinds are reconstructible from saved session facts.
+      They are emitted during a live run only after their underlying session
+      events are saved. Replay preserves their durable projection, but does not
+      promise byte-for-byte equality with the live value: notably,
+      {!Tool_finished} cannot recover the exact failed-versus-interrupted
+      status. {!Host_call} also has different stream cardinality; see
+      {!of_session}.
     - {b live-only} events are progress deltas — model streaming, tool updates,
       workspace and compaction progress, notice injection — that a saved
       document cannot reconstruct. {!of_session} never produces them.
@@ -74,8 +73,12 @@ type t =
       claim : Spice_session.Tool_claim.Started.t;
       result : Spice_tool.Output.t Spice_tool.Result.t;
     }
-      (** An executable tool returned a terminal result for [claim]. [result]
-          carries the erased output, including retained typed evidence. *)
+      (** An executable tool returned a terminal result for [claim]. Live
+          [result] is the real terminal result and may retain typed evidence.
+          Replay retains serialized erased output when present, synthesizes it
+          from model-visible text otherwise, and degrades every recorded error
+          to a generic [`Failed] result because the durable claim does not store
+          the exact failure or interruption status. *)
   | Host_call of {
       call : Spice_llm.Tool.Call.t;
       kind : Call.t option;
@@ -162,9 +165,10 @@ type t =
       *)
 
 val is_durable : t -> bool
-(** [is_durable event] is [true] iff [event] is a durable event — one that
-    {!of_session} can produce from a saved document. It is [false] for every
-    live-only progress delta. *)
+(** [is_durable event] is [true] iff [event]'s kind has a durable projection
+    that {!of_session} can produce from a saved document. It does not imply
+    replay equality for lossy fields. It is [false] for every live-only progress
+    delta. *)
 
 val of_session : Spice_session.t -> t list
 (** [of_session session] is the durable projection of [session]: the durable
@@ -172,6 +176,12 @@ val of_session : Spice_session.t -> t list
     text computed. Host-call recognition uses the catalog recorded on each
     call's own turn; a tool offered by an earlier turn does not carry into a
     later turn. Live-only events are never produced.
+
+    {b Tool result reconstruction.} A finished executable claim preserves its
+    stored {!Spice_tool.Output.t}. Without one, replay synthesizes non-empty
+    output from the model-visible result text. The durable model result records
+    only an error flag, so every replayed error has generic failure kind
+    [`Failed]; live-only interruption and precise failure categories are lost.
 
     {b Host_call cardinality.} An event stream cannot mutate a past fact, so a
     live run emits {!Host_call} twice for one call: once with [result = None]
