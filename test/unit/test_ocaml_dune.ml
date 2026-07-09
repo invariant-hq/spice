@@ -155,6 +155,32 @@ let malformed_workspace_data_returns_parse_error () =
   | Error error -> failf "unexpected error: %s" (Dune.Error.message error)
   | Ok _ -> failf "expected malformed workspace data to fail"
 
+let malformed_module_name_returns_parse_error () =
+  let workspace = workspace () in
+  let output =
+    {|
+((root /workspace)
+ (library
+  ((name foo)
+   (uid uid-foo)
+   (local true)
+   (requires ())
+   (source_dir lib)
+   (modules
+    (((name lowercase)
+      (impl lib/foo.ml)
+      (intf ())
+      (cmt ())
+      (cmti ())))))))
+|}
+  in
+  match Dune.Describe.of_workspace_output ~workspace output with
+  | Error (Dune.Error.Parse_error { source = Dune.Error.Workspace_describe; _ })
+    ->
+      ()
+  | Error error -> failf "unexpected error: %s" (Dune.Error.message error)
+  | Ok _ -> failf "expected malformed module name to fail"
+
 let malformed_tests_data_returns_parse_error () =
   let workspace = workspace () in
   let project =
@@ -294,6 +320,8 @@ let () =
         describe_outputs_normalize_project;
       test "malformed workspace data returns parse error"
         malformed_workspace_data_returns_parse_error;
+      test "malformed module name returns parse error"
+        malformed_module_name_returns_parse_error;
       test "malformed tests data returns parse error"
         malformed_tests_data_returns_parse_error;
       test "rpc diagnostic store tracks events"

@@ -194,6 +194,11 @@ let project_description_invariants () =
         ());
   expect_invalid_arg "empty module dependency" (fun () ->
       ignore (Ocaml.Module_name.make ""));
+  List.iter
+    (fun name ->
+      expect_invalid_arg ("invalid module name " ^ name) (fun () ->
+          ignore (Ocaml.Module_name.make name)))
+    [ "foo"; "Foo.Bar"; "Foo-bar"; " Foo"; "Foo\000Bar" ];
   expect_invalid_arg "empty test target" (fun () ->
       Ocaml.Project.Test.make ~name:"bad" ~source_dir:(path "test") ~target:""
         ~enabled:true ());

@@ -118,7 +118,9 @@ module Module_name : sig
   val make : string -> t
   (** [make name] is an OCaml module name.
 
-      Raises [Invalid_argument] if [name] is empty or contains NUL. *)
+      [name] must be an ASCII OCaml module identifier: it starts with an
+      uppercase letter and continues with letters, digits, underscores, or
+      apostrophes. Raises [Invalid_argument] otherwise. *)
 
   val to_string : t -> string
   (** [to_string t] is [t] as a string. *)

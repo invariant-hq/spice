@@ -31,6 +31,21 @@ let source_label label =
 let plain_label label =
   (not (String.is_empty label)) && not (String.contains label '\000')
 
+let module_name_label label =
+  let valid_rest = function
+    | 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_' | '\'' -> true
+    | _ -> false
+  in
+  let rec loop i =
+    if i = String.length label then true
+    else valid_rest label.[i] && loop (i + 1)
+  in
+  String.length label > 0
+  &&
+  match label.[0] with
+  | 'A' .. 'Z' -> loop 1
+  | _ -> false
+
 module Position = struct
   type t = { line : int; column : int }
 
@@ -103,9 +118,9 @@ module Module_name = struct
   type t = string
 
   let make name =
-    if not (plain_label name) then
+    if not (module_name_label name) then
       invalid "Spice_ocaml.Module_name" "make"
-        "name must not be empty or contain NUL";
+        "name must be an OCaml module name";
     name
 
   let to_string t = t
