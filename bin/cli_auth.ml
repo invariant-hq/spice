@@ -210,18 +210,38 @@ let api_key_pipe_example ~command provider_decl =
   in
   Printf.sprintf "printenv %s | spice auth %s" env_name command
 
-let read_api_key ~command ~example ~api_key_stdin =
-  if not api_key_stdin then
-    Error ("auth " ^ command ^ " requires --api-key-stdin")
-  else if Unix.isatty Unix.stdin then
-    Error
-      (Printf.sprintf
-         "--api-key-stdin expects the API key on stdin; try piping it: %s"
-         example)
-  else
-    match Auth.Secret.api_key (read_stdin_secret ()) with
+(* Read a secret at the terminal with echo disabled, restoring the terminal
+   attributes even if the read is interrupted. The user's enter is not echoed,
+   so the newline is printed back once the attributes are restored. *)
+let read_tty_secret ~prompt =
+  stdout_printf "%s" prompt;
+  let attrs = Unix.tcgetattr Unix.stdin in
+  Unix.tcsetattr Unix.stdin Unix.TCSAFLUSH { attrs with Unix.c_echo = false };
+  Fun.protect
+    ~finally:(fun () ->
+      Unix.tcsetattr Unix.stdin Unix.TCSAFLUSH attrs;
+      stdout_printf "\n")
+    (fun () -> try input_line stdin with End_of_file -> "")
+
+(* An API key arrives one of two ways: piped through [--api-key-stdin] (the
+   scriptable path), or typed at a no-echo terminal prompt when stdin is an
+   interactive terminal. A non-TTY stdin without the flag keeps the explicit
+   demand, so a script never blocks on a silent read. *)
+let read_api_key ~command ~example ~prompt ~api_key_stdin =
+  let secret raw =
+    match Auth.Secret.api_key raw with
     | Error error -> Error (Auth.Error.message error)
     | Ok secret -> Ok secret
+  in
+  if api_key_stdin then
+    if Unix.isatty Unix.stdin then
+      Error
+        (Printf.sprintf
+           "--api-key-stdin expects the API key on stdin; try piping it: %s"
+           example)
+    else secret (read_stdin_secret ())
+  else if Unix.isatty Unix.stdin then secret (read_tty_secret ~prompt)
+  else Error ("auth " ^ command ^ " requires --api-key-stdin")
 
 (* Render a settled login: the header lines, the checked/unchecked account
    facts, and the suggested next command. Every flow settles through
@@ -288,6 +308,10 @@ let print_login_settled host ~provider_decl ~name ~method_id settled =
       | `Blocked -> Failed
       | `Ready | `Degraded | `Unchecked | `Missing -> Success)
 
+let api_key_prompt provider =
+  Printf.sprintf "Enter your %s API key (input hidden): "
+    (Llm_provider.id provider)
+
 let login_api_key ~stdenv host ~provider_decl ~name ~method_id ~api_key_stdin =
   let provider = Provider.id provider_decl in
   let example =
@@ -297,7 +321,8 @@ let login_api_key ~stdenv host ~provider_decl ~name ~method_id ~api_key_stdin =
            (Llm_provider.id provider) method_id)
   in
   match
-    read_api_key ~command:"login --method api-key" ~example ~api_key_stdin
+    read_api_key ~command:"login --method api-key" ~example
+      ~prompt:(api_key_prompt provider) ~api_key_stdin
   with
   | Error message -> Usage_error message
   | Ok secret ->
@@ -754,7 +779,10 @@ let save provider name api_key_stdin =
           ~command:
             (Printf.sprintf "save %s --api-key-stdin" (Llm_provider.id provider))
       in
-      match read_api_key ~command:"save" ~example ~api_key_stdin with
+      match
+        read_api_key ~command:"save" ~example ~prompt:(api_key_prompt provider)
+          ~api_key_stdin
+      with
       | Error message -> Usage_error message
       | Ok secret -> (
           (* Save-only by design: unlike login, [auth save] runs no post-save
@@ -781,7 +809,10 @@ let name_arg doc =
 let api_key_stdin_arg =
   CArg.(
     value & flag
-    & info [ "api-key-stdin" ] ~doc:"Read an API key from standard input.")
+    & info [ "api-key-stdin" ]
+        ~doc:
+          "Read an API key from standard input instead of prompting at the \
+           terminal.")
 
 let login_command =
   let method_ =
@@ -876,6 +907,10 @@ let group =
               take precedence when set. $(b,status) reports per-provider \
               readiness, the storage location, and stored credential names \
               without contacting a provider unless $(b,--refresh) is given.";
+           `P
+             "On a terminal, API-key $(b,login) and $(b,save) prompt for the \
+              key with echo disabled; $(b,--api-key-stdin) reads it from \
+              standard input for scripts.";
            `S CManpage.s_examples;
            `Pre "  spice auth login anthropic";
            `Pre
