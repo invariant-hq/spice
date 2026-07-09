@@ -6,9 +6,16 @@
 open Tui_next_harness
 
 (* The unified [@] file completion (doc/ui-design/03-composer.md §File
-   completion). A real file tree is written into the temp project so the lazy
-   directory enumeration has known content; the list is driven through the live
-   app wiring. No turns run. *)
+   completion), exercised on the transcript — where a session composes most of
+   its messages. A real file tree is written into the temp project so the lazy
+   directory enumeration has known content; one settled turn runs first so the
+   list opens over a transcript, not the home stage. *)
+
+let script =
+  [
+    Provider.message ~expect:[ "say hello" ] ~id:"resp-1"
+      "Hello from the fake provider.";
+  ]
 
 let seed p =
   Project.write p "lib/foo.ml" "let foo = 1\n";
@@ -16,197 +23,204 @@ let seed p =
   Project.write p "node_modules/junk.js" "module.exports = 0\n";
   Project.write p "readme.md" "# fixture\n"
 
-(* "@" opens the unified list above the frame: directory rows carry a trailing
-   "/", every row a "+" glyph, and the ignored [node_modules] is absent. A
-   query narrows it (text-is-the-filter); a no-match query shows the note. *)
-let%expect_test "@ opens the list; dirs carry a slash; a no-match query notes" =
-  Tui.run ~name:"mention-open" ~seed @@ fun t ->
+let reach_transcript t =
   Tui.settle t;
+  Tui.keys t "say hello";
+  Tui.enter t;
+  ignore (Tui.await_request t 1 : string);
+  Tui.settle t
+
+(* "@" opens the unified list above the composer: directory rows carry a
+   trailing "/", every row a "+" glyph, and the ignored [node_modules] is
+   absent. A query narrows it (text-is-the-filter); a no-match query notes. *)
+let%expect_test "@ opens the list; dirs carry a slash; a no-match query notes" =
+  Tui.run ~name:"mention-open" ~provider:script ~seed @@ fun t ->
+  reach_transcript t;
   Tui.keys t "@";
   Tui.settle t;
   Tui.print t;
   [%expect {|01 |
-02 |
-03 |
-04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-06 |
-07 |                            dev · openai/gpt-5.5 medium
-08 |
-09 |      ▎ welcome — and thanks for trying spice this early.
-10 |      ▎ it's experimental: sessions and config may change without migration.
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
 11 |
-12 |           ❯ + lib/
-13 |             + dune-project
-14 |             + readme.md
-15 |           ────────────────────────────────────────────────────────────
-16 |           ❯ @
-17 |           ────────────────────────────────────────────────────────────
-18 |
-19 |                      dune       ✗ · diagnostics unavailable
-20 |                      account    none — /login to connect
-21 |
-22 |                       sandbox: danger-full-access (config)
-23 |
-24 |   ! not logged in · /login · …ui-next-mention-open · gpt-5.5 medium · dune: ✗|}];
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 | ❯ + lib/
+19 |   + dune-project
+20 |   + readme.md
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ @
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   …/spice-tui-next-mention-open · gpt-5.5 medium · dune: ✗     ? for shortcuts|}];
   Tui.keys t "zzz";
   Tui.settle t;
   Tui.print t;
   [%expect {|01 |
-02 |
-03 |
-04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-06 |
-07 |                            dev · openai/gpt-5.5 medium
-08 |
-09 |      ▎ welcome — and thanks for trying spice this early.
-10 |      ▎ it's experimental: sessions and config may change without migration.
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
 11 |
-12 |             no matching files
-13 |           ────────────────────────────────────────────────────────────
-14 |           ❯ @zzz
-15 |           ────────────────────────────────────────────────────────────
+12 |
+13 |
+14 |
+15 |
 16 |
-17 |                      dune       ✗ · diagnostics unavailable
-18 |                      account    none — /login to connect
+17 |
+18 |
 19 |
-20 |                       sandbox: danger-full-access (config)
-21 |
-22 |
-23 |
-24 |   ! not logged in · /login · …ui-next-mention-open · gpt-5.5 medium · dune: ✗|}]
+20 |   no matching files
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ @zzz
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   …/spice-tui-next-mention-open · gpt-5.5 medium · dune: ✗     ? for shortcuts|}]
 
 (* Tab on the selected directory descends into it: its children load and inline
    below it, and the list stays open. *)
 let%expect_test "tab descends into a directory, children appear" =
-  Tui.run ~name:"mention-descend" ~seed @@ fun t ->
-  Tui.settle t;
+  Tui.run ~name:"mention-descend" ~provider:script ~seed @@ fun t ->
+  reach_transcript t;
   Tui.keys t "@";
   Tui.settle t;
   Tui.keys t Keys.tab;
   Tui.settle t;
   Tui.print t;
   [%expect {|01 |
-02 |
-03 |
-04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-06 |
-07 |                            dev · openai/gpt-5.5 medium
-08 |
-09 |      ▎ welcome — and thanks for trying spice this early.
-10 |      ▎ it's experimental: sessions and config may change without migration.
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
 11 |
-12 |           ❯ + lib/
-13 |             + lib/sub/
-14 |             + lib/foo.ml
-15 |             + dune-project
-16 |             + readme.md
-17 |           ────────────────────────────────────────────────────────────
-18 |           ❯ @
-19 |           ────────────────────────────────────────────────────────────
-20 |
-21 |                      dune       ✗ · diagnostics unavailable
-22 |                      account    none — /login to connect
-23 |
-24 |                       sandbox: danger-full-access (config)|}]
+12 |
+13 |
+14 |
+15 |
+16 | ❯ + lib/
+17 |   + lib/sub/
+18 |   + lib/foo.ml
+19 |   + dune-project
+20 |   + readme.md
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ @
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   …/spice-tui-next-mention-descend · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
 
 (* ↵ on a selected file inserts it as an atomic [@]-prefixed reference and
    closes the list. *)
 let%expect_test "enter on a file inserts the ref and closes the list" =
-  Tui.run ~name:"mention-insert" ~seed @@ fun t ->
-  Tui.settle t;
+  Tui.run ~name:"mention-insert" ~provider:script ~seed @@ fun t ->
+  reach_transcript t;
   Tui.keys t "@readme";
   Tui.settle t;
   Tui.print t;
   [%expect {|01 |
-02 |
-03 |
-04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-06 |
-07 |                            dev · openai/gpt-5.5 medium
-08 |
-09 |      ▎ welcome — and thanks for trying spice this early.
-10 |      ▎ it's experimental: sessions and config may change without migration.
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
 11 |
-12 |           ❯ + readme.md
-13 |           ────────────────────────────────────────────────────────────
-14 |           ❯ @readme
-15 |           ────────────────────────────────────────────────────────────
+12 |
+13 |
+14 |
+15 |
 16 |
-17 |                      dune       ✗ · diagnostics unavailable
-18 |                      account    none — /login to connect
+17 |
+18 |
 19 |
-20 |                       sandbox: danger-full-access (config)
-21 |
-22 |
-23 |
-24 |   ! not logged in · /login · …-next-mention-insert · gpt-5.5 medium · dune: ✗|}];
+20 | ❯ + readme.md
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ @readme
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   …/spice-tui-next-mention-insert · gpt-5.5 medium · dune: ✗   ? for shortcuts|}];
   Tui.keys t Keys.enter;
   Tui.settle t;
   Tui.print t;
   [%expect {|01 |
-02 |
-03 |
-04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-06 |
-07 |                            dev · openai/gpt-5.5 medium
-08 |
-09 |      ▎ welcome — and thanks for trying spice this early.
-10 |      ▎ it's experimental: sessions and config may change without migration.
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
 11 |
-12 |           ────────────────────────────────────────────────────────────
-13 |           ❯ @readme.md
-14 |           ────────────────────────────────────────────────────────────
+12 |
+13 |
+14 |
 15 |
-16 |                      dune       ✗ · diagnostics unavailable
-17 |                      account    none — /login to connect
+16 |
+17 |
 18 |
-19 |                       sandbox: danger-full-access (config)
+19 |
 20 |
-21 |
-22 |
-23 |
-24 |   ! not logged in · /login · …-next-mention-insert · gpt-5.5 medium · dune: ✗|}]
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ @readme.md
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   …/spice-tui-next-mention-insert · gpt-5.5 medium · dune: ✗   ? for shortcuts|}]
 
 (* Esc closes the list and LEAVES the literal [@]-token in the draft — unlike
    the palette's esc, which clears its slash input. Backspacing the "@" away
    also closes the list, the draft empty again. *)
 let%expect_test "esc leaves the @-token; backspace past @ closes and clears" =
-  Tui.run ~name:"mention-esc" ~seed @@ fun t ->
-  Tui.settle t;
+  Tui.run ~name:"mention-esc" ~provider:script ~seed @@ fun t ->
+  reach_transcript t;
   Tui.keys t "@lib";
   Tui.settle t;
   Tui.keys t Keys.escape;
   Tui.settle t;
   Tui.print t;
   [%expect {|01 |
-02 |
-03 |
-04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-06 |
-07 |                            dev · openai/gpt-5.5 medium
-08 |
-09 |      ▎ welcome — and thanks for trying spice this early.
-10 |      ▎ it's experimental: sessions and config may change without migration.
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
 11 |
-12 |           ────────────────────────────────────────────────────────────
-13 |           ❯ @lib
-14 |           ────────────────────────────────────────────────────────────
+12 |
+13 |
+14 |
 15 |
-16 |                      dune       ✗ · diagnostics unavailable
-17 |                      account    none — /login to connect
+16 |
+17 |
 18 |
-19 |                       sandbox: danger-full-access (config)
+19 |
 20 |
-21 |
-22 |
-23 |
-24 |   ! not logged in · /login · …tui-next-mention-esc · gpt-5.5 medium · dune: ✗|}];
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ @lib
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   …/tmp/spice-tui-next-mention-esc · gpt-5.5 medium · dune: ✗  ? for shortcuts|}];
   Tui.keys t Keys.backspace;
   Tui.keys t Keys.backspace;
   Tui.keys t Keys.backspace;
@@ -214,26 +228,26 @@ let%expect_test "esc leaves the @-token; backspace past @ closes and clears" =
   Tui.settle t;
   Tui.print t;
   [%expect {|01 |
-02 |
-03 |
-04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-06 |
-07 |                            dev · openai/gpt-5.5 medium
-08 |
-09 |      ▎ welcome — and thanks for trying spice this early.
-10 |      ▎ it's experimental: sessions and config may change without migration.
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
 11 |
-12 |           ────────────────────────────────────────────────────────────
-13 |           ❯ message spice
-14 |           ────────────────────────────────────────────────────────────
+12 |
+13 |
+14 |
 15 |
-16 |                      dune       ✗ · diagnostics unavailable
-17 |                      account    none — /login to connect
+16 |
+17 |
 18 |
-19 |                       sandbox: danger-full-access (config)
+19 |
 20 |
-21 |
-22 |
-23 |
-24 |   ! not logged in · /login · …tui-next-mention-esc · gpt-5.5 medium · dune: ✗|}]
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ message spice
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   …/tmp/spice-tui-next-mention-esc · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]

@@ -5,237 +5,279 @@
 
 open Tui_next_harness
 
-(* Prompt history (lib/tui/history.ml, wired through the runtime): the global
-   JSONL loads at boot, arrow-walk recalls it, and ctrl+r reverse search
-   fuzzy-matches and inserts the pick into the draft (never submits). The
-   history file is seeded on disk before launch under the isolated config home;
-   no turns run. *)
+(* Prompt history (lib/tui/history.ml, wired through the runtime), exercised on
+   the transcript where recall and search actually happen. The global JSONL is
+   seeded on disk before launch; a settled turn then runs, so the submitted
+   prompt joins the seeded entries in history exactly as a real session's would.
+   Arrow-walk recalls, and ctrl+r reverse search fuzzy-matches and inserts the
+   pick into the draft (never submits). *)
 
-(* A prompt on disk is recalled by Up on the empty draft — the load path,
-   end to end through the runtime. *)
-let%expect_test "up recalls a prompt loaded from disk" =
-  Tui.run ~name:"history-load" ~seed:(fun p ->
+let script =
+  [
+    Provider.message ~expect:[ "say hello" ] ~id:"resp-1"
+      "Hello from the fake provider.";
+  ]
+
+let reach_transcript t =
+  Tui.settle t;
+  Tui.keys t "say hello";
+  Tui.enter t;
+  ignore (Tui.await_request t 1 : string);
+  Tui.settle t
+
+(* The recall walks newest-first: the turn's own prompt comes back on the first
+   [up], the disk-loaded prompt on the second — proving the boot load and the
+   in-session submission share one history. *)
+let%expect_test "up walks recall from the turn prompt into the loaded history" =
+  Tui.run ~name:"history-load" ~provider:script ~seed:(fun p ->
       Seed.history p [ Seed.history_entry ~ts:1000 "alpha prompt" ])
   @@ fun t ->
-  Tui.settle t;
+  reach_transcript t;
   Tui.keys t Keys.up;
   Tui.settle t;
   Tui.print t;
   [%expect {|01 |
-02 |
-03 |
-04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-06 |
-07 |                            dev · openai/gpt-5.5 medium
-08 |
-09 |      ▎ welcome — and thanks for trying spice this early.
-10 |      ▎ it's experimental: sessions and config may change without migration.
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
 11 |
-12 |           ────────────────────────────────────────────────────────────
-13 |           ❯ alpha prompt
-14 |           ────────────────────────────────────────────────────────────
+12 |
+13 |
+14 |
 15 |
-16 |                      dune       ✗ · diagnostics unavailable
-17 |                      account    none — /login to connect
+16 |
+17 |
 18 |
-19 |                       sandbox: danger-full-access (config)
+19 |
 20 |
-21 |
-22 |
-23 |
-24 |   ! not logged in · /login · …ui-next-history-load · gpt-5.5 medium · dune: ✗|}]
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ say hello
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   …/spice-tui-next-history-load · gpt-5.5 medium · dune: ✗     ? for shortcuts|}];
+  Tui.keys t Keys.up;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ alpha prompt
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   …/spice-tui-next-history-load · gpt-5.5 medium · dune: ✗     ? for shortcuts|}]
 
 (* ctrl+r opens reverse search over the loaded prompts; a fuzzy subsequence
    query narrows the list; ↵ inserts the pick into the draft and never submits
    (the draft keeps the text, no turn starts). *)
 let%expect_test "ctrl+r fuzzy-searches history and inserts the pick" =
-  Tui.run ~name:"history-search" ~seed:(fun p ->
+  Tui.run ~name:"history-search" ~provider:script ~seed:(fun p ->
       Seed.history p
         [
           Seed.history_entry ~ts:1000 "alpha one";
           Seed.history_entry ~ts:2000 "beta two";
         ])
   @@ fun t ->
-  Tui.settle t;
+  reach_transcript t;
   Tui.keys t Keys.ctrl_r;
   Tui.settle t;
   Tui.print t;
   [%expect {|01 |
-02 |
-03 |
-04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-06 |
-07 |                            dev · openai/gpt-5.5 medium
-08 |
-09 |      ▎ welcome — and thanks for trying spice this early.
-10 |      ▎ it's experimental: sessions and config may change without migration.
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
 11 |
-12 |           reverse-i-search:
-13 |           ❯ beta two
-14 |             alpha one
-15 |           ────────────────────────────────────────────────────────────
-16 |           ⌕ search history
-17 |           ────────────────────────────────────────────────────────────
-18 |
-19 |                      dune       ✗ · diagnostics unavailable
-20 |                      account    none — /login to connect
-21 |
-22 |                       sandbox: danger-full-access (config)
-23 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 | reverse-i-search:
+18 | ❯ say hello
+19 |   beta two
+20 |   alpha one
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ⌕ search history
+23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   ↵ insert · esc cancel · type to search                             ⌕ history|}];
   Tui.keys t "bt";
   Tui.settle t;
   Tui.print t;
   [%expect {|01 |
-02 |
-03 |
-04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-06 |
-07 |                            dev · openai/gpt-5.5 medium
-08 |
-09 |      ▎ welcome — and thanks for trying spice this early.
-10 |      ▎ it's experimental: sessions and config may change without migration.
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
 11 |
-12 |           reverse-i-search: bt
-13 |           ❯ beta two
-14 |           ────────────────────────────────────────────────────────────
-15 |           ⌕ bt
-16 |           ────────────────────────────────────────────────────────────
+12 |
+13 |
+14 |
+15 |
+16 |
 17 |
-18 |                      dune       ✗ · diagnostics unavailable
-19 |                      account    none — /login to connect
-20 |
-21 |                       sandbox: danger-full-access (config)
-22 |
-23 |
+18 |
+19 | reverse-i-search: bt
+20 | ❯ beta two
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ⌕ bt
+23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   ↵ insert · esc cancel · type to search                             ⌕ history|}];
   Tui.keys t Keys.enter;
   Tui.settle t;
   Tui.print t;
   [%expect {|01 |
-02 |
-03 |
-04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-06 |
-07 |                            dev · openai/gpt-5.5 medium
-08 |
-09 |      ▎ welcome — and thanks for trying spice this early.
-10 |      ▎ it's experimental: sessions and config may change without migration.
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
 11 |
-12 |           ────────────────────────────────────────────────────────────
-13 |           ❯ beta two
-14 |           ────────────────────────────────────────────────────────────
+12 |
+13 |
+14 |
 15 |
-16 |                      dune       ✗ · diagnostics unavailable
-17 |                      account    none — /login to connect
+16 |
+17 |
 18 |
-19 |                       sandbox: danger-full-access (config)
+19 |
 20 |
-21 |
-22 |
-23 |
-24 |   ! not logged in · /login · …-next-history-search · gpt-5.5 medium · dune: ✗|}]
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ beta two
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   …/spice-tui-next-history-search · gpt-5.5 medium · dune: ✗   ? for shortcuts|}]
 
 (* ctrl+r borrows the current draft as an empty query; esc closes the search
-   and restores the exact draft that was displaced, even with no stored
-   history — the surface is the composer's, not the list's. *)
+   and restores the exact draft that was displaced — the surface is the
+   composer's, not the list's. *)
 let%expect_test "ctrl+r borrows the draft and esc restores it" =
-  Tui.run ~name:"history-esc" @@ fun t ->
-  Tui.settle t;
+  Tui.run ~name:"history-esc" ~provider:script @@ fun t ->
+  reach_transcript t;
   Tui.keys t "keep me";
   Tui.settle t;
   Tui.keys t Keys.ctrl_r;
   Tui.settle t;
   Tui.print t;
   [%expect {|01 |
-02 |
-03 |
-04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-06 |
-07 |                            dev · openai/gpt-5.5 medium
-08 |
-09 |      ▎ welcome — and thanks for trying spice this early.
-10 |      ▎ it's experimental: sessions and config may change without migration.
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
 11 |
-12 |           reverse-i-search:
-13 |             no prompt history
-14 |           ────────────────────────────────────────────────────────────
-15 |           ⌕ search history
-16 |           ────────────────────────────────────────────────────────────
+12 |
+13 |
+14 |
+15 |
+16 |
 17 |
-18 |                      dune       ✗ · diagnostics unavailable
-19 |                      account    none — /login to connect
-20 |
-21 |                       sandbox: danger-full-access (config)
-22 |
-23 |
+18 |
+19 | reverse-i-search:
+20 | ❯ say hello
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ⌕ search history
+23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   ↵ insert · esc cancel · type to search                             ⌕ history|}];
   Tui.keys t Keys.escape;
   Tui.settle t;
   Tui.print t;
   [%expect {|01 |
-02 |
-03 |
-04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-06 |
-07 |                            dev · openai/gpt-5.5 medium
-08 |
-09 |      ▎ welcome — and thanks for trying spice this early.
-10 |      ▎ it's experimental: sessions and config may change without migration.
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
 11 |
-12 |           ────────────────────────────────────────────────────────────
-13 |           ❯ keep me
-14 |           ────────────────────────────────────────────────────────────
+12 |
+13 |
+14 |
 15 |
-16 |                      dune       ✗ · diagnostics unavailable
-17 |                      account    none — /login to connect
+16 |
+17 |
 18 |
-19 |                       sandbox: danger-full-access (config)
+19 |
 20 |
-21 |
-22 |
-23 |
-24 |   ! not logged in · /login · …tui-next-history-esc · gpt-5.5 medium · dune: ✗|}]
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ keep me
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   …/tmp/spice-tui-next-history-esc · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
 
-(* A query matching no stored prompt shows the muted "no matching prompts" note
-   (distinct from the empty "no prompt history"). *)
+(* A query matching no stored prompt shows the muted "no matching prompts"
+   note. *)
 let%expect_test "ctrl+r shows the no-match note" =
-  Tui.run ~name:"history-nomatch" ~seed:(fun p ->
+  Tui.run ~name:"history-nomatch" ~provider:script ~seed:(fun p ->
       Seed.history p [ Seed.history_entry ~ts:1000 "alpha one" ])
   @@ fun t ->
-  Tui.settle t;
+  reach_transcript t;
   Tui.keys t Keys.ctrl_r;
   Tui.settle t;
-  Tui.keys t "zzz";
+  Tui.keys t "zzq";
   Tui.settle t;
   Tui.print t;
   [%expect {|01 |
-02 |
-03 |
-04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-06 |
-07 |                            dev · openai/gpt-5.5 medium
-08 |
-09 |      ▎ welcome — and thanks for trying spice this early.
-10 |      ▎ it's experimental: sessions and config may change without migration.
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
 11 |
-12 |           reverse-i-search: zzz
-13 |             no matching prompts
-14 |           ────────────────────────────────────────────────────────────
-15 |           ⌕ zzz
-16 |           ────────────────────────────────────────────────────────────
+12 |
+13 |
+14 |
+15 |
+16 |
 17 |
-18 |                      dune       ✗ · diagnostics unavailable
-19 |                      account    none — /login to connect
-20 |
-21 |                       sandbox: danger-full-access (config)
-22 |
-23 |
+18 |
+19 | reverse-i-search: zzq
+20 |   no matching prompts
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ⌕ zzq
+23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   ↵ insert · esc cancel · type to search                             ⌕ history|}]
