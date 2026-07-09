@@ -44,9 +44,10 @@ module Client : sig
 
       [`Public] sends [client_id] in the form body. [`Secret_post secret] sends
       [client_id] and [client_secret] in the form body. [`Secret_basic secret]
-      sends an [Authorization] header built from the form-encoded client id and
-      secret, and omits client credentials from the form body. Both secret
-      variants contain client secret material. *)
+      sends [Authorization: Basic base64(form(client_id) ^ ":" ^ form(secret))]
+      and omits client credentials from the form body, where [form] uses the
+      same encoding rules as {!encode_form}. Both secret variants contain
+      client secret material. *)
 
   type t
   (** OAuth client identity and authentication method. *)
@@ -235,7 +236,8 @@ module Response : sig
   val json : t -> (Jsont.json, malformed) result
   (** [json t] parses [t.body] as JSON.
 
-      Invalid JSON is returned through the {!malformed} record shape. *)
+      Invalid JSON is returned through the {!malformed} record shape. This
+      function does not inspect [Content-Type]. *)
 
   val error_of_non_success : t -> decode_error
   (** [error_of_non_success t] classifies a non-success response.
@@ -243,6 +245,9 @@ module Response : sig
       Well-formed OAuth errors are preferred over generic HTTP errors. Invalid
       JSON and JSON without an OAuth error become [`Http t]. Malformed OAuth
       error objects become [`Malformed _].
+
+      Classification is based on status and body shape, not response
+      [Content-Type].
 
       Callers with provider-specific pending or retry statuses should handle
       those statuses before calling this function. *)
@@ -256,7 +261,9 @@ module Response : sig
 
       [parse] runs only for successful responses. It may return [`Oauth _] when
       a successful response body itself contains a protocol-level OAuth error,
-      or [`Malformed _] when the success payload has the wrong shape. *)
+      or [`Malformed _] when the success payload has the wrong shape.
+      Classification is based on status and body shape, not response
+      [Content-Type]. *)
 end
 
 (** {1:pkce PKCE and State} *)
@@ -355,7 +362,11 @@ module Token : sig
   val field : string -> t -> Jsont.json option
   (** [field name t] is the first raw field named [name], if present.
 
-      This is for provider extensions. It may expose secret-bearing fields. *)
+      This is for provider extensions. It may expose secret-bearing fields.
+      Duplicate unknown provider fields are not rejected by {!parse}; this
+      accessor returns the first binding. Use {!Json.required} or
+      {!Json.optional} when provider-specific singleton fields need duplicate
+      detection. *)
 
   val field_string : string -> t -> string option
   (** [field_string name t] is the raw string field named [name], if present.
@@ -418,7 +429,8 @@ module Request : sig
   (** [headers t] is [t]'s HTTP headers in insertion order.
 
       Standard builders include only headers required by client authentication;
-      interpreters may add transport headers such as [Content-Type]. *)
+      interpreters may add transport headers such as [Content-Type]. Headers may
+      contain secret material for [`Secret_basic] clients. *)
 
   val params : _ t -> (string * string) list
   (** [params t] is [t]'s form parameters in insertion order.
@@ -579,7 +591,9 @@ module Grant : sig
 
       The request decoder parses 2xx JSON with {!Token.parse}. Non-2xx responses
       with well-formed OAuth error bodies decode as [`Oauth _]; non-2xx
-      responses without OAuth errors decode as [`Http _]. *)
+      responses with malformed OAuth error bodies decode as [`Malformed _];
+      non-2xx responses without OAuth errors decode as [`Http _]. Malformed 2xx
+      success bodies decode as [`Malformed _]. *)
 end
 
 (** {1:authorization Authorization Code Flow} *)
@@ -665,10 +679,12 @@ module Authorization : sig
       [uri] must target [redirect_uri t]. If [redirect_uri t] contains query
       parameters, the callback URI must contain those exact decoded bindings;
       duplicates included. Additional callback query parameters are allowed. URI
-      fragments are ignored for target comparison. The [state] parameter is
-      required, must be unique, and must match [t]. OAuth callback errors are
-      surfaced only after state validation succeeds. Successful callbacks
-      require a unique [code] parameter and return a checked authorization code.
+      fragments are ignored for target comparison and are not searched for
+      [code], [state], or OAuth error fields. Callback fields are read from the
+      URI query only. The [state] parameter is required, must be unique, and must
+      match [t]. OAuth callback errors are surfaced only after state validation
+      succeeds. Successful callbacks require a unique [code] parameter and
+      return a checked authorization code.
   *)
 
   val code : code -> string
@@ -715,6 +731,7 @@ module Revocation : sig
 
       The request decoder returns [Ok ()] for any 2xx response and ignores the
       response body. Non-2xx responses with well-formed OAuth error bodies
-      decode as [`Oauth _]; non-2xx responses without OAuth errors decode as
+      decode as [`Oauth _]; non-2xx responses with malformed OAuth error bodies
+      decode as [`Malformed _]; non-2xx responses without OAuth errors decode as
       [`Http _]. *)
 end
