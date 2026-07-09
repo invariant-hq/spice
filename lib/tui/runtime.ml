@@ -802,15 +802,12 @@ let load_mention_dir ~stdenv ~cwd dir =
   in
   Result.map_error Spice_workspace_fs.Error.message result
 
-(* Prompt-history I/O: one global JSONL shared with the old TUI, next to the
-   auth store (the codec and load semantics live in {!History}; the runtime
-   owns the path, the read, and the locked append — history.mli). Ported from
-   the old TUI's prompt_history.ml so both frontends interoperate on the same
-   file and lock. *)
+(* Prompt-history I/O: one machine-local JSONL in state home (the codec and load
+   semantics live in {!History}; the runtime owns the path, read, and locked
+   append — history.mli). *)
 let history_path host =
   let config = Spice_host.Host.config host in
-  Spice_host.Config.auth_store_path config
-  |> Spice_path.Abs.to_string |> Filename.dirname
+  Spice_host.Config.state_home config |> Spice_path.Abs.to_string
   |> fun dir -> Filename.concat dir "history.jsonl"
 
 (* The cross-process lock is a sidecar [.lock] acquired without an uncancellable
@@ -1817,6 +1814,15 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                   review_repo_ref := Some repo;
                   Ok repo)
         in
+        let review_store_dir root =
+          let config = Spice_host.Host.config host in
+          let data_root =
+            Spice_host.Config.data_home config |> Spice_path.Abs.to_string
+          in
+          Spice_host.Workspace_state.ensure ~fs:(Eio.Stdenv.fs stdenv)
+            ~data_root ~root
+          |> Result.map Spice_host.Workspace_state.reviews_dir
+        in
         let open_review_snapshot base_spec =
           let proc = Eio.Stdenv.process_mgr stdenv in
           let fs = Eio.Stdenv.fs stdenv in
@@ -1841,6 +1847,7 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                   | Ok load ->
                       let root = Spice_review_git.root repo in
                       let key = Spice_review_git.Records.key ~base in
+                      let* dir = review_store_dir root in
                       Ok
                         (Spice_tui_review.snapshot ~root ~base
                            ~range:(spec ^ "..worktree") ~store_key:key
@@ -1851,7 +1858,7 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                            ~crs:load.Spice_review.Live.crs
                            ~fingerprint:load.Spice_review.Live.fingerprint
                            ?persisted:
-                             (Spice_review_git.Records.load ~fs ~root ~key)
+                             (Spice_review_git.Records.load ~fs ~dir ~key)
                            ())))
         in
         let review_reload ~root ~base ~known =
@@ -2383,15 +2390,21 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                               (open_review_snapshot base_spec))))
               | Spice_tui_review.Effect.Store { root; key; record } ->
                   perform (fun () ->
-                      match
-                        Spice_review_git.Records.save ~fs:(Eio.Stdenv.fs stdenv)
-                          ~root ~key record
-                      with
+                      match review_store_dir root with
+                      | Error message ->
+                          deliver
+                            (App.review_msg
+                               (Spice_tui_review.save_failed message))
+                      | Ok dir -> (
+                          match
+                            Spice_review_git.Records.save
+                              ~fs:(Eio.Stdenv.fs stdenv) ~dir ~key record
+                          with
                       | Ok () -> ()
                       | Error message ->
                           deliver
                             (App.review_msg
-                               (Spice_tui_review.save_failed message)))
+                               (Spice_tui_review.save_failed message))))
               | Spice_tui_review.Effect.Watch { root } ->
                   perform (fun () -> start_review_watch ~root)
               | Spice_tui_review.Effect.Watch_stop ->

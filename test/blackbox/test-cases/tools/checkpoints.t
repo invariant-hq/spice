@@ -40,6 +40,12 @@ checkpoint when the turn finishes because shell ran.
   goodbye world
   $ cat repo/unattributed.txt
   drift
+  $ find "$SPICE_TEST_DATA_HOME/workspaces" -name workspace.json | wc -l | tr -d ' '
+  1
+  $ find "$SPICE_TEST_DATA_HOME/workspaces" -type d -name checkpoints.git | wc -l | tr -d ' '
+  1
+  $ test ! -e repo/.spice && echo no-project-state
+  no-project-state
 
 Diff renders the typed change and attributes the shell-created path from
 the bounded checkpoint pair, marked as not revertable.

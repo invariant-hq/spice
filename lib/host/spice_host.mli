@@ -30,6 +30,9 @@ module Config = Config
 module User_dirs = User_dirs
 (** User config, durable-data, and machine-state directory resolution. *)
 
+module Workspace_state = Workspace_state
+(** Global checkpoint and review state keyed by canonical workspace root. *)
+
 module Trust = Trust
 (** Workspace trust store: a dormant seam recording granted workspace roots. *)
 

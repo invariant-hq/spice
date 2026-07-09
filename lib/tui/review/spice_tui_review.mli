@@ -51,8 +51,8 @@ module Effect : sig
         (** Resolve [base_spec] (default [HEAD]) and load the first feature
             snapshot; complete with {!opened}. *)
     | Store of { root : string; key : string; record : Spice_review.Persist.t }
-        (** Persist [record] under [.spice/reviews] keyed by [key]. Fire-and-
-            forget. *)
+        (** Persist [record] in global workspace state keyed by [key].
+            Fire-and-forget. *)
     | Watch of { root : string }  (** Start watching the worktree at [root]. *)
     | Watch_stop  (** Stop the active worktree watch. *)
     | Sleep of { request : Spice_review.Live.Request.t; seconds : float }

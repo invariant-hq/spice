@@ -28,8 +28,9 @@ let run ?env ?rows ?cols project f = Term.run ?env ?rows ?cols project f
    preview echo. Mirrors [Seed.prompt_session_titled] with a settable
    [updated_at]. *)
 let seed_prompt_session project id ~title ~prompt ~updated_at_ms =
-  Project.write project
-    (Filename.concat ".spice/sessions" (Filename.concat id "session.json"))
+  Util.write_file
+    (Project.data project
+       (Filename.concat "sessions" (Filename.concat id "session.json")))
     (Printf.sprintf
        {|{"version":1,"id":"%s","metadata":{"title":"%s","status":"active","cwd":"%s","created_at":1,"updated_at":%Ld},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"%s"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}},{"type":"turn_finished","turn":"turn-1","outcome":{"type":"completed"}}]}|}
        id title (Project.root project) updated_at_ms prompt)

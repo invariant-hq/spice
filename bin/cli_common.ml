@@ -514,6 +514,11 @@ let log_timestamp () =
     (tm.Unix.tm_mon + 1) tm.Unix.tm_mday tm.Unix.tm_hour tm.Unix.tm_min
     tm.Unix.tm_sec ms
 
+let log_run_id =
+  Printf.sprintf "%Ld-%d"
+    (Int64.of_float (Unix.gettimeofday () *. 1_000_000.))
+    (Unix.getpid ())
+
 (* Every message flushes so a crashed or killed process keeps its trail. *)
 let log_reporter oc =
   let formatter = Format.formatter_of_out_channel oc in
@@ -528,8 +533,8 @@ let log_reporter oc =
     in
     msgf @@ fun ?header:_ ?tags:_ fmt ->
     Format.kfprintf k formatter
-      ("%s [%d] %a [%s] @[" ^^ fmt ^^ "@]@.")
-      (log_timestamp ()) pid Logs.pp_level level (Logs.Src.name src)
+      ("%s [%d] [run=%s] %a [%s] @[" ^^ fmt ^^ "@]@.")
+      (log_timestamp ()) pid log_run_id Logs.pp_level level (Logs.Src.name src)
   in
   { Logs.report }
 
@@ -550,27 +555,89 @@ let open_log_file path =
   | oc -> oc
   | exception Sys_error message -> log_env_failure "SPICE_LOG_FILE" message
 
+let rec mkdir_p dir =
+  if not (Sys.file_exists dir) then (
+    mkdir_p (Filename.dirname dir);
+    try Unix.mkdir dir 0o700
+    with Unix.Unix_error (Unix.EEXIST, _, _) -> ())
+
+let state_home_or_fail () =
+  match Spice_host.User_dirs.state_home Sys.getenv_opt with
+  | Ok home -> home
+  | Error error ->
+      log_env_failure "SPICE_STATE_HOME"
+        (Spice_host.User_dirs.Error.message error)
+
+let cleanup_dir ~keep ~suffix ~current dir =
+  let entries =
+    try
+      Sys.readdir dir |> Array.to_list
+      |> List.filter_map (fun name ->
+             let path = Filename.concat dir name in
+             if String.equal path current || not (Filename.check_suffix name suffix)
+             then None
+             else
+               try Some ((Unix.stat path).Unix.st_mtime, path)
+               with Unix.Unix_error _ -> None)
+      |> List.sort (fun (left, _) (right, _) -> Float.compare right left)
+    with Sys_error _ -> []
+  in
+  List.drop (Int.max 0 (keep - 1)) entries
+  |> List.iter (fun (_, path) ->
+         try Unix.unlink path
+         with Unix.Unix_error _ | Sys_error _ -> ())
+
+let save_latest_log ~dir ~path =
+  let latest = Filename.concat dir "latest.json" in
+  let tmp = latest ^ ".tmp." ^ string_of_int (Unix.getpid ()) in
+  let text = Printf.sprintf {|{"run_id":%S,"path":%S}\n|} log_run_id path in
+  try
+    let oc = open_out_gen [ Open_wronly; Open_creat; Open_excl ] 0o600 tmp in
+    Fun.protect ~finally:(fun () -> close_out_noerr oc) (fun () ->
+        output_string oc text);
+    Unix.rename tmp latest
+  with Sys_error _ | Unix.Unix_error _ -> (
+    try Unix.unlink tmp with Unix.Unix_error _ -> ())
+
 let setup_log () =
   Logs_threaded.enable ();
   Logs.set_level ~all:true (log_level_of_env ());
   match Sys.getenv_opt "SPICE_LOG_FILE" with
+  | Some path when Filename.is_relative path ->
+      log_env_failure "SPICE_LOG_FILE" "must be an absolute path"
   | Some path -> Logs.set_reporter (log_reporter (open_log_file path))
   | None -> Logs.set_reporter (log_reporter stderr)
 
 (* The TUI owns the terminal, so stderr logging would corrupt the screen.
-   When logging is on with no explicit destination, divert it to a file under
-   the config home before the runtime takes over. *)
+   When logging is on with no explicit destination, divert it to a per-process
+   file under state home before the runtime takes over. *)
 let divert_logs_for_tui () =
   match (Logs.level (), Sys.getenv_opt "SPICE_LOG_FILE") with
   | None, _ | Some _, Some _ -> ()
   | Some _, None ->
-      let home = Spice_host.User_dirs.config_home Sys.getenv_opt in
-      let rec mkdir_p dir =
-        if not (Sys.file_exists dir) then (
-          mkdir_p (Filename.dirname dir);
-          try Unix.mkdir dir 0o700
-          with Unix.Unix_error (Unix.EEXIST, _, _) -> ())
-      in
-      mkdir_p home;
-      let oc = open_log_file (Filename.concat home "spice.log") in
-      Logs.set_reporter (log_reporter oc)
+      let dir = Filename.concat (state_home_or_fail ()) "logs" in
+      mkdir_p dir;
+      let path = Filename.concat dir (log_run_id ^ ".log") in
+      let oc = open_log_file path in
+      Logs.set_reporter (log_reporter oc);
+      save_latest_log ~dir ~path;
+      cleanup_dir ~keep:20 ~suffix:".log" ~current:path dir
+
+let write_crash_report ~version () =
+  match Spice_host.User_dirs.state_home Sys.getenv_opt with
+  | Error _ -> ()
+  | Ok home -> (
+      let dir = Filename.concat home "crashes" in
+      let path = Filename.concat dir (log_run_id ^ ".txt") in
+      try
+        mkdir_p dir;
+        let oc = open_out_gen [ Open_wronly; Open_creat; Open_excl ] 0o600 path in
+        Fun.protect
+          ~finally:(fun () -> close_out_noerr oc)
+          (fun () ->
+            Printf.fprintf oc
+              "spice_version=%s\nrun_id=%s\npid=%d\nkind=uncaught_exception\n%s"
+              version log_run_id (Unix.getpid ())
+              (Printexc.get_backtrace ()));
+        cleanup_dir ~keep:20 ~suffix:".txt" ~current:path dir
+      with Sys_error _ | Unix.Unix_error _ -> ())

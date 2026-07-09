@@ -4,6 +4,8 @@ danger-full-access runs commands without confinement. The suite default
 posture comes from the setup script (SPICE_SANDBOX_MODE=danger-full-access);
 these cases override it per invocation.
 
+  $ git init -q
+
   $ cat > sandbox-run.jsonl <<'JSONL'
   > {"expect":{"body_contains":["sandbox prompt","\"name\":\"shell\""]},"response":{"id":"resp-sandbox-1","status":"completed","model":"gpt-5.5","usage":{"input_tokens":5,"output_tokens":2},"output":[{"type":"function_call","id":"item-sandbox","call_id":"call-sandbox","name":"shell","arguments":"{\"command\":\"printf sandbox-ok\"}"}]}}
   > {"expect":{"body_contains":["function_call_output","call-sandbox","sandbox-ok","exited 0"]},"response":{"id":"resp-sandbox-2","status":"completed","model":"gpt-5.5","usage":{"input_tokens":9,"output_tokens":3},"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"sandbox final"}]}]}}
@@ -154,7 +156,7 @@ metadata and environment stripping facts, without secret values.
   network=restricted
   readable=/ (read-only)
   writable=$ROOTS
-  protected=.git,.spice,./.spice,./xdg-config/spice
+  protected=.git,.spice,./.spice,./xdg-config/spice,./xdg-data/spice,./xdg-state/spice
   environment=inherited $N, stripped $M
   toolchain=$TOOLCHAIN
   origin sandbox.mode=env SPICE_SANDBOX_MODE

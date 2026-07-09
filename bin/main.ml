@@ -54,7 +54,8 @@ let command =
       Cmd.Env.info "SPICE_LOG_FILE"
         ~doc:
           "Append diagnostics to this file instead of stderr. The interactive \
-           TUI defaults to $(b,spice.log) under the config home.";
+           TUI defaults to a per-process file under the state home. The path \
+           must be absolute.";
       Cmd.Env.info "SPICE_MODEL"
         ~doc:"Model selector override, as $(b,provider/model).";
       Cmd.Env.info "SPICE_SMALL_MODEL"
@@ -109,7 +110,7 @@ let rewrite_run argv =
       Array.of_list (exe :: "run" :: "start" :: token :: rest)
   | _ -> argv
 
-let () =
+let main () =
   (* Record backtraces process-wide so an uncaught exception carries a
      diagnosable trace: in the TUI matrix's handler prints it, and in a headless
      command the default runtime handler does — but only if backtraces were
@@ -135,3 +136,11 @@ let () =
   let code = Cmd.eval' ~argv command in
   Log.debug (fun m -> m "exiting status=%d" code);
   exit code
+
+let () =
+  match main () with
+  | () -> ()
+  | exception exn ->
+      let backtrace = Printexc.get_raw_backtrace () in
+      Cli_common.write_crash_report ~version ();
+      Printexc.raise_with_backtrace exn backtrace

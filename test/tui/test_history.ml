@@ -9,11 +9,9 @@
    run, so like the composer tests these need only the real spice binary.
 
    Isolation (verified before writing): the harness (Project.env) overrides HOME
-   and XDG_CONFIG_HOME into <root>.xdg/{home,config}, outside the project root,
-   and with_temp deletes them on exit. lib/host/config_home.ml resolves the
-   config dir from an absolute XDG_CONFIG_HOME first (non-Windows), so the auth
-   store — and history.jsonl beside it — land at
-   <root>.xdg/config/spice/history.jsonl. No test can touch a real user path.
+   and XDG_STATE_HOME outside the project root, and with_temp deletes them on
+   exit. The history lands at <root>.xdg/state/spice/history.jsonl. No test can
+   touch a real user path.
 
    History is seeded by writing that JSONL directly {e before} launch rather than
    by discarding drafts in-session: a ctrl+c/esc discard does NOT currently reach
@@ -28,11 +26,9 @@ let reduced_motion = [ ("SPICE_REDUCED_MOTION", "1") ]
 let print_fact = Util.print_fact
 let run ?env ?rows ?cols project f = Term.run ?env ?rows ?cols project f
 
-(* The deterministic history path under the harness's isolated config home. *)
+(* The deterministic history path under the harness's isolated state home. *)
 let history_path project =
-  List.fold_left Filename.concat
-    (Project.root project ^ ".xdg")
-    [ "config"; "spice"; "history.jsonl" ]
+  Project.state project "history.jsonl"
 
 (* One [composer.history_entry] line in the shared schema the runtime loads. The
    session id is any non-empty string; the loader ranks it as an earlier session

@@ -394,7 +394,7 @@
    (diff? test_threads.ml test_threads.ml.corrected))))
 
 ; The review screen opens over a real git worktree diff; marks, verdict, and CR
-; edits round-trip .spice/reviews. The "task spice" case submits a real turn, so
+; edits round-trip global workspace review state. The "task spice" case submits a real turn, so
 ; the exe depends on the fake provider server like the transcript tests.
 
 (rule

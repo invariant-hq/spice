@@ -149,9 +149,8 @@ let nul_fields output =
     (String.split_on_char '\000' output)
 
 (* Workspace meta directories are never review content even when the
-   repository does not gitignore them — notably [.spice], whose review-state
-   records would otherwise review themselves. Same set as the host watchers'
-   default ignore. *)
+   repository does not gitignore them. Same set as the host watchers' default
+   ignore. *)
 let meta_path rel =
   List.exists
     (function ".git" | ".spice" | "_build" | "_opam" -> true | _ -> false)
@@ -530,17 +529,15 @@ let glance_if_changed t ~base ~known =
               | Ok crs -> Ok (`Loaded { stats; crs; fingerprint = current }))))
 
 module Records = struct
-  let dir root = Filename.concat root (Filename.concat ".spice" "reviews")
-
   let key ~base =
     Spice_digest.key ~length:16 ~domain:"spice.review_git.worktree-record.v1"
       [ base ]
 
-  let path root key = Filename.concat (dir root) (key ^ ".json")
+  let path dir key = Filename.concat dir (key ^ ".json")
   let keep = 20
 
-  let load ~fs ~root ~key =
-    match Eio.Path.load (Eio.Path.( / ) fs (path root key)) with
+  let load ~fs ~dir ~key =
+    match Eio.Path.load (Eio.Path.( / ) fs (path dir key)) with
     | exception _ -> None
     | text -> (
         match Jsont_bytesrw.decode_string Spice_review.Persist.jsont text with
@@ -578,18 +575,17 @@ module Records = struct
                         (Printexc.to_string exn)))
             sorted
 
-  let save ~fs ~root ~key record =
+  let save ~fs ~dir ~key record =
     match Jsont_bytesrw.encode_string Spice_review.Persist.jsont record with
     | Error message -> Error message
     | Ok text -> (
-        let store_dir = dir root in
         match
-          Eio.Path.mkdirs ~exists_ok:true ~perm:0o755
-            (Eio.Path.( / ) fs store_dir)
+          Eio.Path.mkdirs ~exists_ok:true ~perm:0o700
+            (Eio.Path.( / ) fs dir)
         with
         | exception exn -> Error (Printexc.to_string exn)
         | () -> (
-            let target = path root key in
+            let target = path dir key in
             let tmp = target ^ ".tmp" in
             (try Eio.Path.unlink (Eio.Path.( / ) fs tmp)
              with exn ->
@@ -604,7 +600,7 @@ module Records = struct
             | exception exn -> Error (Printexc.to_string exn)
             | () ->
                 Log.debug (fun m -> m "review record saved key=%s" key);
-                prune ~fs store_dir;
+                prune ~fs dir;
                 Ok ()))
 end
 

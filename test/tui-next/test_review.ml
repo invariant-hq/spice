@@ -13,7 +13,7 @@ open Tui_next_harness
    esc/close QUITS (no stage behind it). One test opens the in-app way, [/review]
    from
    the home stage, where esc returns to the stage. Marks and the verdict write the
-   review store under [.spice/reviews]; CRs write comments into the source. *)
+   global workspace review store; CRs write comments into the source. *)
 
 let sample_code = "let alpha = 1\nlet beta = 2\nlet gamma = 33\nlet delta = 4\n"
 let base_code = "let alpha = 1\nlet beta = 2\nlet gamma = 3\nlet delta = 4\n"
@@ -25,17 +25,16 @@ let seed_diff project =
   Project.git_baseline project;
   Project.write project "lib/code.ml" sample_code
 
-(* The review store the screen persists marks/verdicts to, under
-   [.spice/reviews/<key>.json] — the key is a base..tip hash the test does not
-   predict, so scan the directory for the persisted word (a non-visual observable,
-   the sanctioned narrow fact use). *)
+(* The review store uses opaque workspace and review keys, so scan the isolated
+   data home for the persisted word (a sanctioned narrow non-visual fact). *)
 let reviews_store_has project needle =
-  let dir = Filename.concat (Project.root project) ".spice/reviews" in
-  Sys.file_exists dir
-  && Array.exists
-       (fun name ->
-         Util.contains (Util.read_file (Filename.concat dir name)) needle)
-       (Sys.readdir dir)
+  let rec scan path =
+    if Sys.is_directory path then
+      Sys.readdir path |> Array.exists (fun name -> scan (Filename.concat path name))
+    else Util.contains (Util.read_file path) needle
+  in
+  let dir = Project.data project "workspaces" in
+  Sys.file_exists dir && scan dir
 
 let fact label b = print_string (Printf.sprintf "%s: %b\n" label b)
 
@@ -79,9 +78,9 @@ let%expect_test "the review screen marks, approves, and shows the verdict" =
 23 |
 24 | tab focus diff · space mark · enter open · c comment · a approve · t task spice|}];
   (* The verdict persisted to the review store, not just the screen. *)
-  fact "verdict persisted to .spice/reviews"
+  fact "verdict persisted to global workspace state"
     (reviews_store_has (Tui.project t) "approved");
-  [%expect {| verdict persisted to .spice/reviews: true |}]
+  [%expect {| verdict persisted to global workspace state: true |}]
 
 (* {2 The empty and error states} *)
 

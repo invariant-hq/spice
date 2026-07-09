@@ -210,19 +210,18 @@ module Backend = struct
     in
     if not inside_work_tree then None
     else
-      let key =
-        Spice_digest.key ~length:16 ~domain:"spice.host.mutations.git-tree.v1"
-          [ workspace_root ]
-      in
-      let git_dir =
-        Filename.concat (Filename.concat data_root "checkpoints") key
-      in
+      let workspace_dir = Workspace_state.dir ~data_root ~root:workspace_root in
+      let git_dir = Workspace_state.checkpoint_dir workspace_dir in
       let git args = run ([ "git"; "--git-dir"; git_dir ] @ args) in
       let git_work args =
         run
           ([ "git"; "--git-dir"; git_dir; "--work-tree"; workspace_root ] @ args)
       in
       let initialized =
+        let* workspace_dir =
+          Workspace_state.ensure ~fs ~data_root ~root:workspace_root
+        in
+        let git_dir = Workspace_state.checkpoint_dir workspace_dir in
         match Eio.Path.kind ~follow:true (Eio.Path.( / ) fs git_dir) with
         | `Directory -> Ok ()
         | _ -> (

@@ -23,6 +23,8 @@ let path t local = Filename.concat t.root local
 let scratch t local = Filename.concat (t.root ^ ".xdg") local
 let write t local text = Util.write_file (path t local) text
 let read t local = Util.read_file (path t local)
+let data t local = scratch t (Filename.concat "data/spice" local)
+let state t local = scratch t (Filename.concat "state/spice" local)
 
 let bindings ?openai_base_url ?(extra = []) t =
   (* Keep the home/XDG scratch dirs OUTSIDE the workspace root: created inside
@@ -31,16 +33,22 @@ let bindings ?openai_base_url ?(extra = []) t =
   let home = Filename.concat xdg "home" in
   let config = Filename.concat xdg "config" in
   let cache = Filename.concat xdg "cache" in
+  let data = Filename.concat xdg "data" in
   let runtime = Filename.concat xdg "runtime" in
+  let state = Filename.concat xdg "state" in
   Util.mkdir_p home;
   Util.mkdir_p config;
   Util.mkdir_p cache;
+  Util.mkdir_p data;
   Util.mkdir_p runtime;
+  Util.mkdir_p state;
   [
     ("HOME", home);
     ("XDG_CONFIG_HOME", config);
     ("XDG_CACHE_HOME", cache);
+    ("XDG_DATA_HOME", data);
     ("XDG_RUNTIME_DIR", runtime);
+    ("XDG_STATE_HOME", state);
     ("TERM", "xterm-256color");
     ("SPICE_AUTO_TITLE", "0");
     (* Reduced motion by default: without live animation the app sits in the

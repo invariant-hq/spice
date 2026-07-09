@@ -1966,28 +1966,29 @@ module Files = struct
 
   let load ~stdenv t kind = load_path ~stdenv (path_string t kind)
 
-  let before_project_local_write stdenv path () =
-    ensure_project_local_gitignore stdenv path
+  let before_project_write stdenv t () =
+    ensure_project_local_gitignore stdenv (path_string t Project_local)
 
   let edit ~stdenv t kind ~f =
     let path = path_string t kind in
     match kind with
-    | User | Project ->
+    | User ->
         edit_path ~stdenv ~path ~before_write:(fun () -> Ok ()) ~f
-    | Project_local ->
-        edit_path ~stdenv ~path
-          ~before_write:(before_project_local_write stdenv path)
-          ~f
+    | Project | Project_local ->
+        edit_path ~stdenv ~path ~before_write:(before_project_write stdenv t) ~f
 
   let ensure ~stdenv t kind =
     let path = path_string t kind in
     match kind with
-    | User | Project -> ensure_path ~stdenv ~path ()
+    | User -> ensure_path ~stdenv ~path ()
+    | Project ->
+        ensure_path ~stdenv ~path ~before_write:(before_project_write stdenv t)
+          ()
     | Project_local when file_exists stdenv path ->
-        ensure_project_local_gitignore stdenv path
+      ensure_project_local_gitignore stdenv path
     | Project_local ->
         ensure_path ~stdenv ~path
-          ~before_write:(before_project_local_write stdenv path)
+          ~before_write:(before_project_write stdenv t)
           ()
 end
 

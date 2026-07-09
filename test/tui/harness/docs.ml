@@ -57,7 +57,7 @@ let session_doc_of_json json =
   { id; event_count; forked_from }
 
 let session_docs project =
-  let root = Project.path project ".spice/sessions" in
+  let root = Project.data project "sessions" in
   if not (Sys.file_exists root && Sys.is_directory root) then []
   else
     Sys.readdir root |> Array.to_list |> List.sort String.compare

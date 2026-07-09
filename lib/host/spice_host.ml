@@ -6,6 +6,7 @@
 module Env = Env
 module Config = Config
 module User_dirs = User_dirs
+module Workspace_state = Workspace_state
 module Trust = Trust
 module Host = Host
 module Account = Account

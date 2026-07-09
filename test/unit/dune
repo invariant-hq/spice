@@ -272,6 +272,11 @@
  (libraries windtrap spice_host))
 
 (test
+ (name test_workspace_state)
+ (modules test_workspace_state)
+ (libraries windtrap spice_host eio eio_main))
+
+(test
  (name test_provider)
  (modules test_provider)
  (libraries

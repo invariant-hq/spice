@@ -14,7 +14,7 @@
 
    Blackbox coverage for the ported review screen (doc/ui-design/11-review.md):
    /review opens the two-pane screen over the worktree diff; marks and the
-   verdict persist under .spice/reviews/ across processes; CR add/resolve write
+   verdict persist under global workspace state across processes; CR add/resolve write
    the source comment in the CR/XCR grammar; the live watcher refreshes the
    queue; a missing repository shows the problem line. The `spice review` startup
    subcommand is deferred (plan §divergence 6), so every case opens via the
@@ -86,7 +86,7 @@ let%expect_test "review screen marks, approves, and persists" =
 22 |                                 │
 23 |
 24 | tab focus diff · space mark · enter open · c comment · a approve · t task spice|}];
-  (* Reopen: marks, verdict, and orientation come back from .spice/reviews. *)
+  (* Reopen: marks, verdict, and orientation come back from workspace state. *)
   ( run project @@ fun t ->
     open_review t;
     Term.wait t (Screen.has "approved");

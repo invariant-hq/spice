@@ -330,9 +330,11 @@ let records_save_load_and_prune () =
   with_repo @@ fun ~proc:_ ~fs ~dir ~git:_ ->
   let record, review, scope = review_record () in
   let key = Git.Records.key ~base:"base" in
-  expect_string_ok "save record" (Git.Records.save ~fs ~root:dir ~key record);
+  let store_dir = Filename.concat dir "reviews" in
+  expect_string_ok "save record"
+    (Git.Records.save ~fs ~dir:store_dir ~key record);
   let loaded =
-    match Git.Records.load ~fs ~root:dir ~key with
+    match Git.Records.load ~fs ~dir:store_dir ~key with
     | Some record -> record
     | None -> failf "expected saved record"
   in
@@ -346,16 +348,13 @@ let records_save_load_and_prune () =
     (match Review.verdict_freshness restored with
     | `Approved -> true
     | `Pending | `Stale -> false);
-  let store_dir = Filename.concat dir (Filename.concat ".spice" "reviews") in
-  write dir
-    (Filename.concat (Filename.concat ".spice" "reviews") (key ^ ".json"))
-    "{not valid json";
+  write dir (Filename.concat "reviews" (key ^ ".json")) "{not valid json";
   is_true ~msg:"corrupt records load as absent"
-    (Option.is_none (Git.Records.load ~fs ~root:dir ~key));
+    (Option.is_none (Git.Records.load ~fs ~dir:store_dir ~key));
   for i = 0 to 24 do
     let key = Printf.sprintf "record-%02d" i in
     expect_string_ok ("save " ^ key)
-      (Git.Records.save ~fs ~root:dir ~key record)
+      (Git.Records.save ~fs ~dir:store_dir ~key record)
   done;
   let json_records =
     Sys.readdir store_dir |> Array.to_list

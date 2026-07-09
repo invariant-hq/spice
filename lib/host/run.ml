@@ -118,6 +118,13 @@ let mutations_recorder ~stdenv ~store ~workspace_root =
     | output -> Ok output
     | exception exn -> Error (Printexc.to_string exn)
   in
+  let workspace_root =
+    match
+      run_git [ "git"; "-C"; workspace_root; "rev-parse"; "--show-toplevel" ]
+    with
+    | Ok root when not (String.is_empty (String.trim root)) -> String.trim root
+    | Ok _ | Error _ -> workspace_root
+  in
   Mutations.recorder
     ~log:(Mutations.Log.make ~fs ~root:store_root)
     ?checkpoint:

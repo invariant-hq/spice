@@ -96,13 +96,14 @@ module Backend : sig
       shadow-git backend for [workspace_root], or [None] when the root is not
       inside a git repository or no usable git binary answers [run].
 
-      The shadow git-dir lives below [data_root/checkpoints], keyed by the
-      workspace root; it shares the workspace object database through alternates
-      and respects the workspace ignore files. [capture] stages everything into
-      the persistent shadow index and writes a tree object; the tree hash is the
-      reference. No commits are created. [run argv] executes [argv] and returns
-      raw stdout (snapshot file contents flow through it); it is a function so
-      this module owns no process machinery. *)
+      The shadow git-dir lives below the workspace manifest directory at
+      [data_root/workspaces/<key>/checkpoints.git]; it shares the workspace
+      object database through alternates and respects the workspace ignore
+      files. [capture] stages everything into the persistent shadow index and
+      writes a tree object; the tree hash is the reference. No commits are
+      created. [run argv] executes [argv] and returns raw stdout (snapshot file
+      contents flow through it); it is a function so this module owns no process
+      machinery. *)
 end
 
 (** {1:runtime Recorder} *)

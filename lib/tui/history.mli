@@ -5,12 +5,12 @@
 
 (** Prompt history: the JSONL codec, load semantics, and ctrl+r search.
 
-    Spice persists submitted and discarded drafts to one global
-    newline-delimited JSON file shared with the old TUI (`history.jsonl` next to
-    the auth store). This module owns the on-disk record and the reverse-search
+    Spice persists submitted and discarded drafts to one machine-local
+    newline-delimited JSON file ([history.jsonl] under state home). This module
+    owns the on-disk record and the reverse-search
     surface; it is {b pure} — no file I/O and no locking. The runtime reads the
     file, appends under an F_LOCK, and decides where the file lives (the
-    global-vs-per-workspace keying is deliberately not fixed here); it feeds
+    exact location is deliberately not fixed here); it feeds
     this module the file contents and takes back encoded lines.
 
     {b Format compatibility is a hard constraint}: {!encode} and {!decode} use

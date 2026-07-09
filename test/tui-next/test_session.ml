@@ -24,8 +24,9 @@ let now_ms = 1_000_000
    deterministic under virtual time) and no events, so it lists but replays
    empty. *)
 let seed_session project id ~title ~updated_at_ms =
-  Project.write project
-    (Filename.concat ".spice/sessions" (Filename.concat id "session.json"))
+  Util.write_file
+    (Project.data project
+       (Filename.concat "sessions" (Filename.concat id "session.json")))
     (Printf.sprintf
        {|{"version":1,"id":"%s","metadata":{"title":"%s","status":"active","cwd":"%s","created_at":1,"updated_at":%d},"events":[]}|}
        id title (Project.root project) updated_at_ms)
@@ -44,8 +45,9 @@ let seed_four project =
 (* A resumable session carrying one finished turn, so resuming it replays a real
    transcript. Recent enough to head the recents list. *)
 let seed_prompt project id ~title ~prompt =
-  Project.write project
-    (Filename.concat ".spice/sessions" (Filename.concat id "session.json"))
+  Util.write_file
+    (Project.data project
+       (Filename.concat "sessions" (Filename.concat id "session.json")))
     (Printf.sprintf
        {|{"version":1,"id":"%s","metadata":{"title":"%s","status":"active","cwd":"%s","created_at":1,"updated_at":%d},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"%s"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}},{"type":"turn_finished","turn":"turn-1","outcome":{"type":"completed"}}]}|}
        id title (Project.root project) now_ms prompt)

@@ -1,8 +1,17 @@
 Project-local config updates maintain [.spice/.gitignore].
 
+  $ git init -q
+
 Initialization creates a gitignore entry.
 
   $ spice config init --project-local
+  $ cat .spice/.gitignore
+  config.local.json
+
+Shared project initialization establishes the same local-config protection.
+
+  $ mv .spice .spice-local-init
+  $ spice config init --project
   $ cat .spice/.gitignore
   config.local.json
 

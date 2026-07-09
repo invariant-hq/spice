@@ -23,8 +23,9 @@ let print_fact = Util.print_fact
    replayed transcript's User block. Mirrors [test_sessions_screen]'s seed.
    [updated_at] orders sessions for the newest-session launch flags. *)
 let seed_prompt_session ?(updated_at = 2) project id ~title ~prompt =
-  Project.write project
-    (Filename.concat ".spice/sessions" (Filename.concat id "session.json"))
+  Util.write_file
+    (Project.data project
+       (Filename.concat "sessions" (Filename.concat id "session.json")))
     (Printf.sprintf
        {|{"version":1,"id":"%s","metadata":{"title":"%s","status":"active","cwd":"%s","created_at":1,"updated_at":%d},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"%s"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}},{"type":"turn_finished","turn":"turn-1","outcome":{"type":"completed"}}]}|}
        id title (Project.root project) updated_at prompt)

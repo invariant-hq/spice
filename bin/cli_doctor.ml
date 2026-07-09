@@ -65,6 +65,20 @@ let config_check ~stdenv config =
         details = List.map (fun error -> Config.Error.message error) errors;
       }
 
+let storage_check config =
+  let path accessor = accessor config |> Spice_path.Abs.to_string in
+  {
+    name = "storage";
+    verdict = Pass;
+    details =
+      [
+        "cwd=" ^ path Spice_host.Config.cwd;
+        "project=" ^ path Spice_host.Config.project_root;
+        "data=" ^ path Spice_host.Config.data_home;
+        "state=" ^ path Spice_host.Config.state_home;
+      ];
+  }
+
 (* Passive readiness only: no provider request. The run-blocking case is a
    missing or blocked credential for the provider of the selected main
    model; other providers are informational. *)
@@ -281,6 +295,7 @@ let doctor json cwd =
     | Ok host ->
         [
           config_check ~stdenv (Spice_host.Host.config host);
+          storage_check (Spice_host.Host.config host);
           auth_check ~sw ~stdenv host;
           local_engine_check ();
           toolchain_check host;

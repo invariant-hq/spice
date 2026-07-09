@@ -186,33 +186,33 @@ val glance_if_changed :
 (** {1:records Review records} *)
 
 module Records : sig
-  (** The durable review-record store beside a worktree.
+  (** The durable review-record store in a caller-owned global directory.
 
-      Records live under [.spice/reviews/<key>.json] at the worktree root, keyed
-      by the review's base and mode. Writes are atomic (exclusive-create then
-      rename) and the store is pruned to its newest entries. Restore is
-      validated by {!Spice_review.Persist.restore}, so a missing or corrupt
-      record only costs saved marks. *)
+      Records live at [dir/<key>.json], keyed by the review's base and mode.
+      Writes are atomic (exclusive-create then rename) and the store is pruned
+      to its newest entries. Restore is validated by
+      {!Spice_review.Persist.restore}, so a missing or corrupt record only costs
+      saved marks. *)
 
   val key : base:string -> string
   (** [key ~base] is the record key for a worktree review against [base]. *)
 
   val load :
     fs:Eio.Fs.dir_ty Eio.Path.t ->
-    root:string ->
+    dir:string ->
     key:string ->
     Spice_review.Persist.t option
-  (** [load ~fs ~root ~key] is the saved record under worktree [root], when one
+  (** [load ~fs ~dir ~key] is the saved record under [dir], when one
       exists and decodes; anything else is [None]. *)
 
   val save :
     fs:Eio.Fs.dir_ty Eio.Path.t ->
-    root:string ->
+    dir:string ->
     key:string ->
     Spice_review.Persist.t ->
     (unit, string) result
-  (** [save ~fs ~root ~key record] writes [record] atomically under worktree
-      [root] and prunes the store to its newest entries. *)
+  (** [save ~fs ~dir ~key record] writes [record] atomically under [dir] and
+      prunes the store to its newest entries. *)
 end
 
 (** {1:apply Applying CR mutations} *)

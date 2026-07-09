@@ -5,6 +5,11 @@ says so; everything else is healthy in a fresh workspace.
   $ git init -q .
   $ SPICE_MODEL=openai/gpt-5.5 spice doctor | sed -E 's|^  dune: .*|  dune: $DUNE|'
   config: ok
+  storage: ok
+    cwd=$TESTCASE_ROOT
+    project=$TESTCASE_ROOT
+    data=$TESTCASE_ROOT/xdg-data/spice
+    state=$TESTCASE_ROOT/xdg-state/spice
   auth: fail
     openai: missing (selected model provider); run `spice auth login openai`
     anthropic: missing; run `spice auth login anthropic`
@@ -28,6 +33,11 @@ With a credential present, doctor is clean and exits zero.
 
   $ OPENAI_API_KEY=test-key SPICE_MODEL=openai/gpt-5.5 spice doctor | sed -E 's|^  dune: .*|  dune: $DUNE|'
   config: ok
+  storage: ok
+    cwd=$TESTCASE_ROOT
+    project=$TESTCASE_ROOT
+    data=$TESTCASE_ROOT/xdg-data/spice
+    state=$TESTCASE_ROOT/xdg-state/spice
   auth: ok
     openai: unchecked (selected model provider); run `spice auth status openai --refresh`
     anthropic: missing; run `spice auth login anthropic`
@@ -79,7 +89,7 @@ Unknown config fields are a warning, not a failure.
 
   $ mkdir -p "$XDG_CONFIG_HOME/spice"
   $ printf '{"totally_unknown_field":true}' > "$XDG_CONFIG_HOME/spice/config.json"
-  $ OPENAI_API_KEY=test-key SPICE_MODEL=openai/gpt-5.5 spice doctor | sed -n '/^config/,/^auth/p'
+  $ OPENAI_API_KEY=test-key SPICE_MODEL=openai/gpt-5.5 spice doctor | sed -n '/^config/,/^storage/p'
   config: warn
     $TESTCASE_ROOT/xdg-config/spice/config.json unknown field: totally_unknown_field
-  auth: ok
+  storage: ok
