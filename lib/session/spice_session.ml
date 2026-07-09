@@ -321,6 +321,20 @@ module Run = struct
 
     let default_denial_message _ = "Permission denied by policy."
 
+    let executable_declaration tool =
+      Llm.Tool.make ~name:(Tool.name tool) ~description:(Tool.description tool)
+        ~input_schema:(Tool.input_schema tool) ()
+
+    let validate_executable_declarations tools =
+      try
+        List.iter
+          (fun tool -> ignore (executable_declaration tool))
+          (Tool.Catalog.tools tools)
+      with Invalid_argument message ->
+        invalid_arg
+          ("Spice_session.Run.Config.make: invalid executable tool \
+            declaration: " ^ message)
+
     let make ~tools ?(host_tools = []) ~policy
         ?(prelude = Llm.Request.Prelude.empty) ?(max_steps = max_int)
         ?(denial_message = default_denial_message) () =
@@ -334,6 +348,7 @@ module Run = struct
           invalid_arg
             ("Spice_session.Run.Config.make: " ^ Tool.Error.message error)
       | Ok tools ->
+          validate_executable_declarations tools;
           { tools; host_tools; policy; prelude; max_steps; denial_message }
 
     let tools t = Tool.Catalog.tools t.tools
@@ -345,12 +360,7 @@ module Run = struct
     let denial_message t = t.denial_message
 
     let declarations t =
-      List.map
-        (fun tool ->
-          Llm.Tool.make ~name:(Tool.name tool)
-            ~description:(Tool.description tool)
-            ~input_schema:(Tool.input_schema tool) ())
-        (Tool.Catalog.tools t.tools)
+      List.map executable_declaration (Tool.Catalog.tools t.tools)
       @ t.host_tools
   end
 

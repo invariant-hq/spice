@@ -99,7 +99,16 @@ let config_construction_is_programmer_local () =
   expect_invalid_arg "duplicate tool names raise" (fun () ->
       Run.Config.make
         ~tools:[ executable_tool (); executable_tool () ]
-        ~policy:Permission.Policy.default ())
+        ~policy:Permission.Policy.default ());
+  let bad_name_tool =
+    Tool.make ~name:"bad name" ~description:"Bad tool name."
+      ~input:Tool.Input.empty ~output
+      ~run:(fun _context () -> Tool.Result.completed ~output:() ())
+      ()
+  in
+  expect_invalid_arg "invalid executable tool names raise" (fun () ->
+      Run.Config.make ~tools:[ bad_name_tool ] ~policy:Permission.Policy.default
+        ())
 
 let permission_from_step step =
   match Run.Step.next step with

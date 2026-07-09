@@ -413,8 +413,9 @@ module Run : sig
         message. The function must be pure; its result becomes durable
         transcript state.
 
-        Raises [Invalid_argument] if [tools] contains duplicate tool names or
-        [max_steps] is not positive. *)
+        Raises [Invalid_argument] if [tools] contains duplicate tool names, if
+        an executable tool cannot be projected to a model-visible declaration,
+        or if [max_steps] is not positive. *)
 
     val tools : t -> Spice_tool.t list
     (** [tools t] are [t]'s executable host capabilities. *)
