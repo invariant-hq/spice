@@ -78,6 +78,22 @@ selection.
   spice: --api-key-stdin cannot be used with device-code login
   [2]
 
+A stored credential kind the provider cannot serve is rejected when the client
+is built, never sent as a stale substitute: Anthropic has no OAuth flow, so an
+OAuth secret must not ride as a bearer token that nothing refreshes.
+
+  $ mkdir -p "$XDG_CONFIG_HOME/spice"
+  $ printf '{"version":1,"credentials":{"anthropic":{"default":{"kind":"oauth","access_token":"oauth-anthropic-1"}}}}' > "$XDG_CONFIG_HOME/spice/auth.json"
+  $ spice run --cwd "$PWD" --model anthropic/claude-sonnet-5 "hi"
+  permission: default
+  sandbox: danger-full-access (config)
+  backend: none not_requested
+  network: enabled
+  warning: command sandbox disabled by explicit user choice
+  spice: unsupported credential kind oauth for provider anthropic
+  [1]
+  $ rm "$XDG_CONFIG_HOME/spice/auth.json"
+
 Unsupported auth store versions fail loudly.
 
   $ mkdir -p "$XDG_CONFIG_HOME/spice"

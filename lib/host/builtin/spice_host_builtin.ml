@@ -314,19 +314,38 @@ let anthropic_adapter =
           Error
             (Spice_host.Host.Error.Missing_credential
                Spice_llm_anthropic.provider)
-      | Some credential ->
+      | Some credential -> (
+          (* No Anthropic OAuth flow exists: an OAuth secret here would ride as
+             a static bearer that nothing refreshes, and the check already
+             reports OAuth unsupported — the build agrees rather than sending a
+             token that silently goes stale. *)
           let credential =
             Secret.expose
               (Credential.secret credential)
-              ~api_key:(fun ~key -> Spice_llm_anthropic.Credential.api_key key)
+              ~api_key:(fun ~key ->
+                Ok (Spice_llm_anthropic.Credential.api_key key))
               ~bearer:(fun ~token ->
-                Spice_llm_anthropic.Credential.bearer token)
+                Ok (Spice_llm_anthropic.Credential.bearer token))
               ~oauth:(fun
-                  ~access_token ~refresh_token:_ ~expires_at:_ ~account_id:_ ->
-                Spice_llm_anthropic.Credential.bearer access_token)
+                  ~access_token:_
+                  ~refresh_token:_
+                  ~expires_at:_
+                  ~account_id:_
+                ->
+                Error
+                  (Spice_host.Host.Error.Unsupported_credential
+                     {
+                       provider = Spice_llm_anthropic.provider;
+                       kind = Secret.Kind.OAuth;
+                     }))
           in
-          let config = Spice_llm_anthropic.Config.make ?base_url () in
-          Ok (Spice_llm_anthropic.client ~sw ~env:stdenv ~config ~credential ()))
+          match credential with
+          | Error _ as error -> error
+          | Ok credential ->
+              let config = Spice_llm_anthropic.Config.make ?base_url () in
+              Ok
+                (Spice_llm_anthropic.client ~sw ~env:stdenv ~config ~credential
+                   ())))
     ()
 
 let anthropic =
