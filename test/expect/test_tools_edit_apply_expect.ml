@@ -616,6 +616,26 @@ let%expect_test "apply_patch applies add update delete and move" =
     disk moved/path.txt: "new\nkeep\n"
     json paths=4 changed=4 dirs=new,new/dir,moved diff=true |}]
 
+let%expect_test "apply_patch preserves BOM and CRLF line endings" =
+  with_fixture @@ fun ~root ~outside:_ ~fs ~workspace ->
+  let input =
+    apply_input
+      (patch
+         [
+           "*** Update File: bom-crlf.txt";
+           "@@";
+           "-alpha";
+           "+ALPHA";
+         ])
+  in
+  run_apply ~fs ~workspace input;
+  print_disk root "bom-crlf.txt";
+  [%expect
+    {|
+    entries: bom-crlf.txt:modify
+    entries=1 diff=true
+    disk bom-crlf.txt: "\239\187\191ALPHA\r\nbravo\r\n" |}]
+
 let%expect_test
     "apply_patch rejects duplicate outputs missing context and unsafe reads" =
   with_fixture @@ fun ~root ~outside:_ ~fs ~workspace ->
