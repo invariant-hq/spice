@@ -499,6 +499,19 @@ module Artifacts_tests = struct
     round_trip ~msg:"plan jsont round-trips" ~equal:Plan.equal Plan.jsont
       (ok "approve" (Plan.approve ~approved_at:(time 30) (a_plan ())))
 
+  let plan_decode_rejects_self_supersession () =
+    let json by =
+      Printf.sprintf
+        {|{"id":"plan-1","source":{"session":"session-1","turn":"turn-1"},"body":"Body.","status":{"type":"superseded","superseded_at":20,"by":"%s"},"created_at":10}|}
+        by
+    in
+    (match Jsont_bytesrw.decode_string Plan.jsont (json "plan-1") with
+    | Error _ -> ()
+    | Ok _ -> failf "self-superseding stored plan should be rejected");
+    match Jsont_bytesrw.decode_string Plan.jsont (json "plan-2") with
+    | Ok _ -> ()
+    | Error error -> failf "valid superseding plan should decode: %s" error
+
   let plan_decode_prose () =
     is_true ~msg:"propose_plan decode error is model-visible prose"
       (match
@@ -940,6 +953,8 @@ module Artifacts_tests = struct
         test "plan rejections" plan_rejections;
         test "plan transitions" plan_transitions;
         test "plan round-trips" plan_round_trips;
+        test "plan decode rejects self-supersession"
+          plan_decode_rejects_self_supersession;
         test "plan decode prose" plan_decode_prose;
         test "plan decision" plan_decision;
         test "todo rejections" todo_rejections;

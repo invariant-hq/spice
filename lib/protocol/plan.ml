@@ -185,11 +185,21 @@ let check_status_time ~created_at status =
       ^ " must not be before plan creation time")
     status
 
+let check_replacement id by =
+  if Id.equal id by then
+    Error ("plan " ^ Id.to_string id ^ " cannot supersede itself")
+  else Ok ()
+
+let check_status_id id = function
+  | Status.Superseded { by; _ } -> check_replacement id by
+  | Status.Proposed | Status.Approved _ | Status.Rejected _ -> Ok ()
+
 (* The single validation path shared by [propose] and the codec, which is why
    the codec can decode any stored lifecycle status without re-checking. *)
 let make ~id ~source ?title ~body ~status ~created_at () =
   let* () = check_title title in
   let* () = check_body body in
+  let* () = check_status_id id status in
   let* () = check_status_time ~created_at status in
   Ok { id; source; title; body; status; created_at }
 
@@ -230,15 +240,13 @@ let reject ~rejected_at ?reason t =
       invalid_transition "reject" t
 
 let supersede ~superseded_at ~by t =
-  if Id.equal t.id by then
-    Error ("plan " ^ Id.to_string t.id ^ " cannot supersede itself")
-  else
-    match t.status with
-    | Status.Superseded _ -> invalid_transition "supersede" t
-    | Status.Proposed | Status.Approved _ | Status.Rejected _ ->
-        let status = Status.superseded ~superseded_at ~by in
-        let* () = check_status_time ~created_at:t.created_at status in
-        Ok { t with status }
+  let* () = check_replacement t.id by in
+  match t.status with
+  | Status.Superseded _ -> invalid_transition "supersede" t
+  | Status.Proposed | Status.Approved _ | Status.Rejected _ ->
+      let status = Status.superseded ~superseded_at ~by in
+      let* () = check_status_time ~created_at:t.created_at status in
+      Ok { t with status }
 
 let equal a b = a = b
 
