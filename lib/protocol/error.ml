@@ -97,6 +97,6 @@ let hints = function
       []
 
 let diagnostic error =
-  Spice_diagnostic.make ~hints:(hints error) (message error)
+  Spice_diagnostic.of_text ~hints:(hints error) (message error)
 
 let pp ppf error = Format.pp_print_string ppf (message error)

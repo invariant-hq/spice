@@ -55,6 +55,30 @@ let rendering () =
     "unknown key\nin project config\nHint: first"
     (Diagnostic.to_string full)
 
+let opaque_text () =
+  equal string ~msg:"single-line opaque text" "malformed config"
+    (Diagnostic.to_string (Diagnostic.of_text "malformed config"));
+  equal string ~msg:"first line becomes message, tail becomes context"
+    "malformed config\nFile \"-\", line 1\nFile \"-\": in member model"
+    (Diagnostic.to_string
+       (Diagnostic.of_text
+          "malformed config\nFile \"-\", line 1\nFile \"-\": in member model"));
+  equal string ~msg:"crlf separator is treated as one line break"
+    "malformed config\nFile \"-\", line 1"
+    (Diagnostic.to_string
+       (Diagnostic.of_text "malformed config\r\nFile \"-\", line 1"));
+  equal string ~msg:"single trailing newline is ignored" "malformed config"
+    (Diagnostic.to_string (Diagnostic.of_text "malformed config\n"));
+  equal string ~msg:"hints still render after context"
+    "malformed config\nFile \"-\", line 1\nHint: fix config.json"
+    (Diagnostic.to_string
+       (Diagnostic.of_text ~hints:[ "fix config.json" ]
+          "malformed config\nFile \"-\", line 1"));
+  expect_invalid_arg "empty opaque text raises" (fun () ->
+      Diagnostic.of_text "");
+  expect_invalid_arg "empty first line raises" (fun () ->
+      Diagnostic.of_text "\ncontext")
+
 let suggest () =
   equal (list string) ~msg:"empty candidates make no hint" []
     (Diagnostic.suggest []);
@@ -113,6 +137,7 @@ let () =
     [
       test "constructor validates invariants" make_invariants;
       test "renders message, context, and hints" rendering;
+      test "converts opaque text to message and context" opaque_text;
       test "formats suggestion hints" suggest;
       test "suggests close matches" did_you_mean;
     ]

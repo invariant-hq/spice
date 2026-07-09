@@ -31,6 +31,34 @@ let make ?context ?(hints = []) message =
     hints;
   { message; context; hints }
 
+let first_line_break text =
+  let rec loop i =
+    if i = String.length text then None
+    else match text.[i] with '\n' | '\r' -> Some i | _ -> loop (i + 1)
+  in
+  loop 0
+
+let after_line_break text index =
+  match text.[index] with
+  | '\r' when index + 1 < String.length text && Char.equal text.[index + 1] '\n'
+    ->
+      index + 2
+  | '\n' | '\r' -> index + 1
+  | _ -> assert false
+
+let of_text ?(hints = []) text =
+  check_non_empty "of_text" "text" text;
+  match first_line_break text with
+  | None -> make ~hints text
+  | Some index ->
+      let message = String.sub text 0 index in
+      let context_start = after_line_break text index in
+      let context =
+        String.sub text context_start (String.length text - context_start)
+      in
+      if String.is_empty context then make ~hints message
+      else make ~context ~hints message
+
 (* Hints *)
 
 let max_suggestion_distance = 2

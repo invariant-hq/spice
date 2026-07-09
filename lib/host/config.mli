@@ -56,6 +56,11 @@ module Error : sig
       knowledge lives, for example close config-key spellings. Hints are
       rendered by host diagnostics; they are not part of {!message}. *)
 
+  val diagnostic : t -> Spice_diagnostic.t
+  (** [diagnostic e] is [e] as a renderable boundary diagnostic. Multi-line
+      decoder traces are rendered as diagnostic context under a single-line
+      primary message. *)
+
   val pp : Format.formatter -> t -> unit
   (** [pp ppf e] formats [e]'s message for diagnostics. *)
 end

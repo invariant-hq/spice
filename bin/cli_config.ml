@@ -13,9 +13,7 @@ module Config = Spice_host.Config
 module Config_file = Config.Config_file
 
 let config_error_text error =
-  Spice_diagnostic.to_string
-    (Spice_diagnostic.make ~hints:(Config.Error.hints error)
-       (Config.Error.message error))
+  Spice_diagnostic.to_string (Config.Error.diagnostic error)
 
 let config_keys =
   [

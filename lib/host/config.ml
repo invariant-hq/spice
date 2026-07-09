@@ -14,6 +14,7 @@ module Error = struct
 
   let message t = t.message
   let hints t = t.hints
+  let diagnostic t = Spice_diagnostic.of_text ~hints:t.hints t.message
   let pp ppf t = Format.pp_print_string ppf t.message
 end
 

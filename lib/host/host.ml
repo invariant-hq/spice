@@ -201,7 +201,9 @@ module Error = struct
         []
 
   let diagnostic error =
-    Spice_diagnostic.make ~hints:(hints error) (message error)
+    match error with
+    | Config error -> Config.Error.diagnostic error
+    | error -> Spice_diagnostic.make ~hints:(hints error) (message error)
 
   let pp ppf error = Format.pp_print_string ppf (message error)
 end

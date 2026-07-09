@@ -69,9 +69,7 @@ let config_key =
         Error
           (`Msg
              (Spice_diagnostic.to_string
-                (Spice_diagnostic.make
-                   ~hints:(Spice_host.Config.Error.hints error)
-                   (Spice_host.Config.Error.message error))))
+                (Spice_host.Config.Error.diagnostic error)))
   in
   let print ppf (Spice_host.Config.Field.Any key) =
     Format.pp_print_string ppf (Spice_host.Config.Field.name key)

@@ -34,6 +34,18 @@ val make : ?context:string -> ?hints:string list -> string -> t
     any hint is empty or contains a newline, or if [context] is empty when
     present. *)
 
+val of_text : ?hints:string list -> string -> t
+(** [of_text ?hints text] is a diagnostic from opaque pre-rendered error text,
+    such as a JSON decoder trace or transport-library message. The first line
+    becomes the primary message; remaining text, when present, becomes
+    [context]. A single trailing line break is ignored.
+
+    Prefer {!make} for native errors whose primary message and context are
+    already known separately.
+
+    Raises [Invalid_argument] if [text] is empty, if its first line is empty, or
+    if any hint is empty or contains a newline. *)
+
 (** {1:hints Hints}
 
     Produce hints where the candidate knowledge lives — the code that fails a
