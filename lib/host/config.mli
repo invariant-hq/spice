@@ -568,7 +568,7 @@ val load :
   ?process_env:Env.t ->
   ?cwd:string ->
   ?extra_config_file:string ->
-  ?store_root:string ->
+  ?data_home:string ->
   ?overrides:Patch.t list ->
   unit ->
   (t, Error.t) result
@@ -601,25 +601,35 @@ val load :
     Empty environment settings are ignored.
 
     [cwd] defaults to the Eio current working directory and must name an
-    existing directory. [store_root] defaults to [".spice"] under the resolved
-    working directory and must not be empty. [extra_config_file] takes
-    precedence over [SPICE_CONFIG]. When [process_env] is absent, environment
-    variables are read from a snapshot of the current process environment. *)
+    existing directory. [data_home] defaults to the global user data directory
+    resolved by {!User_dirs.data_home}. [extra_config_file] takes precedence
+    over [SPICE_CONFIG]. When [process_env] is absent, environment variables are
+    read from a snapshot of the current process environment. *)
 
 val cwd : t -> Spice_path.Abs.t
 (** [cwd t] is [t]'s resolved working directory.
 
     The directory existed when [t] was loaded. *)
 
-val store_root : t -> Spice_path.Abs.t
-(** [store_root t] is [t]'s durable session store root.
+val project_root : t -> Spice_path.Abs.t
+(** [project_root t] is the nearest ancestor of {!cwd} containing a [.git]
+    marker, or {!cwd} when no marker exists. Project config and skills resolve
+    from this root. *)
+
+val data_home : t -> Spice_path.Abs.t
+(** [data_home t] is [t]'s durable global data root.
+
+    Loading config does not create the directory. *)
+
+val state_home : t -> Spice_path.Abs.t
+(** [state_home t] is [t]'s machine-local state root.
 
     Loading config does not create the directory. *)
 
 val auth_store_path : t -> Spice_path.Abs.t
 (** [auth_store_path t] is [t]'s user-scoped credential store path.
 
-    The path is derived from config-home environment, not from [store_root].
+    The path is derived from config-home environment, not from {!data_home}.
     Loading config does not read or create the credential store. *)
 
 val process_env : t -> Env.t
@@ -631,8 +641,8 @@ val files : t -> Config_file.paths
 val sandbox_protected_roots : t -> Spice_path.Abs.t list
 (** [sandbox_protected_roots t] are host authority roots that workspace-write
     sandboxes must keep read-only even when they sit beneath a writable root:
-    the user config/auth directory, the project config directory, and
-    {!store_root}. *)
+    the user config/auth directory, the project config directory, {!data_home},
+    and {!state_home}. *)
 
 module Models : sig
   (** Model-related configuration.

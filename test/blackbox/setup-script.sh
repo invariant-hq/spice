@@ -1,6 +1,7 @@
 export HOME="$PWD/home"
 export XDG_CONFIG_HOME="$PWD/xdg-config"
 export XDG_DATA_HOME="$PWD/xdg-data"
+export XDG_STATE_HOME="$PWD/xdg-state"
 export SHELL=/bin/sh
 
 unset APPDATA
@@ -8,6 +9,7 @@ unset COMSPEC
 unset SPICE_ANTHROPIC_BASE_URL
 unset SPICE_CONFIG
 unset SPICE_CONFIG_HOME
+unset SPICE_DATA_HOME
 unset SPICE_MAX_STEPS
 unset SPICE_MODEL
 unset SPICE_OPENAI_AUTH_BASE_URL
@@ -18,6 +20,7 @@ unset SPICE_SANDBOX_BACKEND
 unset SPICE_SANDBOX_REQUIRE
 unset SPICE_SHELL
 unset SPICE_SMALL_MODEL
+unset SPICE_STATE_HOME
 unset SPICE_WEB_BRAVE_API_KEY
 export SPICE_AUTO_TITLE=0
 
@@ -35,7 +38,7 @@ export SPICE_SANDBOX_MODE=danger-full-access
 export SPICE_LOCAL_MEMORY_BUDGET=25769803776
 export SPICE_LOCAL_SERVER_BINARY=spice-test-llama-server
 
-mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
+mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME"
 
 find_up () {
   local path="$1"

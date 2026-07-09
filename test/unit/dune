@@ -267,6 +267,11 @@
   eio_main))
 
 (test
+ (name test_user_dirs)
+ (modules test_user_dirs)
+ (libraries windtrap spice_host))
+
+(test
  (name test_provider)
  (modules test_provider)
  (libraries

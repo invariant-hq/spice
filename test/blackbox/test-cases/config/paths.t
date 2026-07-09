@@ -1,5 +1,7 @@
 Spice config paths are resolved from an isolated test environment.
 
+  $ git init -q
+
 The user config defaults to XDG config home.
 
   $ spice config path
@@ -15,6 +17,14 @@ Project config files live under the workspace-local [.spice] directory.
 
   $ spice config path --project-local
   $TESTCASE_ROOT/.spice/config.local.json
+
+Nested commands keep using the nearest Git project root.
+
+  $ mkdir -p lib/nested
+  $ cd lib/nested
+  $ spice config path --project
+  $TESTCASE_ROOT/.spice/config.json
+  $ cd ../..
 
 [SPICE_CONFIG_HOME] redirects the user config root.
 

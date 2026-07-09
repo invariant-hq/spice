@@ -534,7 +534,7 @@ let divert_logs_for_tui () =
   match (Logs.level (), Sys.getenv_opt "SPICE_LOG_FILE") with
   | None, _ | Some _, Some _ -> ()
   | Some _, None ->
-      let home = Spice_host.Config_home.path Sys.getenv_opt in
+      let home = Spice_host.User_dirs.config_home Sys.getenv_opt in
       let rec mkdir_p dir =
         if not (Sys.file_exists dir) then (
           mkdir_p (Filename.dirname dir);

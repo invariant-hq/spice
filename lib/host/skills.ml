@@ -332,20 +332,6 @@ let metadata_text field value =
 let fs_abs stdenv abs =
   Eio.Path.( / ) (Eio.Stdenv.fs stdenv) (Spice_path.Abs.to_string abs)
 
-let marker_exists stdenv dir =
-  let path = Eio.Path.( / ) (fs_abs stdenv dir) ".git" in
-  Eio.Path.is_file path || Eio.Path.is_directory path
-
-let find_workspace_root ~stdenv cwd =
-  let rec loop dir =
-    if marker_exists stdenv dir then Some dir
-    else
-      match Spice_path.Abs.parent dir with
-      | None -> None
-      | Some parent -> loop parent
-  in
-  loop cwd
-
 (* Builds content facts for one read skill file. *)
 let content_of_text ~resources text =
   match Spice_frontmatter.parse text with
@@ -526,7 +512,7 @@ let load ~stdenv ~builtins ?(builtin_origin = "builtin") config =
     { enabled = false; skills = []; catalog = Catalog.render ~budget:0 [] }
   else
     let cwd = Config.cwd config in
-    let root = Option.value (find_workspace_root ~stdenv cwd) ~default:cwd in
+    let root = Config.project_root config in
     let under base segments =
       List.fold_left
         (fun abs segment ->

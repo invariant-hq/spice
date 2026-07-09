@@ -5,7 +5,7 @@
 
 module Env = Env
 module Config = Config
-module Config_home = Config_home
+module User_dirs = User_dirs
 module Trust = Trust
 module Host = Host
 module Account = Account

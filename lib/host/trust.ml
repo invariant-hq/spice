@@ -86,7 +86,7 @@ let load_store stdenv path =
 let load ~stdenv ?process_env () =
   let process_env = Option.value process_env ~default:(Env.current ()) in
   let getenv = Env.get process_env in
-  let path = Config_home.trust_store_path getenv in
+  let path = User_dirs.trust_store_path getenv in
   let* store = load_store stdenv path in
   Ok { path; store }
 

@@ -1,5 +1,7 @@
 Spice config show renders text and JSON views of the effective config.
 
+  $ git init -q
+
 With no optional fields configured, text output contains resolved defaults.
 
   $ spice config show
@@ -144,7 +146,7 @@ Origin output explains where effective values came from.
 JSON output has a stable shape.
 
   $ spice config show --json
-  {"cwd":"$TESTCASE_ROOT","store_root":"$TESTCASE_ROOT/.spice","auth_store_path":"$TESTCASE_ROOT/xdg-config/spice/auth.json","files":{"user":"$TESTCASE_ROOT/xdg-config/spice/config.json","project":"$TESTCASE_ROOT/.spice/config.json","project_local":"$TESTCASE_ROOT/.spice/config.local.json"},"model":"openai/gpt-5.5","small_model":"openai/gpt-5.4-mini","reasoning":null,"run":{"max_steps":9},"tui":{"thinking":true},"notices":{"fswatch":true,"cr_comments":true,"dune_diagnostics":true,"dune_build":true},"permission":{"mode":"plan"},"shell":"/bin/bash","instructions":{"global":true,"project":true,"claude_md":true,"project_max_bytes":32768},"skills":{"enabled":true,"builtin":true,"project":true,"compat":true,"paths":[],"catalog_max_bytes":8192},"tools":{"anchored_edits":false},"web":{"enabled":false,"allow_private_network":false,"search_backend":"disabled","fetch_max_bytes":5242880,"output_max_chars":100000,"timeout_ms":30000,"max_timeout_ms":120000},"providers":{"openai":{"base_url":"https://api.openai.example/v1"},"openrouter":{"base_url":"https://openrouter.example/api/v1"}}}
+  {"cwd":"$TESTCASE_ROOT","project_root":"$TESTCASE_ROOT","data_home":"$TESTCASE_ROOT/xdg-data/spice","state_home":"$TESTCASE_ROOT/xdg-state/spice","auth_store_path":"$TESTCASE_ROOT/xdg-config/spice/auth.json","files":{"user":"$TESTCASE_ROOT/xdg-config/spice/config.json","project":"$TESTCASE_ROOT/.spice/config.json","project_local":"$TESTCASE_ROOT/.spice/config.local.json"},"model":"openai/gpt-5.5","small_model":"openai/gpt-5.4-mini","reasoning":null,"run":{"max_steps":9},"tui":{"thinking":true},"notices":{"fswatch":true,"cr_comments":true,"dune_diagnostics":true,"dune_build":true},"permission":{"mode":"plan"},"shell":"/bin/bash","instructions":{"global":true,"project":true,"claude_md":true,"project_max_bytes":32768},"skills":{"enabled":true,"builtin":true,"project":true,"compat":true,"paths":[],"catalog_max_bytes":8192},"tools":{"anchored_edits":false},"web":{"enabled":false,"allow_private_network":false,"search_backend":"disabled","fetch_max_bytes":5242880,"output_max_chars":100000,"timeout_ms":30000,"max_timeout_ms":120000},"providers":{"openai":{"base_url":"https://api.openai.example/v1"},"openrouter":{"base_url":"https://openrouter.example/api/v1"}}}
 
 JSON origin output has a stable envelope and includes shadowed sources.
 

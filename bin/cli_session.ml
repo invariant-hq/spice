@@ -23,7 +23,7 @@ let turn_id_string id = Session.Turn.Id.to_string id
 let time_json time = json_encode Session.Time.jsont time
 
 let workflow_root host =
-  Spice_host.Config.store_root (Spice_host.Host.config host)
+  Spice_host.Config.data_home (Spice_host.Host.config host)
   |> Spice_path.Abs.to_string
 
 let default_limit = 25

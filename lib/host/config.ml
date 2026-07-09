@@ -1310,11 +1310,31 @@ let canonical_cwd env = function
         resolve_under ~base ~name:"cwd" (Eio.Path.native_exn path)
       else error ("cwd is not a directory: " ^ cwd)
 
-let spice_dir cwd = Filename.concat (Spice_path.Abs.to_string cwd) ".spice"
-let project_config_path cwd = Filename.concat (spice_dir cwd) "config.json"
+let fs_abs stdenv abs =
+  Eio.Path.( / ) (Eio.Stdenv.fs stdenv) (Spice_path.Abs.to_string abs)
 
-let project_local_config_path cwd =
-  Filename.concat (spice_dir cwd) "config.local.json"
+let git_marker_exists stdenv dir =
+  let path = Eio.Path.( / ) (fs_abs stdenv dir) ".git" in
+  Eio.Path.is_file path || Eio.Path.is_directory path
+
+let discover_project_root stdenv cwd =
+  let rec loop dir =
+    if git_marker_exists stdenv dir then dir
+    else
+      match Spice_path.Abs.parent dir with
+      | None -> cwd
+      | Some parent -> loop parent
+  in
+  loop cwd
+
+let spice_dir project_root =
+  Filename.concat (Spice_path.Abs.to_string project_root) ".spice"
+
+let project_config_path project_root =
+  Filename.concat (spice_dir project_root) "config.json"
+
+let project_local_config_path project_root =
+  Filename.concat (spice_dir project_root) "config.local.json"
 
 let file_exists env path = Eio.Path.is_file (fs_path env path)
 
@@ -1927,13 +1947,14 @@ module Files = struct
     let* base = host_cwd stdenv in
     let* user =
       resolve_under ~base ~name:"user config path"
-        (Config_home.config_path getenv)
+        (User_dirs.config_path getenv)
     in
+    let project_root = discover_project_root stdenv cwd in
     let* project =
-      project_config_path cwd |> abs_path ~name:"project config path"
+      project_config_path project_root |> abs_path ~name:"project config path"
     in
     let* project_local =
-      project_local_config_path cwd
+      project_local_config_path project_root
       |> abs_path ~name:"project-local config path"
     in
     Ok { user; project; project_local }
@@ -2026,7 +2047,9 @@ end
 type t = {
   process_env : Env.t;
   cwd : Spice_path.Abs.t;
-  store_root : Spice_path.Abs.t;
+  project_root : Spice_path.Abs.t;
+  data_home : Spice_path.Abs.t;
+  state_home : Spice_path.Abs.t;
   auth_store_path : Spice_path.Abs.t;
   layer : Layer.t;
   origins : (Field.any * Origin.t) Name_map.t;
@@ -2041,7 +2064,9 @@ type t = {
 }
 
 let cwd t = t.cwd
-let store_root t = t.store_root
+let project_root t = t.project_root
+let data_home t = t.data_home
+let state_home t = t.state_home
 let auth_store_path t = t.auth_store_path
 let process_env t = t.process_env
 let files t = t.files
@@ -2049,7 +2074,7 @@ let files t = t.files
 let sandbox_protected_roots t =
   Option.to_list (Spice_path.Abs.parent (Files.user t.files))
   @ Option.to_list (Spice_path.Abs.parent (Files.project t.files))
-  @ [ t.store_root ]
+  @ [ t.data_home; t.state_home ]
 
 let find field t = Layer.get_field field t.layer
 
@@ -2481,32 +2506,43 @@ let pp ppf t =
   let permissions = permissions t in
   let runtime = runtime t in
   Format.fprintf ppf
-    "@[<v>{ cwd = %S; store_root = %S; auth_store_path = %S; permission_mode = \
-     %S; shell = %S }@]"
+    "@[<v>{ cwd = %S; project_root = %S; data_home = %S; state_home = %S; \
+     auth_store_path = %S; permission_mode = %S; shell = %S }@]"
     (Spice_path.Abs.to_string t.cwd)
-    (Spice_path.Abs.to_string t.store_root)
+    (Spice_path.Abs.to_string t.project_root)
+    (Spice_path.Abs.to_string t.data_home)
+    (Spice_path.Abs.to_string t.state_home)
     (Spice_path.Abs.to_string t.auth_store_path)
     (Permission.Preset.to_string (Permissions.mode permissions))
     (Runtime.shell runtime)
 
-let load ~stdenv ?process_env ?cwd ?extra_config_file ?store_root
+let load ~stdenv ?process_env ?cwd ?extra_config_file ?data_home
     ?(overrides = []) () =
   let process_env = Option.value process_env ~default:(Env.current ()) in
   let getenv = Env.get process_env in
   let cwd = Option.value cwd ~default:(cwd_default stdenv) in
   let* cwd = canonical_cwd stdenv cwd in
-  let* store_root =
-    resolve_under ~base:cwd ~name:"store_root"
-      (Option.value store_root ~default:".spice")
-  in
+  let project_root = discover_project_root stdenv cwd in
   let* base = host_cwd stdenv in
+  let* data_home =
+    match data_home with
+    | Some path -> resolve_under ~base ~name:"data home" path
+    | None -> (
+        match User_dirs.data_home getenv with
+        | Ok path -> resolve_under ~base ~name:"data home" path
+        | Error path_error -> error (User_dirs.Error.message path_error))
+  in
+  let* state_home =
+    match User_dirs.state_home getenv with
+    | Ok path -> resolve_under ~base ~name:"state home" path
+    | Error path_error -> error (User_dirs.Error.message path_error)
+  in
   let* auth_store_path =
     resolve_under ~base ~name:"auth_store_path"
-      (Config_home.auth_store_path getenv)
+      (User_dirs.auth_store_path getenv)
   in
   let* user_config_file =
-    resolve_under ~base ~name:"user config path"
-      (Config_home.config_path getenv)
+    resolve_under ~base ~name:"user config path" (User_dirs.config_path getenv)
   in
   let* extra_config_file =
     let raw =
@@ -2523,8 +2559,8 @@ let load ~stdenv ?process_env ?cwd ?extra_config_file ?store_root
         let* path = resolve_under ~base ~name:"extra config path" path in
         Ok (Some path)
   in
-  let project_config_file = project_config_path cwd in
-  let project_local_config_file = project_local_config_path cwd in
+  let project_config_file = project_config_path project_root in
+  let project_local_config_file = project_local_config_path project_root in
   let* user =
     load_layer_path ~stdenv (Spice_path.Abs.to_string user_config_file)
   in
@@ -2634,7 +2670,9 @@ let load ~stdenv ?process_env ?cwd ?extra_config_file ?store_root
     {
       process_env;
       cwd;
-      store_root;
+      project_root;
+      data_home;
+      state_home;
       auth_store_path;
       layer;
       origins;

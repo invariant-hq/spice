@@ -103,7 +103,7 @@ end
 let store ~stdenv host =
   Spice_session_store.make ~fs:(Eio.Stdenv.fs stdenv)
     ~clock:(Eio.Stdenv.clock stdenv)
-    ~root:(Config.store_root (Host.config host))
+    ~root:(Config.data_home (Host.config host))
 
 let store_error = Session_loop.of_store
 

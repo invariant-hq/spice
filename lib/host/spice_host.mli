@@ -27,8 +27,8 @@ module Env = Env
 module Config = Config
 (** Host configuration. *)
 
-module Config_home = Config_home
-(** Config home directory resolution from the process environment. *)
+module User_dirs = User_dirs
+(** User config, durable-data, and machine-state directory resolution. *)
 
 module Trust = Trust
 (** Workspace trust store: a dormant seam recording granted workspace roots. *)

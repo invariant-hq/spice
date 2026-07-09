@@ -41,9 +41,9 @@ let registry =
 
 let host ~stdenv ~process_env =
   let cwd = Sys.getcwd () in
-  let store_root = "_build/test-host-account-store" in
+  let data_home = "_build/test-host-account-store" in
   let config =
-    match Config.load ~stdenv ~process_env ~cwd ~store_root () with
+    match Config.load ~stdenv ~process_env ~cwd ~data_home () with
     | Ok config -> config
     | Error error -> failf "config: %a" Config.Error.pp error
   in
@@ -58,6 +58,8 @@ let process_credentials_shadow_environment () =
     Env.of_list
       [
         ("SPICE_CONFIG_HOME", config_home);
+        ( "SPICE_STATE_HOME",
+          Filename.concat (Sys.getcwd ()) "_build/test-host-account-state" );
         ("OPENAI_API_KEY", "env-key-material");
       ]
   in

@@ -37,6 +37,14 @@ let command =
         ~doc:
           "Base directory for Spice config files and the auth store. Defaults \
            to $(b,XDG_CONFIG_HOME/spice).";
+      Cmd.Env.info "SPICE_DATA_HOME"
+        ~doc:
+          "Root for durable Spice data such as sessions and workflow state. \
+           Defaults to $(b,XDG_DATA_HOME/spice).";
+      Cmd.Env.info "SPICE_STATE_HOME"
+        ~doc:
+          "Root for machine-local Spice state such as logs and prompt history. \
+           Defaults to $(b,XDG_STATE_HOME/spice).";
       Cmd.Env.info "SPICE_CONFIG"
         ~doc:"Extra config file layered over the user config file.";
       Cmd.Env.info "SPICE_LOG"

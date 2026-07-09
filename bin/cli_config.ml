@@ -137,8 +137,14 @@ let show_json config =
   json_obj
     [
       ("cwd", Jsont.Json.string (Spice_path.Abs.to_string (Config.cwd config)));
-      ( "store_root",
-        Jsont.Json.string (Spice_path.Abs.to_string (Config.store_root config))
+      ( "project_root",
+        Jsont.Json.string
+          (Spice_path.Abs.to_string (Config.project_root config)) );
+      ( "data_home",
+        Jsont.Json.string (Spice_path.Abs.to_string (Config.data_home config))
+      );
+      ( "state_home",
+        Jsont.Json.string (Spice_path.Abs.to_string (Config.state_home config))
       );
       ( "auth_store_path",
         Jsont.Json.string
