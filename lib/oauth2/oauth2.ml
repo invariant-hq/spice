@@ -415,6 +415,7 @@ module Request = struct
 
   let uri t = t.uri
   let headers (t : _ t) = t.headers
+  let params (t : _ t) = t.params
   let body t = encode_form t.params
   let decode t response = t.decode response
 

@@ -58,9 +58,7 @@ let get_unique name params =
   | [ value ] -> Ok (Some value)
   | _ :: _ :: _ -> Error (`Duplicate name)
 
-(* [Request.body] is the wire form body; decode it back to inspect parameters,
-   since the builders no longer expose their parameter lists directly. *)
-let request_params request = decode_query (O.Request.body request)
+let request_params = O.Request.params
 
 let grant_params request =
   List.filter
@@ -1091,6 +1089,31 @@ let grants_and_revocation () =
           })
       : unit)
 
+let custom_request () =
+  let request =
+    O.Request.post_form
+      ~uri:(Uri.of_string "https://provider.example/custom")
+      ~headers:[ ("X-OAuth2-Test", "preserved") ]
+      ~params:[ ("client_id", "custom"); ("a", "1"); ("a", "2") ]
+      ~decode:(fun response ->
+        if response.O.Response.status = 202 then Ok response.O.Response.body
+        else Error (`Http response))
+      ()
+  in
+  check_params "custom request params"
+    [ ("client_id", "custom"); ("a", "1"); ("a", "2") ]
+    (O.Request.params request);
+  equal string ~msg:"custom request body" "client_id=custom&a=1&a=2"
+    (O.Request.body request);
+  (match O.Request.headers request with
+  | [ ("X-OAuth2-Test", "preserved") ] -> ()
+  | headers ->
+      failf "custom request headers: expected one header, got %d"
+        (List.length headers));
+  equal string ~msg:"custom request decoder" "accepted"
+    (expect_ok "custom request decode"
+       (O.Request.decode request (response ~status:202 "accepted")))
+
 let secret_safety () =
   let token =
     expect_ok "secret token parse"
@@ -1230,5 +1253,8 @@ let () =
           test "does not print secret-bearing values" secret_safety;
         ];
       group "requests"
-        [ test "builds grants and revocation requests" grants_and_revocation ];
+        [
+          test "builds grants and revocation requests" grants_and_revocation;
+          test "builds custom form requests" custom_request;
+        ];
     ]

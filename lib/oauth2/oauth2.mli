@@ -420,6 +420,13 @@ module Request : sig
       Standard builders include only headers required by client authentication;
       interpreters may add transport headers such as [Content-Type]. *)
 
+  val params : _ t -> (string * string) list
+  (** [params t] is [t]'s form parameters in insertion order.
+
+      Order and duplicate names are preserved. Parameters may contain
+      credential, token, authorization code, device code, or client secret
+      material. *)
+
   val body : _ t -> string
   (** [body t] is [t]'s form parameters encoded as a form body.
 
