@@ -71,6 +71,36 @@ let first_hunk_scope review =
       Review.Scope.of_hunk ~path:(Review.Feature.File.path changed) hunk
   | _ -> failf "expected a text file with hunks"
 
+let feature_construction_boundaries () =
+  expect_error "file needs one side" Review.Error.Invalid_file
+    (Review.Feature.File.make ~path:(rel "lib/missing.ml") ~before:None
+       ~after:None ());
+  expect_error "context must be non-negative" Review.Error.Invalid_file
+    (Review.Feature.File.make ~context:(-1) ~path:(rel "lib/a.ml")
+       ~before:(Some "a\n") ~after:(Some "b\n") ());
+  expect_error "max edit distance must be non-negative" Review.Error.Invalid_file
+    (Review.Feature.File.make ~max_edit_distance:(-1) ~path:(rel "lib/a.ml")
+       ~before:(Some "a\n") ~after:(Some "b\n") ());
+  let a_first =
+    file ~path:"lib/a.ml" ~before:(Some "a\n") ~after:(Some "first\n") ()
+  in
+  let a_duplicate =
+    file ~path:"lib/a.ml" ~before:(Some "a\n") ~after:(Some "duplicate\n") ()
+  in
+  let b = file ~path:"lib/b.ml" ~before:(Some "b\n") ~after:(Some "b'\n") () in
+  let feature = feature [ b; a_first; a_duplicate ] in
+  let files = Review.Feature.files feature in
+  equal (list string) ~msg:"feature files are path sorted"
+    [ "lib/a.ml"; "lib/b.ml" ]
+    (List.map
+       (fun file -> Spice_path.Rel.to_string (Review.Feature.File.path file))
+       files);
+  equal (option string) ~msg:"duplicate paths keep the first entry"
+    (Some "first\n")
+    (Option.bind
+       (Review.Feature.find_file feature ~path:(rel "lib/a.ml"))
+       Review.Feature.File.after)
+
 (* Scopes *)
 
 let scope_containment () =
@@ -652,6 +682,8 @@ let opaque_files_are_whole_file_units () =
 let () =
   run "spice.review"
     [
+      group "features"
+        [ test "construction boundaries" feature_construction_boundaries ];
       group "scopes" [ test "containment" scope_containment ];
       group "marks"
         [
