@@ -7,6 +7,8 @@ internal notes, see the rest of [`doc/`](../).
   workflows, modes, decisions, and worktree review.
 - [Providers and accounts](providers.md) — authentication, credential
   precedence, readiness, model selection, and compatible local servers.
+- [Instructions and skills](instructions-and-skills.md) — `AGENTS.md`, project
+  guidance, skill authoring and discovery, budgets, and inspection.
 - [Configuration](configuration.md) — config files, precedence, workspace
   filtering, and the `spice config` commands.
 - [Security](security.md) — permissions, command sandboxing, workspace trust,

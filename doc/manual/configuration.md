@@ -75,6 +75,10 @@ all of it. Additional groups accepted by `get`, `set`, and `unset` include:
 - `web.*` — web tools: `enabled`, `allow_private_network`, `search_backend`,
   `fetch_max_bytes`, `output_max_chars`, `timeout_ms`, `max_timeout_ms`.
 
+See [Instructions and skills](instructions-and-skills.md) for instruction-file
+precedence, skill authoring and discovery, context budgets, and per-run
+overrides.
+
 `permission.rules` is the structured exception: edit it directly in user or
 extra config, inspect it with `spice permission list`, and remove individual
 writable rules with `spice permission remove`. See

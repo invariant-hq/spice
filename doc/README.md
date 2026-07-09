@@ -10,6 +10,8 @@ overview when changing how the libraries compose.
   workflows, modes, decisions, and worktree review.
 - [Providers and accounts](manual/providers.md) — authentication, credential
   precedence, readiness, model selection, and compatible local servers.
+- [Instructions and skills](manual/instructions-and-skills.md) — `AGENTS.md`,
+  project guidance, skill authoring and discovery, budgets, and inspection.
 - [Configuration](manual/configuration.md) — config files, precedence,
   workspace-safe project config, and the `spice config` commands.
 - [Security](manual/security.md) — permissions, command sandboxing, workspace

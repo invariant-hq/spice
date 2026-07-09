@@ -191,6 +191,7 @@ from.
 The [manual](doc/manual/README.md) covers the details:
 [interactive TUI workflows](doc/manual/interactive.md),
 [providers and accounts](doc/manual/providers.md),
+[instructions and skills](doc/manual/instructions-and-skills.md),
 [configuration](doc/manual/configuration.md),
 [security](doc/manual/security.md),
 [sessions](doc/manual/sessions.md), and

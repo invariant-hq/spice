@@ -75,6 +75,10 @@ The palette is the current command catalog. Its main groups are:
 - workflow: `/plan`, `/build`, `/review`;
 - process: `/quit`.
 
+`/skills` shows the discovered inventory. See
+[Instructions and skills](instructions-and-skills.md) for project and global
+instructions, skill roots, precedence, and per-run controls.
+
 Commands that replace or mutate the active session—such as `/clear`, `/fork`,
 and `/compact`—are available only when the current turn is idle. Surface and
 display commands remain available while a turn runs.

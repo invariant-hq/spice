@@ -37,6 +37,9 @@ subcommand name can be passed after `--` (`spice run -- resume`).
 | `--cwd DIR` | Working directory override. |
 | `--id ID` / `--title T` | New session id and title. Start only. |
 
+See [Instructions and skills](instructions-and-skills.md) for discovery,
+precedence, and the difference between cataloged and forced skills.
+
 `spice run resume [SESSION | --last] [PROMPT]` accepts the same run flags:
 with `PROMPT` it starts a new turn on the saved session, without it it
 advances a blocked or interrupted turn. To reopen a session interactively,
