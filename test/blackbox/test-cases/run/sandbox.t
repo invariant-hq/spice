@@ -86,6 +86,19 @@ command is never spawned.
 The refusal is machine-readable in the shell tool event itself, no text
 parsing required.
 
+Configured sandbox.network=enabled is reflected in run.started metadata even
+when an unavailable backend is reported as refused data.
+
+  $ cat > network-enabled-run.jsonl <<'JSONL'
+  > {"expect":{"body_contains":["network prompt","\"name\":\"shell\""]},"response":{"id":"resp-network","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"network final"}]}]}}
+  > JSONL
+  $ start_fake_openai network-enabled-run.jsonl network-capture network-port
+  $ _SPICE_TEST_SANDBOX_UNAVAILABLE=1 SPICE_SANDBOX_REQUIRE=off SPICE_SANDBOX_MODE=workspace-write SPICE_SANDBOX_NETWORK=enabled spice run --cwd "$PWD" --json --permission-mode bypass --id network-enabled-run "network prompt" | sed -n '/"type":"run.started"/p; s/.*\("final_text":"network final"\).*/\1/p'
+  spice: session saved; resume with: spice resume 'network-enabled-run'
+  {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"workspace-write","origin":"config","require":"off","network":"enabled","backend":"none","enforcement":"refused"}}
+  "final_text":"network final"
+  $ wait_fake_server
+
 Read-only runs advertise only read tools plus shell, and an unavailable
 backend refuses ordinary shell commands per call rather than spawning them
 unconfined.
