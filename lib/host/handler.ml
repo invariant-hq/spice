@@ -60,7 +60,7 @@ let handle_todo ~fs ~root document call todos =
 (* A re-proposal supersedes any prior proposed or approved plan for the session
    before the new proposal is created, per the plan lifecycle. *)
 let supersede_prior_plans ~fs ~root ~session ~by ~superseded_at =
-  let* plans = Artifacts.Plan.list ~fs ~root ~session () in
+  let* plans = Artifacts.Plan.list ~fs ~root ~session in
   let supersedable plan =
     let status = Spice_protocol.Plan.status plan in
     (Spice_protocol.Plan.Status.is_proposed status

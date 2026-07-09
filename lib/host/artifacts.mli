@@ -13,21 +13,22 @@
     module only stores, loads, lists, and, for plans and goals, resolves them.
 
     The artifacts share one JSON-file backend but not one storage shape: plans
-    are keyed per id, todos and goals per session, and subagent runs per parent,
-    one file per child. {!Plan}, {!Todo}, {!Goal}, and {!Subagent_run} own those
-    key schemes and expose the verbs each surface needs. Storage failures report
-    through {!Error}, the one boundary-visible piece of the backend.
+    are keyed per session and id, todos and goals per session, and subagent runs
+    per parent, one file per child. {!Plan}, {!Todo}, {!Goal}, and
+    {!Subagent_run} own those key schemes and expose the verbs each surface
+    needs. Storage failures report through {!Error}, the one boundary-visible
+    piece of the backend.
 
     {b Serialization.} Writes to a single artifact file are truncate-and-replace
     and are not atomic against a concurrent writer of the {e same} file;
-    correctness requires per-file single-writer discipline. The per-id plan and
-    per-session todo and goal files meet this by construction. Subagent runs
-    meet it by storing one file per child ([subagents/<parent>/<child>.json]) so
-    a run's status transitions rewrite only that child's file — there is no
-    per-parent aggregate for two children to race on. {!Plan.create} and the
-    exclusive writes are check-then-write and do not serialize concurrent
-    creators; a caller relying on the exclusivity must serialize creation
-    itself. *)
+    correctness requires per-file single-writer discipline. The per-session/id
+    plan and per-session todo and goal files meet this by construction. Subagent
+    runs meet it by storing one file per child
+    ([subagents/<parent>/<child>.json]) so a run's status transitions rewrite
+    only that child's file — there is no per-parent aggregate for two children
+    to race on. {!Plan.create} and the exclusive writes are check-then-write and
+    do not serialize concurrent creators; a caller relying on the exclusivity
+    must serialize creation itself. *)
 
 (** {1:errors Errors} *)
 
@@ -73,13 +74,15 @@ end
 (** {1:plans Plans} *)
 
 module Plan : sig
-  (** Per-id plan storage and the plan-approval boundary.
+  (** Per-session plan storage and the plan-approval boundary.
 
-      A plan is stored in one file per id under [root/plans]. A model proposes a
-      plan through the host-tool surface; the host saves it
+      A plan is stored in one file per id under [root/plans/<session>]. A model
+      proposes a plan through the host-tool surface; the host saves it
       {!Spice_protocol.Plan.Status.Proposed} and the turn blocks. A user
       decision drives it through {!resolve}, which transitions the stored
-      artifact and yields the model-visible answer text. *)
+      artifact and yields the model-visible answer text. Obsolete unscoped files
+      directly under [root/plans] are rejected as {!Error.Corrupt_file}; they
+      are never merged into the session-scoped namespace. *)
 
   val save :
     fs:Eio.Fs.dir_ty Eio.Path.t ->
@@ -102,32 +105,33 @@ module Plan : sig
   val load :
     fs:Eio.Fs.dir_ty Eio.Path.t ->
     root:string ->
+    session:Spice_session.Id.t ->
     Spice_protocol.Plan.Id.t ->
     (Spice_protocol.Plan.t, Error.t) result
-  (** [load ~fs ~root id] loads plan [id]. A missing plan is {!Error.Not_found};
-      a malformed file or an id that does not match [id] is
-      {!Error.Corrupt_file}. *)
+  (** [load ~fs ~root ~session id] loads [session]'s plan [id]. A missing plan
+      is {!Error.Not_found}; a malformed file or a stored session or id that
+      does not match the requested key is {!Error.Corrupt_file}. *)
 
   val list :
     fs:Eio.Fs.dir_ty Eio.Path.t ->
     root:string ->
-    ?session:Spice_session.Id.t ->
-    unit ->
+    session:Spice_session.Id.t ->
     (Spice_protocol.Plan.t list, Error.t) result
-  (** [list ~fs ~root ?session ()] lists plans, restricted to those sourced from
-      [session] when supplied. A missing directory is an empty list; results are
-      newest first by {!Spice_protocol.Plan.updated_at}, then by id. Malformed
-      files are {!Error.Corrupt_file}. *)
+  (** [list ~fs ~root ~session] lists [session]'s plans. A missing directory is
+      an empty list; results are newest first by
+      {!Spice_protocol.Plan.updated_at}, then by id. Malformed files or a stored
+      session that does not match [session] are {!Error.Corrupt_file}. *)
 
   val resolve :
     fs:Eio.Fs.dir_ty Eio.Path.t ->
     root:string ->
+    session:Spice_session.Id.t ->
     now:Spice_session.Time.t ->
     decision:Spice_protocol.Plan.Decision.t ->
     Spice_protocol.Plan.Proposal.t ->
     (string, Error.t) result
-  (** [resolve ~fs ~root ~now ~decision proposal] applies [decision] to the
-      stored plan named by [proposal].
+  (** [resolve ~fs ~root ~session ~now ~decision proposal] applies [decision] to
+      [session]'s stored plan named by [proposal].
 
       It loads the proposal's plan, approves or rejects it at [now], saves the
       transitioned artifact, and returns the model-visible answer text the

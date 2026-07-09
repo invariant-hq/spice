@@ -360,7 +360,8 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
      [Artifacts.Error.Conflict], reported to the client as an execution error so
      a stale dialog fails loudly rather than wedging the turn. *)
   let resolve_plan ~decision proposal =
-    Artifacts.Plan.resolve ~fs ~root ~now:(now stdenv) ~decision proposal
+    Artifacts.Plan.resolve ~fs ~root ~session ~now:(now stdenv) ~decision
+      proposal
     |> Result.map_error Artifacts.Error.to_protocol_error
   in
   let hooks =

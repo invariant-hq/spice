@@ -1466,7 +1466,9 @@ let resolve_continuation ~fs ~root ~now document = function
       let* pending, proposal = execution (pending_plan_call document) in
       let* text =
         sidecar
-          (Spice_host.Artifacts.Plan.resolve ~fs ~root ~now ~decision proposal)
+          (Spice_host.Artifacts.Plan.resolve ~fs ~root
+             ~session:(Session.id (Store.Document.session document))
+             ~now ~decision proposal)
       in
       Ok (Answer_question { pending; text })
   | Tool_claim_interrupted { id; reason } ->

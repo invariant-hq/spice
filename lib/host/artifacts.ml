@@ -123,38 +123,79 @@ module Plan = struct
   let kind = "plan"
   let dir ~root = Filename.concat root "plans"
 
-  let path ~root id =
+  let reject_unscoped_files ~fs ~root =
+    let base = dir ~root in
+    if not (dir_exists ~fs base) then Ok ()
+    else
+      let* names = io base (fun () -> Eio.Path.read_dir (fs_path ~fs base)) in
+      match List.find_opt is_json_file names with
+      | None -> Ok ()
+      | Some name ->
+          let path = Filename.concat base name in
+          Error
+            (Error.Corrupt_file
+               {
+                 path;
+                 message =
+                   "unscoped plan artifacts are unsupported; expected \
+                    plans/<session>/<plan>.json";
+               })
+
+  let session_dir ~root session =
     Filename.concat (dir ~root)
+      (escaped_component (Spice_session.Id.to_string session))
+
+  let path ~root ~session id =
+    Filename.concat
+      (session_dir ~root session)
       (escaped_component (Spice_protocol.Plan.Id.to_string id) ^ ".json")
 
+  let plan_session plan =
+    Spice_protocol.Plan.Source.session (Spice_protocol.Plan.source plan)
+
   let save ~fs ~root plan =
+    let* () = reject_unscoped_files ~fs ~root in
+    let session = plan_session plan in
     save_file ~fs Spice_protocol.Plan.jsont
-      (path ~root (Spice_protocol.Plan.id plan))
+      (path ~root ~session (Spice_protocol.Plan.id plan))
       plan
 
   let create ~fs ~root plan =
+    let* () = reject_unscoped_files ~fs ~root in
     let id = Spice_protocol.Plan.id plan in
+    let session = plan_session plan in
     create_file ~fs ~kind
-      ~key:(Spice_protocol.Plan.Id.to_string id)
-      Spice_protocol.Plan.jsont (path ~root id) plan
+      ~key:
+        (Spice_session.Id.to_string session
+        ^ "/"
+        ^ Spice_protocol.Plan.Id.to_string id)
+      Spice_protocol.Plan.jsont (path ~root ~session id) plan
 
-  let load ~fs ~root id =
+  let load ~fs ~root ~session id =
+    let* () = reject_unscoped_files ~fs ~root in
     let key = Spice_protocol.Plan.Id.to_string id in
-    let p = path ~root id in
+    let p = path ~root ~session id in
     let* plan = read_file ~fs Spice_protocol.Plan.jsont p in
     match plan with
     | None -> Error (Error.Not_found { kind; key })
     | Some plan ->
         let stored = Spice_protocol.Plan.id plan in
-        if Spice_protocol.Plan.Id.equal stored id then Ok plan
+        let stored_session = plan_session plan in
+        if
+          Spice_protocol.Plan.Id.equal stored id
+          && Spice_session.Id.equal stored_session session
+        then Ok plan
         else
           Error
             (Error.Corrupt_file
                {
                  path = p;
                  message =
-                   Printf.sprintf "plan id %S does not match requested key %S"
+                   Printf.sprintf
+                     "plan key %S/%S does not match requested key %S/%S"
+                     (Spice_session.Id.to_string stored_session)
                      (Spice_protocol.Plan.Id.to_string stored)
+                     (Spice_session.Id.to_string session)
                      key;
                })
 
@@ -169,24 +210,34 @@ module Plan = struct
           (Spice_protocol.Plan.id b)
     | order -> order
 
-  let list ~fs ~root ?session () =
-    let* plans = list_dir ~fs Spice_protocol.Plan.jsont (dir ~root) in
-    let plans =
-      match session with
-      | None -> plans
-      | Some session ->
-          List.filter
-            (fun plan ->
-              Spice_session.Id.equal session
-                (Spice_protocol.Plan.Source.session
-                   (Spice_protocol.Plan.source plan)))
-            plans
+  let list ~fs ~root ~session =
+    let* () = reject_unscoped_files ~fs ~root in
+    let* plans =
+      list_dir ~fs Spice_protocol.Plan.jsont (session_dir ~root session)
     in
-    Ok (List.sort compare_newest plans)
+    let rec check acc = function
+      | [] -> Ok (List.sort compare_newest acc)
+      | plan :: rest ->
+          if Spice_session.Id.equal (plan_session plan) session then
+            check (plan :: acc) rest
+          else
+            let p = path ~root ~session (Spice_protocol.Plan.id plan) in
+            Error
+              (Error.Corrupt_file
+                 {
+                   path = p;
+                   message =
+                     Printf.sprintf
+                       "plan session %S does not match requested key %S"
+                       (Spice_session.Id.to_string (plan_session plan))
+                       (Spice_session.Id.to_string session);
+                 })
+    in
+    check [] plans
 
-  let resolve ~fs ~root ~now ~decision proposal =
+  let resolve ~fs ~root ~session ~now ~decision proposal =
     let id = Spice_protocol.Plan.Proposal.id proposal in
-    let* plan = load ~fs ~root id in
+    let* plan = load ~fs ~root ~session id in
     let transitioned =
       match (decision : Spice_protocol.Plan.Decision.t) with
       | Spice_protocol.Plan.Decision.Approve ->

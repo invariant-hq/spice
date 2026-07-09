@@ -148,8 +148,8 @@ plan or todo commands.
 
   $ spice session create --id workflow --title Workflow
   workflow
-  $ mkdir -p .spice/plans .spice/todos
-  $ cat > .spice/plans/plan-1.json <<'JSON'
+  $ mkdir -p .spice/plans/workflow .spice/todos
+  $ cat > .spice/plans/workflow/plan-1.json <<'JSON'
   > {"id":"plan-1","source":{"session":"workflow","turn":"turn-plan","tool_call_id":"call-plan"},"title":"Plan","body":"Do the work","status":{"type":"proposed"},"created_at":1}
   > JSON
   $ cat > .spice/todos/workflow.json <<'JSON'
@@ -159,3 +159,12 @@ plan or todo commands.
   {"schema_version":1,"type":"session","session":{"id":"workflow","title":"Workflow","preview":null,"lifecycle":"active","phase":"idle","forked_from":null,"event_count":0,"active_turn":null,"cwd":"$TESTCASE_ROOT","created_at":$TIME,"updated_at":$TIME,"revision":"sha256:$HASH","active_model":null,"last_outcome":null,"waiting":null},"latest_compaction":null,"context":{"projected_input_tokens_estimate":0,"basis":"estimate","context_window":null,"auto_compaction_limit":null},"workflow":{"plans":[{"id":"plan-1","source":{"session":"workflow","turn":"turn-plan","tool_call_id":"call-plan"},"title":"Plan","body":"Do the work","status":{"type":"proposed"},"created_at":$TIME}],"todos":[{"id":"todo-1","owner":"main","content":"Inspect code","status":"in_progress","priority":"high","position":0},{"id":"todo-2","owner":"main","content":"Update docs","status":"pending","priority":"medium","position":1}],"subagents":[]}}
   $ spice session show --json workflow | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"(created_at|updated_at)":[0-9]+/"\1":$TIME/g'
   {"schema_version":1,"type":"session","session":{"id":"workflow","title":"Workflow","preview":null,"lifecycle":"active","phase":"idle","forked_from":null,"event_count":0,"active_turn":null,"cwd":"$TESTCASE_ROOT","created_at":$TIME,"updated_at":$TIME,"revision":"sha256:$HASH","active_model":null,"last_outcome":null,"waiting":null},"latest_compaction":null,"context":{"projected_input_tokens_estimate":0,"basis":"estimate","context_window":null,"auto_compaction_limit":null},"workflow":{"plans":[{"id":"plan-1","source":{"session":"workflow","turn":"turn-plan","tool_call_id":"call-plan"},"title":"Plan","body":"Do the work","status":{"type":"proposed"},"created_at":$TIME}],"todos":[{"id":"todo-1","owner":"main","content":"Inspect code","status":"in_progress","priority":"high","position":0},{"id":"todo-2","owner":"main","content":"Update docs","status":"pending","priority":"medium","position":1}],"subagents":[]}}
+
+Obsolete unscoped plan files fail loudly instead of being silently ignored.
+
+  $ cat > .spice/plans/legacy.json <<'JSON'
+  > {"id":"legacy","source":{"session":"workflow","turn":"turn-plan","tool_call_id":"call-plan"},"body":"Old layout","status":{"type":"proposed"},"created_at":1}
+  > JSON
+  $ spice session show --json workflow 2>&1
+  spice: $TESTCASE_ROOT/.spice/plans/legacy.json: unscoped plan artifacts are unsupported; expected plans/<session>/<plan>.json
+  [1]

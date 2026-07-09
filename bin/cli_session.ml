@@ -54,7 +54,7 @@ let load_workflow ~stdenv host session_id =
   let fs = Eio.Stdenv.fs stdenv in
   let root = workflow_root host in
   let* plans =
-    sidecar (Spice_host.Artifacts.Plan.list ~fs ~root ~session:session_id ())
+    sidecar (Spice_host.Artifacts.Plan.list ~fs ~root ~session:session_id)
   in
   let* todos = sidecar (Spice_host.Artifacts.Todo.load ~fs ~root session_id) in
   let* goal = sidecar (Spice_host.Artifacts.Goal.load ~fs ~root session_id) in

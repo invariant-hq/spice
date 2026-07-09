@@ -54,6 +54,23 @@ The plan sidecar was persisted as `proposed` and the session parked on the
   $ spice session show --json plan-run | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"active_turn":"turn_[^"]+"/"active_turn":"turn_$ID"/; s/"turn":"turn_[^"]+"/"turn":"turn_$ID"/g; s/"created_at":[0-9]+/"created_at":$TIME/g; s/"updated_at":[0-9]+/"updated_at":$TIME/g'
   {"schema_version":1,"type":"session","session":{"id":"plan-run","title":null,"preview":"plan the work","lifecycle":"active","phase":"waiting","forked_from":null,"event_count":2,"active_turn":"turn_$ID","cwd":"$TESTCASE_ROOT","created_at":$TIME,"updated_at":$TIME,"revision":"sha256:$HASH","active_model":"openai/responses:gpt-5.5","last_outcome":null,"waiting":{"kind":"host_tool","turn":"turn_$ID","tool_call_id":"plan-1","tool":"propose_plan"},"workflow_mode":"plan"},"latest_compaction":null,"context":{"projected_input_tokens_estimate":68,"basis":"estimate","context_window":1050000,"auto_compaction_limit":1030000},"workflow":{"plans":[{"id":"milestone-plan","source":{"session":"plan-run","turn":"turn_$ID","tool_call_id":"plan-1"},"title":"Milestone Plan","body":"- Inspect host workflow\n- Patch bounded gaps","status":{"type":"proposed"},"created_at":$TIME}],"todos":[],"subagents":[]}}
 
+Plan ids are scoped to their session. A second session can independently use
+the same model-authored id without conflicting with the first session's plan.
+
+  $ cat > plan-two.jsonl <<'JSONL'
+  > {"expect":{"body_contains":["\"name\":\"propose_plan\""]},"response":{"id":"resp-plan-two","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-plan-two","call_id":"plan-2","name":"propose_plan","arguments":"{\"id\":\"milestone-plan\",\"title\":\"Second Plan\",\"body\":\"- Work independently\"}"}]}}
+  > JSONL
+  $ start_fake_openai plan-two.jsonl plan-two-capture plan-two-port
+
+  $ spice run --json --cwd "$PWD" --permission-mode bypass --mode plan --id plan-run-two "plan other work" 2>&1 | grep -o '"type":"session.waiting"'
+  "type":"session.waiting"
+  [3]
+  $ wait_fake_server
+  $ spice session show --json plan-run | grep -o '"source":{"session":"plan-run"' | head -1
+  "source":{"session":"plan-run"
+  $ spice session show --json plan-run-two | grep -o '"source":{"session":"plan-run-two"' | head -1
+  "source":{"session":"plan-run-two"
+
 `spawn_subagent` launches a detached child session: the spawn returns a
 launch acknowledgment immediately, the parent turn continues while the
 child explores with read-only tools, and the process exits only once the
