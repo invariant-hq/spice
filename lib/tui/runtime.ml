@@ -1194,18 +1194,45 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
            [`Explicit_started] — permanently live — and re-renders the whole
            mounted transcript at 30fps forever, CPU proportional to session
            length even when nothing on screen changes. *)
+        (* [owns_terminal]: a caller-supplied backend (the pty harness) runs its
+           own I/O and keeps the default signal disposition; only the real
+           terminal path takes over fault handling below. *)
+        let owns_terminal = Option.is_none matrix in
         let matrix =
           match matrix with
           | Some matrix -> matrix
           | None ->
+              (* [~signal_handlers:false] declines matrix's own signal and
+                 uncaught-exception handlers so spice owns the terminating-signal
+                 path: matrix's handlers print no backtrace and, worse, exit
+                 silently, so a killed TUI leaves a garbled terminal and no
+                 diagnostic. *)
               Matrix_eio.create ~mode:`Alt ~sw ~clock ~stdin:stdenv#stdin
                 ~stdout:stdenv#stdout ~target_fps:(Some 30.)
                 ~cursor_visible:true ~mouse_enabled:true ~exit_on_ctrl_c:false
-                ~start_idle:true ()
+                ~start_idle:true ~signal_handlers:false ()
         in
+        (* Leave the alternate screen and record a crash report before a
+           terminating signal ends the process, so a killed session restores the
+           terminal and leaves a durable trace instead of dying silently. *)
+        if owns_terminal then
+          Spice_crash.install_signal_breadcrumbs ~on_restore:(fun () ->
+              Matrix.close matrix);
         let process_perform thunk =
           Eio.Fiber.fork_daemon ~sw (fun () ->
-              thunk ();
+              (try thunk () with
+              | Eio.Cancel.Cancelled _ as exn -> raise exn
+              | exn ->
+                  (* A background effect fault must not fail the shared switch
+                     and tear the whole session down. Record it for the durable
+                     trail — printing here would corrupt the UI-owned terminal —
+                     and drop this effect; the session stays up. *)
+                  let backtrace = Printexc.get_raw_backtrace () in
+                  let (_ : string option) =
+                    Spice_crash.record ~fault:(Printexc.to_string exn)
+                      ~detail:(Printexc.raw_backtrace_to_string backtrace)
+                  in
+                  ());
               `Stop_daemon)
         in
         (* The stable Mosaic dispatch, captured by every perform (the closure
