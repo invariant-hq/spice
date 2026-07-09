@@ -2298,8 +2298,12 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
               perform (fun () -> resolve_auth_cancel request)
           | App.Auth_copy text -> Mosaic.Cmd.copy_to_clipboard text
           | App.Auth_open_url { request; url } ->
+              (* Guarded by the live-flow table, not only the shell's
+                 active-request check: no browser may open for a flow that
+                 settled or was cancelled by the time the command runs. *)
               perform (fun () ->
-                  if Spice_host_builtin.Login.open_browser url then
+                  if not (Hashtbl.mem auth_cancels request) then ()
+                  else if Spice_host_builtin.Login.open_browser url then
                     deliver (App.auth_browser_opened ~request)
                   else deliver (App.auth_browser_open_failed ~request))
           | App.Review_command eff -> (
