@@ -12,7 +12,7 @@ internal notes, see the rest of [`doc/`](../).
 - [Permission rules](permission-rules.md) — durable rule precedence, matcher
   JSON, authoring, inspection, and removal.
 - [Sessions](sessions.md) — where sessions live and how to list, resume,
-  fork, diff, and revert them.
+  fork, rewind, diff, and revert them.
 - [Headless runs](headless.md) — `spice run` for scripts
   and CI: run flags, the JSONL event stream, exit codes, and the
   blocked-session resume contract.

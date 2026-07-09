@@ -26,8 +26,13 @@ subcommand name can be passed after `--` (`spice run -- resume`).
 | `--permission-unattended POLICY` | `block` parks the session and exits 3; `deny` records a model-visible denial and continues. |
 | `--sandbox MODE` | `read-only`, `workspace-write` (default), `danger-full-access`, or `external-sandbox`. Restricted modes fail closed when unenforceable. |
 | `--require-sandbox` | Fail before credentials and session creation unless the sandbox is enforceable. |
-| `--ephemeral` | Persist nothing: the session lives under a throwaway root removed when the run ends. Start only. |
+| `--ephemeral` | Persist nothing: the session lives under a throwaway root removed when the run ends. A blocked ephemeral run cannot be resumed. Start only. |
 | `--skill NAME` | Load a skill into the turn ahead of the prompt. Repeatable. Start only. |
+| `--no-skills` | Disable skill discovery and the skill tool for this invocation. |
+| `--no-instructions` | Disable global and project instruction files for this invocation. |
+| `--no-project-instructions` / `--project-instructions` | Disable or force-enable project instruction files for this invocation. |
+| `--goal TEXT` | Pursue a build-mode goal across turns. Without `PROMPT`, the objective seeds the first turn. Start only. |
+| `--goal-budget TOKENS` | Stop goal pursuit when its token budget is exhausted. |
 | `--max-steps N` | Maximum model/tool steps. |
 | `--cwd DIR` | Working directory override. |
 | `--id ID` / `--title T` | New session id and title. Start only. |
@@ -74,6 +79,30 @@ spice run reply ID --tool-interrupted EXECUTION_ID --reason "hung"
 unattended contexts, choose the policy up front with
 `--permission-unattended block|deny`.
 
+## Long-running goals
+
+`--goal` asks a build-mode run to continue across turn boundaries until the
+goal is completed, blocked, budget-limited, or explicitly stopped:
+
+```sh
+spice run --goal "Port the parser and keep the suite green"
+spice run --goal "Finish the release" --goal-budget 200000 \
+  "Start by auditing the remaining blockers"
+```
+
+Goal lifecycle actions use `spice run reply` but do not require a pending
+permission, plan, or question:
+
+```sh
+spice run reply SESSION --pause-goal
+spice run reply SESSION --edit-goal "Ship the parser without compatibility"
+spice run reply SESSION --resume-goal [--goal-budget TOKENS]
+spice run reply SESSION --clear-goal
+```
+
+Pausing and clearing do not start a turn. Resuming a paused, blocked, or
+budget-limited goal continues pursuit when the session is idle.
+
 ## JSONL events
 
 With `--json`, each line is one event object carrying `schema_version`
@@ -87,6 +116,8 @@ With `--json`, each line is one event object carrying `schema_version`
 - `compaction.started`, `compaction.model_started`, `compaction.retrying`,
   `compaction.installed`, `compaction.skipped`, `compaction.failed`
 - `workspace.degraded`
+- `goal.set`, `goal.objective_updated`, `goal.resumed`, `goal.paused`
+- `goal.blocked`, `goal.budget_limited`, `goal.completed`, `goal.cleared`
 
 `session.waiting` describes what the session is blocked on and how to resolve
 it; pair it with exit code 3 in scripts.

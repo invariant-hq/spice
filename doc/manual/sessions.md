@@ -23,6 +23,9 @@ spice run resume SESSION "..."    # extend a session headlessly with a new promp
 spice resume SESSION              # open the TUI on a session by id
 ```
 
+Commands that take a session id accept a unique id prefix. Where supported,
+`--last` targets the newest session in the current working directory.
+
 ## Lifecycle commands
 
 ```sh
@@ -31,16 +34,25 @@ spice session show SESSION        # metadata, execution status, and next steps
 spice session search QUERY        # search saved session metadata
 spice session create [--title T]  # create an empty saved session
 spice session rename SESSION TITLE
-spice session fork SESSION        # branch a session into a new document
+spice session fork SESSION --id CHILD [--title T]
+spice session rewind SESSION --to-turn TURN --id CHILD [--after] [--revert-fs]
 spice session archive SESSION     # hide from default listings
 spice session restore SESSION
 spice session delete SESSION      # tombstone (asks for confirmation)
-spice session export SESSION      # export the session document
+spice session export SESSION [--format json|text|markdown]
 spice session compact SESSION     # compact context out-of-band
 ```
 
 `--all` lists sessions across working directories; by default listings are
 scoped to the current one.
+
+`fork` copies the whole parent into a new child and leaves the parent
+unchanged. `rewind` is fork-at-a-turn-boundary: `--before` (the default) drops
+the named turn and everything after it; `--after` keeps the named turn and
+drops only later turns. `--revert-fs` also attempts an all-or-nothing revert of
+the dropped turns' Spice-authored workspace changes. A stale file or missing
+mutation record refuses that filesystem revert without discarding the new
+transcript child.
 
 ## Diff and revert
 
