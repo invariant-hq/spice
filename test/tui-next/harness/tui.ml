@@ -222,16 +222,17 @@ let advance t dt =
 
 (* A lone trailing ESC byte is ambiguous (Escape vs. the start of an Alt/CSI
    sequence), so the parser buffers it behind a 50 ms disambiguation deadline
-   and emits the [Escape] key only once that deadline passes. A real terminal
-   resolves it when the escape timeout elapses; the deterministic backend only
-   drains its parser while processing a fed chunk, so a bare wake never fires
-   the deadline and the Escape would stall until the next keystroke. Model the
-   timeout: let the loop buffer the ESC, step virtual time past the deadline,
-   then feed an empty chunk to force the drain that delivers the key. *)
+   and emits the [Escape] key only once that deadline passes. Model the timeout
+   exactly as a real terminal does: let the loop buffer the ESC, then step
+   virtual time past the deadline and wake it. The backend drains its parser at
+   the current instant on that wake (as the Unix backend drains after every
+   wait), so the buffered ESC resolves to [Escape] — no synthetic input, so the
+   escape-timeout decode path stays covered. (Feeding an empty chunk to force
+   the drain does not work: [Parser.feed] re-scans the buffered ESC and re-arms
+   its deadline, swallowing the key and the next keystroke with it.) *)
 let flush_pending_escape t =
   round_trip t;
   set_time t (Matrix_test.now t.backend +. 0.06);
-  Matrix_test.feed t.backend "";
   wake t
 
 let ends_with_escape bytes =
