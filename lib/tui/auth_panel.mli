@@ -78,6 +78,9 @@ type outcome =
       (** Nothing persisted; the display-safe failure message. *)
 
 type record = {
+  provider_id : string;
+      (** The id of the provider the flow ran against ([openai], …) — what the
+          post-login model handoff focuses on. *)
   provider_title : string;
       (** The provider display name for the record head. *)
   outcome : outcome;  (** The settled outcome. *)

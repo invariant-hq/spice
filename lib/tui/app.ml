@@ -1695,7 +1695,13 @@ let notice_headline line =
    [Auth_panel.record] so the shared [provider_title] label needs no
    type-directed disambiguation. *)
 let auth_settled_line record =
-  let { Auth_panel.provider_title; outcome; acct_fingerprint; source_word } =
+  let {
+    Auth_panel.provider_id = _;
+    provider_title;
+    outcome;
+    acct_fingerprint;
+    source_word;
+  } =
     record
   in
   let ident =
@@ -2417,24 +2423,47 @@ let update msg t =
       | Panel (Auth panel) when Auth_panel.active_request panel = Some request
         ->
           let t = { t with surface = Conversing } in
-          let t =
+          let t, commands =
             match t.phase with
             | Chat chat ->
-                {
-                  t with
-                  phase =
-                    Chat
-                      {
-                        chat with
-                        transcript =
-                          Transcript.append chat.transcript
-                            (Transcript.Notice
-                               (Notice.Event (auth_settled_line record)));
-                      };
-                }
-            | Prelude -> { t with notice = [ auth_settled_line record ] }
+                ( {
+                    t with
+                    phase =
+                      Chat
+                        {
+                          chat with
+                          transcript =
+                            Transcript.append chat.transcript
+                              (Transcript.Notice
+                                 (Notice.Event (auth_settled_line record)));
+                        };
+                  },
+                  [] )
+            | Prelude -> (
+                let t = { t with notice = [ auth_settled_line record ] } in
+                (* A home-stage login that saved a credential hands off to the
+                   model picker seeded on the new provider — the "now what?"
+                   answer (09-auth Q8/D1). The catalog stays whole so other
+                   providers remain discoverable; esc lands back on the
+                   composer with the notice standing. Logouts, rejections, and
+                   failures stay put. *)
+                match record.Auth_panel.outcome with
+                | Auth_panel.Signed_in | Auth_panel.Saved_unchecked _ ->
+                    let panel_state =
+                      Model_panel.focus_provider record.Auth_panel.provider_id
+                        Model_panel.loading
+                    in
+                    ( {
+                        t with
+                        surface =
+                          Panel (Model { panel_state; return = To_chat });
+                      },
+                      [ Load_model_panel ] )
+                | Auth_panel.Saved_blocked | Auth_panel.Removed
+                | Auth_panel.Env_active _ | Auth_panel.Failed _ ->
+                    (t, []))
           in
-          (t, [ Reload_brief ])
+          (t, commands @ [ Reload_brief ])
       | Conversing
       | Panel (Auth _ | Session_switch _ | Model _ | Dialog _)
       | Screen _ ->

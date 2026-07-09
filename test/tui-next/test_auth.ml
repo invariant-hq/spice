@@ -431,3 +431,75 @@ let%expect_test "a locked model row reroutes into login" =
 22 |   enter save · esc back · paste works · your key is not shown
 23 |
 24 |   ↵ save · esc back|}]
+
+(* A home-stage login that saves a credential hands off to the model picker,
+   seeded on the just-connected provider's group with the catalog whole (D1);
+   esc lands back on the composer with the settled record standing in the
+   notice slot. *)
+let%expect_test "a home login settle hands off to the model picker" =
+  Tui.run ~name:"auth-model-handoff"
+    ~env:[ ("SPICE_ANTHROPIC_BASE_URL", "http://127.0.0.1:9/v1") ]
+  @@ fun t ->
+  Tui.settle t;
+  open_login t;
+  Tui.keys t "anthropic";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.keys t "sk-ant-test-key-1234";
+  Tui.enter t;
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 |
+02 |
+03 |
+04 |
+05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+07 |
+08 |                            dev · openai/gpt-5.5 medium
+09 |
+10 |                ▎ Log in to Anthropic · ✓ signed in · …1234 (store)
+11 |
+12 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+13 |    model
+14 |
+15 |   ↑ 10 more
+16 |
+17 |     Anthropic
+18 |   ❯ Claude Sonnet 5         Default · 1M context · Efficient for routine tasks
+19 |     Claude Fable 5               1M context · Best for everyday, complex tasks
+20 |   ↓ 26 more
+21 |
+22 |   ○ No effort  ← → to adjust
+23 |
+24 |   ↵ set default · ←→ effort · type to filter · ↑↓ select · esc close|}];
+  Tui.keys t Keys.escape;
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 |
+02 |
+03 |
+04 |
+05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+07 |
+08 |                            dev · openai/gpt-5.5 medium
+09 |
+10 |                ▎ Log in to Anthropic · ✓ signed in · …1234 (store)
+11 |
+12 |           ────────────────────────────────────────────────────────────
+13 |           ❯ message spice
+14 |           ────────────────────────────────────────────────────────────
+15 |
+16 |                      dune       ✗ · diagnostics unavailable
+17 |
+18 |                       sandbox: danger-full-access (config)
+19 |
+20 |
+21 |
+22 |
+23 |
+24 |   …ice-tui-next-auth-model-handoff · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]

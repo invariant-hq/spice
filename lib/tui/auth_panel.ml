@@ -36,6 +36,7 @@ type outcome =
   | Failed of string
 
 type record = {
+  provider_id : string;
   provider_title : string;
   outcome : outcome;
   acct_fingerprint : string option;

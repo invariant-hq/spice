@@ -32,7 +32,13 @@ type ready = {
       (** The live effort [←]/[→] adjusts, seeded from {!facts.reasoning}. *)
 }
 
-type t = Loading | Failed of string | Ready of ready
+type t =
+  | Loading of { focus : string option }
+      (** [focus] pins the next {!loaded}'s opening selection to a provider's
+          group — the post-login handoff (09-auth §9 / D1). *)
+  | Failed of string
+  | Ready of ready
+
 type msg = Key of Panel.key
 
 type event =
@@ -44,7 +50,12 @@ type event =
     }
   | Login_required of string
 
-let loading = Loading
+let loading = Loading { focus = None }
+
+let focus_provider id t =
+  match t with
+  | Loading _ -> Loading { focus = Some id }
+  | Failed _ | Ready _ -> t
 
 (* One selectable slot: a catalog model, or — hoisted to the top while the filter
    is empty — the current model shown as the "Default (recommended)" alias. The
@@ -110,18 +121,44 @@ let initial_selection slots =
       in
       loop 0 slots
 
+(* The first unlocked catalog row in provider [id]'s group; the alias row is
+   skipped so the highlight lands on the group itself. [None] when the provider
+   is unknown or its whole group is still locked (a failed login, say), which
+   falls back to the default seeding. *)
+let provider_selection ~id slots =
+  let prefix = id ^ "/" in
+  let rec loop i = function
+    | [] -> None
+    | slot :: rest ->
+        if
+          (not slot.alias) && (not slot.model.locked)
+          && String.starts_with ~prefix slot.model.selector
+        then Some i
+        else loop (i + 1) rest
+  in
+  loop 0 slots
+
 let loaded facts t =
+  let fresh focus =
+    let ready =
+      { facts; filter = ""; selected = 0; effort = facts.reasoning }
+    in
+    let slots = slots ready in
+    let selected =
+      match Option.bind focus (fun id -> provider_selection ~id slots) with
+      | Some index -> index
+      | None -> initial_selection slots
+    in
+    Ready { ready with selected }
+  in
   match t with
-  | Loading | Failed _ ->
-      let ready =
-        { facts; filter = ""; selected = 0; effort = facts.reasoning }
-      in
-      Ready { ready with selected = initial_selection (slots ready) }
+  | Loading { focus } -> fresh focus
+  | Failed _ -> fresh None
   | Ready ready -> Ready (clamp { ready with facts })
 
 let failed message = function
   | Ready ready when ready.facts.models <> [] -> Ready ready
-  | Loading | Failed _ | Ready _ -> Failed message
+  | Loading _ | Failed _ | Ready _ -> Failed message
 
 let key ev =
   match Panel.classify ev with
@@ -233,7 +270,7 @@ let narrow ready appended =
 
 let update (Key k) t =
   match t with
-  | Loading | Failed _ -> (
+  | Loading _ | Failed _ -> (
       match k with Panel.Action Panel.Escape -> (t, Close) | _ -> (t, Stay))
   | Ready ready -> (
       match k with
@@ -514,7 +551,7 @@ let list_block ~width ~rows ready =
 
 let content ~width ~rows t =
   match t with
-  | Loading -> [ muted_line "⠋ loading models…" ]
+  | Loading _ -> [ muted_line "⠋ loading models…" ]
   | Failed message -> [ error_line message ]
   | Ready ready -> (
       match slots ready with
@@ -535,7 +572,7 @@ let content ~width ~rows t =
 
 let view ~frame ~width ~rows t =
   let filter =
-    match t with Loading | Failed _ -> "" | Ready ready -> ready.filter
+    match t with Loading _ | Failed _ -> "" | Ready ready -> ready.filter
   in
   Panel.view ~frame ~name:"model" ~filter ~width
     ~hint:

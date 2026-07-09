@@ -108,6 +108,15 @@ val loading : t
 (** [loading] is the panel just opened, before its facts arrive: {!view} renders
     a muted loading line and an empty filter. *)
 
+val focus_provider : string -> t -> t
+(** [focus_provider id t] pins the next {!loaded}'s opening selection to
+    provider [id]'s group — its first unlocked model — instead of the default
+    seeding. The post-login handoff (09-auth §9): a home-stage login settle
+    opens the panel focused on the provider that just connected, catalog whole
+    so other providers stay discoverable. [id] is the provider id a selector
+    prefixes ([openai/…]). An unknown id, or a group still fully locked, falls
+    back to the default seeding; a panel already loaded is unchanged. *)
+
 val loaded : facts -> t -> t
 (** [loaded facts t] folds [facts] into [t]. From loading or error it seeds the
     filter empty, the effort from [facts.reasoning], and the selection on the

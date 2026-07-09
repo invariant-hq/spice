@@ -1095,8 +1095,8 @@ let auth_source_word = function
 (* Reduce a settled login to the display-safe record the shell renders. A
    [Checked] account whose phase is [`Blocked] saved but was rejected;
    [Cancelled] is defensive — the command handler drops it before this. *)
-let auth_record_of_settled ~title (settled : Spice_host_builtin.Login.settled) :
-    Auth_panel.record =
+let auth_record_of_settled ~provider ~title
+    (settled : Spice_host_builtin.Login.settled) : Auth_panel.record =
   match settled with
   | Spice_host_builtin.Login.Checked account ->
       let outcome =
@@ -1105,14 +1105,16 @@ let auth_record_of_settled ~title (settled : Spice_host_builtin.Login.settled) :
         | `Missing | `Unchecked | `Ready | `Degraded -> Auth_panel.Signed_in
       in
       {
-        Auth_panel.provider_title = title;
+        Auth_panel.provider_id = Spice_llm.Provider.id provider;
+        provider_title = title;
         outcome;
         acct_fingerprint = Spice_account.fingerprint account;
         source_word = auth_source_word (Spice_account.source account);
       }
   | Spice_host_builtin.Login.Unchecked { account; reason } ->
       {
-        Auth_panel.provider_title = title;
+        Auth_panel.provider_id = Spice_llm.Provider.id provider;
+        provider_title = title;
         outcome = Auth_panel.Saved_unchecked reason;
         acct_fingerprint = Option.bind account Spice_account.fingerprint;
         source_word =
@@ -1121,25 +1123,28 @@ let auth_record_of_settled ~title (settled : Spice_host_builtin.Login.settled) :
       }
   | Spice_host_builtin.Login.Failed message ->
       {
-        Auth_panel.provider_title = title;
+        Auth_panel.provider_id = Spice_llm.Provider.id provider;
+        provider_title = title;
         outcome = Auth_panel.Failed message;
         acct_fingerprint = None;
         source_word = None;
       }
   | Spice_host_builtin.Login.Cancelled ->
       {
-        Auth_panel.provider_title = title;
+        Auth_panel.provider_id = Spice_llm.Provider.id provider;
+        provider_title = title;
         outcome = Auth_panel.Failed "sign-in cancelled";
         acct_fingerprint = None;
         source_word = None;
       }
 
-let auth_record_of_logout ~title
+let auth_record_of_logout ~provider ~title
     (result : (Spice_host_builtin.Login.logout, string) result) :
     Auth_panel.record =
   let base outcome =
     {
-      Auth_panel.provider_title = title;
+      Auth_panel.provider_id = Spice_llm.Provider.id provider;
+      provider_title = title;
       outcome;
       acct_fingerprint = None;
       source_word = None;
@@ -1927,7 +1932,7 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                       ());
                   deliver
                     (App.auth_settled ~request
-                       (auth_record_of_settled
+                       (auth_record_of_settled ~provider
                           ~title:(model_provider_title provider)
                           settled)))
         in
@@ -2247,8 +2252,9 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                       deliver
                         (App.auth_settled ~request
                            {
-                             Auth_panel.provider_title =
-                               model_provider_title provider;
+                             Auth_panel.provider_id =
+                               Spice_llm.Provider.id provider;
+                             provider_title = model_provider_title provider;
                              outcome =
                                Auth_panel.Failed
                                  (Spice_auth.Error.message error);
@@ -2269,7 +2275,7 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                           ());
                       deliver
                         (App.auth_settled ~request
-                           (auth_record_of_settled
+                           (auth_record_of_settled ~provider
                               ~title:(model_provider_title provider)
                               settled)))
           | App.Auth_browser_login { request; provider; method_id } ->
@@ -2291,7 +2297,7 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                   | Error _ -> ());
                   deliver
                     (App.auth_settled ~request
-                       (auth_record_of_logout
+                       (auth_record_of_logout ~provider
                           ~title:(model_provider_title provider)
                           result)))
           | App.Auth_cancel { request } ->
