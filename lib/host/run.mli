@@ -64,8 +64,12 @@ module Plan : sig
       {!Sandbox.Effective.status} for the run-start summary. *)
 
   val permission : t -> Config.Source.t Permission.Run.t
-  (** [permission t] is the run's permission table. Read
-      {!Permission.Run.preset} for the run-start summary. *)
+  (** [permission t] is the run's permission table, including the rules a
+      confining sandbox credits into the posture (see
+      {!Permission.Run.with_sandbox_backing}). Display surfaces read this table
+      — not the pre-plan posture — so denial provenance explains the decision
+      the run actually made. Read {!Permission.Run.preset} for the run-start
+      summary. *)
 end
 
 val plan :

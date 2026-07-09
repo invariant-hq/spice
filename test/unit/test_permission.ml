@@ -1188,6 +1188,44 @@ let change_is_inert_and_durable () =
     with_change;
   roundtrip "request without change roundtrips" request_value Request.jsont bare
 
+let destructive_command_matcher () =
+  let destructive = Policy.Match.command Policy.Match.Command.destructive in
+  let matches access = Policy.Match.matches destructive access in
+  let yes msg access = check msg (matches access) in
+  let no msg access = check msg (not (matches access)) in
+  yes "rm -rf is destructive" (exec "rm" [ "-rf"; "build" ]);
+  yes "rm -r is destructive" (exec "rm" [ "-r"; "dir" ]);
+  yes "rm -f is destructive" (exec "rm" [ "-f"; "file" ]);
+  yes "rm --recursive is destructive" (exec "rm" [ "--recursive"; "dir" ]);
+  no "rm of a named file is not flagged" (exec "rm" [ "notes.txt" ]);
+  yes "an absolute rm path resolves by basename" (exec "/bin/rm" [ "-rf"; "x" ]);
+  yes "git push --force is destructive" (exec "git" [ "push"; "--force" ]);
+  yes "git push -f is destructive" (exec "git" [ "push"; "-f" ]);
+  no "an ordinary git push is not flagged"
+    (exec "git" [ "push"; "origin"; "main" ]);
+  yes "git reset --hard is destructive" (exec "git" [ "reset"; "--hard" ]);
+  no "a plain git reset is not flagged" (exec "git" [ "reset" ]);
+  yes "git clean --force is destructive" (exec "git" [ "clean"; "-fd" ]);
+  no "git status is not flagged" (exec "git" [ "status" ]);
+  yes "dd is destructive" (exec "dd" [ "if=/dev/zero"; "of=disk.img" ]);
+  yes "an mkfs variant is destructive" (exec "mkfs.ext4" [ "/dev/sdb1" ]);
+  yes "sudo escalates and is destructive" (exec "sudo" [ "rm"; "x" ]);
+  no "ls is not flagged" (exec "ls" [ "-la" ]);
+  yes "a destructive segment in shell text is flagged"
+    (shell "cd build && rm -rf .");
+  yes "a piped destructive command is flagged" (shell "echo x | rm -rf y");
+  yes "a wrapped destructive command is flagged"
+    (shell "find . -type f | xargs rm -rf");
+  yes "destruction hidden by a substitution is flagged"
+    (shell "rm -rf $(cat targets)");
+  no "a benign command with a redirect is not flagged"
+    (shell "dune build 2> log.txt");
+  no "a read-only shell command is not flagged" (shell "git status");
+  no "the matcher ignores non-command accesses" (workspace_read "README.md");
+  roundtrip "the destructive rule roundtrips through json" rule_value
+    Policy.Rule.jsont
+    (Policy.Rule.review destructive)
+
 let () =
   run "spice.permission"
     [
@@ -1237,4 +1275,6 @@ let () =
         rule_observers_and_match_eliminator;
       test "change validation and lookup" change_validation_and_lookup;
       test "change is inert and durable" change_is_inert_and_durable;
+      test "destructive command matcher classifies irreversible commands"
+        destructive_command_matcher;
     ]

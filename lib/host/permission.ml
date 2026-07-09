@@ -63,6 +63,14 @@ module Preset = struct
         (Spice_permission.Policy.Match.path ~op
            Spice_permission.Policy.Match.Path.workspace)
     in
+    (* [review_destructive] precedes [allow_command] so an irreversible command
+       is reviewed while every other command the sandbox confines runs without
+       review; ordering is load-bearing because the first matching rule wins. *)
+    let review_destructive =
+      Spice_permission.Policy.Rule.review
+        (Spice_permission.Policy.Match.command
+           Spice_permission.Policy.Match.Command.destructive)
+    in
     let allow_command =
       Spice_permission.Policy.Rule.allow
         (Spice_permission.Policy.Match.command
@@ -74,9 +82,10 @@ module Preset = struct
           allow_workspace `Create;
           allow_workspace `Modify;
           allow_workspace `Delete;
+          review_destructive;
           allow_command;
         ]
-    | Accept_edits -> [ allow_command ]
+    | Accept_edits -> [ review_destructive; allow_command ]
     | Plan | Bypass -> []
 
   let equal = ( = )

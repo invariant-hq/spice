@@ -109,6 +109,23 @@ module Match : sig
     val any : t
     (** [any] matches every command access. *)
 
+    val destructive : t
+    (** [destructive] matches command accesses that can irreversibly delete or
+        overwrite data the model never named, or escalate out of confinement —
+        currently recursive or forced [rm], [git push --force],
+        [git reset --hard], [git clean --force], [dd], [shred], [mkfs], and
+        [sudo]/[doas].
+
+        Placed as a {!Rule.review} rule before a broad command {!Rule.allow},
+        this keeps such commands reviewable even under a posture that otherwise
+        allows commands, because a sandbox bounds where a command writes but not
+        whether the loss is recoverable. The classifier reads the already-parsed
+        argv structurally and falls back to a lenient token scan for shell text,
+        deliberately over-flagging rather than missing a form a redirect or
+        substitution hid. It is host command-safety policy, not a proof: a
+        matching command is worth review, and a non-match is not a guarantee of
+        safety. *)
+
     val exact : Access.Command.t -> t
     (** [exact command] matches command accesses equal to [command]. *)
 

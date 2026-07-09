@@ -135,13 +135,121 @@ module Command_match = struct
         args : string list;
         cwd : Path_match.t option;
       }
+    | Destructive
 
   let any = Any
   let exact command = Exact command
+  let destructive = Destructive
 
   let argv_prefix ?cwd ~program ~args () =
     reject_empty "Match.Command.argv_prefix" "program" program;
     Argv_prefix { program; args; cwd }
+
+  (* Programs and flag combinations that irreversibly delete or overwrite data
+     the model never named, or escalate out of confinement. A workspace sandbox
+     bounds where such a command writes but not whether the loss is
+     recoverable, so {!Destructive} keeps them reviewable even under a posture
+     that otherwise allows commands. The classifier inspects the already-parsed
+     argv structurally; for the shell-text form it applies the same rules to a
+     lenient token scan that ignores quoting and expansion — over-flagging
+     rather than missing a destructive form a redirect or substitution hid. *)
+  let unquote token =
+    let len = String.length token in
+    if len >= 2 then
+      match (token.[0], token.[len - 1]) with
+      | '\'', '\'' | '"', '"' -> String.sub token 1 (len - 2)
+      | _ -> token
+    else token
+
+  let scan_words sub =
+    String.map (function '\t' | '\n' | '\r' -> ' ' | c -> c) sub
+    |> String.split_on_char ' '
+    |> List.filter_map (fun raw ->
+           match unquote raw with "" -> None | word -> Some word)
+
+  let scan_subcommands command =
+    let buf = Buffer.create (String.length command) in
+    let acc = ref [] in
+    let flush () =
+      acc := Buffer.contents buf :: !acc;
+      Buffer.clear buf
+    in
+    String.iter
+      (function ';' | '|' | '&' | '\n' -> flush () | c -> Buffer.add_char buf c)
+      command;
+    flush ();
+    List.rev !acc
+
+  let is_env_assignment token =
+    match String.index_opt token '=' with
+    | None | Some 0 -> false
+    | Some equals ->
+        let name_char c =
+          c = '_'
+          || (c >= 'A' && c <= 'Z')
+          || (c >= 'a' && c <= 'z')
+          || (c >= '0' && c <= '9')
+        in
+        let ok = ref true in
+        String.iteri
+          (fun i c -> if i < equals && not (name_char c) then ok := false)
+          token;
+        !ok
+
+  let pass_through_wrapper = function
+    | "env" | "xargs" | "nohup" | "stdbuf" -> true
+    | _ -> false
+
+  let rec program_and_args = function
+    | token :: rest when is_env_assignment token -> program_and_args rest
+    | token :: rest when pass_through_wrapper (Filename.basename token) ->
+        program_and_args rest
+    | token :: rest -> Some (Filename.basename token, rest)
+    | [] -> None
+
+  let short_flag has_char token =
+    String.length token >= 2
+    && token.[0] = '-'
+    && token.[1] <> '-'
+    && String.exists (Char.equal has_char) token
+
+  let has_flag ~long ~short args =
+    List.exists (fun t -> List.mem t long || short_flag short t) args
+
+  let git_is_destructive args =
+    match
+      List.find_opt (fun t -> not (String.length t > 0 && t.[0] = '-')) args
+    with
+    | Some "push" ->
+        has_flag ~long:[ "--force"; "--force-with-lease" ] ~short:'f' args
+    | Some "reset" -> List.mem "--hard" args
+    | Some "clean" -> has_flag ~long:[ "--force" ] ~short:'f' args
+    | _ -> false
+
+  let program_is_destructive program args =
+    match program with
+    | "sudo" | "doas" -> true
+    | "dd" | "shred" | "mkfs" -> true
+    | "rm" ->
+        has_flag ~long:[ "--force"; "--recursive" ] ~short:'f' args
+        || List.exists (short_flag 'r') args
+        || List.exists (short_flag 'R') args
+    | "git" -> git_is_destructive args
+    | _ ->
+        String.length program > 5 && String.equal (String.sub program 0 5) "mkfs."
+
+  let tokens_are_destructive tokens =
+    match program_and_args tokens with
+    | Some (program, args) -> program_is_destructive program args
+    | None -> false
+
+  let command_is_destructive = function
+    | Access.Command.Argv { program; args; _ } ->
+        tokens_are_destructive (program :: args)
+    | Access.Command.Shell { text; _ } ->
+        List.exists
+          (fun sub -> tokens_are_destructive (scan_words sub))
+          (scan_subcommands text)
 
   let list_has_prefix ~prefix values =
     let rec loop prefix values =
@@ -171,6 +279,7 @@ module Command_match = struct
         && list_has_prefix ~prefix:args access_args
         && optional_scope_matches cwd access_cwd
     | Argv_prefix _, Access.Command.Shell _ -> false
+    | Destructive, command -> command_is_destructive command
 
   let stable_text = function
     | Any -> "any"
@@ -181,9 +290,11 @@ module Command_match = struct
         ^ String.concat ":" (List.map stable_field args)
         ^ ":"
         ^ stable_option Path_match.stable_text cwd
+    | Destructive -> "destructive"
 
   let pp ppf = function
     | Any -> Format.pp_print_string ppf "any-command"
+    | Destructive -> Format.pp_print_string ppf "destructive-command"
     | Exact command ->
         Format.fprintf ppf "command-exact(%a)" Access.Command.pp command
     | Argv_prefix { program; args; cwd } ->
@@ -654,6 +765,10 @@ module Rule = struct
     Jsont.Object.map ~kind:"any command matcher" Command_match.any
     |> Jsont.Object.error_unknown |> Jsont.Object.finish
 
+  let command_destructive_pattern_jsont =
+    Jsont.Object.map ~kind:"destructive command matcher" Command_match.destructive
+    |> Jsont.Object.error_unknown |> Jsont.Object.finish
+
   let command_exact_pattern_jsont =
     let make access =
       match access with
@@ -664,7 +779,9 @@ module Rule = struct
     Jsont.Object.map ~kind:"exact command matcher" make
     |> Jsont.Object.mem "access" Access.jsont ~enc:(function
       | Command_match.Exact command -> Access.command command
-      | Command_match.Any | Command_match.Argv_prefix _ -> assert false)
+      | Command_match.Any | Command_match.Argv_prefix _ | Command_match.Destructive
+        ->
+          assert false)
     |> Jsont.Object.error_unknown |> Jsont.Object.finish
 
   let command_argv_prefix_pattern_jsont =
@@ -675,20 +792,28 @@ module Rule = struct
     Jsont.Object.map ~kind:"argv prefix command matcher" make
     |> Jsont.Object.mem "program" Jsont.string ~enc:(function
       | Command_match.Argv_prefix { program; _ } -> program
-      | Command_match.Any | Command_match.Exact _ -> assert false)
+      | Command_match.Any | Command_match.Exact _ | Command_match.Destructive ->
+          assert false)
     |> Jsont.Object.mem "args"
          Jsont.(list string)
          ~enc:(function
            | Command_match.Argv_prefix { args; _ } -> args
-           | Command_match.Any | Command_match.Exact _ -> assert false)
+           | Command_match.Any | Command_match.Exact _ | Command_match.Destructive
+             ->
+               assert false)
     |> Jsont.Object.opt_mem "cwd" scope_jsont ~enc:(function
       | Command_match.Argv_prefix { cwd; _ } -> cwd
-      | Command_match.Any | Command_match.Exact _ -> assert false)
+      | Command_match.Any | Command_match.Exact _ | Command_match.Destructive ->
+          assert false)
     |> Jsont.Object.error_unknown |> Jsont.Object.finish
 
   let command_pattern_jsont =
     let any_case =
       Jsont.Object.Case.map "any" command_any_pattern_jsont ~dec:Fun.id
+    in
+    let destructive_case =
+      Jsont.Object.Case.map "destructive" command_destructive_pattern_jsont
+        ~dec:Fun.id
     in
     let exact_case =
       Jsont.Object.Case.map "exact" command_exact_pattern_jsont ~dec:Fun.id
@@ -699,6 +824,8 @@ module Rule = struct
     in
     let enc_case = function
       | Command_match.Any as pattern -> Jsont.Object.Case.value any_case pattern
+      | Command_match.Destructive as pattern ->
+          Jsont.Object.Case.value destructive_case pattern
       | Command_match.Exact _ as pattern ->
           Jsont.Object.Case.value exact_case pattern
       | Command_match.Argv_prefix _ as pattern ->
@@ -707,6 +834,7 @@ module Rule = struct
     let cases =
       [
         Jsont.Object.Case.make any_case;
+        Jsont.Object.Case.make destructive_case;
         Jsont.Object.Case.make exact_case;
         Jsont.Object.Case.make argv_prefix_case;
       ]
@@ -889,6 +1017,7 @@ module Match = struct
     type t = Command_match.t
 
     let any = Command_match.any
+    let destructive = Command_match.destructive
     let exact = Command_match.exact
     let argv_prefix = Command_match.argv_prefix
   end

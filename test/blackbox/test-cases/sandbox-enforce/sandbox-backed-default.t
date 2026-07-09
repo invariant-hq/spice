@@ -35,8 +35,8 @@ Both effects landed and no permission was requested.
 
 A destructive command stays reviewable even though the sandbox would confine
 it: the sandbox bounds where it writes, not whether the deletion is
-recoverable. The run parks on review, the review names the destructive fact,
-and the file survives.
+recoverable. The run parks on review; the review shows the command as a command
+and attributes it to the destructive rule, and the file survives.
 
   $ echo keep > victim.txt
   $ cat > destructive.jsonl <<'JSONL'
@@ -45,8 +45,10 @@ and the file survives.
   $ start_fake_openai destructive.jsonl destructive-capture destructive-port
   $ spice run --cwd "$PWD" --id destructive-run "destructive prompt" >destructive.out 2>&1; echo exit:$?
   exit:3
-  $ grep -o 'shell.destructive' destructive.out
-  shell.destructive
+  $ grep -oF "command exec 'rm' '-rf' 'victim.txt'" destructive.out
+  command exec 'rm' '-rf' 'victim.txt'
+  $ grep -o 'review: rule' destructive.out
+  review: rule
   $ wait_fake_server
   $ cat victim.txt
   keep

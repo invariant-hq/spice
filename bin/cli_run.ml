@@ -621,6 +621,11 @@ let assemble ?cwd_override_abs ?skills:preloaded_skills ~sw ~stdenv ~json ~store
     |> Result.map_error (fun error ->
         `Runtime (Spice_host.Sandbox.Gate_error.message error))
   in
+  (* [Run.plan] credits an enforcing sandbox into the posture, so the block
+     display and denial provenance must read the plan's table -- not the
+     pre-plan [permission] -- or they would explain a decision against rules the
+     run did not use. *)
+  let permission = Spice_host.Run.Plan.permission plan in
   let permission_of =
     Cli_block.permission_context permission ~workflow_mode:mode
   in
