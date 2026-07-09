@@ -1653,6 +1653,15 @@ module Rpc = struct
       Error
         (Error.Connection_failed { endpoint = "dune rpc registry"; message })
 
+    let missing_visible_endpoint_error () =
+      Error
+        (Error.Connection_failed
+           {
+             endpoint = "dune rpc registry";
+             message =
+               "no running Dune RPC instance was found for this workspace";
+           })
+
     let select_endpoint t =
       match refresh t with
       | Error _ as error -> error
@@ -1723,6 +1732,21 @@ module Rpc = struct
               t.endpoint <- Some endpoint;
               t.diagnostics <- store);
           Ok (endpoint, store))
+
+    let request_visible_diagnostics t =
+      Eio.Switch.run @@ fun sw ->
+      match refresh t with
+      | Error _ as error -> error
+      | Ok None -> missing_visible_endpoint_error ()
+      | Ok (Some endpoint) ->
+          let (Net net) = t.net in
+          Connection.with_connection ~sw ~net ~workspace:t.workspace endpoint
+            ~f:(fun connection ->
+              let* store = Connection.request_diagnostics connection in
+              with_lock t (fun () ->
+                  t.endpoint <- Some endpoint;
+                  t.diagnostics <- store);
+              Ok (endpoint, store))
 
     module Health = struct
       type t = Disconnected | Clean | Failing of int | Unknown

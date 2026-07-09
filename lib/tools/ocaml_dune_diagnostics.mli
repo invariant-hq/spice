@@ -5,17 +5,15 @@
 
 (** Model-facing Dune RPC diagnostics tool.
 
-    [ocaml_dune_diagnostics] reads the current OCaml diagnostics from a shared
-    workspace-level {!Spice_ocaml_dune.Rpc.Instance.t}. The same instance is
-    intended to be owned by the host and passed both to this tool and to the
-    proactive diagnostics watcher, so tool calls and watcher notifications see
-    one latest-known Dune diagnostic store.
+    [ocaml_dune_diagnostics] requests the current OCaml diagnostics from a
+    shared workspace-level {!Spice_ocaml_dune.Rpc.Instance.t}. The same instance
+    is intended to be owned by the host and passed both to this tool and to the
+    proactive diagnostics watcher, so tool calls and watcher notifications share
+    endpoint discovery and the latest-known Dune diagnostic store.
 
-    The tool does not own a Dune process and does not issue a blocking
-    synchronous diagnostics request. Hosts that want live diagnostics should
-    pass the same instance to the Dune diagnostics watcher, which owns endpoint
-    startup and refresh. If no endpoint has been discovered, the tool fails as
-    unavailable. *)
+    The tool does not own or start a Dune process. It only connects when a
+    matching Dune RPC endpoint is already visible in the registry. If no endpoint
+    is visible, the tool fails as unavailable. *)
 
 val name : string
 (** Stable tool name, ["ocaml_dune_diagnostics"]. *)
@@ -36,8 +34,8 @@ module Output : sig
   val diagnostics :
     t -> (Spice_ocaml_dune.Rpc.Diagnostic.id * Spice_ocaml.Diagnostic.t) list
   (** [diagnostics t] is the current Dune diagnostic set returned by the RPC
-      request, ordered according to the adapter store. The list may be empty
-      when Dune reports no diagnostics. *)
+      request, ordered according to the adapter store. The list is empty iff the
+      request succeeded and Dune reported no diagnostics. *)
 
   val diagnostic_count : t -> int
   (** [diagnostic_count t] is the number of diagnostics in {!diagnostics}. *)
@@ -57,15 +55,14 @@ val run :
   Spice_tool.Context.t ->
   unit ->
   Output.t Spice_tool.Result.t
-(** [run ~dune ctx ()] returns the latest diagnostic set observed through
-    [dune].
+(** [run ~dune ctx ()] requests the current diagnostic set through [dune].
 
-    The result is completed with {!Output.t} when [dune] already has a selected
-    endpoint or registry polling finds one. The output contains the shared
-    instance's latest-known diagnostic store, which may be empty if Dune has not
-    published diagnostics yet. The result is interrupted if [ctx] is cancelled
-    before work starts, and failed as [`Unavailable] if no endpoint is visible
-    or registry polling fails. *)
+    The result is completed with {!Output.t} when registry polling finds a
+    matching Dune RPC endpoint and the diagnostics request succeeds. The request
+    updates [dune]'s latest-known diagnostic store. The result is interrupted if
+    [ctx] is cancelled before work starts, and failed as [`Unavailable] if no
+    endpoint is visible, registry polling fails, connection fails, or the RPC
+    request fails. *)
 
 val tool : dune:Spice_ocaml_dune.Rpc.Instance.t -> unit -> Spice_tool.t
 (** [tool ~dune ()] is the erased model-facing diagnostics tool backed by

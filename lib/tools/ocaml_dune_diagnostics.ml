@@ -163,25 +163,14 @@ let run ~dune ctx () =
   if Tool.Context.cancelled ctx then
     Tool.Result.interrupted ~reason:"tool call cancelled" ~cancelled:true ()
   else
-    let current endpoint =
-      Tool.Result.completed
-        ~output:
-          (Output.make ~endpoint
-             ~diagnostics:
-               (Dune.Rpc.Diagnostic.Store.to_list
-                  (Dune.Rpc.Instance.diagnostics dune)))
-        ()
-    in
-    match Dune.Rpc.Instance.endpoint dune with
-    | Some endpoint -> current endpoint
-    | None -> (
-        match Dune.Rpc.Instance.refresh dune with
-        | Ok (Some endpoint) -> current endpoint
-        | Ok None ->
-            Tool.Result.failed `Unavailable
-              "no running Dune RPC instance was found for this workspace"
-        | Error error ->
-            Tool.Result.failed `Unavailable (Dune.Error.message error))
+    match Dune.Rpc.Instance.request_visible_diagnostics dune with
+    | Ok (endpoint, diagnostics) ->
+        Tool.Result.completed
+          ~output:
+            (Output.make ~endpoint
+               ~diagnostics:(Dune.Rpc.Diagnostic.Store.to_list diagnostics))
+          ()
+    | Error error -> Tool.Result.failed `Unavailable (Dune.Error.message error)
 
 let tool ~dune () =
   let workspace = Dune.Rpc.Instance.workspace dune in

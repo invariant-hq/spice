@@ -451,6 +451,17 @@ module Rpc : sig
         and updates {!endpoint} and {!diagnostics}. On failure the existing
         store is left as the latest-known value. *)
 
+    val request_visible_diagnostics :
+      t -> (Endpoint.t * Diagnostic.Store.t, Error.t) result
+    (** [request_visible_diagnostics t] requests Dune's current full diagnostic
+        set only when a matching endpoint is already visible in the registry.
+
+        It polls the registry like {!refresh}, opens a short-lived connection to
+        the visible endpoint, and updates {!endpoint} and {!diagnostics} on
+        success. Unlike {!request_diagnostics}, it never triggers the optional
+        lazy starter. It returns {!Error.Connection_failed} when no matching
+        endpoint is visible. *)
+
     module Health : sig
       (** One-shot build-health verdict from Dune's current diagnostics.
 
