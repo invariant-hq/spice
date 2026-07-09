@@ -282,27 +282,36 @@ let wire t entry =
   Live.on_settled entry.live (fun result ->
       settle t entry ~parent ~child result)
 
-(* The child session id derives from the parent id and the spawning tool
-   call id — deterministic, so lineage is readable, scripted fixtures can
-   name runs, and drill-in keys are stable across reloads (a deterministic
-   [<message>$$<call>] pattern). A duplicate call id — a rewound-and-replayed
-   spawn — fails at session creation with a model-visible error rather
-   than silently reusing the old child. Ids with no usable call id fall
-   back to fresh minting. *)
+let escaped_id_component text =
+  let hex = "0123456789ABCDEF" in
+  let buffer = Buffer.create (String.length text) in
+  String.iter
+    (fun char ->
+      match char with
+      | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '-' | '_' ->
+          Buffer.add_char buffer char
+      | _ ->
+          let code = Char.code char in
+          Buffer.add_char buffer '%';
+          Buffer.add_char buffer hex.[code lsr 4];
+          Buffer.add_char buffer hex.[code land 0x0f])
+    text;
+  Buffer.contents buffer
+
+(* The child session id derives from the parent id and the spawning tool call
+   id. Percent-encoding keeps opaque provider ids injective within one parent,
+   while leaving common ids readable and stable across reloads. A duplicate
+   raw call id — a rewound-and-replayed spawn — still fails at session creation
+   rather than silently reusing the old child. An empty call id falls back to
+   fresh minting. *)
 let child_id t ~parent ~parent_call_id =
-  let sanitized =
-    String.map
-      (fun char ->
-        match char with
-        | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '-' | '_' -> char
-        | _ -> '-')
-      parent_call_id
-  in
-  if String.is_empty sanitized then
+  if String.is_empty parent_call_id then
     Spice_session.Id.of_string (fresh_id t.stdenv "ses")
   else
     Spice_session.Id.of_string
-      (Spice_session.Id.to_string parent ^ "-sub-" ^ sanitized)
+      (Spice_session.Id.to_string parent
+      ^ "-sub-"
+      ^ escaped_id_component parent_call_id)
 
 let running_count t =
   List.length

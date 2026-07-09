@@ -56,6 +56,35 @@ let escaped_component text =
     text;
   Buffer.contents buffer
 
+let hex_value = function
+  | '0' .. '9' as c -> Some (Char.code c - Char.code '0')
+  | 'A' .. 'F' as c -> Some (10 + Char.code c - Char.code 'A')
+  | 'a' .. 'f' as c -> Some (10 + Char.code c - Char.code 'a')
+  | _ -> None
+
+let unescaped_component path text =
+  let invalid message = Error (Error.Corrupt_file { path; message }) in
+  let buffer = Buffer.create (String.length text) in
+  let rec decode index =
+    if index = String.length text then Ok (Buffer.contents buffer)
+    else
+      match text.[index] with
+      | '%' ->
+          if index + 2 >= String.length text then
+            invalid "truncated percent escape in artifact filename"
+          else (
+            match (hex_value text.[index + 1], hex_value text.[index + 2]) with
+            | Some high, Some low ->
+                Buffer.add_char buffer (Char.chr ((high lsl 4) lor low));
+                decode (index + 3)
+            | _ -> invalid "invalid percent escape in artifact filename")
+      | c when is_unreserved c ->
+          Buffer.add_char buffer c;
+          decode (index + 1)
+      | _ -> invalid "unescaped reserved byte in artifact filename"
+  in
+  decode 0
+
 let fs_path ~fs p = Eio.Path.( / ) fs p
 
 let io p f =
@@ -588,16 +617,24 @@ module Subagent_run = struct
               let* names =
                 io dir (fun () -> Eio.Path.read_dir (fs_path ~fs dir))
               in
-              let ids =
-                List.filter_map
-                  (fun name ->
-                    if is_json_file name then
-                      Some
-                        (Spice_session.Id.of_string
-                           (Filename.remove_extension name))
-                    else None)
-                  names
+              let rec decode_ids ids = function
+                | [] -> Ok ids
+                | name :: names ->
+                    if not (is_json_file name) then decode_ids ids names
+                    else
+                      let path = Filename.concat dir name in
+                      let* id =
+                        unescaped_component path
+                          (Filename.remove_extension name)
+                      in
+                      if String.is_empty id then
+                        corrupt path "child session id must not be empty"
+                      else
+                        decode_ids
+                          (Spice_session.Id.of_string id :: ids)
+                          names
               in
+              let* ids = decode_ids [] names in
               collect (List.rev_append ids acc) rest
       in
       collect [] parents

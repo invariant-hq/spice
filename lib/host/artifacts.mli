@@ -293,5 +293,6 @@ module Subagent_run : sig
   (** [children ~fs ~root] is every child session id with a run record, across
       all parents, from filenames alone — no run file is decoded. For callers
       that need only the membership set, like the session picker's hide-children
-      filter. *)
+      filter. Filename escaping is decoded back to the exact session id;
+      malformed escapes are {!Error.Corrupt_file}. *)
 end

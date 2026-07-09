@@ -128,6 +128,26 @@ completed run with the child's final text as its summary.
   $ spice session show --json subagent-run | grep -o '"summary":"child exploration findings"'
   "summary":"child exploration findings"
 
+Opaque provider call ids remain distinct subagent identities even when they
+differ only by punctuation. The parent id also contains a slash, exercising
+escaped parent and child run paths in the real store.
+
+  $ cat > subagent-identities.jsonl <<'JSONL'
+  > {"expect":{"body_contains":["\"name\":\"spawn_subagent\""],"body_not_contains":["punctuation child a findings"]},"response":{"id":"resp-identities","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-identity-a","call_id":"spawn/a","name":"spawn_subagent","arguments":"{\"role\":\"explore\",\"task\":\"Inspect punctuation child a\"}"},{"type":"function_call","id":"item-identity-b","call_id":"spawn?a","name":"spawn_subagent","arguments":"{\"role\":\"explore\",\"task\":\"Inspect punctuation child b\"}"}]}}
+  > {"expect":{"body_contains":["Role: explore","Inspect punctuation child a"]},"response":{"id":"resp-identity-child-a","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"punctuation child a findings"}]}]}}
+  > {"expect":{"body_contains":["Role: explore","Inspect punctuation child b"]},"response":{"id":"resp-identity-child-b","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"punctuation child b findings"}]}]}}
+  > {"expect":{"body_contains":["function_call_output","spawn/a","spawn?a","team/a-sub-spawn%2Fa","team/a-sub-spawn%3Fa"]},"response":{"id":"resp-identities-final","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Distinct children launched."}]}]}}
+  > JSONL
+  $ SPICE_FAKE_PROVIDER_UNORDERED=1 start_fake_openai subagent-identities.jsonl subagent-identities-capture subagent-identities-port
+
+  $ spice run --json --cwd "$PWD" --permission-mode bypass --id 'team/a' "delegate twice" 2>&1 | grep -o '"final_text":"Distinct children launched."'
+  "final_text":"Distinct children launched."
+  $ wait_fake_server
+  $ spice session show --json 'team/a' | grep -o '"role":"explore"' | wc -l | tr -d ' '
+  2
+  $ find '.spice/subagents/team%2Fa' -name '*.json' | wc -l | tr -d ' '
+  2
+
 `wait_subagents` closes the loop: the deterministic child id from the
 launch acknowledgment lets the model block for the result and read the
 child's findings in the same turn.
