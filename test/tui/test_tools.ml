@@ -486,7 +486,9 @@ let%expect_test "a host tool after a question settles in the transcript" =
   Term.send t "inspect";
   Term.send t Keys.enter;
   Term.wait t (fun s ->
-      Screen.has "Sequenced the work." s && Screen.has "? for shortcuts" s);
+      Screen.has "Sequenced the work." s
+      && Screen.has "dune: ✓" s
+      && Screen.has "? for shortcuts" s);
   Screen.print ~project (Term.screen t);
   [%expect
     {|
@@ -513,7 +515,7 @@ let%expect_test "a host tool after a question settles in the transcript" =
      21 | ────────────────────────────────────────────────────────────────────────────────
      22 | ❯ message spice
      23 | ────────────────────────────────────────────────────────────────────────────────
-     24 |   …i-next-tools-question-then-todo · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
+     24 |   …i-next-tools-question-then-todo · gpt-5.5 medium · dune: ✓  ? for shortcuts|}]
 
 (* OCaml structural search (02-tools.md §OCaml tools, Navigation and
    evaluation): [ocaml_search_expressions] shares the [Search] verb and reports
