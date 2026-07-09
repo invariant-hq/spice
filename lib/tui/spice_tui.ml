@@ -31,8 +31,8 @@ module Goodbye = Goodbye
 
 type outcome = Runtime.outcome = { last_session : Spice_session.Id.t option }
 
-let run ~stdenv ~startup () =
-  match Runtime.run ~stdenv ~startup () with
+let run ~stdenv ~startup ?clock ?matrix ?probe ?process_env () =
+  match Runtime.run ~stdenv ~startup ?clock ?matrix ?probe ?process_env () with
   | Ok outcome -> Ok outcome
   | Error `No_tty -> Error Error.No_tty
   | Error (`Runtime message) -> Error (Error.Runtime message)

@@ -90,8 +90,23 @@ type outcome = { last_session : Spice_session.Id.t option }
 val run :
   stdenv:Eio_unix.Stdenv.base ->
   startup:Startup.t ->
+  ?clock:float Eio.Time.clock_ty Eio.Std.r ->
+  ?matrix:Matrix.app ->
+  ?probe:(Mosaic.Probe.t -> unit) ->
+  ?process_env:Spice_host.Env.t ->
   unit ->
   (outcome, Error.t) result
 (** [run ~stdenv ~startup ()] runs the interactive TUI in the
     current terminal. [Error e] reports unsupported terminals or recoverable
-    runtime failures. *)
+    runtime failures.
+
+    The optional arguments swap the runtime's environment for an alternate
+    one and default to the production wiring: [clock] backs every runtime
+    timestamp and sleep (default [Eio.Stdenv.clock stdenv]); [matrix] is the
+    terminal backend (default a [Matrix_eio] backend over [stdenv]'s TTY —
+    supplying one skips the interactive-TTY gate); [probe] receives the
+    {!Mosaic.Probe.t} for the run before the loop starts; [process_env] is
+    the environment snapshot host configuration reads (default
+    {!Spice_host.Env.current}). Deterministic test harnesses drive the TUI
+    through these — a headless [matrix.test] backend, a mock clock, and a
+    pinned environment. *)

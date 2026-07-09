@@ -26,8 +26,12 @@ let reduced_motion () =
 let host_error error =
   Spice_diagnostic.to_string (Spice_host.Host.Error.diagnostic error)
 
-let load_host ~stdenv (startup : App.startup) =
-  let process_env = Spice_host.Env.current () in
+let load_host ~stdenv ?process_env (startup : App.startup) =
+  let process_env =
+    match process_env with
+    | Some env -> env
+    | None -> Spice_host.Env.current ()
+  in
   let cwd = Option.map Spice_path.Abs.to_string startup.App.cwd in
   match Spice_host.Config.load ~stdenv ~process_env ?cwd () with
   | Error error -> Error (host_error (Spice_host.Host.Error.Config error))
@@ -174,21 +178,33 @@ let discover_repo ~stdenv ~cwd =
 (* The brief loader: cheap host probes assembled into a {!Home.Brief.t}. The worktree
    glance short-circuits on an unchanged fingerprint so an idle worktree costs
    one probe per tick; the derived lines are cached against it. *)
-let make_brief_loader ?sandbox_flag ~stdenv ~clock ~host ~cwd () =
+let make_brief_loader ?sandbox_flag ~engaged ~stdenv ~clock ~host ~cwd () =
   let config = Spice_host.Host.config host in
   let warning = config_warning ?flag:sandbox_flag config in
   let workspace = Spice_workspace.single (Spice_workspace.Root.make cwd) in
-  let dune =
-    Spice_ocaml_dune.Rpc.Instance.create ~fs:(Eio.Stdenv.fs stdenv)
-      ~net:(Eio.Stdenv.net stdenv) ~workspace ~sleep:(Eio.Time.sleep clock) ()
+  (* The Dune build-health probe reads a live watch's endpoint; it never spawns
+     one. When workspace tooling does not engage there is no watch to read, so
+     the probe is skipped and the footer reports [Disconnected] rather than
+     polling the registry each tick. *)
+  let dune_health =
+    if engaged then (
+      let dune =
+        Spice_ocaml_dune.Rpc.Instance.create ~fs:(Eio.Stdenv.fs stdenv)
+          ~net:(Eio.Stdenv.net stdenv) ~workspace ~sleep:(Eio.Time.sleep clock)
+          ()
+      in
+      fun () -> Spice_ocaml_dune.Rpc.Instance.build_health dune ~clock ())
+    else fun () -> Spice_ocaml_dune.Rpc.Instance.Health.Disconnected
   in
-  let repo = discover_repo ~stdenv ~cwd in
+  (* Lazy: the git spawn belongs to the first (asynchronous) brief load, not
+     the boot critical path before the first frame. *)
+  let repo = lazy (discover_repo ~stdenv ~cwd) in
   let store = Spice_host.Session.store ~stdenv host in
   let known = ref None in
   let cached_worktree = ref None in
   let cached_crs = ref None in
   let glance () =
-    match repo with
+    match Lazy.force repo with
     | None -> (None, None)
     | Some (repo, base) -> (
         match Spice_review_git.glance_if_changed repo ~base ~known:!known with
@@ -264,8 +280,7 @@ let make_brief_loader ?sandbox_flag ~stdenv ~clock ~host ~cwd () =
     let session = session () in
     incr tick;
     {
-      Home.Brief.dune =
-        Spice_ocaml_dune.Rpc.Instance.build_health dune ~clock ();
+      Home.Brief.dune = dune_health ();
       worktree;
       crs;
       session;
@@ -311,23 +326,28 @@ let failing_file dune =
   | Some _ as file -> file
   | None -> List.find_map located entries
 
-let make_health_loader ~stdenv ~clock ~cwd =
-  let workspace = Spice_workspace.single (Spice_workspace.Root.make cwd) in
-  let dune =
-    Spice_ocaml_dune.Rpc.Instance.create ~fs:(Eio.Stdenv.fs stdenv)
-      ~net:(Eio.Stdenv.net stdenv) ~workspace ~sleep:(Eio.Time.sleep clock) ()
-  in
-  fun () ->
-    let health = Spice_ocaml_dune.Rpc.Instance.build_health dune ~clock () in
-    let file =
-      match health with
-      | Spice_ocaml_dune.Rpc.Instance.Health.Failing _ -> failing_file dune
-      | Spice_ocaml_dune.Rpc.Instance.Health.Clean
-      | Spice_ocaml_dune.Rpc.Instance.Health.Disconnected
-      | Spice_ocaml_dune.Rpc.Instance.Health.Unknown ->
-          None
+let make_health_loader ~engaged ~stdenv ~clock ~cwd =
+  (* No watch runs when workspace tooling does not engage, so the chat-phase
+     poll reports [Disconnected] without touching the registry. *)
+  if not engaged then fun () ->
+    (Spice_ocaml_dune.Rpc.Instance.Health.Disconnected, None)
+  else
+    let workspace = Spice_workspace.single (Spice_workspace.Root.make cwd) in
+    let dune =
+      Spice_ocaml_dune.Rpc.Instance.create ~fs:(Eio.Stdenv.fs stdenv)
+        ~net:(Eio.Stdenv.net stdenv) ~workspace ~sleep:(Eio.Time.sleep clock) ()
     in
-    (health, file)
+    fun () ->
+      let health = Spice_ocaml_dune.Rpc.Instance.build_health dune ~clock () in
+      let file =
+        match health with
+        | Spice_ocaml_dune.Rpc.Instance.Health.Failing _ -> failing_file dune
+        | Spice_ocaml_dune.Rpc.Instance.Health.Clean
+        | Spice_ocaml_dune.Rpc.Instance.Health.Disconnected
+        | Spice_ocaml_dune.Rpc.Instance.Health.Unknown ->
+            None
+      in
+      (health, file)
 
 (* The quick-switch panel's rows: up to [limit] top-level recent sessions in the
    cwd, each projected to the panel's row with the display title and the
@@ -1123,30 +1143,52 @@ let auth_record_of_logout ~title
       base Auth_panel.Removed
   | Error message -> base (Auth_panel.Failed message)
 
-let run ~stdenv ~(startup : App.startup) () =
-  if not (is_interactive ()) then Error `No_tty
+let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env ()
+    =
+  (* A caller-supplied backend owns its own I/O, so the TTY gate only guards
+     the default terminal path. *)
+  if Option.is_none matrix && not (is_interactive ()) then Error `No_tty
   else
     Eio.Switch.run ~name:"spice-tui" @@ fun sw ->
-    match load_host ~stdenv startup with
+    match load_host ~stdenv ?process_env startup with
     | Error message -> Error (`Runtime message)
     | Ok host ->
-        let clock = Eio.Stdenv.clock stdenv in
+        let clock =
+          match clock with
+          | Some clock -> clock
+          | None -> Eio.Stdenv.clock stdenv
+        in
         let cwd = Spice_host.Config.cwd (Spice_host.Host.config host) in
+        (* Whether the workspace's Dune tooling engages for this run; the brief
+           and health probes read a live watch that only [build_run] spawns, so
+           they skip the probe and report a degraded footer when it will not. *)
+        let tooling_engaged =
+          Spice_host.Config.Workspace.tooling_engaged
+            (Spice_host.Config.workspace (Spice_host.Host.config host))
+            ~root:(Spice_path.Abs.to_string cwd)
+        in
         let sandbox_flag = startup.App.sandbox in
         let snapshot = build_snapshot ?sandbox_flag ~stdenv host in
         let load_brief =
-          make_brief_loader ?sandbox_flag ~stdenv ~clock ~host ~cwd ()
+          make_brief_loader ?sandbox_flag ~engaged:tooling_engaged ~stdenv
+            ~clock ~host ~cwd ()
         in
-        let load_health = make_health_loader ~stdenv ~clock ~cwd in
+        let load_health =
+          make_health_loader ~engaged:tooling_engaged ~stdenv ~clock ~cwd
+        in
         (* [start_idle]: the render cadence runs only while something animates
            (mosaic requests it for tick subscriptions). Without it the loop is
            [`Explicit_started] — permanently live — and re-renders the whole
            mounted transcript at 30fps forever, CPU proportional to session
            length even when nothing on screen changes. *)
         let matrix =
-          Matrix_eio.create ~mode:`Alt ~sw ~clock ~stdin:stdenv#stdin
-            ~stdout:stdenv#stdout ~target_fps:(Some 30.) ~cursor_visible:true
-            ~mouse_enabled:true ~exit_on_ctrl_c:false ~start_idle:true ()
+          match matrix with
+          | Some matrix -> matrix
+          | None ->
+              Matrix_eio.create ~mode:`Alt ~sw ~clock ~stdin:stdenv#stdin
+                ~stdout:stdenv#stdout ~target_fps:(Some 30.)
+                ~cursor_visible:true ~mouse_enabled:true ~exit_on_ctrl_c:false
+                ~start_idle:true ()
         in
         let process_perform thunk =
           Eio.Fiber.fork_daemon ~sw (fun () ->
@@ -1829,7 +1871,7 @@ let run ~stdenv ~(startup : App.startup) () =
               ~f:(fun _events ->
                 deliver
                   (App.review_msg
-                     (Spice_tui_review.fs_changed ~now:(Unix.gettimeofday ()))))
+                     (Spice_tui_review.fs_changed ~now:(Eio.Time.now clock))))
               ~on_error:(fun error ->
                 deliver
                   (App.review_msg
@@ -2279,7 +2321,7 @@ let run ~stdenv ~(startup : App.startup) () =
                       deliver
                         (App.review_msg
                            (Spice_tui_review.tick request
-                              ~now:(Unix.gettimeofday ()))))
+                              ~now:(Eio.Time.now clock))))
               | Spice_tui_review.Effect.Load { request; root; base; known } ->
                   perform (fun () ->
                       deliver
@@ -2330,5 +2372,5 @@ let run ~stdenv ~(startup : App.startup) () =
             subscriptions = App.subscriptions;
           }
         in
-        Mosaic.run ~matrix ~process_perform app;
+        Mosaic.run ~matrix ~process_perform ?probe app;
         Ok { last_session = !created_session }
