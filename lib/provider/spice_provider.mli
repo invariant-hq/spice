@@ -42,9 +42,12 @@ module Selector : sig
   val of_string : string -> (t, Error.t) result
   (** [of_string s] parses [s] as [provider/model].
 
-      Leading and trailing whitespace is ignored. Errors when [s] is empty, has
-      no ['/'] separator, has an empty provider or model segment, or has a
-      provider segment that is not a valid provider namespace. *)
+      Leading and trailing whitespace is ignored. Parsing splits on the first
+      ['/']; the full non-empty remainder is the provider-local model id, and
+      may itself contain ['/'] characters. The model id is not otherwise
+      validated here. Errors when [s] is empty, has no ['/'] separator, has an
+      empty provider or model segment, or has a provider segment that is not a
+      valid provider namespace. *)
 
   val provider : t -> Spice_llm.Provider.t
   (** [provider t] is [t]'s provider namespace. *)

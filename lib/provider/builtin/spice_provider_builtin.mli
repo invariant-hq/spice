@@ -19,7 +19,7 @@
     {!Spice_provider.make} and {!Spice_provider.Model.make}: model namespaces
     match their provider, provider-local model ids are unique within a provider,
     list metadata is duplicate-free and deterministic, and default models are
-    declared in their provider's model list.
+    declared in their provider's model list and selectable.
 
     Runtime availability is outside this module. Credentials, base URLs, account
     state, config enablement, and permission policy are host facts. A built-in
@@ -59,16 +59,18 @@ val google : Spice_provider.t
 
     Its provider id is [google]. Model identities are Google request identities
     from {!Spice_llm_google}, and the declared default model is
-    [gemini-3-pro-preview]. Auth declares [GOOGLE_GENERATIVE_AI_API_KEY] and an
-    API-key login method. *)
+    [gemini-3-flash-preview]. Auth declares [GOOGLE_GENERATIVE_AI_API_KEY] and
+    an API-key login method. *)
 
 val deepseek : Spice_provider.t
 (** [deepseek] is the built-in local DeepSeek provider declaration.
 
     Its provider id is [deepseek]. Model identities are local DeepSeek DSML
     request identities from {!Spice_llm_deepseek}, and the declared default
-    model is [q2-q4-imatrix]. Auth is {!Spice_provider.Auth.none}; model files
-    are resolved by the host adapter from the local filesystem. *)
+    model is [q2-q4-imatrix]. Auth is {!Spice_provider.Auth.none}. Undeclared
+    provider-local ids ending in [.gguf] resolve through the dynamic-model
+    policy as explicit local weight files; other undeclared ids stay unknown.
+    File existence and loadability are host/runtime concerns. *)
 
 val local : Spice_provider.t
 (** [local] is the built-in managed local provider declaration.
@@ -76,8 +78,11 @@ val local : Spice_provider.t
     Its provider id is [local]. Model identities are chat-completions request
     identities from {!Spice_llm_local}, the model list derives from the curated
     {!Spice_llm_local.Manifest}, and the declared default model is
-    [qwen3-coder-30b]. Auth is {!Spice_provider.Auth.none}; model weights are
-    downloaded and served by the host adapter's managed server. *)
+    [qwen3-coder-30b]. Auth is {!Spice_provider.Auth.none}. Declared model
+    weights are downloaded and served by the host adapter's managed server.
+    Undeclared provider-local ids ending in [.gguf] resolve through the
+    dynamic-model policy as explicit local weight files; other undeclared ids
+    stay unknown. File existence and loadability are host/runtime concerns. *)
 
 val ollama : Spice_provider.t
 (** [ollama] is the built-in Ollama provider declaration.
@@ -85,7 +90,8 @@ val ollama : Spice_provider.t
     Its provider id is [ollama]. The declaration lists no static models: the
     daemon owns the model set, so every id resolves through the declared
     dynamic-model policy and is interpreted by the daemon at request time. Auth
-    is {!Spice_provider.Auth.none}; the daemon endpoint defaults to
+    is optional: [OLLAMA_API_KEY] and API-key login are declared, but local
+    unauthenticated daemons remain valid. The daemon endpoint defaults to
     [http://127.0.0.1:11434] and follows the provider base-URL config. *)
 
 val all : Spice_provider.t list
