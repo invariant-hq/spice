@@ -19,11 +19,11 @@
     needs. Storage failures report through {!Error}, the one boundary-visible
     piece of the backend.
 
-    {b Serialization.} Writes to a single artifact file are truncate-and-replace
-    and are not atomic against a concurrent writer of the {e same} file;
-    correctness requires per-file single-writer discipline. The per-session/id
-    plan and per-session todo and goal files meet this by construction. Subagent
-    runs meet it by storing one file per child
+    {b Serialization.} Replacements of a single artifact file use a temporary
+    file and atomic rename, but are not serialized against a concurrent writer
+    of the {e same} file; correctness requires per-file single-writer
+    discipline. The per-session/id plan and per-session todo and goal files meet
+    this by construction. Subagent runs meet it by storing one file per child
     ([subagents/<parent>/<child>.json]) so a run's status transitions rewrite
     only that child's file — there is no per-parent aggregate for two children
     to race on. {!Plan.create} and the exclusive writes are check-then-write and
@@ -121,6 +121,26 @@ module Plan : sig
       an empty list; results are newest first by
       {!Spice_protocol.Plan.updated_at}, then by id. Malformed files or a stored
       session that does not match [session] are {!Error.Corrupt_file}. *)
+
+  (** The type for storing a proposal: committed replacement state, or a
+      model-visible refusal that leaves existing plans unchanged. *)
+  type proposal_result = Stored | Refused of string
+
+  val propose :
+    fs:Eio.Fs.dir_ty Eio.Path.t ->
+    root:string ->
+    superseded_at:Spice_session.Time.t ->
+    Spice_protocol.Plan.t ->
+    (proposal_result, Error.t) result
+  (** [propose ~fs ~root ~superseded_at plan] stores [plan] and supersedes the
+      session's prior proposed or approved plans at [superseded_at].
+
+      An existing plan with the new id or a rejected lifecycle transition is
+      {!Refused} without changing stored plans. Storage changes are
+      failure-preserving: values are validated before writing, each replacement
+      is atomic, and a failed multi-file update restores already-written plans
+      and removes the new proposal. A storage or rollback failure is {!Error.t}.
+  *)
 
   val resolve :
     fs:Eio.Fs.dir_ty Eio.Path.t ->

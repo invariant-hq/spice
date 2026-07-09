@@ -57,29 +57,6 @@ let handle_todo ~fs ~root document call todos =
   in
   Ok (Some (result_text call text))
 
-(* A re-proposal supersedes any prior proposed or approved plan for the session
-   before the new proposal is created, per the plan lifecycle. *)
-let supersede_prior_plans ~fs ~root ~session ~by ~superseded_at =
-  let* plans = Artifacts.Plan.list ~fs ~root ~session in
-  let supersedable plan =
-    let status = Spice_protocol.Plan.status plan in
-    (Spice_protocol.Plan.Status.is_proposed status
-    || Spice_protocol.Plan.Status.is_approved status)
-    && not (Spice_protocol.Plan.Id.equal (Spice_protocol.Plan.id plan) by)
-  in
-  let rec loop = function
-    | [] -> Ok (Ok ())
-    | plan :: rest -> (
-        if not (supersedable plan) then loop rest
-        else
-          match Spice_protocol.Plan.supersede ~superseded_at ~by plan with
-          | Error message -> Ok (Error message)
-          | Ok plan ->
-              let* () = Artifacts.Plan.save ~fs ~root plan in
-              loop rest)
-  in
-  loop plans
-
 (* How a decoded proposal resolves once storage is attempted: it either parks
    the turn (saved) or is rejected with a model-visible message. A hard storage
    failure is a separate [Error], not one of these. *)
@@ -92,40 +69,28 @@ let handle_plan ~fs ~root ~now document call proposal =
   let created_at = now () in
   let session_id = Spice_session.id session in
   let stored : (plan_stored, Artifacts.Error.t) result =
-    let* superseded =
-      supersede_prior_plans ~fs ~root ~session:session_id
-        ~by:(Spice_protocol.Plan.Proposal.id proposal)
-        ~superseded_at:created_at
+    let plan =
+      let* source =
+        Spice_protocol.Plan.Source.make ~session:session_id ~turn
+          ~tool_call_id:(Spice_llm.Tool.Call.id call)
+          ()
+      in
+      Spice_protocol.Plan.propose
+        ~id:(Spice_protocol.Plan.Proposal.id proposal)
+        ~source
+        ?title:(Spice_protocol.Plan.Proposal.title proposal)
+        ~body:(Spice_protocol.Plan.Proposal.body proposal)
+        ~created_at ()
     in
-    match superseded with
+    match plan with
     | Error message -> Ok (Rejected message)
-    | Ok () -> (
-        let plan =
-          let* source =
-            Spice_protocol.Plan.Source.make ~session:session_id ~turn
-              ~tool_call_id:(Spice_llm.Tool.Call.id call)
-              ()
-          in
-          Spice_protocol.Plan.propose
-            ~id:(Spice_protocol.Plan.Proposal.id proposal)
-            ~source
-            ?title:(Spice_protocol.Plan.Proposal.title proposal)
-            ~body:(Spice_protocol.Plan.Proposal.body proposal)
-            ~created_at ()
-        in
-        match plan with
-        | Error message -> Ok (Rejected message)
-        | Ok plan -> (
-            match Artifacts.Plan.create ~fs ~root plan with
-            | Ok () -> Ok Parked
-            | Error
-                ((Artifacts.Error.Conflict _ | Artifacts.Error.Not_found _) as
-                 error) ->
-                Ok (Rejected (Artifacts.Error.message error))
-            | Error
-                ((Artifacts.Error.Corrupt_file _ | Artifacts.Error.Io _) as
-                 error) ->
-                Error error))
+    | Ok plan -> (
+        match
+          Artifacts.Plan.propose ~fs ~root ~superseded_at:created_at plan
+        with
+        | Ok Artifacts.Plan.Stored -> Ok Parked
+        | Ok (Artifacts.Plan.Refused message) -> Ok (Rejected message)
+        | Error error -> Error error)
   in
   match stored with
   | Error error -> Error (Artifacts.Error.to_protocol_error error)

@@ -71,6 +71,31 @@ the same model-authored id without conflicting with the first session's plan.
   $ spice session show --json plan-run-two | grep -o '"source":{"session":"plan-run-two"' | head -1
   "source":{"session":"plan-run-two"
 
+A conflicting re-proposal leaves the current plan unchanged. The replacement
+key is checked before any prior plan is superseded.
+
+  $ cat > plan-approve.jsonl <<'JSONL'
+  > {"expect":{"body_contains":["Plan approved: milestone-plan. Proceed with the plan."]},"response":{"id":"resp-plan-approved","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Plan accepted."}]}]}}
+  > JSONL
+  $ start_fake_openai plan-approve.jsonl plan-approve-capture plan-approve-port
+  $ spice run reply plan-run --cwd "$PWD" --approve-plan 2>&1 | grep -o 'Plan accepted.'
+  Plan accepted.
+  $ wait_fake_server
+
+  $ cat > .spice/plans/plan-run/reused-plan.json <<'JSON'
+  > {"id":"reused-plan","source":{"session":"plan-run","turn":"turn-old","tool_call_id":"call-old"},"body":"Rejected earlier","status":{"type":"rejected","rejected_at":2},"created_at":1}
+  > JSON
+  $ cat > plan-conflict.jsonl <<'JSONL'
+  > {"expect":{"body_contains":["replace the plan"]},"response":{"id":"resp-plan-conflict","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-plan-conflict","call_id":"plan-conflict","name":"propose_plan","arguments":"{\"id\":\"reused-plan\",\"body\":\"Replacement\"}"}]}}
+  > {"expect":{"body_contains":["plan conflict: plan-run/reused-plan"]},"response":{"id":"resp-plan-conflict-final","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Conflict handled."}]}]}}
+  > JSONL
+  $ start_fake_openai plan-conflict.jsonl plan-conflict-capture plan-conflict-port
+  $ spice run resume plan-run --cwd "$PWD" --mode plan "replace the plan" 2>&1 | grep -o 'Conflict handled.'
+  Conflict handled.
+  $ wait_fake_server
+  $ grep -o '"type":"approved"' .spice/plans/plan-run/milestone-plan.json
+  "type":"approved"
+
 `spawn_subagent` launches a detached child session: the spawn returns a
 launch acknowledgment immediately, the parent turn continues while the
 child explores with read-only tools, and the process exits only once the

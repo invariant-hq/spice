@@ -85,8 +85,40 @@ let write_file ~fs ~create codec p value =
   let* () = mkdir_p ~fs (Filename.dirname p) in
   io p (fun () -> Eio.Path.save ~create (fs_path ~fs p) text)
 
+let tmp_counter = ref 0
+
+let tmp_path p =
+  incr tmp_counter;
+  p ^ ".tmp."
+  ^ string_of_int (Unix.getpid ())
+  ^ "." ^ string_of_int !tmp_counter
+
+let remove_file ~fs p =
+  if file_exists ~fs p then io p (fun () -> Eio.Path.unlink (fs_path ~fs p))
+  else Ok ()
+
 let save_file ~fs codec p value =
-  write_file ~fs ~create:(`Or_truncate 0o600) codec p value
+  let* text = encode codec p value in
+  let* () = mkdir_p ~fs (Filename.dirname p) in
+  let tmp = tmp_path p in
+  let* () =
+    io tmp (fun () ->
+        Eio.Path.save ~create:(`Exclusive 0o600) (fs_path ~fs tmp) text)
+  in
+  match io p (fun () -> Eio.Path.rename (fs_path ~fs tmp) (fs_path ~fs p)) with
+  | Ok () -> Ok ()
+  | Error error -> (
+      match remove_file ~fs tmp with
+      | Ok () -> Error error
+      | Error cleanup ->
+          Error
+            (Error.Io
+               {
+                 path = p;
+                 message =
+                   Error.message error ^ "; temporary-file cleanup failed: "
+                   ^ Error.message cleanup;
+               }))
 
 let create_file ~fs ~kind ~key codec p value =
   if file_exists ~fs p then Error (Error.Conflict { kind; key })
@@ -234,6 +266,114 @@ module Plan = struct
                  })
     in
     check [] plans
+
+  type proposal_result = Stored | Refused of string
+
+  let proposal_conflict session id =
+    Error.Conflict
+      {
+        kind;
+        key =
+          Spice_session.Id.to_string session
+          ^ "/"
+          ^ Spice_protocol.Plan.Id.to_string id;
+      }
+
+  let rollback_replacement ~fs ~root ~created originals =
+    let rec restore first_error = function
+      | [] -> first_error
+      | plan :: rest -> (
+          match save ~fs ~root plan with
+          | Ok () -> restore first_error rest
+          | Error error ->
+              let first_error =
+                match first_error with
+                | Some _ -> first_error
+                | None -> Some error
+              in
+              restore first_error rest)
+    in
+    let restore_error = restore None originals in
+    let remove_error =
+      match
+        remove_file ~fs
+          (path ~root ~session:(plan_session created)
+             (Spice_protocol.Plan.id created))
+      with
+      | Ok () -> None
+      | Error error -> Some error
+    in
+    match (restore_error, remove_error) with
+    | None, None -> Ok ()
+    | Some error, None | None, Some error -> Error error
+    | Some restore, Some remove ->
+        Error
+          (Error.Io
+             {
+               path = dir ~root;
+               message =
+                 "plan replacement rollback failed: " ^ Error.message restore
+                 ^ "; replacement cleanup failed: " ^ Error.message remove;
+             })
+
+  let commit_replacement ~fs ~root plan updates =
+    match create ~fs ~root plan with
+    | Error (Error.Conflict _ as error) -> Ok (Refused (Error.message error))
+    | Error error -> Error error
+    | Ok () ->
+        let rec save_updates originals = function
+          | [] -> Ok Stored
+          | (original, updated) :: rest -> (
+              match save ~fs ~root updated with
+              | Ok () -> save_updates (original :: originals) rest
+              | Error write_error -> (
+                  match
+                    rollback_replacement ~fs ~root ~created:plan originals
+                  with
+                  | Ok () -> Error write_error
+                  | Error rollback_error ->
+                      Error
+                        (Error.Io
+                           {
+                             path = dir ~root;
+                             message =
+                               "plan replacement failed: "
+                               ^ Error.message write_error ^ "; "
+                               ^ Error.message rollback_error;
+                           })))
+        in
+        save_updates [] updates
+
+  let propose ~fs ~root ~superseded_at plan =
+    let session = plan_session plan in
+    let id = Spice_protocol.Plan.id plan in
+    let* plans = list ~fs ~root ~session in
+    if
+      List.exists
+        (fun stored ->
+          Spice_protocol.Plan.Id.equal (Spice_protocol.Plan.id stored) id)
+        plans
+    then Ok (Refused (Error.message (proposal_conflict session id)))
+    else
+      let supersedable stored =
+        let status = Spice_protocol.Plan.status stored in
+        Spice_protocol.Plan.Status.is_proposed status
+        || Spice_protocol.Plan.Status.is_approved status
+      in
+      let rec updates acc = function
+        | [] -> Ok (List.rev acc)
+        | stored :: rest -> (
+            if not (supersedable stored) then updates acc rest
+            else
+              match
+                Spice_protocol.Plan.supersede ~superseded_at ~by:id stored
+              with
+              | Error message -> Error message
+              | Ok updated -> updates ((stored, updated) :: acc) rest)
+      in
+      match updates [] plans with
+      | Error message -> Ok (Refused message)
+      | Ok updates -> commit_replacement ~fs ~root plan updates
 
   let resolve ~fs ~root ~session ~now ~decision proposal =
     let id = Spice_protocol.Plan.Proposal.id proposal in
