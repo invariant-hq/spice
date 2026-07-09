@@ -22,6 +22,12 @@ let stripped_patterns =
     "GEMINI_*";
     "AWS_*";
     "AZURE_*";
+    (* credential agent handles *)
+    "SSH_AUTH_SOCK";
+    "SSH_AGENT_PID";
+    "GPG_AGENT_INFO";
+    "GNUPGHOME";
+    "KRB5CCNAME";
     (* loader injection *)
     "LD_*";
     "DYLD_*";

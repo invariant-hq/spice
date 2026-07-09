@@ -17,7 +17,8 @@
 val stripped_patterns : string list
 (** [stripped_patterns] are the name patterns removed from confined command
     environments: credential shapes ([*TOKEN*], [*SECRET*], ...), provider
-    prefixes ([ANTHROPIC_*], [OPENAI_*], ...), loader injection ([LD_*],
+    prefixes ([ANTHROPIC_*], [OPENAI_*], ...), credential-agent handles
+    ([SSH_AUTH_SOCK], [GPG_AGENT_INFO], ...), loader injection ([LD_*],
     [DYLD_*]), and shell-startup overrides ([BASH_ENV], ...). *)
 
 val partition : (string * string) list -> (string * string) list * string list

@@ -105,6 +105,8 @@ let env_partition_strips_credentials () =
       ("ANTHROPIC_API_KEY", "sk-secret");
       ("GITHUB_TOKEN", "ghp_secret");
       ("openai_api_key", "lowercase-secret");
+      ("SSH_AUTH_SOCK", "/tmp/agent.sock");
+      ("GPG_AGENT_INFO", "/tmp/gpg.sock:123:1");
       ("DYLD_INSERT_LIBRARIES", "/tmp/evil.dylib");
       ("BASH_ENV", "/tmp/evil.sh");
       ("HOME", "/home/user");
@@ -128,6 +130,8 @@ let env_partition_strips_credentials () =
           "ANTHROPIC_API_KEY";
           "GITHUB_TOKEN";
           "openai_api_key";
+          "SSH_AUTH_SOCK";
+          "GPG_AGENT_INFO";
           "DYLD_INSERT_LIBRARIES";
           "BASH_ENV";
         ]
