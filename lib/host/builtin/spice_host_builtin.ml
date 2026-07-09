@@ -172,12 +172,8 @@ let chatgpt_account_headers = function
 
 let openai_auth_config = function
   | None -> Ok Spice_auth.Openai_chatgpt.Config.default
-  | Some issuer -> (
-      match
-        Spice_auth.Openai_chatgpt.Config.make ~issuer:(Uri.of_string issuer) ()
-      with
-      | config -> Ok config
-      | exception Invalid_argument _ -> Error Spice_account.Problem.Unsupported)
+  | Some issuer ->
+      Spice_auth.Openai_chatgpt.Config.make ~issuer:(Uri.of_string issuer) ()
 
 let openai_auth_problem = function
   | Spice_auth.Error.Rejected _ -> Spice_account.Problem.Refresh_failed
@@ -191,7 +187,7 @@ let openai_auth_problem = function
 
 let with_openai_auth ~stdenv ?auth_base_url run =
   match openai_auth_config auth_base_url with
-  | Error _ as error -> error
+  | Error error -> Error (openai_auth_problem error)
   | Ok config -> (
       match Spice_auth.Http.tls_client ~stdenv with
       | Error _ -> Error Spice_account.Problem.Network

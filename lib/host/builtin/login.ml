@@ -216,10 +216,9 @@ let drive_device ~stdenv host ~provider ?name ?cancel ~events ~http ~sw started
 let openai_chatgpt_config host ~provider =
   match Account.provider_auth_base_url host ~provider with
   | None -> Ok Auth.Openai_chatgpt.Config.default
-  | Some root -> (
-      match Auth.Openai_chatgpt.Config.make ~issuer:(Uri.of_string root) () with
-      | config -> Ok config
-      | exception Invalid_argument message -> Error message)
+  | Some root ->
+      Result.map_error Auth.Error.message
+        (Auth.Openai_chatgpt.Config.make ~issuer:(Uri.of_string root) ())
 
 let device ~stdenv host ~provider ~method_id ?name ?cancel events =
   match resolve_protocol host ~provider ~method_id with

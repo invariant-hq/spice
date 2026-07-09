@@ -162,11 +162,26 @@ let rejects_empty_generic_refresh_token env () =
   | Error error -> failf "expected protocol error, got %a" Auth.Error.pp error
   | Ok _ -> failf "expected empty refresh token rejection"
 
+let rejects_invalid_openai_auth_issuer () =
+  match
+    Auth.Openai_chatgpt.Config.make ~issuer:(Uri.of_string "file:///tmp/auth") ()
+  with
+  | Error (Auth.Error.Invalid_request message) ->
+      is_true ~msg:"invalid issuer is reported"
+        (String.includes ~affix:"issuer must use http or https" message)
+  | Error error -> failf "expected invalid request, got %a" Auth.Error.pp error
+  | Ok _ -> failf "expected invalid issuer rejection"
+
 let with_eio test () = Eio_main.run @@ fun env -> test env ()
 
 let () =
   run "auth"
     [
+      group "config"
+        [
+          test "rejects invalid OpenAI auth issuers"
+            rejects_invalid_openai_auth_issuer;
+        ];
       group "oauth"
         [
           test ~timeout:3.0 "rejects non-Bearer generic token responses"

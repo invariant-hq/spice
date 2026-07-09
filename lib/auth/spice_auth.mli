@@ -233,7 +233,7 @@ module Openai_chatgpt : sig
         pending authorization state. *)
 
     val default : t
-    (** [default] is [make ()]. *)
+    (** [default] is the standard OpenAI ChatGPT auth configuration. *)
 
     val make :
       ?issuer:Uri.t ->
@@ -241,7 +241,7 @@ module Openai_chatgpt : sig
       ?expires_in:int ->
       ?poll_interval:int ->
       unit ->
-      t
+      (t, Error.t) result
     (** [make ?issuer ?client_id ?expires_in ?poll_interval ()] is OpenAI
         ChatGPT auth configuration.
 
@@ -253,7 +253,13 @@ module Openai_chatgpt : sig
         must be non-negative, and zero makes the corresponding deadline or delay
         immediate.
 
-        Raises [Invalid_argument] if any supplied value is invalid. *)
+        Defaults:
+        - [issuer] defaults to [https://auth.openai.com].
+        - [client_id] defaults to [app_EMoamEEZ73f0CkXaXp7hrann].
+        - [expires_in] defaults to [900].
+        - [poll_interval] defaults to [5].
+
+        Errors with [Invalid_request] if any supplied value is invalid. *)
   end
 
   val refresh :

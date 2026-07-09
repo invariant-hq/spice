@@ -11,15 +11,6 @@ let log_src =
 
 module Log = (val Logs.src_log log_src : Logs.LOG)
 
-let invalid fn message = invalid_arg ("Spice_auth." ^ fn ^ ": " ^ message)
-
-let check_non_empty fn field = function
-  | "" -> invalid fn (field ^ " must not be empty")
-  | _ -> ()
-
-let check_non_negative fn field value =
-  if value < 0 then invalid fn (field ^ " must not be negative")
-
 let user_error_message message =
   match String.split_first ~sep:":" message with
   | None -> message
@@ -253,27 +244,44 @@ module Openai_chatgpt = struct
           || String.equal (String.lowercase_ascii scheme) "http"
       | None -> false
 
+    let invalid_config message =
+      Error (Error.Invalid_request ("OpenAI ChatGPT auth config: " ^ message))
+
     let check_issuer issuer =
       if not (valid_scheme (Uri.scheme issuer)) then
-        invalid "Openai_chatgpt.Config.make" "issuer must use http or https";
-      if Option.is_none (Uri.host issuer) then
-        invalid "Openai_chatgpt.Config.make" "issuer must have a host";
-      if Option.is_some (Uri.verbatim_query issuer) then
-        invalid "Openai_chatgpt.Config.make" "issuer must not have a query";
-      if Option.is_some (Uri.fragment issuer) then
-        invalid "Openai_chatgpt.Config.make" "issuer must not have a fragment"
+        invalid_config "issuer must use http or https"
+      else if Option.is_none (Uri.host issuer) then
+        invalid_config "issuer must have a host"
+      else if Option.is_some (Uri.verbatim_query issuer) then
+        invalid_config "issuer must not have a query"
+      else if Option.is_some (Uri.fragment issuer) then
+        invalid_config "issuer must not have a fragment"
+      else Ok ()
+
+    let check_non_empty field = function
+      | "" -> invalid_config (field ^ " must not be empty")
+      | _ -> Ok ()
+
+    let check_non_negative field value =
+      if value < 0 then invalid_config (field ^ " must not be negative")
+      else Ok ()
 
     let make ?(issuer = default_issuer) ?(client_id = default_client_id)
         ?(expires_in = default_expires_in)
         ?(poll_interval = default_poll_interval) () =
-      check_issuer issuer;
-      check_non_empty "Openai_chatgpt.Config.make" "client_id" client_id;
-      check_non_negative "Openai_chatgpt.Config.make" "expires_in" expires_in;
-      check_non_negative "Openai_chatgpt.Config.make" "poll_interval"
-        poll_interval;
-      { issuer; client_id; expires_in; poll_interval }
+      let* () = check_issuer issuer in
+      let* () = check_non_empty "client_id" client_id in
+      let* () = check_non_negative "expires_in" expires_in in
+      let* () = check_non_negative "poll_interval" poll_interval in
+      Ok { issuer; client_id; expires_in; poll_interval }
 
-    let default = make ()
+    let default =
+      {
+        issuer = default_issuer;
+        client_id = default_client_id;
+        expires_in = default_expires_in;
+        poll_interval = default_poll_interval;
+      }
     let client_id t = t.client_id
     let expires_in t = t.expires_in
     let poll_interval t = t.poll_interval
