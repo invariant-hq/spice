@@ -504,7 +504,7 @@ let rec verify_file ~path source sites =
   match
     Grep.parse_implementation ~filename:(Workspace.Path.display path) after
   with
-  | Error message -> Error (`Rewrite_unparsable message)
+  | Error error -> Error (`Rewrite_unparsable (Grep.Parse_error.to_string error))
   | Ok structure ->
       let spans = expr_spans structure in
       let failing =
@@ -1039,9 +1039,12 @@ let search_file ~fs ~workspace pattern path =
   | Ok source -> (
       let filename = Workspace.Path.display path in
       match Grep.parse_implementation ~filename source with
-      | Error message ->
+      | Error error ->
           `Skipped
-            { Output.skipped_path = path; reason = Output.Syntax_error message }
+            {
+              Output.skipped_path = path;
+              reason = Output.Syntax_error (Grep.Parse_error.to_string error);
+            }
       | Ok structure -> (
           match Grep.search_with_bindings pattern ~path structure with
           | [] -> `Searched

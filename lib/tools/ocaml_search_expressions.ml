@@ -550,9 +550,12 @@ let search_file ~fs ~workspace ~anchors pattern path =
   | Ok source -> (
       let filename = Workspace.Path.display path in
       match Grep.parse_implementation ~filename source with
-      | Error message ->
+      | Error error ->
           Error
-            { Output.skipped_path = path; reason = Output.Syntax_error message }
+            {
+              Output.skipped_path = path;
+              reason = Output.Syntax_error (Grep.Parse_error.to_string error);
+            }
       | Ok structure -> (
           match Grep.search pattern ~path structure with
           | [] -> Ok []

@@ -51,7 +51,8 @@ let bindings pattern source =
       failf "pattern %S: %s" pattern (Grep.Pattern.error_message error)
   | Ok parsed -> (
       match Grep.parse_implementation ~filename:"test.ml" source with
-      | Error error -> failf "source did not parse: %s" error
+      | Error error ->
+          failf "source did not parse: %s" (Grep.Parse_error.to_string error)
       | Ok structure ->
           Grep.search_with_bindings parsed ~path:workspace_path structure
           |> List.map (fun (location, bs) ->
@@ -67,7 +68,8 @@ let find pattern source =
       failf "pattern %S: %s" pattern (Grep.Pattern.error_message error)
   | Ok parsed -> (
       match Grep.parse_implementation ~filename:"test.ml" source with
-      | Error error -> failf "source did not parse: %s" error
+      | Error error ->
+          failf "source did not parse: %s" (Grep.Parse_error.to_string error)
       | Ok structure ->
           Grep.search parsed ~path:workspace_path structure
           |> List.map (slice source))
@@ -219,9 +221,17 @@ let unsupported_patterns () =
 
 let source_parse_errors () =
   match Grep.parse_implementation ~filename:"broken.ml" "let x =\n" with
-  | Error message ->
+  | Error error ->
+      equal string ~msg:"filename" "broken.ml" (Grep.Parse_error.filename error);
+      equal string ~msg:"message" "syntax error" (Grep.Parse_error.message error);
       is_true ~msg:"diagnostic mentions a syntax error"
-        (String.length message > 0)
+        (String.length (Grep.Parse_error.to_string error) > 0);
+      begin match Grep.Parse_error.position error with
+      | Some position ->
+          equal int ~msg:"line" 2 (Ocaml.Position.line position);
+          equal int ~msg:"column" 0 (Ocaml.Position.column position)
+      | None -> failf "expected parser error position"
+      end
   | Ok _ -> failf "expected a syntax error for broken source"
 
 let binding_flagship_upgrade () =

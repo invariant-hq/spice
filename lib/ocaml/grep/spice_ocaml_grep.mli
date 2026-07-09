@@ -80,14 +80,47 @@ end
 
 (** {1 Parsing searched sources} *)
 
+module Parse_error : sig
+  type t
+  (** Searched-source parse errors. *)
+
+  val make :
+    filename:string ->
+    message:string ->
+    ?position:Spice_ocaml.Position.t ->
+    unit ->
+    t
+  (** [make ~filename ~message ?position ()] is a searched-source parse error.
+
+      [filename] is the filename supplied to {!parse_implementation}. [message]
+      is a human-readable parser diagnostic. [position] is the parser-reported
+      start position of the error when available. Raises [Invalid_argument] if
+      [filename] or [message] is empty. *)
+
+  val filename : t -> string
+  (** [filename t] is the filename supplied to {!parse_implementation}. *)
+
+  val message : t -> string
+  (** [message t] is the human-readable parser diagnostic. *)
+
+  val position : t -> Spice_ocaml.Position.t option
+  (** [position t] is the parser-reported start position, if available. *)
+
+  val to_string : t -> string
+  (** [to_string t] is a human-readable diagnostic. The text is not stable enough
+      for programmatic matching. *)
+
+  val pp : Format.formatter -> t -> unit
+  (** [pp ppf t] formats {!to_string} [t]. *)
+end
+
 val parse_implementation :
-  filename:string -> string -> (Parsetree.structure, string) result
+  filename:string -> string -> (Parsetree.structure, Parse_error.t) result
 (** [parse_implementation ~filename source] parses [source] as an OCaml
     implementation. [filename] is recorded in locations and used in the error
     diagnostic.
 
-    Errors with a human-readable syntax diagnostic, including the error position
-    when the parser reports one. *)
+    Errors with a structured syntax diagnostic. *)
 
 (** {1 Search} *)
 

@@ -514,6 +514,33 @@ end
 
 (* {1 Parsing searched sources} *)
 
+module Parse_error = struct
+  type t = {
+    filename : string;
+    message : string;
+    position : Spice_ocaml.Position.t option;
+  }
+
+  let make ~filename ~message ?position () =
+    if String.equal filename "" then invalid_arg "parse error filename is empty";
+    if String.equal message "" then invalid_arg "parse error message is empty";
+    { filename; message; position }
+
+  let filename t = t.filename
+  let message t = t.message
+  let position t = t.position
+
+  let to_string t =
+    match t.position with
+    | None -> t.message
+    | Some position ->
+        Printf.sprintf "%s at line %d, column %d" t.message
+          (Spice_ocaml.Position.line position)
+          (Spice_ocaml.Position.column position)
+
+  let pp ppf t = Format.pp_print_string ppf (to_string t)
+end
+
 let parse_implementation ~filename source =
   let lexbuf = Lexing.from_string source in
   lexbuf.Lexing.lex_curr_p <-
@@ -531,11 +558,12 @@ let parse_implementation ~filename source =
         | Syntaxerr.Error error ->
             let loc = Syntaxerr.location_of_error error in
             let start = loc.Location.loc_start in
-            Printf.sprintf " at line %d, column %d" start.Lexing.pos_lnum
-              (start.Lexing.pos_cnum - start.Lexing.pos_bol)
-        | _ -> ""
+            Some
+              (Spice_ocaml.Position.make ~line:start.Lexing.pos_lnum
+                 ~column:(start.Lexing.pos_cnum - start.Lexing.pos_bol))
+        | _ -> None
       in
-      Error (Printf.sprintf "syntax error%s" position)
+      Error (Parse_error.make ~filename ~message:"syntax error" ?position ())
 
 (* {1 Search} *)
 
