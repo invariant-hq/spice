@@ -279,11 +279,12 @@ let%expect_test "the permission dialog denies and resumes without running" =
 
 (* Always allow: a shell call whose argv has a command family ("git commit")
    offers a fourth option that saves a durable rule over that family. The scope
-   line defaults to this session and [s] cycles it. Picking it at project scope
-   grants the blocked call for the session AND installs the family rule, so a
-   later DISTINCT [git commit] runs with no prompt (the turn reaches its resume
-   without a second dialog), and the rule text lands in the gitignored
-   project-local config. *)
+   line defaults to this session and [s] cycles it to user (the only two scopes:
+   a workspace file never originates permission authority). Picking it at user
+   scope grants the blocked call for the session AND installs the family rule, so
+   a later DISTINCT [git commit] runs with no prompt (the turn reaches its resume
+   without a second dialog), and the rule text lands in the outside-workspace
+   user config. *)
 let%expect_test "always allow saves a family rule and silences the family" =
   let script =
     [
@@ -327,7 +328,7 @@ let%expect_test "always allow saves a family rule and silences the family" =
 22 |
 23 |
 24 ||}];
-  (* Cycle the always-allow scope to the project-local file, then always-allow
+  (* Cycle the always-allow scope from this session to user, then always-allow
      with [4]. The grant proceeds the first commit; the SECOND distinct commit is
      decided under the installed family rule with no prompt, so the turn reaches
      its resume request without a second dialog opening. *)
@@ -337,10 +338,14 @@ let%expect_test "always allow saves a family rule and silences the family" =
   ignore (Tui.await_request t 3 : string);
   Tui.release t "fin";
   Tui.settle t;
-  let local = Project.path (Tui.project t) ".spice/config.local.json" in
-  let contents = Util.read_file local in
+  let user_config =
+    Project.scratch (Tui.project t) "config/spice/config.json"
+  in
+  let contents =
+    if Sys.file_exists user_config then Util.read_file user_config else ""
+  in
   print_string
     (if Util.contains contents "argv-prefix" && Util.contains contents "commit"
-     then "rule saved to project-local config"
+     then "rule saved to user config"
      else "MISSING RULE >>>" ^ contents ^ "<<<");
-  [%expect {| rule saved to project-local config |}]
+  [%expect {| rule saved to user config |}]

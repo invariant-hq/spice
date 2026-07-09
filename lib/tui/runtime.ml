@@ -2027,8 +2027,6 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                       let durable_kind =
                         match scope with
                         | Permission_dialog.Session -> None
-                        | Permission_dialog.Project ->
-                            Some Spice_host.Config.Config_file.Project_local
                         | Permission_dialog.User ->
                             Some Spice_host.Config.Config_file.User
                       in
@@ -2036,7 +2034,8 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                       | None -> ()
                       | Some kind ->
                           let files =
-                            Spice_host.Config.files (Spice_host.Host.config host)
+                            Spice_host.Config.files
+                              (Spice_host.Host.config host)
                           in
                           List.iter
                             (fun rule ->
@@ -2072,8 +2071,7 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                   match !attachment with
                   | Some (live, _) ->
                       Spice_host.Live.submit live
-                        (Spice_protocol.Command.Answer
-                           { turn; call_id; answer })
+                        (Spice_protocol.Command.Answer { turn; call_id; answer })
                   | None -> ())
           | App.Resolve_plan { turn; call_id; decision } ->
               perform (fun () ->

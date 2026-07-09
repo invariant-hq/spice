@@ -22,9 +22,11 @@ type t
 (** The type for the permission dialog's UI state. *)
 
 (** Where an "always allow" answer saves its derived rule. [Session] keeps it in
-    the run only; [Project] also writes the gitignored project-local config;
-    [User] also writes the durable user config. *)
-type scope = Session | Project | User
+    the run only; [User] also writes the durable user config, which loads its
+    rules on every run. A project-local scope is deliberately absent: workspace
+    files never originate permission authority (their rules are stripped on
+    load), so saving there would silently not persist. *)
+type scope = Session | User
 
 val make : Spice_session.Permission.Requested.t -> t
 (** [make request] is the permission dialog for [request], cursor on allow-once,
@@ -40,10 +42,7 @@ type outcome =
   | Allow of Spice_permission.Policy.Review.scope
       (** Grant the request with this scope ([Once] or the exact-grant
           [Session]). *)
-  | Always of {
-      rules : Spice_permission.Policy.Rule.t list;
-      scope : scope;
-    }
+  | Always of { rules : Spice_permission.Policy.Rule.t list; scope : scope }
       (** Grant the request and install these durable family rules at [scope].
           The blocked call is also allowed for the session so it proceeds. *)
   | Deny  (** Deny with feedback: borrow the composer. *)

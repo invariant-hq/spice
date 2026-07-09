@@ -10,7 +10,7 @@ module Review = Spice_permission.Policy.Review
 module Suggest = Spice_permission.Suggest
 module Requested = Spice_session.Permission.Requested
 
-type scope = Session | Project | User
+type scope = Session | User
 
 type t = {
   request : Requested.t;
@@ -224,10 +224,7 @@ let ctrl_o (ev : Matrix.Input.Key.event) =
   | Matrix.Input.Key.Char u -> Uchar.equal u (Uchar.of_char 'o')
   | _ -> false
 
-let next_scope = function
-  | Session -> Project
-  | Project -> User
-  | User -> Session
+let next_scope = function Session -> User | User -> Session
 
 let always_outcome t =
   Always { rules = List.map Suggest.rule t.suggestions; scope = t.scope }
@@ -373,7 +370,6 @@ let headline_row ~counts head =
 
 let scope_word = function
   | Session -> "this session"
-  | Project -> "this project (.spice/config.local.json)"
   | User -> "all your projects"
 
 let always_summary t =
@@ -407,8 +403,7 @@ let options_view t ~allow_once ~session_scope =
   box ~flex_direction:Flex_direction.Column ~flex_shrink:0.
     (List.init (option_count t) (fun i ->
          let selected = Option_list.selected t.nav = i in
-         Option_list.row ~selected ~number:(i + 1)
-           ~label:(label i ~selected) ()))
+         Option_list.row ~selected ~number:(i + 1) ~label:(label i ~selected) ()))
 
 let view ~width t =
   let accesses = reviewed_accesses t in

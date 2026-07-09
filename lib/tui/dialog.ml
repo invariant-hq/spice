@@ -94,7 +94,6 @@ let key ev t =
           let where =
             match (scope : Permission_dialog.scope) with
             | Permission_dialog.Session -> "this session"
-            | Permission_dialog.Project -> "this project"
             | Permission_dialog.User -> "all projects"
           in
           ( t,
