@@ -64,6 +64,17 @@ let with_store_env name f =
   let root = Spice_path.Abs.of_string_exn root_native in
   f ~fs ~clock ~root
 
+let session_document_path ~root_path id =
+  let sessions = Eio.Path.( / ) root_path "sessions" in
+  let session_dir = Eio.Path.( / ) sessions id in
+  Eio.Path.( / ) session_dir "session.json"
+
+let session_json id =
+  Printf.sprintf
+    "{\"version\":1,\"id\":%S,\"metadata\":{\"status\":\"active\",\
+     \"cwd\":\"/workspace\",\"created_at\":1,\"updated_at\":1},\"events\":[]}\n"
+    id
+
 let doc_id document =
   Session.Id.to_string (Session.id (Store.Document.session document))
 
@@ -89,6 +100,22 @@ let load_missing_is_not_found () =
   | Error (Store.Error.Not_found id) ->
       equal string ~msg:"not-found carries the requested id" "ghost"
         (Session.Id.to_string id)
+  | Error error -> failf "unexpected error: %a" Store.Error.pp error
+
+let load_rejects_non_file_document_path () =
+  with_store "load-non-file" @@ fun ~root_path store ->
+  let id = Session.Id.of_string "doc" in
+  ignore (ok_or_fail (Store.create store (make_session "doc")));
+  let path = session_document_path ~root_path "doc" in
+  Eio.Path.unlink path;
+  Eio.Path.mkdirs ~exists_ok:true ~perm:0o700 path;
+  match Store.load store id with
+  | Error (Store.Error.Corrupt { path; message }) ->
+      is_true ~msg:"corrupt path names the document"
+        (String.includes ~affix:"doc/session.json" path);
+      equal string ~msg:"non-file document message" "is not a regular file"
+        message
+  | Ok _ -> failf "non-file session document should not load"
   | Error error -> failf "unexpected error: %a" Store.Error.pp error
 
 (* R2: the removed [Invalid_limit] recoverable error is now a programmer-error
@@ -160,6 +187,42 @@ let list_reports_corrupt_without_counting_limit () =
         (Option.map Session.Id.to_string entry.Store.Corrupt.id);
       is_true ~msg:"corrupt entry names its path"
         (String.includes ~affix:"bad" entry.Store.Corrupt.path)
+  | entries -> failf "expected one corrupt entry, got %d" (List.length entries)
+
+let list_reports_non_file_document_path () =
+  with_store "list-non-file" @@ fun ~root_path store ->
+  ignore (ok_or_fail (Store.create store (make_session "doc")));
+  let path = session_document_path ~root_path "doc" in
+  Eio.Path.unlink path;
+  Eio.Path.mkdirs ~exists_ok:true ~perm:0o700 path;
+  let documents, corrupt = ok_or_fail (Store.list store ()) in
+  equal (list string) ~msg:"non-file document is not listed" []
+    (List.map doc_id documents);
+  match corrupt with
+  | [ entry ] ->
+      equal (option string) ~msg:"corrupt entry carries the parsed id"
+        (Some "doc")
+        (Option.map Session.Id.to_string entry.Store.Corrupt.id);
+      equal string ~msg:"non-file document message" "is not a regular file"
+        entry.Store.Corrupt.message
+  | entries -> failf "expected one corrupt entry, got %d" (List.length entries)
+
+let list_rejects_invalid_session_directory_name () =
+  with_store "list-invalid-dir" @@ fun ~root_path store ->
+  let bad_dir = Eio.Path.( / ) (Eio.Path.( / ) root_path "sessions") "%ZZ" in
+  Eio.Path.mkdirs ~exists_ok:true ~perm:0o700 bad_dir;
+  Eio.Path.save ~create:(`Exclusive 0o600)
+    (Eio.Path.( / ) bad_dir "session.json")
+    (session_json "doc");
+  let documents, corrupt = ok_or_fail (Store.list store ()) in
+  equal (list string) ~msg:"invalid path document is not listed" []
+    (List.map doc_id documents);
+  match corrupt with
+  | [ entry ] ->
+      equal (option string) ~msg:"invalid path has no parsed id" None
+        (Option.map Session.Id.to_string entry.Store.Corrupt.id);
+      equal string ~msg:"invalid session path message"
+        "store path is not a valid session id" entry.Store.Corrupt.message
   | entries -> failf "expected one corrupt entry, got %d" (List.length entries)
 
 let stale_writers_conflict_loudly () =
@@ -281,12 +344,18 @@ let () =
     [
       test "create rejects a duplicate id" create_rejects_duplicate;
       test "load of a missing session is not found" load_missing_is_not_found;
+      test "load rejects a non-file document path"
+        load_rejects_non_file_document_path;
       test "list rejects a non-positive limit" list_rejects_non_positive_limit;
       test "save rejects a session id mismatch" save_rejects_id_mismatch;
       test "list filters lifecycle and applies limit"
         list_filters_lifecycle_and_limit;
       test "list reports corrupt entries without counting the limit"
         list_reports_corrupt_without_counting_limit;
+      test "list reports a non-file document path"
+        list_reports_non_file_document_path;
+      test "list rejects an invalid session directory name"
+        list_rejects_invalid_session_directory_name;
       test "stale writers conflict loudly" stale_writers_conflict_loudly;
       test "concurrent saves preserve the compare-and-set"
         concurrent_saves_preserve_the_cas;

@@ -135,8 +135,18 @@ let session_path store id =
   Filename.concat (session_dir store id) document_filename
 
 let lock_path store = Filename.concat (sessions_dir store) ".lock"
-let file_exists store path = Eio.Path.is_file (fs_path store path)
 let dir_exists store path = Eio.Path.is_directory (fs_path store path)
+
+let path_kind store path =
+  match Eio.Path.kind ~follow:true (fs_path store path) with
+  | `Not_found -> Ok `Missing
+  | `Regular_file -> Ok `File
+  | `Directory -> Ok `Directory
+  | _ -> Ok `Other
+  | exception exn -> Error (Error.Io { path; message = Printexc.to_string exn })
+
+let non_file_document path =
+  Error (Error.Corrupt { path; message = "is not a regular file" })
 
 let mkdir_p store dir =
   if String.is_empty dir || String.equal dir "." then Ok ()
@@ -261,8 +271,11 @@ let load_path store path =
 
 let load store id =
   let path = session_path store id in
-  if not (file_exists store path) then Error (Error.Not_found id)
-  else
+  match path_kind store path with
+  | Error _ as error -> error
+  | Ok `Missing -> Error (Error.Not_found id)
+  | Ok (`Directory | `Other) -> non_file_document path
+  | Ok `File ->
     let* document = load_path store path in
     let actual = Spice_session.id (Document.session document) in
     if Spice_session.Id.equal id actual then Ok document
@@ -328,8 +341,11 @@ let create store session =
   with_sessions_lock store (fun () ->
       let id = Spice_session.id session in
       let path = session_path store id in
-      if file_exists store path then Error (Error.Already_exists id)
-      else
+      match path_kind store path with
+      | Error _ as error -> error
+      | Ok `File -> Error (Error.Already_exists id)
+      | Ok (`Directory | `Other) -> non_file_document path
+      | Ok `Missing ->
         let* text = encode_session session in
         let* () = write_document store path text in
         Log.debug (fun m -> m "session created id=%a" Spice_session.Id.pp id);
@@ -349,8 +365,11 @@ let save store document session =
   with_sessions_lock store (fun () ->
       let id = Spice_session.id session in
       let path = session_path store id in
-      if not (file_exists store path) then Error (Error.Not_found id)
-      else
+      match path_kind store path with
+      | Error _ as error -> error
+      | Ok `Missing -> Error (Error.Not_found id)
+      | Ok (`Directory | `Other) -> non_file_document path
+      | Ok `File ->
         let* actual = load_path store path |> Result.map Document.revision in
         let expected = Document.revision document in
         if not (Spice_session.Revision.equal expected actual) then
@@ -432,58 +451,84 @@ let list store ?(include_archived = false) ?(include_deleted = false) ?filter
        ^ string_of_int limit)
   | Some _ | None -> ());
   let dir = sessions_dir store in
-  if not (dir_exists store dir) then Ok ([], [])
-  else
-    let* names = io dir (fun () -> directory_names store dir) in
-    let include_candidate document =
-      include_document ~include_archived ~include_deleted document
-      && match filter with None -> true | Some f -> f document
-    in
-    let rec collect documents corrupt = function
-      | [] -> Ok (List.rev documents, List.rev corrupt)
-      | name :: names -> (
-          let child_dir = Filename.concat dir name in
-          let path = session_document_path child_dir in
-          let path_id = id_of_directory_name name in
-          if not (dir_exists store child_dir) then
-            collect documents corrupt names
-          else if not (file_exists store path) then
-            collect documents corrupt names
-          else
-            (* [load_path] fails only with [Corrupt] (decode) or [Io]. *)
-            match load_path store path with
-            | Error (Error.Corrupt { path; message }) ->
-                let entry = Corrupt.make ?id:path_id ~path ~message () in
-                Log.warn (fun m ->
-                    m "skipped corrupt session path=%s message=%s"
-                      (Corrupt.path entry)
-                      (log_clip (Corrupt.message entry)));
-                collect documents (entry :: corrupt) names
-            | Error error -> Error error
-            | Ok document -> (
-                let actual = Spice_session.id (Document.session document) in
-                match path_id with
-                | Some expected
-                  when not (Spice_session.Id.equal expected actual) ->
-                    let message =
-                      Format.asprintf
-                        "document id %a does not match store path id %a"
-                        Spice_session.Id.pp actual Spice_session.Id.pp expected
-                    in
-                    Log.warn (fun m ->
-                        m "skipped session with mismatched id path=%s" path);
-                    collect documents
-                      (Corrupt.make ?id:path_id ~path ~message () :: corrupt)
-                      names
-                | Some _ | None ->
-                    if include_candidate document then
-                      collect (document :: documents) corrupt names
-                    else collect documents corrupt names))
-    in
-    let* documents, corrupt = collect [] [] (List.sort String.compare names) in
-    let documents = List.sort compare_documents_newest documents in
-    Ok
-      ( (match limit with
-        | None -> documents
-        | Some limit -> List.take limit documents),
-        corrupt )
+  match path_kind store dir with
+  | Error _ as error -> error
+  | Ok `Missing -> Ok ([], [])
+  | Ok (`File | `Other) ->
+      Error (Error.Io { path = dir; message = "is not a directory" })
+  | Ok `Directory ->
+      let* names = io dir (fun () -> directory_names store dir) in
+      let include_candidate document =
+        include_document ~include_archived ~include_deleted document
+        && match filter with None -> true | Some f -> f document
+      in
+      let rec collect documents corrupt = function
+        | [] -> Ok (List.rev documents, List.rev corrupt)
+        | name :: names -> (
+            let child_dir = Filename.concat dir name in
+            let path = session_document_path child_dir in
+            let path_id = id_of_directory_name name in
+            if not (dir_exists store child_dir) then
+              collect documents corrupt names
+            else
+              match path_kind store path with
+              | Error error -> Error error
+              | Ok `Missing -> collect documents corrupt names
+              | Ok (`Directory | `Other) ->
+                  collect documents
+                    (Corrupt.make ?id:path_id ~path
+                       ~message:"is not a regular file" ()
+                    :: corrupt)
+                    names
+              | Ok `File -> (
+                  match path_id with
+                  | None ->
+                      collect documents
+                        (Corrupt.make ~path
+                           ~message:"store path is not a valid session id" ()
+                        :: corrupt)
+                        names
+                  | Some expected -> (
+                      (* [load_path] fails only with [Corrupt] (decode) or [Io]. *)
+                      match load_path store path with
+                      | Error (Error.Corrupt { path; message }) ->
+                          let entry =
+                            Corrupt.make ~id:expected ~path ~message ()
+                          in
+                          Log.warn (fun m ->
+                              m "skipped corrupt session path=%s message=%s"
+                                (Corrupt.path entry)
+                                (log_clip (Corrupt.message entry)));
+                          collect documents (entry :: corrupt) names
+                      | Error error -> Error error
+                      | Ok document ->
+                          let actual =
+                            Spice_session.id (Document.session document)
+                          in
+                          if not (Spice_session.Id.equal expected actual) then
+                            let message =
+                              Format.asprintf
+                                "document id %a does not match store path id %a"
+                                Spice_session.Id.pp actual Spice_session.Id.pp
+                                expected
+                            in
+                            Log.warn (fun m ->
+                                m "skipped session with mismatched id path=%s"
+                                  path);
+                            collect documents
+                              (Corrupt.make ~id:expected ~path ~message ()
+                              :: corrupt)
+                              names
+                          else if include_candidate document then
+                            collect (document :: documents) corrupt names
+                          else collect documents corrupt names)))
+      in
+      let* documents, corrupt =
+        collect [] [] (List.sort String.compare names)
+      in
+      let documents = List.sort compare_documents_newest documents in
+      Ok
+        ( (match limit with
+          | None -> documents
+          | Some limit -> List.take limit documents),
+          corrupt )
