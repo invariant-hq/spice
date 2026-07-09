@@ -6,7 +6,7 @@ The list shows the active preset's rules even before any durable rule exists.
 
   $ spice permission list
   #  RULE          ACTION  MATCH                   SOURCE
-  1  7846a2b8d492  allow   path-workspace op=read  preset permission.mode=default
+  1  be7bf2b60ce9  allow   path-workspace op=read  preset permission.mode=default
 
 Hand-written rules in the user config list before the preset, in file order,
 with content-derived ids, source kind, and storage location. The relative
@@ -22,9 +22,9 @@ path form carries no machine-derived workspace root key.
   > JSON
   $ spice permission list
   #  RULE          ACTION  MATCH                                                                     SOURCE
-  1  076f6458c223  allow   command pattern={"type":"argv-prefix","program":"dune","args":["build"]}  user $TESTCASE_ROOT/xdg-config/spice/config.json
-  2  9bbe27537a03  deny    path-exact-relative relative=.env                                         user $TESTCASE_ROOT/xdg-config/spice/config.json
-  3  7846a2b8d492  allow   path-workspace op=read                                                    preset permission.mode=default
+  1  39dabbb6bf76  allow   command pattern={"type":"argv-prefix","program":"dune","args":["build"]}  user $TESTCASE_ROOT/xdg-config/spice/config.json
+  2  b62807796201  deny    path-exact-relative relative=.env                                         user $TESTCASE_ROOT/xdg-config/spice/config.json
+  3  be7bf2b60ce9  allow   path-workspace op=read                                                    preset permission.mode=default
 
 Reordering the file does not change rule ids: identity is derived from rule
 content, never from position.
@@ -38,14 +38,14 @@ content, never from position.
   > JSON
   $ spice permission list
   #  RULE          ACTION  MATCH                                                                     SOURCE
-  1  9bbe27537a03  deny    path-exact-relative relative=.env                                         user $TESTCASE_ROOT/xdg-config/spice/config.json
-  2  076f6458c223  allow   command pattern={"type":"argv-prefix","program":"dune","args":["build"]}  user $TESTCASE_ROOT/xdg-config/spice/config.json
-  3  7846a2b8d492  allow   path-workspace op=read                                                    preset permission.mode=default
+  1  b62807796201  deny    path-exact-relative relative=.env                                         user $TESTCASE_ROOT/xdg-config/spice/config.json
+  2  39dabbb6bf76  allow   command pattern={"type":"argv-prefix","program":"dune","args":["build"]}  user $TESTCASE_ROOT/xdg-config/spice/config.json
+  3  be7bf2b60ce9  allow   path-workspace op=read                                                    preset permission.mode=default
 
 The JSON view mirrors the same rows with the rule's schema encoding.
 
   $ spice permission list --json
-  {"schema_version":1,"type":"permission.rules","rules":[{"position":1,"id":"9bbe27537a03","rule":{"action":"deny","matcher":{"type":"path-exact-relative","relative":".env"}},"source":"user","location":"$TESTCASE_ROOT/xdg-config/spice/config.json"},{"position":2,"id":"076f6458c223","rule":{"action":"allow","matcher":{"type":"command","pattern":{"type":"argv-prefix","program":"dune","args":["build"]}}},"source":"user","location":"$TESTCASE_ROOT/xdg-config/spice/config.json"},{"position":3,"id":"7846a2b8d492","rule":{"action":"allow","matcher":{"type":"path-workspace","op":"read"}},"source":"preset","location":"permission.mode=default"}]}
+  {"schema_version":1,"type":"permission.rules","rules":[{"position":1,"id":"b62807796201","rule":{"action":"deny","matcher":{"type":"path-exact-relative","relative":".env"}},"source":"user","location":"$TESTCASE_ROOT/xdg-config/spice/config.json"},{"position":2,"id":"39dabbb6bf76","rule":{"action":"allow","matcher":{"type":"command","pattern":{"type":"argv-prefix","program":"dune","args":["build"]}}},"source":"user","location":"$TESTCASE_ROOT/xdg-config/spice/config.json"},{"position":3,"id":"be7bf2b60ce9","rule":{"action":"allow","matcher":{"type":"path-workspace","op":"read"}},"source":"preset","location":"permission.mode=default"}]}
 
 Two identical rules in one layer are a load error naming the duplicate id,
 before any command can run against the config.
@@ -58,7 +58,7 @@ before any command can run against the config.
   >     "matcher": { "type": "path-exact-relative", "relative": ".env" } } ] } }
   > JSON
   $ spice permission list
-  spice: $TESTCASE_ROOT/xdg-config/spice/config.json permission.rules contains duplicate rule 9bbe27537a03
+  spice: $TESTCASE_ROOT/xdg-config/spice/config.json permission.rules contains duplicate rule b62807796201
   [1]
 
 Invalid rule JSON fails loudly with the offending location.
@@ -110,13 +110,13 @@ Scalar edits through other permission keys preserve the structured rules.
 
 Removal edits exactly one file and drops the member when no rules remain.
 
-  $ spice permission remove 9bbe27537a03
-  removed rule 9bbe27537a03 from user $TESTCASE_ROOT/xdg-config/spice/config.json
+  $ spice permission remove b62807796201
+  removed rule b62807796201 from user $TESTCASE_ROOT/xdg-config/spice/config.json
   $ cat "$XDG_CONFIG_HOME/spice/config.json"
   {}
   $ spice permission list
   #  RULE          ACTION  MATCH                   SOURCE
-  1  7846a2b8d492  allow   path-workspace op=read  preset permission.mode=default
+  1  be7bf2b60ce9  allow   path-workspace op=read  preset permission.mode=default
 
 Unknown ids fail loudly, and preset rules are not removable.
 
@@ -149,8 +149,8 @@ become effective policy. Only the user layer (and the preset) list.
   > JSON
   $ spice permission list
   #  RULE          ACTION  MATCH                                                                     SOURCE
-  1  076f6458c223  allow   command pattern={"type":"argv-prefix","program":"dune","args":["build"]}  user $TESTCASE_ROOT/xdg-config/spice/config.json
-  2  7846a2b8d492  allow   path-workspace op=read                                                    preset permission.mode=default
+  1  39dabbb6bf76  allow   command pattern={"type":"argv-prefix","program":"dune","args":["build"]}  user $TESTCASE_ROOT/xdg-config/spice/config.json
+  2  be7bf2b60ce9  allow   path-workspace op=read                                                    preset permission.mode=default
 
 The stripped workspace rules surface as config diagnostics, one per file.
 
@@ -160,11 +160,11 @@ The stripped workspace rules surface as config diagnostics, one per file.
 Removal never reaches workspace files: their rules are not durable policy,
 so the ids resolve against the user layer only. The files stay hand-editable.
 
-  $ spice permission remove 076f6458c223
-  removed rule 076f6458c223 from user $TESTCASE_ROOT/xdg-config/spice/config.json
+  $ spice permission remove 39dabbb6bf76
+  removed rule 39dabbb6bf76 from user $TESTCASE_ROOT/xdg-config/spice/config.json
   $ spice permission list
   #  RULE          ACTION  MATCH                   SOURCE
-  1  7846a2b8d492  allow   path-workspace op=read  preset permission.mode=default
+  1  be7bf2b60ce9  allow   path-workspace op=read  preset permission.mode=default
   $ rm -f .spice/config.json .spice/config.local.json
 
 The unattended reply policy is an ordinary enum key with a built-in default,

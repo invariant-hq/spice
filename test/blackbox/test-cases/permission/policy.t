@@ -29,8 +29,8 @@ OpenAI-Responses backend.
   • tool write_file running
   ✓ tool write_file notes/today.txt completed: A notes/today.txt
   changed 1 file (+1 -0)
-  diff: spice session diff rule-allows --latest
-  revert: spice session revert rule-allows --latest
+  diff: spice session diff --latest 'rule-allows'
+  revert: spice session revert --latest 'rule-allows'
   written
   exit:0
   $ wait_fake_server
@@ -48,7 +48,7 @@ override of explicit policy. The model sees the denial; nothing blocks.
   $ spice config set tools.editor string-replace
   $ cat > bypass.jsonl <<'JSONL'
   > {"expect":{"body_contains":["\"name\":\"write_file\""]},"response":{"id":"resp-3","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-3","call_id":"call-bypass","name":"write_file","arguments":"{\"path\":\".env\",\"contents\":\"SECRET=1\"}"}]}}
-  > {"expect":{"body_contains":["function_call_output","Permission denied by policy rule 9bbe27537a03 (user)."]},"response":{"id":"resp-4","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"denied by policy"}]}]}}
+  > {"expect":{"body_contains":["function_call_output","Permission denied by policy rule b62807796201 (user)."]},"response":{"id":"resp-4","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"denied by policy"}]}]}}
   > JSONL
   $ start_fake_openai bypass.jsonl capture-bypass port-bypass
   $ spice run --cwd "$PWD" --permission-mode bypass --id deny-under-bypass "write .env" 2>/dev/null; echo exit:$?
