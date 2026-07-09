@@ -187,13 +187,12 @@ let process_environment config =
   with_config |> String_map.bindings
   |> List.map (fun (name, value) -> name ^ "=" ^ value)
   |> Array.of_list
-  |> Spice_ocaml_toolchain.augment ~program:"ocaml"
 
 (* [run_shell]'s [execvp] resolves a bare program against the process [PATH], not
-   [env], so pin the absolute path recovered from the switch [env] points at. *)
-let program_path env name =
-  match snd (Spice_ocaml_toolchain.locate env ~program:name) with
-  | Some abs -> abs
+   [env], so pin the absolute path the search space yields. *)
+let program_path toolchain name =
+  match Spice_ocaml_toolchain.find toolchain name with
+  | Some (abs, _) -> abs
   | None -> name
 
 let resolve_dir ~fs ~workspace input =
@@ -477,11 +476,27 @@ let run ~fs ~workspace ~config ?watch ?(cancelled = default_cancelled) input =
                 let started = Unix.gettimeofday () in
                 let max_output_bytes = Config.max_output_bytes config in
                 let cwd = Spice_path.Abs.to_string (Workspace.Path.abs dir) in
-                let env = process_environment config in
+                let toolchain =
+                  Spice_ocaml_toolchain.discover
+                    ~env:(process_environment config)
+                    ~workspace_root:
+                      (Some
+                         (Spice_path.Abs.to_string
+                            (Workspace.Path.abs (Workspace.root_path workspace))))
+                in
+                let env =
+                  Spice_ocaml_toolchain.env toolchain
+                    ~program:(Config.ocaml config)
+                in
                 let dune_result =
                   Process.run_shell ~cwd ~env ~timeout_ms ~max_output_bytes
                     ~cancelled
-                    [ program_path env (Config.dune config); "ocaml"; "top"; "." ]
+                    [
+                      program_path toolchain (Config.dune config);
+                      "ocaml";
+                      "top";
+                      ".";
+                    ]
                 in
                 let dune_output =
                   output_of_process ~input ~dir ~stage:Output.Dune_top ~started
@@ -520,7 +535,7 @@ let run ~fs ~workspace ~config ?watch ?(cancelled = default_cancelled) input =
                                      ~code:(Input.code input))
                                 ~cancelled
                                 [
-                                  program_path env (Config.ocaml config);
+                                  program_path toolchain (Config.ocaml config);
                                   "-stdin";
                                   "-noinit";
                                 ]

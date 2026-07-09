@@ -169,12 +169,15 @@ let find_dev_tool_binary ~cwd ~tool =
    no already-built binary was found on disk. *)
 let warm_dev_tool ~cwd ~env ~timeout_ms ~tool ~configured =
   (* [run_shell]'s [execvp] resolves a bare [dune] against the process [PATH],
-     not [env]; pin the absolute path recovered from the switch [env] points at. *)
+     not [env]; pin the absolute path the search space yields. *)
   let configured =
     match configured with
     | dune :: rest -> (
-        match snd (Spice_ocaml_toolchain.locate env ~program:dune) with
-        | Some dune -> dune :: rest
+        let toolchain =
+          Spice_ocaml_toolchain.discover ~env ~workspace_root:(Some cwd)
+        in
+        match Spice_ocaml_toolchain.find toolchain dune with
+        | Some (dune, _) -> dune :: rest
         | None -> configured)
     | [] -> configured
   in
@@ -208,7 +211,10 @@ let resolve_program ~cwd ?(env = Unix.environment ())
       (* Recover the switch bin when the inherited [PATH] does not already carry
          the toolchain, so [on_path], warming, and the pinned absolute below all
          see the same directory a correctly-launched session would. *)
-      let env = Spice_ocaml_toolchain.augment env ~program:"dune" in
+      let toolchain =
+        Spice_ocaml_toolchain.discover ~env ~workspace_root:(Some cwd)
+      in
+      let env = Spice_ocaml_toolchain.env toolchain ~program:"dune" in
       match dune_tools_exec_tool configured with
       | Some tool -> (
           (* An explicit [dune tools exec] prefix. Prefer an already-built
@@ -231,8 +237,8 @@ let resolve_program ~cwd ?(env = Unix.environment ())
               | Some bin -> Ok [ bin ]
               | None -> Ok configured)
           | Some tool -> (
-              match snd (Spice_ocaml_toolchain.locate env ~program:tool) with
-              | Some bin -> Ok [ bin ]
+              match Spice_ocaml_toolchain.find toolchain tool with
+              | Some (bin, _) -> Ok [ bin ]
               | None -> Ok configured)
           | None -> Ok configured))
 
@@ -312,9 +318,13 @@ let run ~program ~cwd ?(env = Unix.environment ())
   let env, program =
     match program with
     | head :: rest -> (
-        match Spice_ocaml_toolchain.locate env ~program:head with
-        | env, Some exe -> (env, exe :: rest)
-        | env, None -> (env, program))
+        let toolchain =
+          Spice_ocaml_toolchain.discover ~env ~workspace_root:(Some cwd)
+        in
+        match Spice_ocaml_toolchain.find toolchain head with
+        | Some (exe, _) ->
+            (Spice_ocaml_toolchain.env toolchain ~program:head, exe :: rest)
+        | None -> (env, program))
     | [] -> (env, program)
   in
   let command_argv = argv ~program ~command ~args in

@@ -1,14 +1,15 @@
 Spice inherits the PATH of the process that launched it, so a session started
-without the opam switch on PATH must still find the toolchain: the OCaml tools
-recover the switch bin from the variables opam exports, and report a clear cause
-when nothing can be recovered rather than a bare exec failure.
+without the opam switch on PATH must still find the toolchain. Resolution walks
+a ladder: the SPICE_DUNE override, PATH, $OPAM_SWITCH_PREFIX/bin, then the
+workspace's _opam/bin — and reports the rungs it checked when none resolves,
+rather than a bare exec failure.
 
 Capture Spice's absolute path before narrowing PATH, and clear the
-toolchain-locator variables Dune sets for this cram run so the fixture controls
+toolchain-locator variables this cram run may carry so the fixture controls
 them.
 
   $ SPICE="$(command -v spice)"
-  $ unset DUNE_OCAML_STDLIB OPAM_SWITCH_PREFIX
+  $ unset DUNE_OCAML_STDLIB OPAM_SWITCH_PREFIX SPICE_DUNE
 
   $ mkdir -p fixture/lib
   $ cat > fixture/dune-project <<'EOF'
@@ -58,3 +59,33 @@ the tool returns a project shape instead of the hint.
   OCaml Dune project
   $ grep -c "not on Spice's PATH" cap-b/request-2.json || true
   0
+
+Local switch: no locator variables, but the workspace holds an opam local
+switch whose _opam/bin resolves dune.
+
+  $ mkdir -p fixture/_opam/bin
+  $ cp switch/bin/dune fixture/_opam/bin/dune
+  $ start_fake_openai describe.jsonl cap-c port-c
+  $ PATH=/usr/bin:/bin "$SPICE" run --cwd fixture --permission-mode bypass --sandbox danger-full-access --id local-switch "go" >/dev/null 2>&1
+  $ wait_fake_server
+  $ grep -oE "OCaml Dune project" cap-c/request-2.json | head -1
+  OCaml Dune project
+  $ rm -rf fixture/_opam
+
+Explicit override: SPICE_DUNE names the stub, which is used although PATH
+cannot resolve dune.
+
+  $ start_fake_openai describe.jsonl cap-d port-d
+  $ PATH=/usr/bin:/bin SPICE_DUNE="$PWD/switch/bin/dune" "$SPICE" run --cwd fixture --permission-mode bypass --sandbox danger-full-access --id explicit "go" >/dev/null 2>&1
+  $ wait_fake_server
+  $ grep -oE "OCaml Dune project" cap-d/request-2.json | head -1
+  OCaml Dune project
+
+A broken override fails loudly and never falls through, even though the real
+dune is on this PATH.
+
+  $ start_fake_openai describe.jsonl cap-e port-e
+  $ SPICE_DUNE=/no/such/dune "$SPICE" run --cwd fixture --permission-mode bypass --sandbox danger-full-access --id broken-override "go" >/dev/null 2>&1
+  $ wait_fake_server
+  $ grep -oE "SPICE_DUNE is set to /no/such/dune" cap-e/request-2.json | head -1
+  SPICE_DUNE is set to /no/such/dune
