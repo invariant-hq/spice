@@ -294,6 +294,37 @@ let%expect_test "commenting a removed line lands indented in the worktree" =
   [%expect {|settle notice shown: true
 comment indented like the block: true|}]
 
+let%expect_test "commenting a deletion hunk lands at the deletion site" =
+  Project.with_temp "review-cr-hunk-indent" @@ fun project ->
+  Project.git project [ "init"; "-q" ];
+  Project.write project "lib/block.ml"
+    "let f () =\n  let kept = 1 in\n  let removed = 2 in\n  kept\n";
+  Project.git project [ "add"; "-A" ];
+  Project.git project [ "commit"; "-q"; "-m"; "baseline" ];
+  Project.write project "lib/block.ml" "let f () =\n  let kept = 1 in\n  kept\n";
+  (* Down selects the hunk scope from the nav pane. Pure deletion hunks still
+     anchor where the deleted line lived, not at the top of the file. *)
+  ( run project @@ fun t ->
+    open_review t;
+    Term.wait t (fun screen ->
+        Screen.has "0/1 reviewed" screen && Screen.has "let kept" screen);
+    Term.send t Keys.down;
+    Term.wait t (Screen.has "hunk 1/1");
+    Term.send t "c";
+    Term.wait t (Screen.has "CR on lib/block.ml:");
+    Term.send t "fix: keep this";
+    Term.send t Keys.enter;
+    Term.wait t (Screen.has "CR added");
+    print_fact "settle notice shown" (Screen.has "CR added" (Term.screen t)) );
+  let source = Project.read project "lib/block.ml" in
+  print_fact "hunk comment indented like the block"
+    (Util.contains source "\n  (* CR fix: keep this *)\n  kept\n");
+  print_fact "hunk comment not inserted at top"
+    (not (String.starts_with ~prefix:"(* CR fix: keep this *)" source));
+  [%expect {|settle notice shown: true
+hunk comment indented like the block: true
+hunk comment not inserted at top: true|}]
+
 let%expect_test "esc leaves the review and returns to the stage" =
   Project.with_git_fixture "review-esc" @@ fun project ->
   Project.write project "lib/code.ml" sample_code;

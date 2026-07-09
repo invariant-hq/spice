@@ -518,6 +518,17 @@ let worktree_line review ~path side line =
               Some
                 (Spice_diff.Hunk.new_start hunk + Spice_diff.Hunk.new_count hunk))
 
+let hunk_add_anchor review ~path hunk =
+  match hunk_first_changed_line ~path hunk with
+  | Some (Spice_review.Scope.Line (side, path, line)) ->
+      Option.map
+        (fun line -> (path, line))
+        (worktree_line review ~path side line)
+  | Some (Spice_review.Scope.Feature | Spice_review.Scope.File _
+         | Spice_review.Scope.Hunk _)
+  | None ->
+      Some (path, Spice_diff.Hunk.new_start hunk)
+
 let add_anchor review =
   match Spice_review.cursor review with
   | Spice_review.Cursor.Cr index ->
@@ -532,8 +543,10 @@ let add_anchor review =
           Option.map
             (fun line -> (path, line))
             (worktree_line review ~path side line)
-      | Spice_review.Scope.Hunk { path; new_start; new_count; _ } ->
-          Some (path, if new_count > 0 then new_start else 1)
+      | Spice_review.Scope.Hunk { path; new_start; _ } -> (
+          match containing_hunk review ~path scope with
+          | Some hunk -> hunk_add_anchor review ~path hunk
+          | None -> Some (path, new_start))
       | Spice_review.Scope.File path -> (
           match
             Spice_review.Feature.find_file (Spice_review.feature review) ~path
@@ -541,7 +554,7 @@ let add_anchor review =
           | Some file -> (
               match Spice_review.Feature.File.content file with
               | Spice_review.Feature.File.Text (hunk :: _) ->
-                  Some (path, Spice_diff.Hunk.new_start hunk)
+                  hunk_add_anchor review ~path hunk
               | Spice_review.Feature.File.Text []
               | Spice_review.Feature.File.Opaque _ ->
                   Some (path, 1))
