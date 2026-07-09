@@ -14,10 +14,10 @@
     It is the single host-call classification path a frontend consumes:
     {!of_outcome} is defined {e over} {!Outcome}'s own [call] field, never
     re-classifying the raw call, so this projection and {!Outcome} cannot drift.
-    A new dialog-worthy host tool is a new arm here — a compile error at every
-    match, which is the intent. *)
+    Other classified calls deliberately fall through to {!Host_tool}; adding a
+    dedicated dialog arm remains an explicit API decision. *)
 
-type t =
+type t = private
   | Permission of Spice_session.Permission.Requested.t
       (** A tool needs a permission the policy will not grant on its own. *)
   | Plan of {
@@ -44,7 +44,7 @@ val of_outcome : Outcome.t -> t option
     {!Outcome.Finished}, a tool-claim wait, an executable-tool wait, or a
     host-tool wait whose call the current tool vocabulary cannot classify (a
     replay-only edge — a live run shares the vocabulary, so its host-tool waits
-    always classify). It reads {!Outcome}'s pre-applied [call] field rather than
+    always classify). It reads {!Outcome}'s derived [call] field rather than
     re-running {!Call.classify}, so the projection agrees with [o] by
     construction: a {!Call.Plan} becomes {!Plan}, a {!Call.Question} becomes
     {!Question}, and every other classified call — including {!Call.Invalid} —

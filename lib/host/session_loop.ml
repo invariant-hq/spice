@@ -417,15 +417,11 @@ let rec handle_step ~store ~projector ~pressure_compacted ~overflow_compacted
           handle_step ~store ~projector ~pressure_compacted ~overflow_compacted
             ~model ~host_tool hooks ?compaction run document step
       | Ok None ->
-          let outcome =
-            Spice_protocol.Outcome.Waiting { waiting = block; call = kind }
-          in
+          let outcome = Spice_protocol.Outcome.of_waiting block in
           hooks.terminal ~observe:hooks.observe (document, outcome);
           Ok (document, outcome))
   | Spice_session.Run.Step.Waiting block ->
-      let outcome =
-        Spice_protocol.Outcome.Waiting { waiting = block; call = None }
-      in
+      let outcome = Spice_protocol.Outcome.of_waiting block in
       hooks.terminal ~observe:hooks.observe (document, outcome);
       Ok (document, outcome)
   | Spice_session.Run.Step.Finished { turn; outcome = turn_outcome } ->
@@ -436,9 +432,7 @@ let rec handle_step ~store ~projector ~pressure_compacted ~overflow_compacted
       hooks.observe
         (Spice_protocol.Event.Turn_finished
            { turn; outcome = turn_outcome; final_text });
-      let outcome =
-        Spice_protocol.Outcome.Finished { turn; outcome = turn_outcome }
-      in
+      let outcome = Spice_protocol.Outcome.finished ~turn ~outcome:turn_outcome in
       hooks.terminal ~observe:hooks.observe (document, outcome);
       Ok (document, outcome)
   | Spice_session.Run.Step.(Request_model _ | Run_tool _)

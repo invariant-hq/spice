@@ -11,7 +11,7 @@
     in-process convenience that cannot cross a wire, so remote clients observe
     state through {!Event.t}. *)
 
-type t =
+type t = private
   | Waiting of {
       waiting : Spice_session.Waiting.t;
           (** Why the active turn cannot continue. Product-agnostic. *)
@@ -25,6 +25,15 @@ type t =
       turn : Spice_session.Turn.Id.t;  (** Finished turn id. *)
       outcome : Spice_session.Turn.Outcome.t;  (** Terminal outcome. *)
     }  (** The step reached a terminal turn outcome. *)
+
+val of_waiting : Spice_session.Waiting.t -> t
+(** [of_waiting waiting] is a blocked outcome. A host-tool boundary is
+    classified once with {!Call.classify}; every other waiting kind carries
+    [None]. *)
+
+val finished :
+  turn:Spice_session.Turn.Id.t -> outcome:Spice_session.Turn.Outcome.t -> t
+(** [finished ~turn ~outcome] is a terminal turn outcome. *)
 
 val waiting : t -> Spice_session.Waiting.t option
 (** [waiting t] is [Some w] when [t] is {!Waiting} on [w], and [None] when [t]

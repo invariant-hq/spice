@@ -10,6 +10,18 @@ type t =
       outcome : Spice_session.Turn.Outcome.t;
     }
 
+let of_waiting waiting =
+  let call =
+    match waiting with
+    | Spice_session.Waiting.Host_tool host_tool ->
+        Call.classify host_tool.Spice_session.Waiting.call
+    | Spice_session.Waiting.Permission _ | Spice_session.Waiting.Tool_claim _ ->
+        None
+  in
+  Waiting { waiting; call }
+
+let finished ~turn ~outcome = Finished { turn; outcome }
+
 let waiting = function
   | Waiting { waiting; _ } -> Some waiting
   | Finished _ -> None

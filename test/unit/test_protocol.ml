@@ -1037,7 +1037,6 @@ module Boundary_tests = struct
   module Command = Spice_protocol.Command
   module Outcome = Spice_protocol.Outcome
   module Error = Spice_protocol.Error
-  module Call = Spice_protocol.Call
   module Session = Spice_session
   module Llm = Spice_llm
   module Tool = Spice_tool
@@ -1137,10 +1136,9 @@ module Boundary_tests = struct
 
   let outcome_waiting_and_finished () =
     let waiting = Session.Waiting.host_tool ~turn:turn_id ask_call in
-    let blocked = Outcome.Waiting { waiting; call = Call.classify ask_call } in
+    let blocked = Outcome.of_waiting waiting in
     let finished =
-      Outcome.Finished
-        { turn = turn_id; outcome = Session.Turn.Outcome.completed }
+      Outcome.finished ~turn:turn_id ~outcome:Session.Turn.Outcome.completed
     in
     is_true ~msg:"waiting outcome exposes its waiting"
       (Option.is_some (Outcome.waiting blocked));
@@ -1167,8 +1165,7 @@ module Boundary_tests = struct
   let pending_of_outcome () =
     let of_call call =
       let waiting = Session.Waiting.host_tool ~turn:turn_id call in
-      Pending.of_outcome
-        (Outcome.Waiting { waiting; call = Call.classify call })
+      Pending.of_outcome (Outcome.of_waiting waiting)
     in
     (match of_call ask_call with
     | Some (Pending.Question { turn; call_id; _ }) ->
@@ -1187,8 +1184,8 @@ module Boundary_tests = struct
     is_true ~msg:"finished outcome has no pending boundary"
       (Option.is_none
          (Pending.of_outcome
-            (Outcome.Finished
-               { turn = turn_id; outcome = Session.Turn.Outcome.completed })))
+            (Outcome.finished ~turn:turn_id
+               ~outcome:Session.Turn.Outcome.completed)))
 
   let suite =
     group "boundary"
