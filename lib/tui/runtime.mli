@@ -38,4 +38,11 @@ val run :
     - [probe] is forwarded to {!Mosaic.run}: it receives the runtime quiescence
       probe before the loop starts.
     - [process_env] is the environment snapshot host configuration reads.
-      Defaults to {!Spice_host.Env.current}. *)
+      Defaults to {!Spice_host.Env.current}.
+
+    Commands performed by the Mosaic application run in daemon fibers. Eio
+    cancellation unwinds those fibers. Another exception from one command is
+    logged with its recorded backtrace and that command is dropped; it does not
+    fail the shared runtime switch or terminate the session. Fatal exceptions
+    outside this contained command boundary follow Matrix's terminal-restoring
+    uncaught-exception path. *)

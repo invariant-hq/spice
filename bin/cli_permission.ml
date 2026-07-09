@@ -270,9 +270,8 @@ let group =
          [
            `S CManpage.s_description;
            `P
-             "Durable rules come from config files and are written by the \
-              interactive review flows; this group lists them in evaluation \
-              order alongside the active preset's rules, and prunes them by \
-              id.";
+             "Durable rules are hand-authored in user or extra config files; \
+              this group lists them in evaluation order alongside the active \
+              preset's rules, and prunes writable rules by id.";
          ])
     [ list_command; remove_command ]

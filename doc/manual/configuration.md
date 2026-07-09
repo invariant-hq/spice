@@ -16,8 +16,12 @@ Values are resolved in increasing precedence:
 5. `SPICE_*` environment overrides.
 6. Runtime overrides, such as run flags (`--model`, `--sandbox`, ...).
 
-Project layers apply only after the workspace is trusted with `spice trust`
-(revoked with `spice untrust`). Until then, project configuration is ignored.
+Project layers load without a trust decision. They are reduced to a
+workspace-safe allowlist; permission rules and authority-bearing keys are
+ignored, and budget values may tighten but not widen values selected outside
+the workspace. `spice config show --origins` reports every dropped or clamped
+input. See [Security](security.md#workspace-config-and-trust) for the complete
+allowlist and the current, dormant role of `spice trust`.
 
 ## Commands
 
@@ -46,7 +50,13 @@ Keys supported by `get`, `set`, and `unset`:
 | `tui.thinking` | Whether the TUI shows thinking summaries. |
 | `providers.ID.base_url` | API root override for provider `ID`. |
 | `run.max_steps` | Maximum model/tool cycles per run. |
-| `permission.mode` | Permission preset: `default`, `accept-edits`, `plan`, or `bypass`. |
+| `permission.mode` | Durable permission preset: `default`, `accept-edits`, or `plan`. `bypass` is available only through the per-run `--permission-mode` flag. |
+| `permission.unattended` | Headless review policy: `block` (default) or `deny`. |
+| `sandbox.mode` | Command sandbox: `read-only`, `workspace-write`, `danger-full-access`, or `external-sandbox`. |
+| `sandbox.require` | Enforcement gate: `enforced` (default), `enforced-or-external`, or `off`. |
+| `sandbox.writable_roots` | Additional absolute or `~`-relative writable roots for `workspace-write`. |
+| `sandbox.network` | Confined shell-command network posture: `restricted` (default) or `enabled`. |
+| `sandbox.toolchain_caches` | Add curated toolchain caches to `workspace-write` roots. |
 | `shell` | Shell program used for shell commands. |
 | `workspace.tooling` | Whether the OCaml/Dune workspace tooling runs: `auto` (default), `on`, or `off`. |
 | `instructions.global` | Load the global `AGENTS.md` from the config home. |
@@ -55,8 +65,7 @@ Keys supported by `get`, `set`, and `unset`:
 | `instructions.project_max_bytes` | Byte budget for project instruction text. |
 
 The full configuration surface is larger; `spice config show --json` prints
-all of it. Groups not yet reachable through `set` are edited directly in the
-config files:
+all of it. Additional groups accepted by `get`, `set`, and `unset` include:
 
 - `notices.*` — host notice producers: `fswatch`, `cr_comments`,
   `dune_diagnostics`, `dune_build`.
@@ -65,7 +74,12 @@ config files:
 - `tools.anchored_edits` — enable the anchored line-edit tool.
 - `web.*` — web tools: `enabled`, `allow_private_network`, `search_backend`,
   `fetch_max_bytes`, `output_max_chars`, `timeout_ms`, `max_timeout_ms`.
-- `sandbox.*` — sandbox mode and enforcement requirements.
+
+`permission.rules` is the structured exception: edit it directly in user or
+extra config, inspect it with `spice permission list`, and remove individual
+writable rules with `spice permission remove`. See
+[Permission rules](permission-rules.md) for the matcher JSON, source behavior,
+and evaluation order.
 
 ## Workspace tooling
 
@@ -152,6 +166,9 @@ spice models select MODEL [--small] [--project | --project-local]
 Provider credentials are managed separately by `spice auth`; see
 `spice auth --help`. Credentials resolve from provider environment variables
 first, then the auth store at `~/.config/spice/auth.json`.
+
+Permissions, sandboxing, workspace config, and trust compose as described in
+the [security guide](security.md).
 
 ## OpenAI-compatible servers (llama.cpp, vLLM, LM Studio, Ollama)
 

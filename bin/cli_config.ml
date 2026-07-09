@@ -33,8 +33,9 @@ let config_keys =
        ASCII slugs." );
     ("run.max_steps", "Positive integer maximum for model/tool cycles.");
     ( "permission.mode",
-      "Permission preset: $(b,default), $(b,accept-edits), $(b,plan), or \
-       $(b,bypass)." );
+      "Durable permission preset: $(b,default), $(b,accept-edits), or \
+       $(b,plan). $(b,bypass) is available only through the per-run \
+       $(b,--permission-mode) flag." );
     ("shell", "Shell program used for shell commands. Must not be empty.");
     ( "instructions.global",
       "Whether the global $(b,AGENTS.md) in the config home is loaded: \

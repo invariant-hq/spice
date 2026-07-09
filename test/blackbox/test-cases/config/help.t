@@ -19,8 +19,11 @@ Enum-valued keys spell out their allowed values.
   $ spice config --help=plain | grep -o 'none, minimal, low, medium, high, xhigh'
   none, minimal, low, medium, high, xhigh
 
-  $ spice config --help=plain | grep -o 'default, accept-edits, plan, or bypass'
-  default, accept-edits, plan, or bypass
+  $ spice config --help=plain | grep -o 'default, accept-edits, or plan'
+  default, accept-edits, or plan
+
+  $ spice config --help=plain | grep -o 'is available only through the per-run --permission-mode flag'
+  is available only through the per-run --permission-mode flag
 
 The group help explains the editing targets, including project-local.
 

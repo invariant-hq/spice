@@ -4,8 +4,7 @@
  ---------------------------------------------------------------------------*)
 
 (* [model] conditions no option yet, so it is discarded here; it stays in the
-   contract because the first conditioned axis (sampling per
-   doc/design-notes/model-conditioning.md §5) resolves from it, and frontends
-   already thread it. *)
+   contract because the first conditioned axis resolves from it, and frontends
+   already thread it. See doc/architecture.md. *)
 let resolve ~model:_ ?reasoning_effort () =
   Spice_llm.Request.Options.make ?reasoning_effort ()

@@ -190,6 +190,7 @@ from.
 
 The [manual](doc/manual/README.md) covers the details:
 [configuration](doc/manual/configuration.md),
+[security](doc/manual/security.md),
 [sessions](doc/manual/sessions.md), and
 [headless runs](doc/manual/headless.md).
 
@@ -224,9 +225,9 @@ stack, and it is heading in three directions:
 
 Spice is early and moving fast. The most useful contributions right now are
 bug reports and real-world usage feedback —
-[open an issue](https://github.com/invariant-hq/spice/issues). The user
-manual lives in [`doc/manual/`](doc/manual/); the design documents in the
-rest of [`doc/`](doc/) explain how the pieces fit together.
+[open an issue](https://github.com/invariant-hq/spice/issues). The
+[documentation index](doc/README.md) links the user manual, architecture, and
+maintainer references.
 
 ## License
 

@@ -21,7 +21,6 @@
 
 ## next
 
-- document permission rules, matcher JSON, presets, and permission-vs-sandbox boundaries in the manual
 - knowledge base?
 - runbook with doc
 - eval suite expansion to non-trivial tasks

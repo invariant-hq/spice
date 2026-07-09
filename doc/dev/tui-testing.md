@@ -4,11 +4,33 @@ Developer reference for the in-process TUI test suite at `test/tui-next`. It
 drives the real application — `App.init/update/view/subscriptions`, the real
 runtime command interpreter, the real host and session store, the real provider
 wire protocol — through the same event vocabulary a terminal produces, and
-observes only the rendered cell grid. No pty, no subprocess, no wall clock. The
-design rationale (why a third suite, the v2 autopsy) lives in the plan; this doc
-is the operational contract: how the harness stays deterministic and what breaks
-it. The harness itself is `test/tui-next/harness/`; `test_home.ml` and
-`test_turn.ml` are the canonical idioms.
+observes the rendered cell grid. The application is not launched in a terminal
+subprocess or pty; the fake provider runs in-process. Tools may still launch real
+subprocesses, and the scheduler uses short real-clock breaths to let genuine IO
+complete. Application-visible time remains virtual and test-controlled.
+
+This is the operational contract: how the harness stays deterministic, which
+boundary belongs in which suite, and what breaks determinism. The harness itself
+is `test/tui-next/harness/`.
+
+## Choose the test boundary
+
+| Boundary under test | Home |
+| --- | --- |
+| Application state, rendering, input decoding, provider turns, dialogs, session persistence, tool execution, resize/reflow | `test/tui-next/` |
+| Raw-mode and alternate-screen setup/restore, primary-screen goodbye output, isatty gating, real `SIGWINCH`, OSC title emission, and terminal process wiring | A small pty/process-level test |
+| CLI argument resolution, exit codes, and real OS-sandbox enforcement | Cram/black-box tests |
+
+`Tui.await_exit` and `Tui.outcome` verify that the in-process application exits
+and returns the expected product outcome. They cannot observe bytes written to
+the primary screen after the alternate screen closes, terminal modes, signals,
+or whether the CLI launched the application correctly. Keep at least one real
+process test for those contracts.
+
+A real Dune RPC/watch handshake also crosses the process boundary. The
+in-process suite may test the TUI's response through an injected or controlled
+seam, but it does not replace a smoke test that proves connection to a real
+`dune build --watch` process.
 
 ## The model
 
@@ -24,7 +46,8 @@ script runs in another. A test:
   never a sleep, never a substring-with-deadline;
 - **gates** the provider with `Tui.await_request` / `Tui.release` (a held reply
   is a named `Eio.Promise`, so a mid-flight state is observable for exactly as
-  long as the test needs);
+  long as the test needs); uses `Tui.await_suspend` when a tool-call response
+  opens a dialog, and `Tui.settle_turn` when a keystroke ends an in-flight turn;
 - **asserts** a full 24-row frame via `Tui.print` at a pinned size (default
   80×24). Substring facts are forbidden; a frame is a `[%expect]` golden,
   promoted with scoped `dune promote test/tui-next/<file>`.
@@ -99,6 +122,35 @@ timer case directly.
   reaches the in-process provider, then returns its body. It fails loudly rather
   than hanging.
 
+## Provider scripts and asynchronous boundaries
+
+Provider scripts are ordered by default: request N must match script item N.
+Use `~unordered:true` only when genuinely concurrent callers, such as a parent
+and detached subagents, can arrive in either order. Every unordered item needs
+content expectations that distinguish it from every other pending item; the
+first matching item is consumed.
+
+The provider supports ordinary completions, held streaming completions, one or
+several tool calls, and plain HTTP responses. Choose the synchronization helper
+for the transition being observed:
+
+- After `Tui.await_request`, a named provider gate keeps a mid-flight frame
+  stable. `Tui.release` waits until the response is fully written and the app
+  has left the working regime; call `Tui.settle` before printing the resulting
+  frame.
+- After a tool-call request that should suspend into a question or permission
+  dialog, call `Tui.await_suspend`. A plain settle can return before the drain
+  fiber has read the response. `await_suspend` is a widened quiet drain because
+  the application exposes no positive dialog-open signal; do not replace it
+  with repeated settles or sleeps.
+- After a force-interrupt or another keystroke that ends a turn while its
+  provider gate remains held, call `Tui.settle_turn`. A plain settle is allowed
+  to stop at the deliberately held `Interrupting…` state.
+
+These helpers move no virtual time. Do not use `Tui.advance` as an async-work
+barrier: it changes elapsed counters and spinner state and can expose unrelated
+save races.
+
 The only real-clock sleep in the harness is a 1 ms scheduler breath while real
 IO (localhost HTTP, tool subprocesses, fswatch systhreads) is genuinely in
 flight; park-waiting is condition-based, not polled.
@@ -110,12 +162,24 @@ flight; park-waiting is condition-based, not polled.
 - **Batch scenarios that share state into one `Tui.run`** — a boot is ~60 ms.
   `test_turn` prints three frames (working, ticked, settled) from one boot.
   Don't contort unrelated scenarios together.
+- **Give every `Tui.run ~name` a globally unique value across the suite.** The
+  temporary project is `/tmp/spice-tui-next-<name>` and is cleared at startup;
+  duplicate names in concurrently running executables can delete each other's
+  workspace and session store.
 - **Send Enter as its own write** (`Tui.enter`), never `"/cmd\r"` in one chunk.
 - **Reduced motion and workspace tooling are off by default**; opt in per test
   with `~env` only when the animation or the dune footer is the behaviour under
   test (workspace tooling on spawns a real `dune`, ~1.5 s and a footer race).
 - Non-visual observables (exit outcome, session-document contents) go through
   the doc-introspection seam, sparingly — never as a screen substring.
+- Seed files, sessions, and Git state through the `~seed` callback. It runs
+  before the Eio loop starts, so fixture setup may use blocking helpers such as
+  `Project.git`; interactive test steps must not.
+
+Useful examples are `test_turn.ml` for a held turn and virtual time,
+`test_dialogs.ml` for suspension, `test_threads.ml` for unordered concurrent
+provider requests, and `test_review.ml` for Git-backed fixtures and launch
+state.
 
 ## Debugging
 
@@ -131,7 +195,13 @@ flight; park-waiting is condition-based, not polled.
   varies run to run, find what advanced the clock outside `advance`: trace every
   `set_time` (its magnitude tells you which timer fired) and check it against
   the four invariants above before touching the harness.
+- Never run `--auto-promote` on the shared `test/tui-next` runtest alias. It can
+  promote unrelated failing executables and enshrine a transient frame. Run one
+  executable in isolation, inspect its output, then promote only its source
+  path with `dune promote test/tui-next/<file>.ml`.
 - Run the one exe directly (not `dune runtest`) for a fast tight loop, and force
   a sweep — `for i in $(seq 1 30); do ./_build/default/test/tui-next/<exe>; done`
   — before trusting a determinism fix. A harness change re-runs `test_home` and
-  `test_turn` plus 30× sweeps of both.
+  `test_turn` plus 30× sweeps of both. A change to release, suspension, or
+  unordered serving also sweeps the representative dialog, tool, and thread
+  tests that exercise that seam.

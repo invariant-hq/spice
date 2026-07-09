@@ -50,9 +50,9 @@ writable automatically, with no per-project config.
   $ spice sandbox explain --cwd "$PWD" | grep -o '/opt/dune-cache-xyz'
   /opt/dune-cache-xyz
 
-The dune cache is never a project checkout, so protected-meta names are not
-manufactured under it: the protected set stays the version-control and Spice
-metadata dirs, never the cache root.
+Protected-meta names apply beneath every writable root, including the dune
+cache. The compact explain view reports the protected names rather than every
+expanded carve-out, so it does not print the cache path on the protected line.
 
   $ if spice sandbox explain --cwd "$PWD" | grep '^protected=' | grep -q 'dune-cache'; then echo present; else echo absent; fi
   absent

@@ -247,7 +247,8 @@ val resolve :
     writable roots when the workspace is a recognized project — currently the
     dune cache ([$DUNE_CACHE_ROOT], else [$XDG_CACHE_HOME/dune], else
     [~/.cache/dune]) when a workspace root holds a [dune-project].
-    Protected-meta names are not applied to these non-project cache roots.
+    Protected-meta names are applied beneath these roots like every other
+    writable root.
 
     Resolution does not gate: a resolved posture may still be rejected by
     {!gate}. *)
@@ -281,5 +282,5 @@ val enforces_workspace_write : Effective.t -> bool
     ({!Spice_host.Permission.Run.with_sandbox_backing}): only under an enforcing
     workspace-write confinement is a command's blast radius bounded to the
     writable set. Read-only, danger-full-access, and declared-external postures
-    return [false], so a run without that confinement keeps reviewing
-    commands. *)
+    return [false], so a run without that confinement keeps reviewing commands.
+*)

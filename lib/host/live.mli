@@ -15,7 +15,14 @@
 
     A remote surface would use Live as its session object, with
     {!Spice_protocol.Command.t} and {!Spice_protocol.Event.t} as its wire
-    shapes. *)
+    shapes.
+
+    Unexpected exceptions escaping {!Runner.execute} are logged with their
+    recorded backtrace and delivered as {!Spice_protocol.Error.Internal} settled
+    results; the attachment remains usable for later commands. Cancellation of
+    the attachment switch is not converted and unwinds normally. Exceptions from
+    event and settled-result subscribers are isolated to that subscriber
+    delivery, except cancellation, which also unwinds. *)
 
 type t
 (** The type for a live session attachment. *)

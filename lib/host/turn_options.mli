@@ -11,13 +11,12 @@
     and TUI alike; adding one to only one assembly site would let the two
     frontends diverge.
 
-    The resolution obeys the layer rule of
-    [doc/design-notes/model-conditioning.md]: a per-model difference resolves
-    here, from declared {!Spice_provider.Model} metadata and the frontend's
-    configured choices, and reaches provider transports only as neutral
-    {!Spice_llm.Request.Options} values — the transport never sees the model
-    metadata. The value produced is thus provider-neutral; no reasoning tier or
-    sampling cap it carries names a provider. *)
+    The resolution obeys the layer rule in [doc/architecture.md]: a per-model
+    difference resolves here, from declared {!Spice_provider.Model} metadata and
+    the frontend's configured choices, and reaches provider transports only as
+    neutral {!Spice_llm.Request.Options} values — the transport never sees the
+    model metadata. The value produced is thus provider-neutral; no reasoning
+    tier or sampling cap it carries names a provider. *)
 
 val resolve :
   model:Spice_provider.Model.t ->

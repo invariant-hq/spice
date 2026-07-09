@@ -1,8 +1,7 @@
 # Spice evaluation suite
 
-This directory is the whole evaluation suite for
-[doc/roadmap/13-evals.md](../doc/roadmap/13-evals.md): the corpus of OCaml
-tasks, the agent adapters, the grading checks, and the `spice-eval` runner.
+This directory is the whole evaluation suite: the corpus of OCaml tasks, the
+agent adapters, the grading checks, and the `spice-eval` runner.
 Everything lives under `eval/`; run output goes to the git-ignored `_evals/`
 directory at the repository root.
 

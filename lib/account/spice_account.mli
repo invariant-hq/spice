@@ -494,7 +494,8 @@ module State : sig
     | Checked  (** A host or provider account observation completed. *)
 
   val to_string : t -> string
-  (** [to_string t] is [t]'s stable diagnostic spelling. *)
+  (** [to_string t] is [t]'s stable spelling: ["missing"], ["present"], or
+      ["checked"]. *)
 
   val pp : Format.formatter -> t -> unit
   (** [pp ppf t] formats [t]'s stable diagnostic spelling. *)
@@ -633,8 +634,9 @@ val pp : Format.formatter -> t -> unit
 val jsont : t Jsont.t
 (** [jsont] maps account status values to credential-free JSON.
 
-    The codec uses versioned storage syntax. Encoded values contain no
-    credential material. They may contain privacy-sensitive profile,
+    The codec uses versioned storage syntax. Its [state] member is ["missing"],
+    ["present"], or ["checked"], matching {!State.to_string}. Encoded values
+    contain no credential material. They may contain privacy-sensitive profile,
     organization, and credential-source metadata, so hosts still decide which
     logging or session surfaces may store them.
 

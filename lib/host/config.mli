@@ -478,7 +478,12 @@ module Config_file : sig
 
   val permission_rules : doc -> Spice_permission.Policy.Rule.t list
   (** [permission_rules doc] are [doc]'s durable permission rules in file order.
-  *)
+
+      The config wire form is a bare, unversioned JSON array of
+      {!Spice_permission.Policy.Rule.jsont} values. It is distinct from the
+      versioned {!Spice_permission.Policy.jsont} codec. A rule schema change is
+      therefore a breaking config change: unsupported shapes fail when the
+      config is loaded rather than being migrated implicitly. *)
 
   val set_permission_rules : Spice_permission.Policy.Rule.t list -> doc -> doc
   (** [set_permission_rules rules doc] replaces [doc]'s durable permission

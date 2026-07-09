@@ -14,7 +14,12 @@
     {!Spice_path.Rel.root}, rendered as [.], when the watched directory is
     deleted, recreated, or its observed metadata changes. Symlinks are observed
     as symlinks and are not traversed as directories. Changes that appear and
-    disappear between two scans may produce no event. *)
+    disappear between two scans may produce no event.
+
+    Native waits may run in uncancellable system threads and are woken only by
+    {!close}. Implementations must therefore close a watcher as soon as its
+    owning switch is cancelled; deferring the close to a switch release handler
+    can deadlock because release waits for the watcher fiber to finish. *)
 
 (** {1:errors Errors} *)
 
