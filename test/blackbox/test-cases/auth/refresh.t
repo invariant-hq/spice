@@ -88,6 +88,8 @@ credential instead of re-sending the rotated token.
   $ wait_fake_server
   $ grep -l "grant_type" capture-par/request-*.json | wc -l | tr -d ' '
   1
+  $ grep -h "authorization: Bearer oauth-access-par" capture-par/request-*.headers | wc -l | tr -d ' '
+  2
 
 A provider 401 during a run forces one refresh and one retry, even when the
 local expiry looked fine — the provider is the authority on token validity.

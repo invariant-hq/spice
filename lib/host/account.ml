@@ -318,7 +318,7 @@ let refresh ~sw ~stdenv ~now ?(force = false) ?name t provider_id =
                    if
                      (not (Spice_account.Secret.has_refresh_token secret))
                      || not (force || near_expiry ~now secret)
-                   then Ok `Nothing
+                   then Ok (`Refreshed (Some stored))
                    else
                      match
                        refresh_route ~sw ~stdenv ~now ?auth_base_url secret
