@@ -108,16 +108,30 @@ let () =
   Cli_common.setup_log ();
   let argv = rewrite_run Sys.argv in
   (* Only the subcommand name: positional arguments can carry prompt text,
-     which never belongs in a log. *)
+     which never belongs in a log or a crash report. *)
+  let subcommand =
+    if
+      Array.length argv > 1
+      && (not (String.starts_with ~prefix:"-" argv.(1)))
+      && not (String.equal argv.(1) "")
+    then argv.(1)
+    else "(default)"
+  in
+  (* Own fault handling before any command runs: record backtraces and install
+     the uncaught-exception handler that persists a crash report and exits with
+     the internal-error status. Without this a fault leaves nothing behind — no
+     backtrace, no file — which is how a Linux TUI session can die silently. *)
+  Spice_crash.install
+    ~report_dir:
+      (Filename.concat (Spice_host.Config_home.path Sys.getenv_opt) "crashes")
+    ~context:(Printf.sprintf "version: %s  command: %s" version subcommand);
+  (* Diagnostic fault injection: raise before any command runs so the crash
+     path (report file, breadcrumb, exit status) can be exercised end to end
+     through the real binary. Inert unless the variable is set. *)
+  (match Sys.getenv_opt "SPICE_DEBUG_CRASH" with
+  | Some tag when tag <> "" -> failwith ("SPICE_DEBUG_CRASH=" ^ tag)
+  | Some _ | None -> ());
   Log.info (fun m ->
-      let subcommand =
-        if
-          Array.length argv > 1
-          && (not (String.starts_with ~prefix:"-" argv.(1)))
-          && not (String.equal argv.(1) "")
-        then argv.(1)
-        else "(default)"
-      in
       m "spice started version=%s command=%s" version subcommand);
   let code = Cmd.eval' ~argv command in
   Log.debug (fun m -> m "exiting status=%d" code);
