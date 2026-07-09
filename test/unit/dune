@@ -207,7 +207,7 @@
 (test
  (name test_notice)
  (modules test_notice)
- (libraries windtrap spice_host spice_protocol eio eio_main))
+ (libraries windtrap spice_host spice_protocol spice_llm eio eio_main))
 
 (test
  (name test_session_metrics)

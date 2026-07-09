@@ -604,7 +604,12 @@ let cancel t child =
           entry.record <- record;
           entry.asked <- None;
           Live.detach entry.live;
+          rearm entry;
           emit t (Settled record);
+          ignore
+            (Eio.Promise.try_resolve entry.resolve
+               (Ok (record, Interrupted { reason = None; cancelled = true }))
+              : bool);
           Ok ()
       | _ ->
           Error

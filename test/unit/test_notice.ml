@@ -61,6 +61,20 @@ let capacity_drops_oldest_notices () =
   equal (list string) ~msg:"publish enforces capacity" [ "b"; "c" ]
     (drain queue |> titles)
 
+let title_only_notice_has_no_blank_body () =
+  let notice =
+    Notice.make ~source:"subagents" ~severity:Notice.Severity.Warning
+      ~title:"subagent cancelled" ~key:"run:child" ()
+  in
+  equal (option string) ~msg:"title-only notice has no body" None
+    (Notice.body notice);
+  match Notice.to_message notice with
+  | Spice_llm.Message.Developer text ->
+      equal string ~msg:"title-only rendering ends at the title"
+        "[spice notice]\nsource: subagents\nseverity: warning\ntitle: subagent cancelled"
+        text
+  | _ -> failf "notice should render as a developer message"
+
 let () =
   run "spice.host.notice"
     [
@@ -71,4 +85,6 @@ let () =
       test "rollback restores batch without overwriting newer facts"
         rollback_restores_batch_without_overwriting_newer_facts;
       test "capacity drops oldest notices" capacity_drops_oldest_notices;
+      test "title-only notice has no blank body"
+        title_only_notice_has_no_blank_body;
     ]

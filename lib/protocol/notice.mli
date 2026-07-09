@@ -47,19 +47,20 @@ val make :
   source:string ->
   severity:Severity.t ->
   title:string ->
-  body:string ->
+  ?body:string ->
   key:string ->
   unit ->
   t
-(** [make ~source ~severity ~title ~body ~key ()] is a notice.
+(** [make ~source ~severity ~title ?body ~key ()] is a notice.
 
-    [source], [title], and [body] are model-visible text. [key] must be stable
-    for the underlying fact while that fact remains logically unchanged, and
-    must change when a queued fact should be surfaced as a distinct pending
+    [source], [title], and an optional [body] are model-visible text. A
+    title-only notice is rendered without a blank body separator. [key] must be
+    stable for the underlying fact while that fact remains logically unchanged,
+    and must change when a queued fact should be surfaced as a distinct pending
     notice.
 
-    Raises [Invalid_argument] if [source], [title], [body], or [key] is empty.
-*)
+    Raises [Invalid_argument] if [source], [title], [key], or a supplied [body]
+    is empty. *)
 
 val source : t -> string
 (** [source t] is the producer that emitted [t]. *)
@@ -70,8 +71,8 @@ val severity : t -> Severity.t
 val title : t -> string
 (** [title t] is [t]'s short model-visible title. *)
 
-val body : t -> string
-(** [body t] is [t]'s model-visible body. *)
+val body : t -> string option
+(** [body t] is [t]'s optional model-visible body. *)
 
 val key : t -> string
 (** [key t] is [t]'s queue coalescing key. *)

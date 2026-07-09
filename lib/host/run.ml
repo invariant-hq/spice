@@ -227,26 +227,26 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
       Spice_protocol.Subagent.Role.to_string
         (Spice_protocol.Subagent_run.role run)
     in
-    let severity, headline, detail =
+    let severity, headline, body =
       match Spice_protocol.Subagent_run.status run with
       | Spice_protocol.Subagent_run.Status.Completed { summary; _ } ->
-          (Spice_protocol.Notice.Severity.Info, "finished", summary)
+          (Spice_protocol.Notice.Severity.Info, "finished", Some summary)
       | Spice_protocol.Subagent_run.Status.Blocked { blocker; _ } ->
-          (Spice_protocol.Notice.Severity.Warning, "blocked", blocker)
+          (Spice_protocol.Notice.Severity.Warning, "blocked", Some blocker)
       | Spice_protocol.Subagent_run.Status.Cancelled _ ->
-          (Spice_protocol.Notice.Severity.Warning, "cancelled", "")
+          (Spice_protocol.Notice.Severity.Warning, "cancelled", None)
       | Spice_protocol.Subagent_run.Status.Failed { message; _ } ->
-          (Spice_protocol.Notice.Severity.Error, "failed", message)
+          (Spice_protocol.Notice.Severity.Error, "failed", Some message)
       | Spice_protocol.Subagent_run.Status.Queued
       | Spice_protocol.Subagent_run.Status.Running _ ->
-          (Spice_protocol.Notice.Severity.Info, "settled", "")
+          (Spice_protocol.Notice.Severity.Info, "settled", None)
     in
     let title =
       "subagent " ^ role ^ " " ^ headline ^ " (session "
       ^ Spice_session.Id.to_string child
       ^ ")"
     in
-    Spice_protocol.Notice.make ~source:"subagents" ~severity ~title ~body:detail
+    Spice_protocol.Notice.make ~source:"subagents" ~severity ~title ?body
       ~key:("subagent-run:" ^ Spice_session.Id.to_string child)
       ()
   in

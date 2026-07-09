@@ -26,14 +26,14 @@ type t = {
   source : string;
   severity : Severity.t;
   title : string;
-  body : string;
+  body : string option;
   key : string;
 }
 
-let make ~source ~severity ~title ~body ~key () =
+let make ~source ~severity ~title ?body ~key () =
   reject_empty "make" "source" source;
   reject_empty "make" "title" title;
-  reject_empty "make" "body" body;
+  Option.iter (reject_empty "make" "body") body;
   reject_empty "make" "key" key;
   { source; severity; title; body; key }
 
@@ -44,13 +44,16 @@ let body t = t.body
 let key t = t.key
 
 let to_message t =
+  let header =
+    [
+      "[spice notice]";
+      "source: " ^ t.source;
+      "severity: " ^ Severity.to_string t.severity;
+      "title: " ^ t.title;
+    ]
+  in
+  let lines =
+    match t.body with None -> header | Some body -> header @ [ ""; body ]
+  in
   Spice_llm.Message.developer
-    (String.concat "\n"
-       [
-         "[spice notice]";
-         "source: " ^ t.source;
-         "severity: " ^ Severity.to_string t.severity;
-         "title: " ^ t.title;
-         "";
-         t.body;
-       ])
+    (String.concat "\n" lines)
