@@ -519,6 +519,17 @@ module Model = struct
   let normalize_supported_reasoning values =
     sort_unique "Model.make" "supported_reasoning" compare_reasoning values
 
+  let check_default_reasoning supported_reasoning = function
+    | None -> ()
+    | Some effort ->
+        if
+          (not (List.is_empty supported_reasoning))
+          && not
+               (List.exists
+                  (fun supported -> compare_reasoning effort supported = 0)
+                  supported_reasoning)
+        then invalid "Model.make" "default_reasoning is not supported"
+
   let make llm ?display_name ?family ?released_on ?context_window
       ?max_output_tokens ?default_reasoning ?supported_reasoning
       ?input_modalities ?output_modalities ?capabilities ?pricing
@@ -531,6 +542,7 @@ module Model = struct
       supported_reasoning |> Option.value ~default:[]
       |> normalize_supported_reasoning
     in
+    check_default_reasoning supported_reasoning default_reasoning;
     let input_modalities =
       input_modalities
       |> Option.value ~default:[ Modality.text ]
@@ -679,7 +691,10 @@ let make id ?display_name ?(auth = Auth.none) ?default_model ?dynamic_model
     | None -> None
     | Some llm -> (
         match declared_model models llm with
-        | Some model -> Some model
+        | Some model ->
+            if not (Model.selectable model) then
+              invalid "make" "default_model is not selectable";
+            Some model
         | None -> invalid "make" "default_model is not declared")
   in
   { id; display_name; auth; models; default_model; dynamic_model }

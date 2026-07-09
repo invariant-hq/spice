@@ -407,7 +407,11 @@ let model_contracts () =
       ~context_window:400_000 ~max_output_tokens:128_000
       ~default_reasoning:Options.Reasoning_effort.Medium
       ~supported_reasoning:
-        [ Options.Reasoning_effort.High; Options.Reasoning_effort.Low ]
+        [
+          Options.Reasoning_effort.High;
+          Options.Reasoning_effort.Medium;
+          Options.Reasoning_effort.Low;
+        ]
       ~input_modalities:[ Modality.image; Modality.text ]
       ~output_modalities:[ Modality.text ]
       ~capabilities:
@@ -458,6 +462,10 @@ let model_contracts () =
       Model.make gpt_5
         ~supported_reasoning:
           [ Options.Reasoning_effort.Low; Options.Reasoning_effort.Low ]
+        ());
+  expect_invalid_arg "default reasoning must be supported" (fun () ->
+      Model.make gpt_5 ~default_reasoning:Options.Reasoning_effort.Medium
+        ~supported_reasoning:[ Options.Reasoning_effort.Low ]
         ())
 
 let provider_contracts () =
@@ -502,7 +510,12 @@ let provider_contracts () =
   expect_invalid_arg "duplicate model ids rejected" (fun () ->
       Provider.make openai [ model; Model.make (llm ~api:messages "gpt-5") () ]);
   expect_invalid_arg "undeclared default rejected" (fun () ->
-      Provider.make openai ~default_model:gpt_5_mini [ model ])
+      Provider.make openai ~default_model:gpt_5_mini [ model ]);
+  expect_invalid_arg "unselectable default rejected" (fun () ->
+      let hidden =
+        Model.make gpt_5 ~status:(Model.Unavailable "retired") ()
+      in
+      Provider.make openai ~default_model:gpt_5 [ hidden ])
 
 let selector_of msg raw =
   match Selector.of_string raw with

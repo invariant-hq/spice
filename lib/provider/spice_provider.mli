@@ -514,13 +514,14 @@ module Model : sig
       [input_modalities] and [output_modalities] default to [[Modality.text]].
       [status] defaults to [Stable]. Other list arguments default to [[]].
       Modality, capability, and reasoning lists are stored in deterministic
-      order after duplicate rejection. [default_reasoning], when supplied, is
-      not required to appear in [supported_reasoning].
+      order after duplicate rejection. If [supported_reasoning] is non-empty,
+      [default_reasoning], when supplied, must appear in it.
 
       Raises [Invalid_argument] if [display_name] is empty, [family] is empty,
       [context_window] or [max_output_tokens] is non-positive, modality tags
       contain duplicates, capability tags contain duplicates, or supported
-      reasoning efforts contain duplicates. *)
+      reasoning efforts contain duplicates, or if [default_reasoning] is
+      supplied but is not in a non-empty [supported_reasoning] list. *)
 
   val llm : t -> Spice_llm.Model.t
   (** [llm t] is [t]'s canonical request model identity. *)
@@ -665,7 +666,7 @@ val make :
     Raises [Invalid_argument] if [display_name] is empty, if a model's provider
     is not [id], if two models have the same provider-local id or canonical
     {!Spice_llm.Model.t}, or if [default_model] is supplied but is not declared
-    in [models].
+    in [models] or is not {!Model.selectable}.
 
     Provider declarations are static. This function performs no environment
     reads, credential checks, config reads, or provider I/O. Empty model lists
