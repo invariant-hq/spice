@@ -63,9 +63,9 @@ workspace tools and host-boundary tools.
 An active turn resumes under its persisted mode. Passing a different mode is a
 usage error before provider credentials are loaded.
 
-  $ mkdir -p .spice/sessions/active-plan
-  $ cat > .spice/sessions/active-plan/session.json <<'JSON'
-  > {"version":1,"id":"active-plan","metadata":{"cwd":"/workspace","title":"Active plan","status":"active","created_at":1,"updated_at":1},"events":[{"type":"turn_started","turn":{"id":"turn-1","mode":"plan","input":{"type":"user","content":[{"type":"text","text":"Plan this"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}}]}
+  $ mkdir -p $SPICE_TEST_DATA_HOME/sessions/active-plan
+  $ cat > $SPICE_TEST_DATA_HOME/sessions/active-plan/session.json <<JSON
+  > {"version":1,"id":"active-plan","metadata":{"cwd":"$PWD","title":"Active plan","status":"active","created_at":1,"updated_at":1},"events":[{"type":"turn_started","turn":{"id":"turn-1","mode":"plan","input":{"type":"user","content":[{"type":"text","text":"Plan this"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}}]}
   > JSON
 
   $ spice run resume active-plan --mode build
@@ -73,4 +73,4 @@ usage error before provider credentials are loaded.
   [2]
 
   $ spice session show --json active-plan | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"created_at":[0-9]+/"created_at":$TIME/g; s/"updated_at":[0-9]+/"updated_at":$TIME/g'
-  {"schema_version":1,"type":"session","session":{"id":"active-plan","title":"Active plan","preview":"Plan this","lifecycle":"active","phase":"active","forked_from":null,"event_count":1,"active_turn":"turn-1","cwd":"/workspace","created_at":$TIME,"updated_at":$TIME,"revision":"sha256:$HASH","active_model":"openai/responses:gpt-5.5","last_outcome":null,"waiting":null,"workflow_mode":"plan"},"latest_compaction":null,"context":{"projected_input_tokens_estimate":3,"basis":"estimate","context_window":1050000,"auto_compaction_limit":1030000}}
+  {"schema_version":1,"type":"session","session":{"id":"active-plan","title":"Active plan","preview":"Plan this","lifecycle":"active","phase":"active","forked_from":null,"event_count":1,"active_turn":"turn-1","cwd":"$TESTCASE_ROOT","created_at":$TIME,"updated_at":$TIME,"revision":"sha256:$HASH","active_model":"openai/responses:gpt-5.5","last_outcome":null,"waiting":null,"workflow_mode":"plan"},"latest_compaction":null,"context":{"projected_input_tokens_estimate":3,"basis":"estimate","context_window":1050000,"auto_compaction_limit":1030000}}

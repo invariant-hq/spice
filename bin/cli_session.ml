@@ -345,12 +345,7 @@ let create json raw_id title =
      let id =
        match raw_id with
        | Some id -> id
-       | None ->
-           let stamp =
-             Eio.Time.now (Eio.Stdenv.clock stdenv)
-             |> Int64.bits_of_float |> Int64.to_string
-           in
-           Session.Id.of_string ("ses-" ^ stamp)
+       | None -> Host_session.fresh_session_id ~clock:(Eio.Stdenv.clock stdenv)
      in
      let store = store stdenv host in
      let* cwd = assembly (host_cwd host) in

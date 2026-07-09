@@ -15,7 +15,7 @@ session store stays empty.
   warning: command sandbox disabled by explicit user choice
   ephemeral final
   $ wait_fake_server
-  $ test -e .spice/sessions || echo no-store
+  $ test -e $SPICE_TEST_DATA_HOME/sessions || echo no-store
   no-store
 
 Ephemeral cannot resume an existing session.

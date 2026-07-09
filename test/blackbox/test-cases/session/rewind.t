@@ -6,16 +6,16 @@ Sessions are seeded directly so the test stays focused on the rewind transform.
 
   $ make_two_turn_session () {
   >   id="$1"
-  >   mkdir -p ".spice/sessions/$id"
-  >   sed -e "s/SESSION_ID/$id/g" -e "s|CWD_PATH|$PWD|g" > ".spice/sessions/$id/session.json" <<'JSON'
+  >   mkdir -p "$SPICE_TEST_DATA_HOME/sessions/$id"
+  >   sed -e "s/SESSION_ID/$id/g" -e "s|CWD_PATH|$PWD|g" > "$SPICE_TEST_DATA_HOME/sessions/$id/session.json" <<'JSON'
   > {"version":1,"id":"SESSION_ID","metadata":{"title":"Rewind me","status":"active","cwd":"CWD_PATH","created_at":1,"updated_at":1},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"first prompt"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}},{"type":"response_appended","response":{"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"reasoning_summary":[],"assistant":{"parts":[{"type":"text","text":"first answer"}]}}},{"type":"turn_finished","turn":"turn-1","outcome":{"type":"completed"}},{"type":"turn_started","turn":{"id":"turn-2","input":{"type":"user","content":[{"type":"text","text":"second prompt"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}},{"type":"response_appended","response":{"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"reasoning_summary":[],"assistant":{"parts":[{"type":"text","text":"second answer"}]}}},{"type":"turn_finished","turn":"turn-2","outcome":{"type":"completed"}}]}
   > JSON
   > }
 
   $ make_three_turn_session () {
   >   id="$1"
-  >   mkdir -p ".spice/sessions/$id"
-  >   sed -e "s/SESSION_ID/$id/g" -e "s|CWD_PATH|$PWD|g" > ".spice/sessions/$id/session.json" <<'JSON'
+  >   mkdir -p "$SPICE_TEST_DATA_HOME/sessions/$id"
+  >   sed -e "s/SESSION_ID/$id/g" -e "s|CWD_PATH|$PWD|g" > "$SPICE_TEST_DATA_HOME/sessions/$id/session.json" <<'JSON'
   > {"version":1,"id":"SESSION_ID","metadata":{"title":"Rewind me","status":"active","cwd":"CWD_PATH","created_at":1,"updated_at":1},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"first prompt"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}},{"type":"response_appended","response":{"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"reasoning_summary":[],"assistant":{"parts":[{"type":"text","text":"first answer"}]}}},{"type":"turn_finished","turn":"turn-1","outcome":{"type":"completed"}},{"type":"turn_started","turn":{"id":"turn-2","input":{"type":"user","content":[{"type":"text","text":"second prompt"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}},{"type":"response_appended","response":{"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"reasoning_summary":[],"assistant":{"parts":[{"type":"text","text":"second answer"}]}}},{"type":"turn_finished","turn":"turn-2","outcome":{"type":"completed"}},{"type":"turn_started","turn":{"id":"turn-3","input":{"type":"user","content":[{"type":"text","text":"third prompt"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}},{"type":"response_appended","response":{"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"reasoning_summary":[],"assistant":{"parts":[{"type":"text","text":"third answer"}]}}},{"type":"turn_finished","turn":"turn-3","outcome":{"type":"completed"}}]}
   > JSON
   > }
@@ -133,7 +133,7 @@ writes no child.
   $ spice session rewind basic --to-turn turn-nope --id nope-child
   spice: turn is not in the session: turn-nope
   [1]
-  $ test -e .spice/sessions/nope-child/session.json && echo written || echo absent
+  $ test -e $SPICE_TEST_DATA_HOME/sessions/nope-child/session.json && echo written || echo absent
   absent
 
 The two edge flags are mutually exclusive.

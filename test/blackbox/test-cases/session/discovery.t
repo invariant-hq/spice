@@ -5,8 +5,8 @@ Previews derive from the first user prompt: whitespace collapses to single
 spaces and long prompts truncate at 80 bytes with an ellipsis. Untitled rows
 fall back to the preview.
 
-  $ mkdir -p .spice/sessions/preview
-  $ cat > .spice/sessions/preview/session.json <<JSON
+  $ mkdir -p $SPICE_TEST_DATA_HOME/sessions/preview
+  $ cat > $SPICE_TEST_DATA_HOME/sessions/preview/session.json <<JSON
   > {"version":1,"id":"preview","metadata":{"cwd":"$PWD","status":"active","created_at":1,"updated_at":199880000},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"one two   three\nfour five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}}]}
   > JSON
   $ spice session show preview | grep '^preview'
@@ -25,11 +25,11 @@ truncation cut does not match.
 
 AGE buckets render minutes, hours, and days against the injected clock.
 
-  $ mkdir -p .spice/sessions/hours .spice/sessions/days
-  $ cat > .spice/sessions/hours/session.json <<JSON
+  $ mkdir -p $SPICE_TEST_DATA_HOME/sessions/hours $SPICE_TEST_DATA_HOME/sessions/days
+  $ cat > $SPICE_TEST_DATA_HOME/sessions/hours/session.json <<JSON
   > {"version":1,"id":"hours","metadata":{"cwd":"$PWD","title":"Hours","status":"active","created_at":1,"updated_at":192800000},"events":[]}
   > JSON
-  $ cat > .spice/sessions/days/session.json <<JSON
+  $ cat > $SPICE_TEST_DATA_HOME/sessions/days/session.json <<JSON
   > {"version":1,"id":"days","metadata":{"cwd":"$PWD","title":"Days","status":"active","created_at":1,"updated_at":1},"events":[]}
   > JSON
   $ SPICE_NOW=200000000 spice session list
@@ -41,8 +41,8 @@ AGE buckets render minutes, hours, and days against the injected clock.
 Sessions recorded in another directory are hidden by default; --all widens the
 scope and adds the CWD column.
 
-  $ mkdir -p .spice/sessions/remote
-  $ cat > .spice/sessions/remote/session.json <<'JSON'
+  $ mkdir -p $SPICE_TEST_DATA_HOME/sessions/remote
+  $ cat > $SPICE_TEST_DATA_HOME/sessions/remote/session.json <<'JSON'
   > {"version":1,"id":"remote","metadata":{"cwd":"/other/place","title":"Remote","status":"active","created_at":1,"updated_at":1},"events":[]}
   > JSON
   $ spice session list | grep '^remote' || echo hidden

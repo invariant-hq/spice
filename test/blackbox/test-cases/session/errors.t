@@ -8,7 +8,7 @@ Duplicate ids are rejected.
   $ spice session create --id demo
   spice: session already exists: demo
   [1]
-  $ cat .spice/sessions/demo/session.json | sed -E 's/"(created_at|updated_at)":[0-9]+/"\1":$TIME/g'
+  $ cat $SPICE_TEST_DATA_HOME/sessions/demo/session.json | sed -E 's/"(created_at|updated_at)":[0-9]+/"\1":$TIME/g'
   {"version":1,"id":"demo","metadata":{"title":"Demo","status":"active","cwd":"$TESTCASE_ROOT","created_at":$TIME,"updated_at":$TIME},"events":[]}
 
 Empty titles are usage errors and do not create documents.
@@ -16,12 +16,12 @@ Empty titles are usage errors and do not create documents.
   $ spice session create --id empty --title ''
   spice: session title must not be empty
   [2]
-  $ test -e .spice/sessions/empty/session.json || echo not-created
+  $ test -e $SPICE_TEST_DATA_HOME/sessions/empty/session.json || echo not-created
   not-created
   $ spice session fork demo --id empty-child --title ''
   spice: session title must not be empty
   [2]
-  $ test -e .spice/sessions/empty-child/session.json || echo not-created
+  $ test -e $SPICE_TEST_DATA_HOME/sessions/empty-child/session.json || echo not-created
   not-created
   $ spice session rename demo ''
   spice: session title must not be empty
@@ -63,7 +63,7 @@ Manual compaction assembles the runtime before mutating the saved session.
   spice: missing credential for provider: openai
   Hint: run `spice auth login openai` to add a credential
   [1]
-  $ cat .spice/sessions/demo/session.json | sed -E 's/"(created_at|updated_at)":[0-9]+/"\1":$TIME/g'
+  $ cat $SPICE_TEST_DATA_HOME/sessions/demo/session.json | sed -E 's/"(created_at|updated_at)":[0-9]+/"\1":$TIME/g'
   {"version":1,"id":"demo","metadata":{"title":"Demo","status":"active","cwd":"$TESTCASE_ROOT","created_at":$TIME,"updated_at":$TIME},"events":[]}
 
 List/search limits must be positive.
@@ -83,7 +83,7 @@ Delete requires an explicit confirmation before loading or mutating a session.
   $ spice session delete demo
   spice: session delete requires --yes
   [2]
-  $ cat .spice/sessions/demo/session.json | sed -E 's/"(created_at|updated_at)":[0-9]+/"\1":$TIME/g'
+  $ cat $SPICE_TEST_DATA_HOME/sessions/demo/session.json | sed -E 's/"(created_at|updated_at)":[0-9]+/"\1":$TIME/g'
   {"version":1,"id":"demo","metadata":{"title":"Demo","status":"active","cwd":"$TESTCASE_ROOT","created_at":$TIME,"updated_at":$TIME},"events":[]}
 
 Unknown export formats are rejected by command-line parsing.

@@ -42,7 +42,7 @@ a separate run against its own fake backend cycle.
 Turn ids are clock-derived, so name the second turn by extracting it from the
 exported transcript (the last turn_started event).
 
-  $ TURN2=$(spice session export rw | grep -oE '"turn_started"[^}]*"id":"turn_-?[0-9]+_[0-9]+"' | tail -1 | grep -oE 'turn_-?[0-9]+_[0-9]+')
+  $ TURN2=$(spice session export rw | grep -oE '"turn_started"[^}]*"id":"turn_-?[0-9]+_[0-9]+_[0-9]+"' | tail -1 | grep -oE 'turn_-?[0-9]+_[0-9]+_[0-9]+')
 
 Rewinding before the second turn with --revert-fs drops turn two, forks the
 transcript to a child, and reverts fileB back to its pre-turn-two state.
@@ -96,7 +96,7 @@ landed.
   CCC
 
   $ printf 'HANDEDIT\n' > fileC.txt
-  $ TURNC=$(spice session export rw2 | grep -oE '"turn_started"[^}]*"id":"turn_-?[0-9]+_[0-9]+"' | tail -1 | grep -oE 'turn_-?[0-9]+_[0-9]+')
+  $ TURNC=$(spice session export rw2 | grep -oE '"turn_started"[^}]*"id":"turn_-?[0-9]+_[0-9]+_[0-9]+"' | tail -1 | grep -oE 'turn_-?[0-9]+_[0-9]+_[0-9]+')
 
   $ spice session rewind rw2 --to-turn "$TURNC" --before --revert-fs --id child2 | sed -E 's/sha256:[0-9a-f]+/sha256:$HASH/'
   child2

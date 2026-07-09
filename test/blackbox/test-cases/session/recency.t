@@ -2,9 +2,9 @@ Saved metadata updates participate in session recency.
 
 Seeded sessions list by their persisted updated_at timestamp.
 
-  $ mkdir -p .spice/sessions/older .spice/sessions/newer
-  $ printf '%s\n' "{\"version\":1,\"id\":\"older\",\"metadata\":{\"title\":\"Older\",\"status\":\"active\",\"cwd\":\"$PWD\",\"created_at\":1,\"updated_at\":1},\"events\":[]}" > .spice/sessions/older/session.json
-  $ printf '%s\n' "{\"version\":1,\"id\":\"newer\",\"metadata\":{\"title\":\"Newer\",\"status\":\"active\",\"cwd\":\"$PWD\",\"created_at\":1,\"updated_at\":2},\"events\":[]}" > .spice/sessions/newer/session.json
+  $ mkdir -p $SPICE_TEST_DATA_HOME/sessions/older $SPICE_TEST_DATA_HOME/sessions/newer
+  $ printf '%s\n' "{\"version\":1,\"id\":\"older\",\"metadata\":{\"title\":\"Older\",\"status\":\"active\",\"cwd\":\"$PWD\",\"created_at\":1,\"updated_at\":1},\"events\":[]}" > $SPICE_TEST_DATA_HOME/sessions/older/session.json
+  $ printf '%s\n' "{\"version\":1,\"id\":\"newer\",\"metadata\":{\"title\":\"Newer\",\"status\":\"active\",\"cwd\":\"$PWD\",\"created_at\":1,\"updated_at\":2},\"events\":[]}" > $SPICE_TEST_DATA_HOME/sessions/newer/session.json
   $ spice session list --json | grep -o '"id":"[^"]*"' | head -2
   "id":"newer"
   "id":"older"

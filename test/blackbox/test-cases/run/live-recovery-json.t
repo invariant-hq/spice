@@ -4,9 +4,9 @@ execution has been durably started but not finished. That is the state Spice
 must never recover from by rerunning the tool automatically.
 
   $ make_unfinished_tool_session () {
-  >   mkdir -p .spice/sessions/crashed-tool
-  >   cat > .spice/sessions/crashed-tool/session.json <<'JSON'
-  > {"version":1,"id":"crashed-tool","metadata":{"cwd":"/workspace","title":"Crashed tool","status":"active","created_at":1,"updated_at":1},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"Write crash.txt"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}},{"type":"response_appended","response":{"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"reasoning_summary":[],"assistant":{"parts":[{"type":"tool_call","tool_call":{"id":"call-write-crash","name":"write_file","input":{"path":"crash.txt","contents":"crashed contents"}}}]}}},{"type":"tool_claim_started","execution":{"id":"tool_exec-crashed","turn":"turn-1","call":{"id":"call-write-crash","name":"write_file","input":{"path":"crash.txt","contents":"crashed contents"}}}}]}
+  >   mkdir -p $SPICE_TEST_DATA_HOME/sessions/crashed-tool
+  >   cat > $SPICE_TEST_DATA_HOME/sessions/crashed-tool/session.json <<JSON
+  > {"version":1,"id":"crashed-tool","metadata":{"cwd":"$PWD","title":"Crashed tool","status":"active","created_at":1,"updated_at":1},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"Write crash.txt"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}},{"type":"response_appended","response":{"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"reasoning_summary":[],"assistant":{"parts":[{"type":"tool_call","tool_call":{"id":"call-write-crash","name":"write_file","input":{"path":"crash.txt","contents":"crashed contents"}}}]}}},{"type":"tool_claim_started","execution":{"id":"tool_exec-crashed","turn":"turn-1","call":{"id":"call-write-crash","name":"write_file","input":{"path":"crash.txt","contents":"crashed contents"}}}}]}
   > JSON
   > }
 
@@ -16,7 +16,7 @@ Status reports the unfinished execution as a live blocked session, with enough
 machine-readable data for a product surface to render the recovery action.
 
   $ spice session show --json crashed-tool | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"created_at":[0-9]+/"created_at":$TIME/g; s/"updated_at":[0-9]+/"updated_at":$TIME/g'
-  {"schema_version":1,"type":"session","session":{"id":"crashed-tool","title":"Crashed tool","preview":"Write crash.txt","lifecycle":"active","phase":"waiting","forked_from":null,"event_count":3,"active_turn":"turn-1","cwd":"/workspace","created_at":$TIME,"updated_at":$TIME,"revision":"sha256:$HASH","active_model":"openai/responses:gpt-5.5","last_outcome":null,"waiting":{"kind":"tool_claim","claim_id":"tool_exec-crashed","turn":"turn-1","tool_call_id":"call-write-crash","tool":"write_file"}},"latest_compaction":null,"context":{"projected_input_tokens_estimate":68,"basis":"estimate","context_window":1050000,"auto_compaction_limit":1030000}}
+  {"schema_version":1,"type":"session","session":{"id":"crashed-tool","title":"Crashed tool","preview":"Write crash.txt","lifecycle":"active","phase":"waiting","forked_from":null,"event_count":3,"active_turn":"turn-1","cwd":"$TESTCASE_ROOT","created_at":$TIME,"updated_at":$TIME,"revision":"sha256:$HASH","active_model":"openai/responses:gpt-5.5","last_outcome":null,"waiting":{"kind":"tool_claim","claim_id":"tool_exec-crashed","turn":"turn-1","tool_call_id":"call-write-crash","tool":"write_file"}},"latest_compaction":null,"context":{"projected_input_tokens_estimate":68,"basis":"estimate","context_window":1050000,"auto_compaction_limit":1030000}}
 
 Resuming the session without an explicit recovery does not rerun the started
 tool. No fake provider is listening here: if Spice tried to continue to a model
@@ -53,7 +53,7 @@ contains the finished execution and final idle state.
   $ test -e crash.txt || echo original-write-not-run
   original-write-not-run
   $ spice session show --json crashed-tool | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"created_at":[0-9]+/"created_at":$TIME/g; s/"updated_at":[0-9]+/"updated_at":$TIME/g'
-  {"schema_version":1,"type":"session","session":{"id":"crashed-tool","title":"Crashed tool","preview":"Write crash.txt","lifecycle":"active","phase":"idle","forked_from":null,"event_count":6,"active_turn":null,"cwd":"/workspace","created_at":$TIME,"updated_at":$TIME,"revision":"sha256:$HASH","active_model":null,"last_outcome":"completed","waiting":null},"latest_compaction":null,"context":{"projected_input_tokens_estimate":79,"basis":"estimate","context_window":1050000,"auto_compaction_limit":1030000}}
+  {"schema_version":1,"type":"session","session":{"id":"crashed-tool","title":"Crashed tool","preview":"Write crash.txt","lifecycle":"active","phase":"idle","forked_from":null,"event_count":6,"active_turn":null,"cwd":"$TESTCASE_ROOT","created_at":$TIME,"updated_at":$TIME,"revision":"sha256:$HASH","active_model":null,"last_outcome":"completed","waiting":null},"latest_compaction":null,"context":{"projected_input_tokens_estimate":79,"basis":"estimate","context_window":1050000,"auto_compaction_limit":1030000}}
   $ spice session export crashed-tool | grep -o '"type":"tool_claim_finished"'
   "type":"tool_claim_finished"
   $ spice session export crashed-tool | grep -o '"text":"interrupted after restart"'

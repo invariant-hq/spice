@@ -51,9 +51,9 @@ exported by id, and is hidden unless deleted sessions are explicitly included.
   [2]
   $ spice session delete --yes child
   child
-  $ test -f .spice/sessions/child/session.json && echo tombstone-saved
+  $ test -f $SPICE_TEST_DATA_HOME/sessions/child/session.json && echo tombstone-saved
   tombstone-saved
-  $ cat .spice/sessions/child/session.json | sed -E 's/"(created_at|updated_at)":[0-9]+/"\1":$TIME/g'
+  $ cat $SPICE_TEST_DATA_HOME/sessions/child/session.json | sed -E 's/"(created_at|updated_at)":[0-9]+/"\1":$TIME/g'
   {"version":1,"id":"child","metadata":{"title":"Child","status":"deleted","forked_from":{"parent":"parent","copied_events":0},"cwd":"$TESTCASE_ROOT","created_at":$TIME,"updated_at":$TIME},"events":[]}
   $ spice session list | grep '^child' || echo hidden
   hidden

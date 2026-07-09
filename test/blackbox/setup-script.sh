@@ -2,6 +2,7 @@ export HOME="$PWD/home"
 export XDG_CONFIG_HOME="$PWD/xdg-config"
 export XDG_DATA_HOME="$PWD/xdg-data"
 export XDG_STATE_HOME="$PWD/xdg-state"
+export SPICE_TEST_DATA_HOME="$XDG_DATA_HOME/spice"
 export SHELL=/bin/sh
 
 unset APPDATA

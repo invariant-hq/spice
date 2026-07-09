@@ -20,8 +20,8 @@ launch.
 Bare resume does not resolve sessions before launch; the home stage owns that
 selection once an interactive terminal is available.
 
-  $ mkdir -p .spice/sessions/elsewhere
-  $ cat > .spice/sessions/elsewhere/session.json <<'JSON'
+  $ mkdir -p $SPICE_TEST_DATA_HOME/sessions/elsewhere
+  $ cat > $SPICE_TEST_DATA_HOME/sessions/elsewhere/session.json <<'JSON'
   > {"version":1,"id":"elsewhere","metadata":{"cwd":"/some/other/project","title":"Elsewhere","status":"active","created_at":1,"updated_at":99999999999999},"events":[]}
   > JSON
   $ spice resume

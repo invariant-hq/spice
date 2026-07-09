@@ -2,8 +2,8 @@ A subagent spawn that cannot create its ledger record rolls back the child
 session. Retrying the same opaque call id after storage recovers therefore
 launches normally instead of colliding with an orphan.
 
-  $ mkdir -p .spice
-  $ printf blocked > .spice/subagents
+  $ mkdir -p "$SPICE_TEST_DATA_HOME"
+  $ printf blocked > $SPICE_TEST_DATA_HOME/subagents
   $ cat > failed-spawn.jsonl <<'JSONL'
   > {"expect":{"body_contains":["\"name\":\"spawn_subagent\""]},"response":{"id":"resp-failed-spawn","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-failed-spawn","call_id":"retry-call","name":"spawn_subagent","arguments":"{\"role\":\"explore\",\"task\":\"Inspect after recovery\"}"}]}}
   > {"expect":{"body_contains":["function_call_output","retry-call"],"body_not_contains":["subagent explore launched"]},"response":{"id":"resp-failed-final","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Spawn failed cleanly."}]}]}}
@@ -13,10 +13,10 @@ launches normally instead of colliding with an orphan.
   $ spice run --json --cwd "$PWD" --permission-mode bypass --id rollback-parent "delegate with broken storage" 2>&1 | grep -o '"final_text":"Spawn failed cleanly."'
   "final_text":"Spawn failed cleanly."
   $ wait_fake_server
-  $ test ! -e .spice/sessions/rollback-parent-sub-retry-call/session.json && echo no-orphan
+  $ test ! -e $SPICE_TEST_DATA_HOME/sessions/rollback-parent-sub-retry-call/session.json && echo no-orphan
   no-orphan
 
-  $ rm .spice/subagents
+  $ rm $SPICE_TEST_DATA_HOME/subagents
   $ cat > retry-spawn.jsonl <<'JSONL'
   > {"expect":{"body_contains":["retry","\"name\":\"spawn_subagent\""]},"response":{"id":"resp-retry-spawn","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-retry-spawn","call_id":"retry-call","name":"spawn_subagent","arguments":"{\"role\":\"explore\",\"task\":\"Inspect after recovery\"}"}]}}
   > {"expect":{"body_contains":["Role: explore","Inspect after recovery"]},"response":{"id":"resp-retry-child","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"recovered child findings"}]}]}}

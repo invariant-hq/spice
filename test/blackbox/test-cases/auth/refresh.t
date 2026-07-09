@@ -136,7 +136,7 @@ document is not created, and a later run learns the same truth the same way.
   spice: blocked credential for provider openai: refresh_failed
   Hint: run `spice auth status openai` and the repair command it names
   [1]
-  $ test -e .spice/sessions/fail-run-1/session.json || echo not-created
+  $ test -e $SPICE_TEST_DATA_HOME/sessions/fail-run-1/session.json || echo not-created
   not-created
   $ spice run --cwd "$PWD" --id fail-run-2 "doomed prompt"
   permission: default

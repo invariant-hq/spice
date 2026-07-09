@@ -5,9 +5,9 @@
 
 let ( let* ) = Result.bind
 
-(* Fresh ids for registry-minted child sessions and turns. The counter breaks
-   ties within a single clock reading so ids stay distinct under a fast
-   loop. *)
+(* Fresh ids for registry-minted child sessions and turns. The process id
+   separates concurrent Spice processes and the counter breaks ties within one
+   clock reading. *)
 let id_counter = ref 0
 
 let fresh_id stdenv prefix =
@@ -16,7 +16,9 @@ let fresh_id stdenv prefix =
     Eio.Time.now (Eio.Stdenv.clock stdenv)
     |> Int64.bits_of_float |> Int64.to_string
   in
-  prefix ^ "_" ^ stamp ^ "_" ^ string_of_int !id_counter
+  prefix ^ "_" ^ stamp ^ "_"
+  ^ string_of_int (Unix.getpid ())
+  ^ "_" ^ string_of_int !id_counter
 
 let now stdenv =
   Eio.Time.now (Eio.Stdenv.clock stdenv)
@@ -146,7 +148,8 @@ let usage_of session =
   let metrics = Spice_session.Metrics.of_session session in
   Spice_protocol.Subagent_run.Usage.make
     ~prompt_tokens:metrics.Spice_session.Metrics.usage.Spice_llm.Usage.input
-    ~completion_tokens:metrics.Spice_session.Metrics.usage.Spice_llm.Usage.output
+    ~completion_tokens:
+      metrics.Spice_session.Metrics.usage.Spice_llm.Usage.output
     ~tool_uses:metrics.Spice_session.Metrics.tool_calls
   |> Result.map_error (fun error ->
       Format.asprintf "invalid child session usage: %a"
@@ -357,8 +360,7 @@ let rollback_spawn t ~document ?run error =
   match ledger_errors @ session_errors with
   | [] -> Error error
   | cleanup ->
-      Error
-        (error ^ "; spawn rollback failed: " ^ String.concat "; " cleanup)
+      Error (error ^ "; spawn rollback failed: " ^ String.concat "; " cleanup)
 
 let spawn t ~parent ~parent_turn ~parent_call_id ~spawn ~depth
     (child_spec : child) =
@@ -382,15 +384,15 @@ let spawn t ~parent ~parent_turn ~parent_call_id ~spawn ~depth
   let run =
     match Artifacts.Subagent_run.put ~fs:t.fs ~root:t.root run with
     | Error error ->
-        rollback_spawn t ~document:child_document (Artifacts.Error.message error)
+        rollback_spawn t ~document:child_document
+          (Artifacts.Error.message error)
     | Ok () -> (
         match
           update_run t ~parent ~child ~f:(fun run ->
               Spice_protocol.Subagent_run.start ~started_at:(now t.stdenv) run)
         with
         | Ok run -> Ok run
-        | Error error ->
-            rollback_spawn t ~document:child_document ~run error)
+        | Error error -> rollback_spawn t ~document:child_document ~run error)
   in
   let* run = run in
   let live = Live.attach ~sw:t.sw ~runner child_document in

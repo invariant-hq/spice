@@ -315,6 +315,36 @@ let locate_session ~store raw =
               ^ String.concat ", " shown ^ suffix)))
   | Error _ as error -> session_store ~id:raw error
 
+let session_document_cwd document =
+  let session = Spice_session_store.Document.session document in
+  Spice_session.metadata session |> Spice_session.Metadata.cwd
+
+(* Explicit session continuations execute in the canonical cwd recorded by the
+   session. The first host is only a global-store discovery context; after the
+   document is found, reload project inputs for its workspace. An explicit
+   [--cwd] is an assertion and must agree before any durable mutation. *)
+let host_for_session ~stdenv ~overrides ~cwd_was_explicit discovery_host
+    document =
+  let recorded = session_document_cwd document in
+  let requested =
+    Spice_host.Host.config discovery_host |> Spice_host.Config.cwd
+  in
+  let recorded_text = Spice_path.Abs.to_string recorded in
+  if cwd_was_explicit && not (Spice_path.Abs.equal requested recorded) then
+    usage
+      ("--cwd "
+      ^ shell_arg (Spice_path.Abs.to_string requested)
+      ^ " does not match the session cwd " ^ shell_arg recorded_text)
+  else
+    let path = Eio.Path.( / ) (Eio.Stdenv.fs stdenv) recorded_text in
+    if not (Eio.Path.is_directory path) then
+      Error
+        (`Runtime ("session cwd is not an existing directory: " ^ recorded_text))
+    else
+      assembly
+        (Spice_host.bootstrap ~stdenv ~registry:Spice_host_builtin.registry
+           ~cwd:recorded_text ~overrides ())
+
 (* The one resolver behind every SESSION-or---last surface: an explicit id or
    unique prefix wins, [--last] selects the newest session in this workspace,
    and their combination or absence is a usage error naming the command. *)

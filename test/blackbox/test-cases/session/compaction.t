@@ -8,8 +8,8 @@ The live execution suite covers creating these documents through `spice run`.
 
   $ make_three_turn_session () {
   >   id="$1"
-  >   mkdir -p ".spice/sessions/$id"
-  >   sed -e "s/SESSION_ID/$id/g" -e "s|CWD_PATH|$PWD|g" > ".spice/sessions/$id/session.json" <<'JSON'
+  >   mkdir -p "$SPICE_TEST_DATA_HOME/sessions/$id"
+  >   sed -e "s/SESSION_ID/$id/g" -e "s|CWD_PATH|$PWD|g" > "$SPICE_TEST_DATA_HOME/sessions/$id/session.json" <<'JSON'
   > {"version":1,"id":"SESSION_ID","metadata":{"title":"Compact me","status":"active","cwd":"CWD_PATH","created_at":1,"updated_at":1},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"first prompt"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}},{"type":"response_appended","response":{"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"reasoning_summary":[],"assistant":{"parts":[{"type":"text","text":"first answer"}]}}},{"type":"turn_finished","turn":"turn-1","outcome":{"type":"completed"}},{"type":"turn_started","turn":{"id":"turn-2","input":{"type":"user","content":[{"type":"text","text":"second prompt"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}},{"type":"response_appended","response":{"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"reasoning_summary":[],"assistant":{"parts":[{"type":"text","text":"second answer"}]}}},{"type":"turn_finished","turn":"turn-2","outcome":{"type":"completed"}},{"type":"turn_started","turn":{"id":"turn-3","input":{"type":"user","content":[{"type":"text","text":"third prompt"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}},{"type":"response_appended","response":{"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"reasoning_summary":[],"assistant":{"parts":[{"type":"text","text":"third answer"}]}}},{"type":"turn_finished","turn":"turn-3","outcome":{"type":"completed"}}]}
   > JSON
   > }
@@ -165,8 +165,8 @@ OpenAI-Responses backend.
 A stale active session — an active turn with no live owner — is rejected until
 the user resumes or records a recovery action.
 
-  $ mkdir -p .spice/sessions/compact-stale
-  $ sed -e "s|CWD_PATH|$PWD|g" > .spice/sessions/compact-stale/session.json <<'JSON'
+  $ mkdir -p $SPICE_TEST_DATA_HOME/sessions/compact-stale
+  $ sed -e "s|CWD_PATH|$PWD|g" > $SPICE_TEST_DATA_HOME/sessions/compact-stale/session.json <<'JSON'
   > {"version":1,"id":"compact-stale","metadata":{"title":"Stale","status":"active","cwd":"CWD_PATH","created_at":1,"updated_at":1},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"stale prompt"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}}]}
   > JSON
   $ spice session compact --cwd "$PWD" compact-stale

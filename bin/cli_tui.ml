@@ -51,7 +51,7 @@ let startup_input draft prompt =
 let run ?session cwd sandbox mode continue_ draft prompt =
   Eio_main.run @@ fun stdenv ->
   status
-    (let* cwd_abs =
+    (let* requested_cwd_abs =
        optional_absolute_cwd stdenv cwd
        |> Result.map_error (fun message -> `Usage message)
      in
@@ -66,22 +66,31 @@ let run ?session cwd sandbox mode continue_ draft prompt =
                  ("unknown mode: " ^ raw ^ " (expected build, plan, or review)"))
      in
      let* input = startup_input draft prompt in
-     let* session =
+     let* session, cwd_abs =
        match (session, continue_) with
        | Some _, true -> usage "choose only one of --continue or --session"
        | Some session, false ->
-           let* host = assembly (load_host ?cwd ~overrides:[] stdenv) in
-           let store = Spice_host.Session.store ~stdenv host in
+           let* discovery_host =
+             assembly (load_host ?cwd ~overrides:[] stdenv)
+           in
+           let store = Spice_host.Session.store ~stdenv discovery_host in
            let* document = locate_session ~store session in
+           let* host =
+             host_for_session ~stdenv ~overrides:[]
+               ~cwd_was_explicit:(Option.is_some cwd) discovery_host document
+           in
            Ok
-             (Some
-                (Spice_session.id
-                   (Spice_session_store.Document.session document)))
+             ( Some
+                 (Spice_session.id
+                    (Spice_session_store.Document.session document)),
+               Some (Spice_host.Config.cwd (Spice_host.Host.config host)) )
        | None, true ->
            let* host = assembly (load_host ?cwd ~overrides:[] stdenv) in
            let* id = newest_session_in_cwd ~surface:`Tui ~stdenv host in
-           Ok (Some id)
-       | None, false -> Ok None
+           Ok
+             ( Some id,
+               Some (Spice_host.Config.cwd (Spice_host.Host.config host)) )
+       | None, false -> Ok (None, requested_cwd_abs)
      in
      let* () =
        match (input, session) with

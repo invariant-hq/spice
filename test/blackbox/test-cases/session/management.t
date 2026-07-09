@@ -6,9 +6,9 @@ lists.
 
   $ spice session create --id demo --title Demo
   demo
-  $ test -f .spice/sessions/demo/session.json && echo saved
+  $ test -f $SPICE_TEST_DATA_HOME/sessions/demo/session.json && echo saved
   saved
-  $ cat .spice/sessions/demo/session.json | sed -E 's/"(created_at|updated_at)":[0-9]+/"\1":$TIME/g'
+  $ cat $SPICE_TEST_DATA_HOME/sessions/demo/session.json | sed -E 's/"(created_at|updated_at)":[0-9]+/"\1":$TIME/g'
   {"version":1,"id":"demo","metadata":{"title":"Demo","status":"active","cwd":"$TESTCASE_ROOT","created_at":$TIME,"updated_at":$TIME},"events":[]}
 
 Text output is compact and stable for the common inspection path.
@@ -69,7 +69,7 @@ directory and preserves the exact id inside the saved document.
 
   $ spice session create --id 'unsafe/id with space' --title Unsafe
   unsafe/id with space
-  $ test -f '.spice/sessions/unsafe%2Fid%20with%20space/session.json' && echo escaped
+  $ test -f "$SPICE_TEST_DATA_HOME/sessions/unsafe%2Fid%20with%20space/session.json" && echo escaped
   escaped
   $ spice session export 'unsafe/id with space' | sed -E 's/"(created_at|updated_at)":[0-9]+/"\1":$TIME/g'
   {"version":1,"id":"unsafe/id with space","metadata":{"title":"Unsafe","status":"active","cwd":"$TESTCASE_ROOT","created_at":$TIME,"updated_at":$TIME},"events":[]}

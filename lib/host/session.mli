@@ -157,10 +157,10 @@ val load :
 (** {1:birth Session birth} *)
 
 val fresh_session_id : clock:_ Eio.Time.clock -> Spice_session.Id.t
-(** [fresh_session_id ~clock] mints a session id from the clock's current time
-    and a process-local counter. Uniqueness is per-process and probabilistic
-    across processes; {!create} and {!fork} still refuse to replace an existing
-    document, so a collision surfaces as an error rather than an overwrite. *)
+(** [fresh_session_id ~clock] mints a session id from the clock's current time,
+    process id, and a process-local counter. {!create} and {!fork} still refuse
+    to replace an existing document, so a collision surfaces as an error rather
+    than an overwrite. *)
 
 val fresh_turn_id : clock:_ Eio.Time.clock -> Spice_session.Turn.Id.t
 (** [fresh_turn_id ~clock] mints a turn id; see {!fresh_session_id} for the

@@ -82,7 +82,7 @@ key is checked before any prior plan is superseded.
   Plan accepted.
   $ wait_fake_server
 
-  $ cat > .spice/plans/plan-run/reused-plan.json <<'JSON'
+  $ cat > $SPICE_TEST_DATA_HOME/plans/plan-run/reused-plan.json <<'JSON'
   > {"id":"reused-plan","source":{"session":"plan-run","turn":"turn-old","tool_call_id":"call-old"},"body":"Rejected earlier","status":{"type":"rejected","rejected_at":2},"created_at":1}
   > JSON
   $ cat > plan-conflict.jsonl <<'JSONL'
@@ -93,7 +93,7 @@ key is checked before any prior plan is superseded.
   $ spice run resume plan-run --cwd "$PWD" --mode plan "replace the plan" 2>&1 | grep -o 'Conflict handled.'
   Conflict handled.
   $ wait_fake_server
-  $ grep -o '"type":"approved"' .spice/plans/plan-run/milestone-plan.json
+  $ grep -o '"type":"approved"' $SPICE_TEST_DATA_HOME/plans/plan-run/milestone-plan.json
   "type":"approved"
 
 `spawn_subagent` launches a detached child session: the spawn returns a
@@ -145,7 +145,7 @@ escaped parent and child run paths in the real store.
   $ wait_fake_server
   $ spice session show --json 'team/a' | grep -o '"role":"explore"' | wc -l | tr -d ' '
   2
-  $ find '.spice/subagents/team%2Fa' -name '*.json' | wc -l | tr -d ' '
+  $ find "$SPICE_TEST_DATA_HOME/subagents/team%2Fa" -name '*.json' | wc -l | tr -d ' '
   2
 
 `wait_subagents` closes the loop: the deterministic child id from the

@@ -16,8 +16,8 @@ With no sessions at all, --last says so and points at run.
 When the newest session lives in another directory and none live here, --last
 refuses with a copy-pasteable cd command.
 
-  $ mkdir -p .spice/sessions/elsewhere
-  $ cat > .spice/sessions/elsewhere/session.json <<'JSON'
+  $ mkdir -p $SPICE_TEST_DATA_HOME/sessions/elsewhere
+  $ cat > $SPICE_TEST_DATA_HOME/sessions/elsewhere/session.json <<'JSON'
   > {"version":1,"id":"elsewhere","metadata":{"cwd":"/some/other/project","title":"Elsewhere","status":"active","created_at":1,"updated_at":99999999999999},"events":[]}
   > JSON
   $ spice run resume --last
@@ -65,8 +65,8 @@ which proves the selection happened.
 
 A session with an active turn refuses a new prompt.
 
-  $ mkdir -p .spice/sessions/running
-  $ cat > .spice/sessions/running/session.json <<JSON
+  $ mkdir -p $SPICE_TEST_DATA_HOME/sessions/running
+  $ cat > $SPICE_TEST_DATA_HOME/sessions/running/session.json <<JSON
   > {"version":1,"id":"running","metadata":{"cwd":"$PWD","title":"Running","status":"active","created_at":1,"updated_at":2},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"Continue"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}}]}
   > JSON
   $ SPICE_MODEL=openai/gpt-5.5 spice run resume running "another prompt"

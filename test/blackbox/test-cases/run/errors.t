@@ -104,7 +104,7 @@ creation.
   Hint: try openai/gpt-5.5
   Hint: run `spice models show openai/gpt-image-1.5` to inspect the model
   [2]
-  $ test -e .spice/sessions/gated/session.json || echo not-created
+  $ test -e $SPICE_TEST_DATA_HOME/sessions/gated/session.json || echo not-created
   not-created
 
 Unavailable models are rejected for runs with their declared reason.
@@ -215,7 +215,7 @@ Without credentials, run fails before creating the requested session document.
   spice: missing credential for provider: openai
   Hint: run `spice auth login openai` to add a credential
   [1]
-  $ test -e .spice/sessions/demo/session.json || echo not-created
+  $ test -e $SPICE_TEST_DATA_HOME/sessions/demo/session.json || echo not-created
   not-created
 
 Missing sessions fail at the session boundary, before model credentials matter.
@@ -312,9 +312,9 @@ credentials exist.
 
   $ make_permission_session () {
   >   id="$1"
-  >   mkdir -p ".spice/sessions/$id"
-  >   sed "s/\"id\":\"perm\"/\"id\":\"$id\"/" > ".spice/sessions/$id/session.json" <<'JSON'
-  > {"version":1,"id":"perm","metadata":{"cwd":"/workspace","title":"Perm","status":"active","created_at":1,"updated_at":1},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"Use the tool"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}},{"type":"response_appended","response":{"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"reasoning_summary":[],"assistant":{"parts":[{"type":"tool_call","tool_call":{"id":"call-1","name":"review_tool","input":{}}}]}}},{"type":"permission_requested","request":{"id":"permission-1","turn":"turn-1","tool_call":{"id":"call-1","name":"review_tool","input":{}},"request":{"version":2,"items":[{"access":{"type":"custom","kind":"write","name":"review_tool"}}]},"asked":[{"type":"custom","kind":"write","name":"review_tool"}]}}]}
+  >   mkdir -p "$SPICE_TEST_DATA_HOME/sessions/$id"
+  >   sed "s/\"id\":\"perm\"/\"id\":\"$id\"/" > "$SPICE_TEST_DATA_HOME/sessions/$id/session.json" <<JSON
+  > {"version":1,"id":"perm","metadata":{"cwd":"$PWD","title":"Perm","status":"active","created_at":1,"updated_at":1},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"Use the tool"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}},{"type":"response_appended","response":{"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"reasoning_summary":[],"assistant":{"parts":[{"type":"tool_call","tool_call":{"id":"call-1","name":"review_tool","input":{}}}]}}},{"type":"permission_requested","request":{"id":"permission-1","turn":"turn-1","tool_call":{"id":"call-1","name":"review_tool","input":{}},"request":{"version":2,"items":[{"access":{"type":"custom","kind":"write","name":"review_tool"}}]},"asked":[{"type":"custom","kind":"write","name":"review_tool"}]}}]}
   > JSON
   > }
 

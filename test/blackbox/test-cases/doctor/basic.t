@@ -51,12 +51,12 @@ diagnostics; warnings do not change the exit code.
 
   $ spice session create --id good
   good
-  $ mkdir -p .spice/sessions/bad
-  $ echo '{broken' > .spice/sessions/bad/session.json
+  $ mkdir -p $SPICE_TEST_DATA_HOME/sessions/bad
+  $ echo '{broken' > $SPICE_TEST_DATA_HOME/sessions/bad/session.json
   $ OPENAI_API_KEY=test-key SPICE_MODEL=openai/gpt-5.5 spice doctor | sed -n '/^sessions/,/^project config/p'
   sessions: warn
     1 document, 1 corrupt
-    $TESTCASE_ROOT/.spice/sessions/bad/session.json:
+    $TESTCASE_ROOT/xdg-data/spice/sessions/bad/session.json:
       Expected: object member or } but found b
       File "-", line 1, characters 1-2:
   project config: ok
@@ -64,7 +64,7 @@ diagnostics; warnings do not change the exit code.
 Listings print one corrupt line each and point here for the full trace.
 
   $ spice session list >/dev/null
-  spice: corrupt session document at $TESTCASE_ROOT/.spice/sessions/bad/session.json: Expected: object member or } but found b; run `spice doctor` for details
+  spice: corrupt session document at $TESTCASE_ROOT/xdg-data/spice/sessions/bad/session.json: Expected: object member or } but found b; run `spice doctor` for details
 
 The JSON envelope carries the same checks.
 

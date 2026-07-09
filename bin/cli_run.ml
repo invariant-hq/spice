@@ -27,7 +27,9 @@ let fresh_id =
       Eio.Time.now (Eio.Stdenv.clock stdenv)
       |> Int64.bits_of_float |> Int64.to_string
     in
-    prefix ^ "_" ^ stamp ^ "_" ^ string_of_int !counter
+    prefix ^ "_" ^ stamp ^ "_"
+    ^ string_of_int (Unix.getpid ())
+    ^ "_" ^ string_of_int !counter
 
 let fresh_session_id stdenv = Session.Id.of_string (fresh_id stdenv "ses")
 let fresh_turn_id stdenv = Session.Turn.Id.of_string (fresh_id stdenv "turn")
@@ -1338,8 +1340,7 @@ let start json raw_id title model reasoning_effort workflow_mode permission_mode
      | Some goal -> print_goal_event ~json ~type_:"goal.set" id goal
      | None -> ());
      let turn =
-       make_turn ~skill_texts stdenv model prompt max_steps
-         ~reasoning_request
+       make_turn ~skill_texts stdenv model prompt max_steps ~reasoning_request
      in
      let* result =
        Fun.protect ~finally:stop_dune (fun () ->
@@ -1359,13 +1360,13 @@ let start json raw_id title model reasoning_effort workflow_mode permission_mode
        maybe_generate_title ~sw ~stdenv host store (result_document result);
      Ok status)
 
-let resume_in_host ~stdenv host json model reasoning_effort workflow_mode
-    permission_mode permission_unattended sandbox max_steps id prompt =
+let resume_document_in_host ~stdenv host json model reasoning_effort
+    workflow_mode permission_mode permission_unattended sandbox max_steps
+    document prompt =
   let started = monotonic_now stdenv in
   Eio.Switch.run @@ fun sw ->
   status
     (let store = Host_session.store ~stdenv host in
-     let* document = locate_session ~store id in
      let session = Store.Document.session document in
      let id = Session.id session in
      let* () = validate_max_steps max_steps in
@@ -1409,9 +1410,21 @@ let resume_in_host ~stdenv host json model reasoning_effort workflow_mode
 
 let resume json model reasoning_effort workflow_mode permission_mode
     permission_unattended sandbox max_steps cwd overrides id prompt =
-  with_host ?cwd ~overrides @@ fun ~stdenv host ->
-  resume_in_host ~stdenv host json model reasoning_effort workflow_mode
-    permission_mode permission_unattended sandbox max_steps id prompt
+  with_host ?cwd ~overrides @@ fun ~stdenv discovery_host ->
+  let store = Host_session.store ~stdenv discovery_host in
+  match
+    let* document = locate_session ~store id in
+    let* host =
+      host_for_session ~stdenv ~overrides ~cwd_was_explicit:(Option.is_some cwd)
+        discovery_host document
+    in
+    Ok (host, document)
+  with
+  | Error error -> status (Error error)
+  | Ok (host, document) ->
+      resume_document_in_host ~stdenv host json model reasoning_effort
+        workflow_mode permission_mode permission_unattended sandbox max_steps
+        document prompt
 
 (* Continuations feed a decision back into a blocked session. The flags name
    the decision; [resolve_continuation] turns it into a host verb, and the
@@ -1462,67 +1475,81 @@ let resolve_continuation document = function
 let continue json model reasoning_effort workflow_mode permission_mode
     permission_unattended sandbox max_steps cwd overrides last session_ref
     continuation =
-  with_host ?cwd ~overrides @@ fun ~stdenv host ->
-  let started = monotonic_now stdenv in
-  Eio.Switch.run @@ fun sw ->
-  status
-    (let store = Host_session.store ~stdenv host in
-     let* document =
-       resolve_session_target ~command:"run reply" ~surface:`Headless ~stdenv
-         host ~last session_ref
-     in
-     let session = Store.Document.session document in
-     let id = Session.id session in
-     let* mode = active_turn_mode workflow_mode session in
-     let* () = validate_max_steps max_steps in
-     let* action = resolve_continuation document continuation in
-     let max_steps = effective_max_steps host max_steps in
-     let reasoning_request = effective_reasoning host reasoning_effort in
-     let* ({ stop_dune; permission_of; _ } as runtime) =
-       assemble ~sw ~stdenv ~json ~store ~session_id:id host ~mode ~model
-         ~reasoning_request ~permission_mode ~sandbox ~max_steps
-     in
-     let* result =
-       Fun.protect ~finally:stop_dune (fun () ->
-           execution_terminal ~json ~stdenv ~store ~id ~started
-             (match action with
-             | Reply { id = permission; answer; message } ->
-                 drive_goal ~stdenv ~store ~json
-                   ~unattended:(effective_unattended host permission_unattended)
-                   ~mode ~max_steps ~reasoning_request runtime document
-                   (Spice_protocol.Command.Reply
-                      { permission; answer; via = None; message })
-             | Answer_question { pending; answer } ->
-                 drive_goal ~stdenv ~store ~json
-                   ~unattended:(effective_unattended host permission_unattended)
-                   ~mode ~max_steps ~reasoning_request runtime document
-                   (Spice_protocol.Command.Answer
-                      {
-                        turn = pending.Session.Waiting.turn;
-                        call_id = Tool_call.id pending.Session.Waiting.call;
-                        answer;
-                      })
-             | Resolve_plan { pending; decision } ->
-                 drive_goal ~stdenv ~store ~json
-                   ~unattended:(effective_unattended host permission_unattended)
-                   ~mode ~max_steps ~reasoning_request runtime document
-                   (Spice_protocol.Command.Resolve_plan
-                      {
-                        turn = pending.Session.Waiting.turn;
-                        call_id = Tool_call.id pending.Session.Waiting.call;
-                        decision;
-                      })
-             | Finish { id; result } ->
-                 drive_goal ~stdenv ~store ~json
-                   ~unattended:(effective_unattended host permission_unattended)
-                   ~mode ~max_steps ~reasoning_request runtime document
-                   (Spice_protocol.Command.Finish_tool (id, result))))
-     in
-     print_changed_trailer ~json ~stdenv ~store result;
-     Ok
-       (print_result ~json ~permission_of
-          ~duration_ms:(duration_ms ~started stdenv)
-          result))
+  with_host ?cwd ~overrides @@ fun ~stdenv discovery_host ->
+  let resolved =
+    let* document =
+      resolve_session_target ~command:"run reply" ~surface:`Headless ~stdenv
+        discovery_host ~last session_ref
+    in
+    let* host =
+      host_for_session ~stdenv ~overrides ~cwd_was_explicit:(Option.is_some cwd)
+        discovery_host document
+    in
+    Ok (host, document)
+  in
+  match resolved with
+  | Error error -> status (Error error)
+  | Ok (host, document) ->
+      let started = monotonic_now stdenv in
+      Eio.Switch.run @@ fun sw ->
+      status
+        (let store = Host_session.store ~stdenv host in
+         let session = Store.Document.session document in
+         let id = Session.id session in
+         let* mode = active_turn_mode workflow_mode session in
+         let* () = validate_max_steps max_steps in
+         let* action = resolve_continuation document continuation in
+         let max_steps = effective_max_steps host max_steps in
+         let reasoning_request = effective_reasoning host reasoning_effort in
+         let* ({ stop_dune; permission_of; _ } as runtime) =
+           assemble ~sw ~stdenv ~json ~store ~session_id:id host ~mode ~model
+             ~reasoning_request ~permission_mode ~sandbox ~max_steps
+         in
+         let* result =
+           Fun.protect ~finally:stop_dune (fun () ->
+               execution_terminal ~json ~stdenv ~store ~id ~started
+                 (match action with
+                 | Reply { id = permission; answer; message } ->
+                     drive_goal ~stdenv ~store ~json
+                       ~unattended:
+                         (effective_unattended host permission_unattended)
+                       ~mode ~max_steps ~reasoning_request runtime document
+                       (Spice_protocol.Command.Reply
+                          { permission; answer; via = None; message })
+                 | Answer_question { pending; answer } ->
+                     drive_goal ~stdenv ~store ~json
+                       ~unattended:
+                         (effective_unattended host permission_unattended)
+                       ~mode ~max_steps ~reasoning_request runtime document
+                       (Spice_protocol.Command.Answer
+                          {
+                            turn = pending.Session.Waiting.turn;
+                            call_id = Tool_call.id pending.Session.Waiting.call;
+                            answer;
+                          })
+                 | Resolve_plan { pending; decision } ->
+                     drive_goal ~stdenv ~store ~json
+                       ~unattended:
+                         (effective_unattended host permission_unattended)
+                       ~mode ~max_steps ~reasoning_request runtime document
+                       (Spice_protocol.Command.Resolve_plan
+                          {
+                            turn = pending.Session.Waiting.turn;
+                            call_id = Tool_call.id pending.Session.Waiting.call;
+                            decision;
+                          })
+                 | Finish { id; result } ->
+                     drive_goal ~stdenv ~store ~json
+                       ~unattended:
+                         (effective_unattended host permission_unattended)
+                       ~mode ~max_steps ~reasoning_request runtime document
+                       (Spice_protocol.Command.Finish_tool (id, result))))
+         in
+         print_changed_trailer ~json ~stdenv ~store result;
+         Ok
+           (print_result ~json ~permission_of
+              ~duration_ms:(duration_ms ~started stdenv)
+              result))
 
 (* Goal lifecycle verbs are session-scoped continuations that mutate the goal
    artifact, not the session transcript. Pause, edit, and clear need no
@@ -1532,96 +1559,108 @@ let continue json model reasoning_effort workflow_mode permission_mode
 let goal_reply json model reasoning_effort workflow_mode permission_mode
     permission_unattended sandbox max_steps cwd overrides last session_ref verb
     goal_budget =
-  with_host ?cwd ~overrides @@ fun ~stdenv host ->
-  let started = monotonic_now stdenv in
-  Eio.Switch.run @@ fun sw ->
-  status
-    (let store = Host_session.store ~stdenv host in
-     let* document =
-       resolve_session_target ~command:"run reply" ~surface:`Headless ~stdenv
-         host ~last session_ref
-     in
-     let session = Store.Document.session document in
-     let id = Session.id session in
-     let fs, root = goal_store_paths ~stdenv ~store in
-     let verb_now = now stdenv in
-     match verb with
-     | `Pause ->
-         let* goal =
-           goal_verb_result
-             (Goal_run.pause_goal ~fs ~root ~session:id ~now:verb_now)
-         in
-         print_goal_event ~json ~type_:"goal.paused" id goal;
-         if not json then
-           stderr_printf "spice: resume the goal with: %s\n"
-             (goal_resume_invocation ~session:id);
-         Ok Success
-     | `Clear ->
-         let* goal =
-           goal_verb_result
-             (Goal_run.clear_goal ~fs ~root ~session:id ~now:verb_now)
-         in
-         print_goal_event ~json ~type_:"goal.cleared" id goal;
-         Ok Success
-     | `Edit objective ->
-         let* goal =
-           goal_verb_result
-             (Goal_run.edit_goal ~fs ~root ~session:id ~objective ~now:verb_now)
-         in
-         print_goal_event ~json ~type_:"goal.objective_updated" id goal;
-         Ok Success
-     | `Resume -> (
-         let* mode =
-           match workflow_mode with
-           | Some (Spice_protocol.Mode.Plan | Spice_protocol.Mode.Review) ->
-               usage "--resume-goal requires build mode"
-           | Some Spice_protocol.Mode.Build | None ->
-               Ok Spice_protocol.Mode.Build
-         in
-         let* () = validate_max_steps max_steps in
-         let* goal =
-           goal_verb_result
-             (Goal_run.resume_goal ~fs ~root ~session:id
-                ?token_budget:goal_budget ~now:verb_now ())
-         in
-         print_goal_event ~json ~type_:"goal.resumed" id goal;
-         match Session.Run.phase session with
-         | Session.Run.Phase.Active | Session.Run.Phase.Waiting _ ->
-             (* A blocked or active turn keeps the driver's seat; continuation
-                follows once that turn ends normally. *)
+  with_host ?cwd ~overrides @@ fun ~stdenv discovery_host ->
+  let resolved =
+    let* document =
+      resolve_session_target ~command:"run reply" ~surface:`Headless ~stdenv
+        discovery_host ~last session_ref
+    in
+    let* host =
+      host_for_session ~stdenv ~overrides ~cwd_was_explicit:(Option.is_some cwd)
+        discovery_host document
+    in
+    Ok (host, document)
+  in
+  match resolved with
+  | Error error -> status (Error error)
+  | Ok (host, document) ->
+      let started = monotonic_now stdenv in
+      Eio.Switch.run @@ fun sw ->
+      status
+        (let store = Host_session.store ~stdenv host in
+         let session = Store.Document.session document in
+         let id = Session.id session in
+         let fs, root = goal_store_paths ~stdenv ~store in
+         let verb_now = now stdenv in
+         match verb with
+         | `Pause ->
+             let* goal =
+               goal_verb_result
+                 (Goal_run.pause_goal ~fs ~root ~session:id ~now:verb_now)
+             in
+             print_goal_event ~json ~type_:"goal.paused" id goal;
              if not json then
-               stderr_printf
-                 "spice: goal resumed; the session has an active or blocked \
-                  turn, continuation follows once it ends\n";
+               stderr_printf "spice: resume the goal with: %s\n"
+                 (goal_resume_invocation ~session:id);
              Ok Success
-         | Session.Run.Phase.Idle ->
-             let max_steps = effective_max_steps host max_steps in
-             let reasoning_request =
-               effective_reasoning host reasoning_effort
+         | `Clear ->
+             let* goal =
+               goal_verb_result
+                 (Goal_run.clear_goal ~fs ~root ~session:id ~now:verb_now)
              in
-             let* ({ model; stop_dune; permission_of; _ } as runtime) =
-               assemble ~sw ~stdenv ~json ~store ~session_id:id host ~mode
-                 ~model ~reasoning_request ~permission_mode ~sandbox ~max_steps
+             print_goal_event ~json ~type_:"goal.cleared" id goal;
+             Ok Success
+         | `Edit objective ->
+             let* goal =
+               goal_verb_result
+                 (Goal_run.edit_goal ~fs ~root ~session:id ~objective
+                    ~now:verb_now)
              in
-             let turn =
-               make_turn ~origin:Goal.turn_origin stdenv model
-                 (Goal_run.continuation_prompt goal)
-                 max_steps ~reasoning_request
+             print_goal_event ~json ~type_:"goal.objective_updated" id goal;
+             Ok Success
+         | `Resume -> (
+             let* mode =
+               match workflow_mode with
+               | Some (Spice_protocol.Mode.Plan | Spice_protocol.Mode.Review) ->
+                   usage "--resume-goal requires build mode"
+               | Some Spice_protocol.Mode.Build | None ->
+                   Ok Spice_protocol.Mode.Build
              in
-             let* result =
-               Fun.protect ~finally:stop_dune (fun () ->
-                   execution_terminal ~json ~stdenv ~store ~id ~started
-                     (drive_goal ~stdenv ~store ~json
-                        ~unattended:
-                          (effective_unattended host permission_unattended)
-                        ~mode ~max_steps ~reasoning_request runtime document
-                        (Spice_protocol.Command.Start turn)))
+             let* () = validate_max_steps max_steps in
+             let* goal =
+               goal_verb_result
+                 (Goal_run.resume_goal ~fs ~root ~session:id
+                    ?token_budget:goal_budget ~now:verb_now ())
              in
-             print_changed_trailer ~json ~stdenv ~store result;
-             Ok
-               (print_result ~json ~permission_of
-                  ~duration_ms:(duration_ms ~started stdenv)
-                  result)))
+             print_goal_event ~json ~type_:"goal.resumed" id goal;
+             match Session.Run.phase session with
+             | Session.Run.Phase.Active | Session.Run.Phase.Waiting _ ->
+                 (* A blocked or active turn keeps the driver's seat; continuation
+                follows once that turn ends normally. *)
+                 if not json then
+                   stderr_printf
+                     "spice: goal resumed; the session has an active or \
+                      blocked turn, continuation follows once it ends\n";
+                 Ok Success
+             | Session.Run.Phase.Idle ->
+                 let max_steps = effective_max_steps host max_steps in
+                 let reasoning_request =
+                   effective_reasoning host reasoning_effort
+                 in
+                 let* ({ model; stop_dune; permission_of; _ } as runtime) =
+                   assemble ~sw ~stdenv ~json ~store ~session_id:id host ~mode
+                     ~model ~reasoning_request ~permission_mode ~sandbox
+                     ~max_steps
+                 in
+                 let turn =
+                   make_turn ~origin:Goal.turn_origin stdenv model
+                     (Goal_run.continuation_prompt goal)
+                     max_steps ~reasoning_request
+                 in
+                 let* result =
+                   Fun.protect ~finally:stop_dune (fun () ->
+                       execution_terminal ~json ~stdenv ~store ~id ~started
+                         (drive_goal ~stdenv ~store ~json
+                            ~unattended:
+                              (effective_unattended host permission_unattended)
+                            ~mode ~max_steps ~reasoning_request runtime document
+                            (Spice_protocol.Command.Start turn)))
+                 in
+                 print_changed_trailer ~json ~stdenv ~store result;
+                 Ok
+                   (print_result ~json ~permission_of
+                      ~duration_ms:(duration_ms ~started stdenv)
+                      result)))
 
 (* Dispatch *)
 
@@ -1682,8 +1721,8 @@ let continuation approve_plan reject_plan allow allow_session deny deny_message
             | Ok decision -> Ok (Some decision)
             | Error error ->
                 usage
-                  (Format.asprintf "%a"
-                     Spice_protocol.Plan.Decision.pp_error error)))
+                  (Format.asprintf "%a" Spice_protocol.Plan.Decision.pp_error
+                     error)))
     | false, false -> Ok None
   in
   let tool_continuation =
@@ -2090,14 +2129,26 @@ let resume_cli json last model reasoning_effort workflow_mode permission_mode
   if last then
     match second with
     | Some _ -> status (usage "run resume --last accepts at most one PROMPT")
-    | None ->
-        with_host ?cwd ~overrides @@ fun ~stdenv host ->
-        status
-          (let* id = newest_session_in_cwd ~surface:`Headless ~stdenv host in
-           Ok
-             (resume_in_host ~stdenv host json model reasoning_effort
-                workflow_mode permission_mode permission_unattended sandbox
-                max_steps id first))
+    | None -> (
+        with_host ?cwd ~overrides @@ fun ~stdenv discovery_host ->
+        let resolved =
+          let* id =
+            newest_session_in_cwd ~surface:`Headless ~stdenv discovery_host
+          in
+          let store = Host_session.store ~stdenv discovery_host in
+          let* document = locate_session ~store id in
+          let* host =
+            host_for_session ~stdenv ~overrides
+              ~cwd_was_explicit:(Option.is_some cwd) discovery_host document
+          in
+          Ok (host, document)
+        in
+        match resolved with
+        | Error error -> status (Error error)
+        | Ok (host, document) ->
+            resume_document_in_host ~stdenv host json model reasoning_effort
+              workflow_mode permission_mode permission_unattended sandbox
+              max_steps document first)
   else
     match (first, second) with
     | None, _ ->

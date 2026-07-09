@@ -119,7 +119,10 @@ let fresh_counter = ref 0
 let fresh_id ~clock prefix =
   incr fresh_counter;
   let stamp = Eio.Time.now clock |> Int64.bits_of_float |> Int64.to_string in
-  prefix ^ "_" ^ stamp ^ "_" ^ string_of_int !fresh_counter
+  prefix ^ "_" ^ stamp ^ "_"
+  ^ string_of_int (Unix.getpid ())
+  ^ "_"
+  ^ string_of_int !fresh_counter
 
 let fresh_session_id ~clock = Spice_session.Id.of_string (fresh_id ~clock "ses")
 
