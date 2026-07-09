@@ -88,9 +88,15 @@ module Secret = struct
 
   let timestamp_add seconds now = Int64.add now (Int64.of_int seconds)
 
+  let require_bearer_token token =
+    let token_type = Oauth2.Token.token_type token in
+    if String.equal (String.lowercase_ascii token_type) "bearer" then Ok ()
+    else Error (Error.Protocol ("unsupported OAuth token_type: " ^ token_type))
+
   (* Generic OAuth secret construction. Provider-specific interpretation, such
      as extracting OpenAI account ids, lives in {!Openai_chatgpt}. *)
   let oauth_token ~now token =
+    let* () = require_bearer_token token in
     let access_token = Oauth2.Token.access_token token in
     let refresh_token = Oauth2.Token.refresh_token token in
     let expires_at =
@@ -98,7 +104,7 @@ module Secret = struct
         (fun seconds -> timestamp_add seconds now)
         (Oauth2.Token.expires_in token)
     in
-    Spice_account.Secret.oauth ~access_token ?refresh_token ?expires_at ()
+    Ok (Spice_account.Secret.oauth ~access_token ?refresh_token ?expires_at ())
 end
 
 module Http = struct
@@ -463,6 +469,7 @@ module Openai_chatgpt = struct
       ?account_id:token.account_id ()
 
   let secret_of_oauth_token ~now oauth_token =
+    let* () = Secret.require_bearer_token oauth_token in
     let access_token = Oauth2.Token.access_token oauth_token in
     let refresh_token = Oauth2.Token.refresh_token oauth_token in
     let id_token = Oauth2.Token.field_string "id_token" oauth_token in
@@ -727,7 +734,7 @@ module OAuth2_authorization_code = struct
   let complete_secret ~http ~sw spec started ~callback ~now ~profile =
     let* token = complete ~http ~sw spec started ~callback in
     match profile with
-    | Generic -> Ok (Secret.oauth_token ~now token)
+    | Generic -> Secret.oauth_token ~now token
     | Openai_chatgpt -> Openai_chatgpt.secret_of_oauth_token ~now token
 end
 
@@ -847,7 +854,8 @@ module Device_code = struct
     with
     | Ok token ->
         Log.info (fun m -> m "device authorization completed");
-        Ok (Authorized (Secret.oauth_token ~now token))
+        let* secret = Secret.oauth_token ~now token in
+        Ok (Authorized secret)
     | Error (`Oauth error) -> (
         match Oauth2.Device.classify_poll_error error with
         | `Authorization_pending ->

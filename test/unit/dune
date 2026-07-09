@@ -277,6 +277,21 @@
   spice_provider_builtin))
 
 (test
+ (name test_auth)
+ (modules test_auth)
+ (libraries
+  windtrap
+  cohttp
+  cohttp-eio
+  eio
+  eio_main
+  oauth2
+  oauth2_eio
+  spice_auth
+  spice_provider
+  uri))
+
+(test
  (name test_llm)
  (modules test_llm)
  (libraries windtrap test_support jsont spice_llm eio eio.unix unix))
