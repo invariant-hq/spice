@@ -4,8 +4,8 @@
 ; the suite in parallel.
 
 (executables
- (names test_home test_turn)
- (modules test_home test_turn)
+ (names test_home test_turn test_composer test_history test_mention test_auth)
+ (modules test_home test_turn test_composer test_history test_mention test_auth)
  (libraries unix windtrap tui_next_harness)
  (preprocess
   (pps ppx_windtrap)))
@@ -25,3 +25,35 @@
   (progn
    (run ./test_turn.exe)
    (diff? test_turn.ml test_turn.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_composer.exe)
+ (action
+  (progn
+   (run ./test_composer.exe)
+   (diff? test_composer.ml test_composer.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_history.exe)
+ (action
+  (progn
+   (run ./test_history.exe)
+   (diff? test_history.ml test_history.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_mention.exe)
+ (action
+  (progn
+   (run ./test_mention.exe)
+   (diff? test_mention.ml test_mention.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_auth.exe)
+ (action
+  (progn
+   (run ./test_auth.exe)
+   (diff? test_auth.ml test_auth.ml.corrected))))
