@@ -389,6 +389,28 @@ let save store document session =
                      (Spice_session.metadata session)));
             Ok (Document.make ~session ~revision:(revision_of_bytes text)))
 
+let remove store document =
+  with_sessions_lock store (fun () ->
+      let id = Document.id document in
+      let path = session_path store id in
+      match path_kind store path with
+      | Error _ as error -> error
+      | Ok `Missing -> Error (Error.Not_found id)
+      | Ok (`Directory | `Other) -> non_file_document path
+      | Ok `File ->
+          let* actual = load_path store path |> Result.map Document.revision in
+          let expected = Document.revision document in
+          if not (Spice_session.Revision.equal expected actual) then
+            Error (Error.Conflict { id; expected; actual })
+          else
+            let* () =
+              io path (fun () -> Eio.Path.unlink (fs_path store path))
+            in
+            let* () = fsync_path store (Filename.dirname path) in
+            Log.debug (fun m ->
+                m "session removed id=%a" Spice_session.Id.pp id);
+            Ok ())
+
 let append store document events =
   match Spice_session.Log.append_all events (Document.session document) with
   | Error error -> Error (Error.Session { id = Document.id document; error })

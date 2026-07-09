@@ -181,6 +181,17 @@ val save : t -> Document.t -> Spice_session.t -> (Document.t, Error.t) result
     cannot be encoded or timestamped, and {!Error.Io} for filesystem failures.
 *)
 
+val remove : t -> Document.t -> (unit, Error.t) result
+(** [remove store document] physically removes [document] if its revision is
+    still current. This is the rollback primitive for a newly-created document
+    whose wider operation could not commit; user-facing deletion remains a
+    lifecycle tombstone at the host boundary.
+
+    Returns {!Error.Not_found} if the document is already absent,
+    {!Error.Conflict} if another writer changed it, {!Error.Corrupt} if the
+    document path is not a regular file, and {!Error.Io} for filesystem
+    failures. *)
+
 val append :
   t -> Document.t -> Spice_session.Event.t list -> (Document.t, Error.t) result
 (** [append store doc events] appends [events] to [doc]'s session and saves the

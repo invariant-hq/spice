@@ -335,6 +335,28 @@ let check_caps t ~depth =
          t.max_concurrent)
   else Ok ()
 
+let rollback_spawn t ~document ?run error =
+  let ledger_errors =
+    match run with
+    | None -> []
+    | Some run -> (
+        match Artifacts.Subagent_run.remove ~fs:t.fs ~root:t.root run with
+        | Ok () -> []
+        | Error cleanup ->
+            [ "ledger cleanup: " ^ Artifacts.Error.message cleanup ])
+  in
+  let session_errors =
+    match Spice_session_store.remove t.store document with
+    | Ok () -> []
+    | Error cleanup ->
+        [ "session cleanup: " ^ Spice_session_store.Error.message cleanup ]
+  in
+  match ledger_errors @ session_errors with
+  | [] -> Error error
+  | cleanup ->
+      Error
+        (error ^ "; spawn rollback failed: " ^ String.concat "; " cleanup)
+
 let spawn t ~parent ~parent_turn ~parent_call_id ~spawn ~depth
     (child_spec : child) =
   let* () = check_caps t ~depth in
@@ -345,23 +367,29 @@ let spawn t ~parent ~parent_turn ~parent_call_id ~spawn ~depth
      spawn leaves no registered run (see the .mli). *)
   let notices = Notice_queue.create () in
   let* runner = child_spec.runner child ~notices in
+  let* run =
+    Spice_protocol.Subagent_run.make ~child ~parent ~parent_turn ~parent_call_id
+      ~spawn ~depth ~created_at ()
+  in
   let* child_document =
     Session.create ~store:t.store ~id:child ~title:child_spec.title
       ~cwd:child_spec.cwd ~created_at ()
     |> Result.map_error Spice_protocol.Error.message
   in
-  let* run =
-    Spice_protocol.Subagent_run.make ~child ~parent ~parent_turn ~parent_call_id
-      ~spawn ~depth ~created_at ()
+  let run =
+    match Artifacts.Subagent_run.put ~fs:t.fs ~root:t.root run with
+    | Error error ->
+        rollback_spawn t ~document:child_document (Artifacts.Error.message error)
+    | Ok () -> (
+        match
+          update_run t ~parent ~child ~f:(fun run ->
+              Spice_protocol.Subagent_run.start ~started_at:(now t.stdenv) run)
+        with
+        | Ok run -> Ok run
+        | Error error ->
+            rollback_spawn t ~document:child_document ~run error)
   in
-  let* () =
-    Artifacts.Subagent_run.put ~fs:t.fs ~root:t.root run
-    |> Result.map_error Artifacts.Error.message
-  in
-  let* run =
-    update_run t ~parent ~child ~f:(fun run ->
-        Spice_protocol.Subagent_run.start ~started_at:(now t.stdenv) run)
-  in
+  let* run = run in
   let live = Live.attach ~sw:t.sw ~runner child_document in
   let settled, resolve = Eio.Promise.create () in
   let entry =

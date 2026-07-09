@@ -301,6 +301,26 @@ let stale_writers_conflict_loudly () =
        (Session.Metadata.title
           (Session.metadata (Store.Document.session loaded))))
 
+let remove_is_revision_checked_and_allows_recreate () =
+  with_store "remove" @@ fun ~root_path:_ store ->
+  let session = make_session "removable" in
+  let stale = ok_or_fail (Store.create store session) in
+  let current =
+    ok_or_fail
+      (Store.save store stale (Session.set_title (Some "current") session))
+  in
+  (match Store.remove store stale with
+  | Error (Store.Error.Conflict _) -> ()
+  | Error error -> failf "stale remove returned: %a" Store.Error.pp error
+  | Ok () -> failf "stale remove should conflict");
+  ok_or_fail (Store.remove store current);
+  (match Store.load store (Session.Id.of_string "removable") with
+  | Error (Store.Error.Not_found _) -> ()
+  | Error error ->
+      failf "removed document load returned: %a" Store.Error.pp error
+  | Ok _ -> failf "removed document should be absent");
+  ignore (ok_or_fail (Store.create store session))
+
 (* The revision check in [save] is a compare-and-set: at most one writer that
    observed a given revision may commit; the rest must see a [Conflict]. The
    cross-process advisory lock ([sessions/.lock]) alone does not enforce this
@@ -399,6 +419,8 @@ let () =
       test "list rejects an invalid session directory name"
         list_rejects_invalid_session_directory_name;
       test "stale writers conflict loudly" stale_writers_conflict_loudly;
+      test "remove is revision checked and allows recreate"
+        remove_is_revision_checked_and_allows_recreate;
       test "concurrent saves preserve the compare-and-set"
         concurrent_saves_preserve_the_cas;
       test "corrupt decode error is intentional"

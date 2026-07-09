@@ -126,8 +126,9 @@ val spawn :
     the child as a {!Live}, and submits its start turn — fire-and-forget.
     Returns the child session id: the run key everywhere. Errors are
     model-visible strings (cap violations before any minting, then storage,
-    ledger, or runner-assembly failures); a failed spawn leaves no registered
-    run. *)
+    ledger, or runner-assembly failures). A failed spawn leaves no registered
+    run, child session, or ledger record; a rollback failure is included in the
+    returned error. *)
 
 val wait :
   ?cancelled:(unit -> bool) ->

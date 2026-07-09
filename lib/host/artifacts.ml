@@ -573,6 +573,8 @@ module Subagent_run = struct
   let put ~fs ~root run =
     save_file ~fs Spice_protocol.Subagent_run.jsont (path_of ~root run) run
 
+  let remove ~fs ~root run = remove_file ~fs (path_of ~root run)
+
   let load ~fs ~root ~parent ~child =
     let p = child_path ~root ~parent ~child in
     let* run = read_file ~fs Spice_protocol.Subagent_run.jsont p in

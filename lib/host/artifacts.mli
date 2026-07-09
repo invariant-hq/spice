@@ -265,6 +265,15 @@ module Subagent_run : sig
       per child. Encoding failures are {!Error.Corrupt_file}; filesystem
       failures are {!Error.Io}. *)
 
+  val remove :
+    fs:Eio.Fs.dir_ty Eio.Path.t ->
+    root:string ->
+    Spice_protocol.Subagent_run.t ->
+    (unit, Error.t) result
+  (** [remove ~fs ~root run] removes [run]'s ledger file when present. This is
+      the idempotent rollback operation for a spawn that could not commit its
+      complete durable state. *)
+
   val load :
     fs:Eio.Fs.dir_ty Eio.Path.t ->
     root:string ->
