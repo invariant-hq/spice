@@ -89,6 +89,13 @@ let repeated_access_tool () =
     ~run:(fun _context () -> Tool.Result.completed ~output:() ())
     ()
 
+let raising_permissions_tool () =
+  let permissions () = invalid_arg "permission planner bug" in
+  Tool.make ~name:"review_tool" ~description:"Reviewed test tool."
+    ~input:Tool.Input.empty ~output ~permissions
+    ~run:(fun _context () -> Tool.Result.completed ~output:() ())
+    ()
+
 let config ?(policy = Permission.Policy.default) ?host_tools ?prelude tools =
   Run.Config.make ~tools ?host_tools ~policy ?prelude ()
 
@@ -174,6 +181,28 @@ let permission_ids_include_request_position () =
         (Session.Permission.Id.equal
            (Session.Permission.Requested.id first)
            (Session.Permission.Requested.id second))
+
+let permission_planner_exceptions_become_tool_errors () =
+  let step =
+    run_response (config [ raising_permissions_tool () ]) (response (call ()))
+  in
+  (match Run.Step.next step with
+  | Run.Step.Request_model _ -> ()
+  | next ->
+      failf "expected model request after permission error, got %a"
+        Run.Step.pp_next next);
+  let state = Session.state (Run.Step.session step) in
+  is_true ~msg:"permission error answers the pending tool call"
+    (Llm.Transcript.is_ready (Session.State.transcript state));
+  match List.rev (Run.Step.events step) with
+  | Session.Event.Message_appended (Llm.Message.Tool_result result) :: _ ->
+      is_true ~msg:"permission error is model-visible"
+        (Llm.Tool.Result.is_error result);
+      check "permission error names the planner failure"
+        (List.exists
+           (String.includes ~affix:"permission planner bug")
+           (Llm.Tool.Result.texts result))
+  | _ -> failf "expected a durable tool error event"
 
 let tool_claim_from_step step =
   match Run.Step.next step with
@@ -649,6 +678,8 @@ let () =
       test "deterministic permission ids" deterministic_permission_ids;
       test "permission ids include request position"
         permission_ids_include_request_position;
+      test "permission planner exceptions become tool errors"
+        permission_planner_exceptions_become_tool_errors;
       test "deterministic tool claim ids" deterministic_tool_claim_ids;
       test "block accessors identify call and turn"
         block_accessors_identify_call_and_turn;

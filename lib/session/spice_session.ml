@@ -660,21 +660,34 @@ module Run = struct
                 loop (request_index + 1) requests
               else Ok (`Review (request_index, review)))
     in
-    let* decision = loop 0 (Tool.Call.permissions tool_call) in
-    match decision with
-    | `Allowed -> Ok `Allowed
-    | `Denied denials ->
-        let denial = fst denials in
-        let* step =
-          append_tool_error config session call
-            (Config.denial_message config denial)
-        in
-        Ok (`Step step)
-    | `Review (request_index, review) ->
-        let* step =
-          request_permission session turn_id call request_index review
-        in
-        Ok (`Step step)
+    let* planning =
+      match Tool.Call.permissions tool_call with
+      | requests -> Ok (`Requests requests)
+      | exception exn ->
+          let* step =
+            append_tool_error config session call
+              ("tool permission planner raised: " ^ Printexc.to_string exn)
+          in
+          Ok (`Step step)
+    in
+    match planning with
+    | `Step step -> Ok (`Step step)
+    | `Requests requests -> (
+        let* decision = loop 0 requests in
+        match decision with
+        | `Allowed -> Ok `Allowed
+        | `Denied denials ->
+            let denial = fst denials in
+            let* step =
+              append_tool_error config session call
+                (Config.denial_message config denial)
+            in
+            Ok (`Step step)
+        | `Review (request_index, review) ->
+            let* step =
+              request_permission session turn_id call request_index review
+            in
+            Ok (`Step step))
 
   and run_tool_action session turn_id call tool_call =
     let execution =
