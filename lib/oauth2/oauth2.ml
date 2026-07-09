@@ -437,6 +437,15 @@ module Device = struct
 
   let reserved = [ "client_id"; "client_secret"; "scope" ]
 
+  let parse_verification_uri field json =
+    let* uri = Json.uri field json in
+    let scheme = Option.map String.lowercase_ascii (Uri.scheme uri) in
+    match (scheme, Uri.host uri) with
+    | (Some "http" | Some "https"), Some _ -> Ok uri
+    | _ ->
+        Error
+          (malformed ~field ~raw:json "expected absolute http or https URI")
+
   let parse json =
     match Error.parse_json json with
     | Error malformed -> Error (`Malformed malformed)
@@ -446,10 +455,10 @@ module Device = struct
           let* device_code = Json.required "device_code" Json.string json in
           let* user_code = Json.required "user_code" Json.string json in
           let* verification_uri =
-            Json.required "verification_uri" Json.uri json
+            Json.required "verification_uri" parse_verification_uri json
           in
           let* verification_uri_complete =
-            Json.optional "verification_uri_complete" Json.uri json
+            Json.optional "verification_uri_complete" parse_verification_uri json
           in
           let* expires_in =
             Json.required "expires_in" Json.non_negative_int json

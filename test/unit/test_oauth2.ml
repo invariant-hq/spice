@@ -722,6 +722,50 @@ let device_authorization () =
   equal int ~msg:"device default interval" 5 (O.Device.interval device);
   is_true ~msg:"device verification_uri_complete is absent"
     (Option.is_none (O.Device.verification_uri_complete device));
+  let device_with_complete =
+    expect_ok "device parse complete uri"
+      (O.Device.parse
+         (json_object
+            [
+              ("device_code", Json.string "device-secret");
+              ("user_code", Json.string "USER-CODE");
+              ("verification_uri", Json.string "https://provider.example/device");
+              ( "verification_uri_complete",
+                Json.string "https://provider.example/device?user_code=USER-CODE"
+              );
+              ("expires_in", Json.int 600);
+            ]))
+  in
+  equal (option string) ~msg:"device complete uri"
+    (Some "https://provider.example/device?user_code=USER-CODE")
+    (Option.map (fun uri -> Uri.to_string uri)
+       (O.Device.verification_uri_complete device_with_complete));
+  List.iter
+    (fun uri ->
+      expect_device_malformed_field ("device invalid verification_uri " ^ uri)
+        "verification_uri"
+        (json_object
+           [
+             ("device_code", Json.string "device-secret");
+             ("user_code", Json.string "USER-CODE");
+             ("verification_uri", Json.string uri);
+             ("expires_in", Json.int 600);
+           ]))
+    [ "not-a-url"; "https:"; "ftp://provider.example/device" ];
+  List.iter
+    (fun uri ->
+      expect_device_malformed_field
+        ("device invalid verification_uri_complete " ^ uri)
+        "verification_uri_complete"
+        (json_object
+           [
+             ("device_code", Json.string "device-secret");
+             ("user_code", Json.string "USER-CODE");
+             ("verification_uri", Json.string "https://provider.example/device");
+             ("verification_uri_complete", Json.string uri);
+             ("expires_in", Json.int 600);
+           ]))
+    [ "not-a-url"; "https:"; "javascript:alert(1)" ];
   expect_device_malformed_field "device negative expires_in" "expires_in"
     (json_object
        [
