@@ -136,6 +136,23 @@ let save_rejects_id_mismatch () =
   raises_invalid_arg "session id b does not match document id a" (fun () ->
       Store.save store document (make_session "b"))
 
+let save_after_removed_document_is_not_found () =
+  with_store "save-removed" @@ fun ~root_path store ->
+  let document = ok_or_fail (Store.create store (make_session "doc")) in
+  let path = session_document_path ~root_path "doc" in
+  Eio.Path.unlink path;
+  let session =
+    Session.set_title (Some "should-not-return") (Store.Document.session document)
+  in
+  match Store.save store document session with
+  | Error (Store.Error.Not_found id) ->
+      equal string ~msg:"not-found carries the document id" "doc"
+        (Session.Id.to_string id);
+      is_false ~msg:"stale save does not recreate the document"
+        (Eio.Path.is_file path)
+  | Ok _ -> failf "saving after the backing document disappeared should fail"
+  | Error error -> failf "unexpected error: %a" Store.Error.pp error
+
 let append_reports_session_errors () =
   with_store "append-session-error" @@ fun ~root_path:_ store ->
   let document = ok_or_fail (Store.create store (make_session "doc")) in
@@ -366,6 +383,8 @@ let () =
         load_rejects_non_file_document_path;
       test "list rejects a non-positive limit" list_rejects_non_positive_limit;
       test "save rejects a session id mismatch" save_rejects_id_mismatch;
+      test "save after a removed document is not found"
+        save_after_removed_document_is_not_found;
       test "append reports session errors" append_reports_session_errors;
       test "list filters lifecycle and applies limit"
         list_filters_lifecycle_and_limit;
