@@ -77,12 +77,6 @@ val host_tools : t -> Call.Kind.t list
     request assembly — the offer here is the mode ceiling, not the per-turn
     catalog. Map through {!Call.Kind.tool} for model-visible declarations. *)
 
-val all_host_tools : Spice_llm.Tool.t list
-(** [all_host_tools] is the complete built-in recognition set across root and
-    child contexts. It includes child-only [message_parent], so it is broader
-    than the union of root {!host_tools} catalogs. It is {!Call.Kind.all} mapped
-    through {!Call.Kind.tool}. See {!Call.classify}. *)
-
 val allows_role : t -> Subagent.Role.t -> bool
 (** [allows_role mode role] is [true] iff a root turn in [mode] may spawn a
     child run with [role].

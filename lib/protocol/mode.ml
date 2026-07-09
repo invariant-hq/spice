@@ -73,8 +73,6 @@ let host_tools = function
         Call.Kind.Subagent_message;
       ]
 
-let all_host_tools = List.map Call.Kind.tool Call.Kind.all
-
 let allows_role mode role =
   match (mode, role) with
   | Build, (Subagent.Role.Explore | Subagent.Role.Review | Subagent.Role.Verify)

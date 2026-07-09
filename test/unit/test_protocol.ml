@@ -155,6 +155,23 @@ module Call_tests = struct
         | None -> failf "kind %s built call should classify" name)
       Call.Kind.all
 
+  let kind_all_is_the_full_recognition_set () =
+    equal (list string) ~msg:"Kind.all is every host tool declaration"
+      [
+        "ask_user";
+        "propose_plan";
+        "todo_write";
+        "update_goal";
+        "spawn_subagent";
+        "wait_subagents";
+        "cancel_subagent";
+        "message_subagent";
+        "message_parent";
+      ]
+      (List.map
+         (fun kind -> Llm.Tool.name (Call.Kind.tool kind))
+         Call.Kind.all)
+
   let answerable_question_folds_valid_and_invalid () =
     let valid =
       Option.get (Call.classify (call ~name:"ask_user" ~input:question_input))
@@ -249,6 +266,8 @@ module Call_tests = struct
         test "classify returns None for non-host tools"
           classify_returns_none_for_non_host_tools;
         test "Kind and classify agree" kind_and_classify_agree;
+        test "Kind.all is the full recognition set"
+          kind_all_is_the_full_recognition_set;
         test "answerable_question folds valid and invalid"
           answerable_question_folds_valid_and_invalid;
         test "answer text is call-specific" answer_text_is_call_specific;
@@ -332,21 +351,6 @@ module Mode_tests = struct
       ]
       (kind_names (Mode.host_tools Mode.Review))
 
-  let all_host_tools_is_the_full_recognition_set () =
-    equal (list string) ~msg:"all_host_tools is every host tool declaration"
-      [
-        "ask_user";
-        "propose_plan";
-        "todo_write";
-        "update_goal";
-        "spawn_subagent";
-        "wait_subagents";
-        "cancel_subagent";
-        "message_subagent";
-        "message_parent";
-      ]
-      (List.map Llm.Tool.name Mode.all_host_tools)
-
   let allows_role_matrix () =
     let roles = Subagent.Role.[ Explore; Review; Verify ] in
     equal (list bool) ~msg:"build allows every role" [ true; true; true ]
@@ -371,8 +375,6 @@ module Mode_tests = struct
           of_string_parses_and_reports_candidates;
         test "of_turn degrades to default" of_turn_degrades_to_default;
         test "host_tools offer table" host_tools_offer_table;
-        test "all_host_tools is the full recognition set"
-          all_host_tools_is_the_full_recognition_set;
         test "allows_role matrix" allows_role_matrix;
         test "contract mapping" contract_mapping;
       ]
