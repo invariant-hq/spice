@@ -71,6 +71,20 @@ let https ~authenticator =
     in
     Tls_eio.client_of_flow ?host tls_config raw
 
+(* Seeding the default RNG and decoding the system trust store are both needed
+   before the first TLS handshake, neither is needed to assemble a client, and
+   both are costly — seeding reads OS entropy, the authenticator decodes the
+   whole CA bundle (tens of milliseconds each). Deferring them to the first
+   handshake through [Lazy] keeps that cost off the boot and prewarm paths (the
+   home frame renders without waiting on entropy or X.509 decoding) and pays it
+   once for every TLS consumer, replacing the per-client re-decode. *)
+let tls_authenticator =
+  lazy
+    (Mirage_crypto_rng_unix.use_default ();
+     match Ca_certs.authenticator () with
+     | Ok authenticator -> authenticator
+     | Error (`Msg message) -> failwith ("X509 authenticator: " ^ message))
+
 let cohttp_headers headers =
   List.fold_left
     (fun acc (name, value) -> Cohttp.Header.add acc name value)
@@ -94,15 +108,12 @@ let read_body body =
 
 let http_get ~sw ~stdenv ~headers url =
   try
-    Mirage_crypto_rng_unix.use_default ();
-    let authenticator =
-      match Ca_certs.authenticator () with
-      | Ok authenticator -> authenticator
-      | Error (`Msg message) -> failwith ("X509 authenticator: " ^ message)
-    in
     let client =
       Cohttp_eio.Client.make
-        ~https:(Some (https ~authenticator))
+        ~https:
+          (Some
+             (fun uri raw ->
+               https ~authenticator:(Lazy.force tls_authenticator) uri raw))
         (Eio.Stdenv.net stdenv)
     in
     Eio.Time.with_timeout_exn (Eio.Stdenv.clock stdenv) check_timeout_s
@@ -141,26 +152,17 @@ let effective_base_url ~default = function
   | Some base_url -> base_url
 
 let web_http_client stdenv =
-  Mirage_crypto_rng_unix.use_default ();
-  let authenticator =
-    match Ca_certs.authenticator () with
-    | Ok authenticator -> authenticator
-    | Error (`Msg message) -> failwith ("X509 authenticator: " ^ message)
-  in
   Cohttp_eio.Client.make
-    ~https:(Some (https ~authenticator))
+    ~https:
+      (Some
+         (fun uri raw ->
+           https ~authenticator:(Lazy.force tls_authenticator) uri raw))
     (Eio.Stdenv.net stdenv)
 
 let web_fetch_https () =
-  Mirage_crypto_rng_unix.use_default ();
-  let authenticator =
-    match Ca_certs.authenticator () with
-    | Ok authenticator -> authenticator
-    | Error (`Msg message) -> failwith ("X509 authenticator: " ^ message)
-  in
-  fun uri raw ->
-    (https ~authenticator uri raw
-      :> [ Eio.Flow.two_way_ty | Eio.Resource.close_ty ] Eio.Std.r)
+ fun uri raw ->
+  (https ~authenticator:(Lazy.force tls_authenticator) uri raw
+    :> [ Eio.Flow.two_way_ty | Eio.Resource.close_ty ] Eio.Std.r)
 
 let chatgpt_base_url = "https://chatgpt.com/backend-api/codex"
 
