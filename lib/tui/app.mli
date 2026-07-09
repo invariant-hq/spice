@@ -107,6 +107,13 @@ type command =
           the next submit creates the new document, exactly as the first submit
           of a launch does. The shell already swapped to the re-bannered empty
           chat when this is emitted. *)
+  | Compact_session of Spice_session.Id.t
+      (** Summarize session [id]'s conversation to free context ([/compact]):
+          the runtime runs the standalone host compaction over the attached
+          document — serialized with any drain through {!Spice_host.Live.write}
+          — delivering its progress and the installed compaction back as
+          {!live_event}s (the reducer renders the Compacting verb and the
+          [compacted] seam), or {!compaction_failed} when it errors. *)
   | Load_thread_document of Spice_session.Id.t
       (** Load a settled child's persisted document for a read-only drill-in
           (doc/plans/tui-next-threads.md §6 phase 5a): the runtime reads the
@@ -347,6 +354,12 @@ val session_forked : parent_title:string -> msg
     (10-commands.md §/fork). [parent_title] is the parent's display title — its
     title, or its id when untitled ({!Spice_protocol.Session_summary}'s
     convention). *)
+
+val compaction_failed : string -> msg
+(** [compaction_failed message] is the message the runtime dispatches when a
+    {!Compact_session} errors: the shell appends the
+    [compaction failed: message] record. Success needs no message — the
+    installed compaction and its progress arrive as {!live_event}s. *)
 
 val sessions_load_failed : string -> msg
 (** [sessions_load_failed message] is the message the runtime dispatches when

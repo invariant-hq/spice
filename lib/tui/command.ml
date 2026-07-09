@@ -115,9 +115,8 @@ let implemented t =
   match t.fate with
   | Open_sessions | Open_model | Open_settings _ | Open_review | Open_login
   | Open_logout | Quit | Toggle_thinking | Toggle_verbose | Switch_mode _
-  | Fork_session | Rename_session | Clear_session ->
+  | Fork_session | Rename_session | Clear_session | Compact_session ->
       true
-  | Compact_session -> false
 
 let is_substring ~affix s =
   let la = String.length affix and ls = String.length s in

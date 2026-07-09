@@ -1248,7 +1248,7 @@ let run ~stdenv ~(startup : App.startup) () =
            provider is connected at all — a connected one would have won the
            derivation — so it reports the login nudge, not a provider name the
            user never chose. *)
-        let bind_runner run =
+        let bind_model_client () =
           let* model, effort =
             match !current_selection with
             | Some (model, effort) -> Ok (model, effort)
@@ -1266,6 +1266,10 @@ let run ~stdenv ~(startup : App.startup) () =
                 Error "not logged in — run /login to connect a provider"
             | result -> Result.map_error host_error result
           in
+          Ok (model, effort, client)
+        in
+        let bind_runner run =
+          let* model, effort, client = bind_model_client () in
           let* runner =
             Spice_host.Run.runner run ~mode:!current_mode ~model ~client
             |> Result.map_error host_error
@@ -1981,6 +1985,44 @@ let run ~stdenv ~(startup : App.startup) () =
           | App.Resume_session id ->
               resume_into (fun () ->
                   store_session id |> Result.map_error failure_message)
+          | App.Compact_session id ->
+              perform (fun () ->
+                  (* The standalone host compaction (session.mli §Standalone
+                     workflows), bound over the same model+client resolution a
+                     turn uses and the same context prelude the headless CLI's
+                     policy carries. [Live.write] serializes the install with
+                     the attached session's drain; progress and the installed
+                     compaction deliver as live events, so the reducer narrates
+                     (the Compacting verb, then the [compacted] seam). *)
+                  let result =
+                    let* model, _effort, client = bind_model_client () in
+                    let* context =
+                      Spice_host.Context.load ~stdenv
+                        (Spice_host.Host.config host)
+                      |> Result.map_error host_error
+                    in
+                    let policy =
+                      Spice_host.Compactor.Policy.of_model
+                        ~prelude:(Spice_host.Context.to_prelude context)
+                        model
+                    in
+                    let store = Spice_host.Session.store ~stdenv host in
+                    Spice_host.Live.write ?live:(live_for id) ~store ~session:id
+                      ~f:(fun document ->
+                        Spice_host.Session.compact ~store ~client ~policy
+                          ~observe:(fun event ->
+                            deliver
+                              (App.live_event ~now:(Eio.Time.now clock) event))
+                          document
+                        |> Result.map (fun result ->
+                               result.Spice_host.Compactor.document))
+                      ()
+                    |> Result.map_error Spice_protocol.Error.message
+                    |> Result.map ignore
+                  in
+                  match result with
+                  | Ok () -> ()
+                  | Error message -> deliver (App.compaction_failed message))
           | App.Clear_session ->
               perform (fun () ->
                   (* Start over: supersede any in-flight resume (its producer

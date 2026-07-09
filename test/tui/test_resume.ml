@@ -242,6 +242,54 @@ let%expect_test "clear starts a fresh session and preserves the previous" =
     a fresh session attaches and runs a turn: true
     previous session still on disk: true |}]
 
+(* /compact runs the standalone host compaction over the attached document:
+   the echo lands, then the settle record. The seeded transcript is far below
+   the model policy's retained tail, so the deterministic pty-reachable
+   outcome is the honest refusal — which drives the full dispatch → runtime →
+   Live.write → Session.compact → delivery loop; an installed compaction's
+   [compacted] seam rides the same live-event path the reducer already
+   renders. The document's history stays on screen either way — compaction
+   changes what the model sees next turn, not what happened. *)
+let%expect_test "compact records the host's verdict and keeps the history" =
+  Project.with_temp "compact-command" @@ fun project ->
+  seed_prompt_session project "ses_compact" ~title:"streaming parser fix"
+    ~prompt:"trace the streaming parser bug";
+  (* The provider credential is needed for the summary-client binding; the
+     policy refuses before any request is made. *)
+  Provider.with_openai project ~answer:"unused" ~body_contains:[]
+  @@ fun provider ->
+  Term.run project ~provider ~env:reduced_motion ~rows:24 ~cols:80
+    ~command:[ "resume"; "ses_compact" ]
+  @@ fun t ->
+  Term.wait t (Screen.has "trace the streaming parser bug");
+  Term.send t "/compact";
+  Term.wait t (fun s -> Screen.has "/compact" s && Screen.lacks "/clear" s);
+  Term.send t Keys.enter;
+  Term.wait t (Screen.has "conversation already fits");
+  let s = Term.screen t in
+  print_fact "compact echo recorded" (Screen.has "❯ /compact" s);
+  print_fact "the host's verdict recorded"
+    (Screen.has "compaction failed: conversation already fits" s);
+  print_fact "history stays on screen"
+    (Screen.has "trace the streaming parser bug" s);
+  [%expect
+    {|
+    compact echo recorded: true
+    the host's verdict recorded: true
+    history stays on screen: true |}]
+
+let%expect_test "compact on the home stage flashes the no-session guard" =
+  Project.with_temp "compact-no-session" @@ fun project ->
+  Term.run project ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
+  Term.wait t (Screen.has "dune:");
+  Term.send t "/compact";
+  Term.wait t (fun s -> Screen.has "/compact" s && Screen.lacks "/clear" s);
+  Term.send t Keys.enter;
+  Term.wait t (Screen.has "no session to compact");
+  print_fact "guard flashed"
+    (Screen.has "no session to compact" (Term.screen t));
+  [%expect {| guard flashed: true |}]
+
 (* /rename: bare (pasted, so the palette never intercepts) it seeds the draft
    with [/rename ] — the palette's argument-insert idiom — so typing just the
    title and submitting fires the rename; the echo carrying the full

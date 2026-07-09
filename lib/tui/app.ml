@@ -274,6 +274,7 @@ type msg =
   | Toggle_expanded
   | Escape
   | Session_forked of { parent_title : string }
+  | Compaction_failed of string
   | Sessions_loaded of Sessions_panel.row list
   | Sessions_load_failed of string
   | Panel_msg of Sessions_panel.msg
@@ -375,6 +376,7 @@ type command =
   | Resume_session of Spice_session.Id.t
   | Fork_session of Spice_session.Id.t
   | Clear_session
+  | Compact_session of Spice_session.Id.t
   (* Load a settled child's persisted document for a read-only drill-in
      (doc/plans/tui-next-threads.md §6 phase 5a): the runtime replays its durable
      events back as [Thread_document_loaded], folded into the drilled chat. *)
@@ -460,6 +462,7 @@ let settled ~now result = Settled { result; now }
 let health_loaded ~now ~file health = Health_loaded { health; file; now }
 let sessions_loaded rows = Sessions_loaded rows
 let session_forked ~parent_title = Session_forked { parent_title }
+let compaction_failed message = Compaction_failed message
 let sessions_load_failed message = Sessions_load_failed message
 let screen_loaded rows = Screen_loaded rows
 let screen_failed message = Screen_failed message
@@ -996,6 +999,32 @@ let dispatch_command ?(argument = None) command t =
           ( { t with surface = Screen (Settings (Settings_screen.loading ~tab)) },
             [ Load_settings ] )
       | Command.Open_review -> open_review ?base_spec:argument t
+      | Command.Compact_session -> (
+          (* Summarize the conversation so far to free context: the echo lands
+             now, the runtime runs the standalone compaction over the attached
+             document (serialized with any drain through Live.write), and the
+             narration arrives as live events — the Compacting verb, then the
+             durable compaction's [compacted] seam. The document's history
+             stays on screen: compaction changes what the MODEL sees next turn,
+             not what happened (01-transcript.md — the document is history).
+             The [attached] gate mirrors /fork. *)
+          match t.session_id with
+          | Some id when t.attached ->
+              let t =
+                match t.phase with
+                | Chat chat ->
+                    let transcript =
+                      Transcript.append chat.transcript
+                        (Transcript.Notice
+                           (Notice.Echo
+                              { command = Command.slash command; result = None }))
+                    in
+                    { t with phase = Chat { chat with transcript } }
+                | Prelude -> t
+              in
+              (t, [ Compact_session id ])
+          | Some _ | None ->
+              ({ t with flash = Some "no session to compact" }, []))
       | Command.Clear_session ->
           (* Start over on a fresh, empty chat — the chat layout, never a return
              to the home stage (its composer moves exactly once per process,
@@ -1124,14 +1153,7 @@ let dispatch_command ?(argument = None) command t =
               in
               ({ t with phase = Chat { chat with expanded; transcript } }, [])
           | Prelude ->
-              ({ t with flash = Some "no tool output to expand yet" }, []))
-      | _ ->
-          ( {
-              t with
-              flash =
-                Some (Command.slash command ^ " lands in a later iteration");
-            },
-            [] ))
+              ({ t with flash = Some "no tool output to expand yet" }, [])))
 
 (* A submitted draft routes by shape (03-composer.md, 10-commands.md): a known
    slash command dispatches through its catalog fate; a [!] command runs on the
@@ -2079,6 +2101,18 @@ let update msg t =
               (Transcript.Notice
                  (Notice.Event
                     ("forked to a new session · ↳ from \"" ^ parent_title ^ "\"")))
+          in
+          ({ t with phase = Chat { chat with transcript } }, [])
+      | Prelude -> (t, []))
+  | Compaction_failed message -> (
+      (* The compaction's success narration flows through the live events (the
+         Compacting verb, then the durable compaction's seam); only a failure
+         needs this dedicated surface. *)
+      match t.phase with
+      | Chat chat ->
+          let transcript =
+            Transcript.append chat.transcript
+              (Transcript.Notice (Notice.Event ("compaction failed: " ^ message)))
           in
           ({ t with phase = Chat { chat with transcript } }, [])
       | Prelude -> (t, []))
