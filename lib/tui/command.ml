@@ -23,7 +23,7 @@ type fate =
   | Quit
 
 (* A catalog entry is plain data; the slash is its identity (slashes are unique,
-   so it keys {!equal} and the per-command implemented set). *)
+   so it keys {!equal}). *)
 type t = {
   slash : string;
   title : string;
@@ -103,21 +103,6 @@ let echoes t = t.echoes
 let fate t = t.fate
 let equal a b = String.equal a.slash b.slash
 
-(* Each build-out wave flips its fates as the shell gains their dispatch, so
-   the palette never advertises a command that would do nothing — and hides
-   nothing that works: the session quick-switch panel, the model panel, the
-   settings screen, the review screen, provider login/logout, quit, the
-   /thinking and /verbose toggles, /fork, /rename, and the /plan//build mode
-   switches are wired today. The match is EXHAUSTIVE by design (no [_]
-   wildcard): a wildcard once let a wired command ship hidden, so every fate
-   states its visibility and the compiler forces the next surface to decide. *)
-let implemented t =
-  match t.fate with
-  | Open_sessions | Open_model | Open_settings _ | Open_review | Open_login
-  | Open_logout | Quit | Toggle_thinking | Toggle_verbose | Switch_mode _
-  | Fork_session | Rename_session | Clear_session | Compact_session ->
-      true
-
 let is_substring ~affix s =
   let la = String.length affix and ls = String.length s in
   if la = 0 then true
@@ -136,7 +121,7 @@ let matches ~query t =
 
 let filter ~query =
   let query = String.lowercase_ascii (String.trim query) in
-  List.filter (fun t -> implemented t && matches ~query t) all
+  List.filter (matches ~query) all
 
 (* [arg_after ~slash trimmed] is the trimmed argument when [trimmed] is [slash]
    followed by whitespace and then non-empty text, matching the slash

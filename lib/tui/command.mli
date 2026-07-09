@@ -11,10 +11,10 @@
     draw from this one table so no property is re-derived in a parallel match
     elsewhere (10-commands.md, 03-composer.md §Slash palette).
 
-    The catalog is closed: {!all} enumerates every command in display order, and
-    a new command cannot exist without joining {!type:t}. Which commands the
-    running frontend actually backs is a separate axis — {!implemented} — so the
-    palette never advertises a command that would do nothing. *)
+    The catalog is closed: {!all} enumerates every command in display order,
+    and a new command cannot exist without joining {!type:t} — and without the
+    shell's dispatch match gaining its arm, so a cataloged command is always
+    backed end to end. *)
 
 (** {1:types Types} *)
 
@@ -95,17 +95,11 @@ type parsed =
 val all : t list
 (** [all] is every command in palette display order. *)
 
-val implemented : t -> bool
-(** [implemented c] is [true] iff the running frontend backs [c] end to end. The
-    palette shows only implemented commands, so a listed command always does
-    something. The set widens per build-out wave. *)
-
 val filter : query:string -> t list
-(** [filter ~query] is the {!implemented} commands whose slash or title contains
-    [query] (case-insensitive substring), in {!all} order. An empty [query]
-    yields every implemented command. This is the palette's row source; it never
-    surfaces an unimplemented command (03-ia-screens-overlays.md §The filter
-    law). *)
+(** [filter ~query] is the commands whose slash or title contains [query]
+    (case-insensitive substring), in {!all} order. An empty [query] yields the
+    whole catalog. This is the palette's row source (03-ia-screens-overlays.md
+    §The filter law). *)
 
 (** {1:queries Queries} *)
 

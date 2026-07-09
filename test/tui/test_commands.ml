@@ -6,9 +6,8 @@
 (* Blackbox pty tests for the slash palette and command dispatch
    (doc/ui-design/03-composer.md §Slash palette, 10-commands.md,
    doc/plans/tui-next-composer.md). No turns run, so like the home tests these
-   need only the real spice binary. The palette advertises only wired commands
-   (Command.implemented — the honest-state gate), and ↵ never sends the draft
-   while the list is up. *)
+   need only the real spice binary. Every cataloged command is backed end to
+   end, and ↵ never sends the draft while the list is up. *)
 
 open Tui_harness
 
@@ -18,24 +17,23 @@ let print_fact = Util.print_fact
 let run ?env ?rows ?cols project f =
   Term.run ?env ?rows ?cols project f
 
-(* Typing "/" on the empty draft opens the palette; only the wired commands
-   show, so nothing advertised is dead. The five-slot window shows the first
-   wired rows ([/model], [/thinking], …) with the seam row counting the rest;
-   an unwired command ([/clear] until its wave lands) never appears. *)
-let%expect_test "slash opens the palette with only wired commands" =
+(* Typing "/" on the empty draft opens the palette on the whole catalog: the
+   five-slot window shows the head rows in display order with the seam row
+   counting the rest. *)
+let%expect_test "slash opens the palette on the catalog" =
   Project.with_temp "next-palette-open" @@ fun project ->
   run project ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
   Term.wait t (Screen.has "dune:");
   Term.send t "/";
   Term.wait t (Screen.has "/model");
+  print_fact "clear row" (Screen.has "/clear" (Term.screen t));
+  print_fact "fork row" (Screen.has "/fork" (Term.screen t));
   print_fact "model row" (Screen.has "/model" (Term.screen t));
-  print_fact "thinking row" (Screen.has "/thinking" (Term.screen t));
-  print_fact "unwired command hidden" (Screen.lacks "/clear" (Term.screen t));
   [%expect
     {|
-    model row: true
-    thinking row: true
-    unwired command hidden: true|}]
+    clear row: true
+    fork row: true
+    model row: true|}]
 
 (* Each keystroke narrows the rows (the composer text IS the filter); a filter
    with no match shows the note row; backspacing past the "/" closes the
@@ -53,7 +51,7 @@ let%expect_test "filtering narrows and backspace past the slash closes" =
   Term.send t Keys.backspace;
   Term.send t Keys.backspace;
   Term.send t Keys.backspace;
-  Term.wait t (fun s -> Screen.has "/model" s && Screen.has "/thinking" s);
+  Term.wait t (fun s -> Screen.has "/model" s && Screen.has "/fork" s);
   Term.send t Keys.backspace;
   Term.send t Keys.backspace;
   Term.wait t (Screen.lacks "/model");
@@ -94,22 +92,6 @@ let%expect_test "enter runs the selected command" =
   Term.wait t (Screen.has "▔▔▔▔");
   print_fact "panel opened" (Screen.has "▔▔▔▔" (Term.screen t));
   [%expect {| panel opened: true |}]
-
-(* A known-but-unwired command ([/clear] until its wave lands) never starts a
-   turn: typed, the no-match palette swallows the ↵ outright; pasted (the
-   draft never passes through a lone "/", so no palette opens), the submit
-   reaches dispatch and gets the honest flash. *)
-let%expect_test "unwired commands flash honestly" =
-  Project.with_temp "next-palette-honest" @@ fun project ->
-  run project ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
-  Term.wait t (Screen.has "dune:");
-  Term.send t (Keys.bracketed_paste "/clear");
-  Term.wait t (Screen.has "/clear");
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "/clear lands in a later iteration");
-  print_fact "pasted unwired command flashed"
-    (Screen.has "/clear lands in a later iteration" (Term.screen t));
-  [%expect {| pasted unwired command flashed: true |}]
 
 (* /plan colors the composer frame with its chip and records nothing on the
    home stage (the chip is the record there); /build restores the wordless gray
