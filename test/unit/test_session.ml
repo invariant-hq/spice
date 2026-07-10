@@ -582,6 +582,56 @@ let permission_request_requires_pending_tool_call () =
          Session.Event.permission_requested request;
        ])
 
+let permission_requests_are_serial () =
+  let turn = turn () in
+  let call = tool_call ~name:"tool_serial" () in
+  let first =
+    permission_request ~id:"permission-first" ~turn:(Session.Turn.id turn)
+      ~tool_call:call (extension_access "tool.serial")
+  in
+  let second =
+    permission_request ~id:"permission-second" ~turn:(Session.Turn.id turn)
+      ~tool_call:call (extension_access "tool.serial")
+  in
+  let blocked =
+    state
+      [
+        Session.Event.turn_started turn;
+        Session.Event.response_appended (response (assistant_tool_call call));
+        Session.Event.permission_requested first;
+      ]
+  in
+  expect_error "second permission request rejects unresolved waiting"
+    (State.Error.Turn
+       (State.Error.Turn.Unresolved_waiting (Session.Turn.id turn)))
+    (State.apply (Session.Event.permission_requested second) blocked)
+
+let raw_tool_result_cannot_bypass_permission () =
+  let turn = turn () in
+  let call = tool_call ~name:"tool_owned" () in
+  let request =
+    permission_request ~turn:(Session.Turn.id turn) ~tool_call:call
+      (extension_access "tool.owned")
+  in
+  let blocked =
+    state
+      [
+        Session.Event.turn_started turn;
+        Session.Event.response_appended (response (assistant_tool_call call));
+        Session.Event.permission_requested request;
+      ]
+  in
+  expect_error "raw tool result cannot bypass permission"
+    (State.Error.Permission
+       (State.Error.Permission.Result_bypasses_permission
+          {
+            permission = Session.Permission.Requested.id request;
+            call_id = Llm.Tool.Call.id call;
+          }))
+    (State.apply
+       (Session.Event.message_appended (tool_result call "bypassed"))
+       blocked)
+
 let permission_request_json_requires_tool_call () =
   let turn = turn () in
   let call = tool_call ~name:"tool_json" () in
@@ -1342,6 +1392,9 @@ let () =
       test "permission replies update grants" permission_replies_update_grants;
       test "permission request requires pending tool call"
         permission_request_requires_pending_tool_call;
+      test "permission requests are serial" permission_requests_are_serial;
+      test "raw tool result cannot bypass permission"
+        raw_tool_result_cannot_bypass_permission;
       test "permission request JSON requires tool call"
         permission_request_json_requires_tool_call;
       test "terminal turns reject unresolved waiting"

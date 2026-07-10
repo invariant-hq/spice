@@ -50,8 +50,8 @@ module Error : sig
           (** A completed response was recorded with a requested model different
               from the active turn's model. *)
       | Unresolved_waiting of Turn.Id.t
-          (** A clean terminal outcome was applied while the turn still had
-              unresolved waiting boundaries. *)
+          (** An event requiring no unresolved durable wait was applied while
+              the turn still had a waiting boundary. *)
   end
 
   module Permission : sig
@@ -65,12 +65,18 @@ module Error : sig
       | Not_pending of Permission.Id.t
           (** A permission reply referenced a request that is no longer pending.
           *)
+      | Result_bypasses_permission of {
+          permission : Permission.Id.t;
+          call_id : string;
+        }
+          (** A raw tool-result event attempted to answer a call owned by a
+              pending permission request. *)
       | Tool_call_not_pending of {
           permission : Permission.Id.t;
           call_id : string;
         }
-          (** A permission request referenced a tool call that is not currently
-              pending in the transcript. *)
+          (** A permission request or resolution referenced a tool call that is
+              not currently pending in the transcript. *)
       | Result_mismatch of {
           permission : Permission.Id.t;
           expected_call_id : string;
@@ -153,6 +159,7 @@ type t
     - permission request ids are unique;
     - permission requests reference the active unfinished turn and a pending
       model tool call;
+    - at most one durable permission or tool-claim wait is unresolved;
     - permission answers reference pending requests and update grants through
       {!Spice_permission.Policy.Review.answer}; denied permission answers answer
       the exact blocked model tool call;

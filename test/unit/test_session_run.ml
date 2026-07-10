@@ -181,6 +181,73 @@ let permission_ids_include_request_position () =
            (Session.Permission.Requested.id first)
            (Session.Permission.Requested.id second))
 
+let permission_ids_include_full_request () =
+  let access =
+    Permission.Access.custom ~kind:`Write ~subject:"same" "review_tool"
+  in
+  let ids_after_change first_request second_request =
+    let request = ref first_request in
+    let permissions () =
+      [ !request ]
+    in
+    let tool =
+      Tool.make ~name:"review_tool" ~description:"Reviewed test tool."
+        ~input:Tool.Input.empty ~output ~permissions
+        ~run:(fun _context () -> Tool.Result.completed ~output:() ())
+        ()
+    in
+    let config = config [ tool ] in
+    let blocked = run_response config (response (call ())) in
+    let first = permission_from_step blocked in
+    request := second_request;
+    match
+      Run.resolve_permission config
+        (Session.Permission.Requested.id first)
+        (Permission.Policy.Review.Allow Permission.Policy.Review.Once)
+        (Run.Step.session blocked)
+    with
+    | Error error ->
+        failf "changed request could not re-review: %a" Run.Error.pp error
+    | Ok step -> (
+        match Run.Step.next step with
+        | Run.Step.Waiting (Session.Waiting.Permission second) ->
+            ( Session.Permission.Requested.id first,
+              Session.Permission.Requested.id second )
+        | next ->
+            failf "expected changed permission review, got %a"
+              Run.Step.pp_next next)
+  in
+  let display text =
+    Permission.Request.make
+      [ Permission.Request.Item.make ~display:text access ]
+  in
+  let change diff =
+    Permission.Request.make
+      [
+        Permission.Request.Item.make
+          ~change:(Permission.Request.Change.make ~diff ())
+          access;
+      ]
+  in
+  let cases =
+    [
+      ( "source",
+        Permission.Request.of_accesses ~source:"first" [ access ],
+        Permission.Request.of_accesses ~source:"changed" [ access ] );
+      ( "grantability",
+        Permission.Request.of_accesses [ access ],
+        Permission.Request.of_accesses ~grantable:false [ access ] );
+      ("display", display "first", display "changed");
+      ("change", change "+first", change "+changed");
+    ]
+  in
+  List.iter
+    (fun (field, first_request, second_request) ->
+      let first, second = ids_after_change first_request second_request in
+      is_false ~msg:(field ^ " changes the permission attempt id")
+        (Session.Permission.Id.equal first second))
+    cases
+
 let permission_planner_exceptions_become_tool_errors () =
   let step =
     run_response (config [ raising_permissions_tool () ]) (response (call ()))
@@ -790,6 +857,8 @@ let () =
       test "deterministic permission ids" deterministic_permission_ids;
       test "permission ids include request position"
         permission_ids_include_request_position;
+      test "permission ids include full request"
+        permission_ids_include_full_request;
       test "permission planner exceptions become tool errors"
         permission_planner_exceptions_become_tool_errors;
       test "deterministic tool claim ids" deterministic_tool_claim_ids;

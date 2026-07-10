@@ -569,11 +569,22 @@ module Run = struct
     |> Spice_permission.Access.Set.elements
     |> List.map Spice_permission.Access.stable_text
 
+  let permission_request_text review =
+    match
+      Jsont.Json.encode Spice_permission.Request.jsont
+        (Spice_permission.Policy.Review.request review)
+    with
+    | Ok json -> Format.asprintf "%a" Jsont.Json.pp json
+    | Error message ->
+        invalid_arg
+          ("Spice_session.Run.permission_id: permission request encode failed: "
+         ^ message)
+
   let permission_id turn_id call request_index review =
-    digest_id "perm" ~domain:"spice.session.permission.v2"
+    digest_id "perm" ~domain:"spice.session.permission.v3"
       (Turn.Id.to_string turn_id :: Llm.Tool.Call.id call
       :: string_of_int request_index
-      :: access_texts review)
+      :: permission_request_text review :: access_texts review)
 
   let tool_claim_id turn_id call =
     Tool_claim.Id.of_string

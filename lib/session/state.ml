@@ -33,6 +33,10 @@ module Error = struct
       | Duplicate of Session_permission.Id.t
       | Unknown of Session_permission.Id.t
       | Not_pending of Session_permission.Id.t
+      | Result_bypasses_permission of {
+          permission : Session_permission.Id.t;
+          call_id : string;
+        }
       | Tool_call_not_pending of {
           permission : Session_permission.Id.t;
           call_id : string;
@@ -98,6 +102,10 @@ module Error = struct
     | Permission (Permission.Not_pending id) ->
         Format.asprintf "permission request is not pending: %a"
           Session_permission.Id.pp id
+    | Permission
+        (Permission.Result_bypasses_permission { permission; call_id }) ->
+        Format.asprintf "tool result for %s bypasses pending permission %a"
+          call_id Session_permission.Id.pp permission
     | Permission (Permission.Tool_call_not_pending { permission; call_id }) ->
         Format.asprintf
           "permission request %a references non-pending tool call: %s"
@@ -347,6 +355,12 @@ let pending_tool_claim_for_result result t =
       result_matches_call result (Tool_claim.Started.call execution))
     (pending_tool_claims t)
 
+let pending_permission_for_result result t =
+  List.find_opt
+    (fun request ->
+      result_matches_call result (Permission.Requested.tool_call request))
+    (pending_permissions t)
+
 let require_no_active_turn t =
   match t.active_turn with
   | None -> Ok ()
@@ -428,15 +442,24 @@ let apply_message_appended message t =
       match require_active_turn t with
       | Error _ as error -> error
       | Ok _ -> (
-          match pending_tool_claim_for_result result t with
-          | Some execution ->
-              tool_claim_error
-                (Error.Tool_claim.Result_bypasses_claim
+          match pending_permission_for_result result t with
+          | Some request ->
+              permission_error
+                (Error.Permission.Result_bypasses_permission
                    {
-                     execution = Tool_claim.Started.id execution;
+                     permission = Permission.Requested.id request;
                      call_id = Spice_llm.Tool.Result.call_id result;
                    })
-          | None -> add_transcript message t))
+          | None -> (
+              match pending_tool_claim_for_result result t with
+              | Some execution ->
+                  tool_claim_error
+                    (Error.Tool_claim.Result_bypasses_claim
+                       {
+                         execution = Tool_claim.Started.id execution;
+                         call_id = Spice_llm.Tool.Result.call_id result;
+                       })
+              | None -> add_transcript message t)))
   | Spice_llm.Message.System _ | Spice_llm.Message.Developer _
   | Spice_llm.Message.User _ -> (
       match require_no_active_turn t with
@@ -499,24 +522,33 @@ let apply_permission_requested request t =
   else
     match require_active_turn_id (Permission.Requested.turn request) t with
     | Error _ as error -> error
-    | Ok () ->
-        let tool_call = Permission.Requested.tool_call request in
-        if
-          List.exists
-            (Spice_llm.Tool.Call.equal tool_call)
-            (Transcript.pending t.transcript)
-        then
-          Ok
-            {
-              t with
-              permission_order_rev = id :: t.permission_order_rev;
-              permissions =
-                Permission_map.add id { request; resolved = None } t.permissions;
-            }
-        else
-          permission_error
-            (Error.Permission.Tool_call_not_pending
-               { permission = id; call_id = Spice_llm.Tool.Call.id tool_call })
+    | Ok () -> (
+        match waiting t with
+        | waiting :: _ ->
+            turn_error (Error.Turn.Unresolved_waiting (Waiting.turn waiting))
+        | [] ->
+            let tool_call = Permission.Requested.tool_call request in
+            if
+              List.exists
+                (Spice_llm.Tool.Call.equal tool_call)
+                (Transcript.pending t.transcript)
+            then
+              Ok
+                {
+                  t with
+                  permission_order_rev = id :: t.permission_order_rev;
+                  permissions =
+                    Permission_map.add id
+                      { request; resolved = None }
+                      t.permissions;
+                }
+            else
+              permission_error
+                (Error.Permission.Tool_call_not_pending
+                   {
+                     permission = id;
+                     call_id = Spice_llm.Tool.Call.id tool_call;
+                   }))
 
 let apply_permission_resolved resolution t =
   let id = Permission.Resolved.id resolution in
@@ -526,50 +558,61 @@ let apply_permission_resolved resolution t =
       if not (permission_is_pending record t) then
         permission_error (Error.Permission.Not_pending id)
       else
-        match Permission.Resolved.decision resolution with
-        | Permission.Resolved.Deny result -> (
-            let call = Permission.Requested.tool_call record.request in
-            if not (result_matches_call result call) then
-              permission_error
-                (Error.Permission.Result_mismatch
-                   {
-                     permission = id;
-                     expected_call_id = Spice_llm.Tool.Call.id call;
-                     expected_name = Spice_llm.Tool.Call.name call;
-                     actual_call_id = Spice_llm.Tool.Result.call_id result;
-                     actual_name = Spice_llm.Tool.Result.name result;
-                   })
-            else
-              match add_transcript (Spice_llm.Message.tool_result result) t with
-              | Error _ as error -> error
-              | Ok t ->
-                  Ok
-                    {
-                      t with
-                      permissions =
-                        Permission_map.add id
-                          { record with resolved = Some resolution }
-                          t.permissions;
-                    })
-        | Permission.Resolved.Allow scope ->
-            (* Grants follow the allow scope directly: [Session] adds the
-               request's asked accesses, [Once] leaves them untouched. Going
-               through [Policy.Review.resolve] here would force a [Rejected]
-               arm that an allow can never produce. *)
-            let grants =
-              Policy.Review.grant
-                (Permission.Requested.review record.request)
-                scope t.grants
-            in
-            Ok
-              {
-                t with
-                grants;
-                permissions =
-                  Permission_map.add id
-                    { record with resolved = Some resolution }
-                    t.permissions;
-              })
+        let call = Permission.Requested.tool_call record.request in
+        if
+          not
+            (List.exists (Spice_llm.Tool.Call.equal call)
+               (Transcript.pending t.transcript))
+        then
+          permission_error
+            (Error.Permission.Tool_call_not_pending
+               { permission = id; call_id = Spice_llm.Tool.Call.id call })
+        else
+          match Permission.Resolved.decision resolution with
+          | Permission.Resolved.Deny result -> (
+              if not (result_matches_call result call) then
+                permission_error
+                  (Error.Permission.Result_mismatch
+                     {
+                       permission = id;
+                       expected_call_id = Spice_llm.Tool.Call.id call;
+                       expected_name = Spice_llm.Tool.Call.name call;
+                       actual_call_id = Spice_llm.Tool.Result.call_id result;
+                       actual_name = Spice_llm.Tool.Result.name result;
+                     })
+              else
+                match
+                  add_transcript (Spice_llm.Message.tool_result result) t
+                with
+                | Error _ as error -> error
+                | Ok t ->
+                    Ok
+                      {
+                        t with
+                        permissions =
+                          Permission_map.add id
+                            { record with resolved = Some resolution }
+                            t.permissions;
+                      })
+          | Permission.Resolved.Allow scope ->
+              (* Grants follow the allow scope directly: [Session] adds the
+                 request's asked accesses, [Once] leaves them untouched. Going
+                 through [Policy.Review.resolve] here would force a [Rejected]
+                 arm that an allow can never produce. *)
+              let grants =
+                Policy.Review.grant
+                  (Permission.Requested.review record.request)
+                  scope t.grants
+              in
+              Ok
+                {
+                  t with
+                  grants;
+                  permissions =
+                    Permission_map.add id
+                      { record with resolved = Some resolution }
+                      t.permissions;
+                })
 
 let apply_tool_claim_started execution t =
   let id = Tool_claim.Started.id execution in

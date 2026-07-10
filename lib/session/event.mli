@@ -35,7 +35,8 @@ type t = private
   | Compaction_installed of Compaction.t
       (** Model replay history was replaced by a compacted transcript. *)
   | Permission_requested of Permission.Requested.t
-      (** A protected operation is waiting for reviewer input. *)
+      (** A protected operation is waiting for reviewer input. Applying this
+          event requires no other unresolved durable waiting boundary. *)
   | Permission_resolved of Permission.Resolved.t
       (** A reviewer reply was applied to a pending permission request. A deny
           reply also carries the model-visible tool result that consumes the
