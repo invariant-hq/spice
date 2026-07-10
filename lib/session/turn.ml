@@ -163,6 +163,7 @@ type t = {
   mode : string option;
   origin : string option;
   max_steps : int option;
+  declarations : Spice_llm.Tool.t list;
   host_tools : string list;
 }
 
@@ -181,19 +182,40 @@ let check_max_steps = function
   | Some max_steps ->
       if max_steps <= 0 then invalid "make" "max_steps must be positive"
 
-let check_host_tools host_tools =
+let check_tool_contract declarations host_tools =
+  let declaration_names = List.map Spice_llm.Tool.name declarations in
+  let rec check_unique field seen = function
+    | [] -> ()
+    | name :: names ->
+        if List.exists (String.equal name) seen then
+          invalid "make" ("duplicate " ^ field ^ " name: " ^ name)
+        else check_unique field (name :: seen) names
+  in
+  check_unique "declaration" [] declaration_names;
+  check_unique "host tool" [] host_tools;
   List.iter
     (fun name ->
-      if String.is_empty name then invalid "make" "host_tools must not be empty")
+      if not (List.exists (String.equal name) declaration_names) then
+        invalid "make" ("host tool has no declaration: " ^ name))
     host_tools
 
 let make ~id ~input ~model ?(options = Spice_llm.Request.Options.default) ?mode
-    ?origin ?max_steps ?(host_tools = []) () =
+    ?origin ?max_steps ~declarations ~host_tools () =
   check_mode mode;
   check_origin origin;
   check_max_steps max_steps;
-  check_host_tools host_tools;
-  { id; input; model; options; mode; origin; max_steps; host_tools }
+  check_tool_contract declarations host_tools;
+  {
+    id;
+    input;
+    model;
+    options;
+    mode;
+    origin;
+    max_steps;
+    declarations;
+    host_tools;
+  }
 
 let id t = t.id
 let input t = t.input
@@ -202,6 +224,7 @@ let options t = t.options
 let mode t = t.mode
 let origin t = t.origin
 let max_steps t = t.max_steps
+let declarations t = t.declarations
 let host_tools t = t.host_tools
 let equal a b = a = b
 
@@ -210,9 +233,10 @@ let pp ppf t =
     Input.pp t.input Spice_llm.Model.pp t.model
 
 let jsont =
-  let make id input model options mode origin max_steps host_tools =
+  let make id input model options mode origin max_steps declarations host_tools =
     decode_invalid_arg (fun () ->
-        make ~id ~input ~model ~options ?mode ?origin ?max_steps ~host_tools ())
+        make ~id ~input ~model ~options ?mode ?origin ?max_steps ~declarations
+          ~host_tools ())
   in
   Jsont.Object.map ~kind:"session turn" make
   |> Jsont.Object.mem "id" Id.jsont ~enc:id
@@ -222,5 +246,7 @@ let jsont =
   |> Jsont.Object.opt_mem "mode" Jsont.string ~enc:mode
   |> Jsont.Object.opt_mem "origin" Jsont.string ~enc:origin
   |> Jsont.Object.opt_mem "max_steps" Jsont.int ~enc:max_steps
+  |> Jsont.Object.mem "declarations" (Jsont.list Spice_llm.Tool.jsont)
+       ~enc:declarations
   |> Jsont.Object.mem "host_tools" (Jsont.list Jsont.string) ~enc:host_tools
   |> Jsont.Object.error_unknown |> Jsont.Object.finish

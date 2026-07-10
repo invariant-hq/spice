@@ -411,7 +411,8 @@ module Run : sig
         [tools] are executable host capabilities. [host_tools] are model-visible
         tools whose calls block the run for product-owned host handling. A call
         is classified as host-handled by tool name before executable-tool
-        dispatch.
+        dispatch. Their provider-facing declarations are cached and become the
+        durable declaration snapshot of each newly accepted turn.
 
         [prelude] defaults to {!Spice_llm.Request.Prelude.empty} and is used for
         every model request built from this config. It does not become session
@@ -447,9 +448,9 @@ module Run : sig
     (** [max_steps t] is [t]'s default positive model-response limit. *)
 
     val declarations : t -> Spice_llm.Tool.t list
-    (** [declarations t] is the model-visible tool declaration list sent on
-        every request built from [t]: executable tools rendered as LLM
-        declarations, then host tools, in declaration order. *)
+    (** [declarations t] are the model-visible declarations accepted by a new
+        turn: executable tools rendered as LLM declarations, then host tools,
+        in declaration order. Active turns use their own durable snapshot. *)
   end
 
   module Step : sig
@@ -540,10 +541,11 @@ module Run : sig
   (** [start config ~id ~input ~model ?options ?mode ?origin ?max_steps session]
       starts a turn in [session] and advances to the next external boundary.
 
-      Host-tool names are stamped from [config]. [options] defaults to
-      {!Spice_llm.Request.Options.default}. [max_steps], when absent, is
-      inherited from [config] during planning. [mode] and [origin], when
-      present, are durable host metadata interpreted outside replay.
+      The complete declaration list and host-tool ownership subset are stamped
+      from [config]. [options] defaults to {!Spice_llm.Request.Options.default}.
+      [max_steps], when absent, is inherited from [config] during planning.
+      [mode] and [origin], when present, are durable host metadata interpreted
+      outside replay.
 
       The returned step includes the turn-started event and any immediately
       planned events, such as a permission request or tool claim. Returns
@@ -559,6 +561,12 @@ module Run : sig
       pending executable tool call is decoded, permission-checked, and either
       claimed, blocked for review, denied with a model-visible error result, or
       answered with a dispatch error result.
+
+      Model requests use the active turn's durable declarations and host-tool
+      ownership. [config] supplies the live prelude, executable implementations,
+      permission policy, and denial rendering. A newly configured tool is not
+      available until the next turn; a removed or changed executable fails
+      through the ordinary tool-dispatch error path.
 
       Returns {!Error.No_active_turn} if [session] has no active turn. *)
 

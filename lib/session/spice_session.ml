@@ -327,6 +327,7 @@ module Run = struct
       prelude : Llm.Request.Prelude.t;
       max_steps : int;
       denial_message : Spice_permission.Policy.Denial.t -> string;
+      declarations : Llm.Tool.t list;
     }
 
     let default_denial_message _ = "Permission denied by policy."
@@ -335,11 +336,9 @@ module Run = struct
       Llm.Tool.make ~name:(Tool.name tool) ~description:(Tool.description tool)
         ~input_schema:(Tool.input_schema tool) ()
 
-    let validate_executable_declarations tools =
+    let executable_declarations tools =
       try
-        List.iter
-          (fun tool -> ignore (executable_declaration tool))
-          (Tool.Catalog.tools tools)
+        List.map executable_declaration (Tool.Catalog.tools tools)
       with Invalid_argument message ->
         invalid_arg
           ("Spice_session.Run.Config.make: invalid executable tool \
@@ -372,9 +371,18 @@ module Run = struct
       match Tool.Catalog.make tools with
       | Error error -> invalid_config (Tool.Error.message error)
       | Ok tools ->
-          validate_executable_declarations tools;
+          let executable_declarations = executable_declarations tools in
           validate_host_tool_names tools host_tools;
-          { tools; host_tools; policy; prelude; max_steps; denial_message }
+          let declarations = executable_declarations @ host_tools in
+          {
+            tools;
+            host_tools;
+            policy;
+            prelude;
+            max_steps;
+            denial_message;
+            declarations;
+          }
 
     let tools t = Tool.Catalog.tools t.tools
     let tool_catalog t = t.tools
@@ -384,9 +392,7 @@ module Run = struct
     let max_steps t = t.max_steps
     let denial_message t = t.denial_message
 
-    let declarations t =
-      List.map executable_declaration (Tool.Catalog.tools t.tools)
-      @ t.host_tools
+    let declarations t = t.declarations
   end
 
   module Step = struct
@@ -437,7 +443,7 @@ module Run = struct
     (* The session id is the stable prompt-cache routing key: one conversation,
        one cache shard, across every request of every turn. *)
     Llm.Request.make ~model:(Turn.model turn) ~prelude:(Config.prelude config)
-      ~tools:(Config.declarations config)
+      ~tools:(Turn.declarations turn)
       ~options:(Turn.options turn)
       ~cache_key:(Id.to_string (id session))
       (State.transcript state)
@@ -535,6 +541,12 @@ module Run = struct
 
   let is_host_tool_name host_tools call =
     List.exists (String.equal (Llm.Tool.Call.name call)) host_tools
+
+  let is_declared declarations call =
+    List.exists
+      (fun declaration ->
+        String.equal (Llm.Tool.name declaration) (Llm.Tool.Call.name call))
+      declarations
 
   let permission_already_allows state call request review =
     let same_call requested =
@@ -728,6 +740,9 @@ module Run = struct
     if is_host_tool_name (Turn.host_tools turn) call then
       Step.make ~session ~events:[]
         ~next:(Step.Waiting (Waiting.host_tool ~turn:turn_id call))
+    else if not (is_declared (Turn.declarations turn) call) then
+      append_tool_error config session call
+        (Tool.Error.message (Tool.Error.Unknown_tool (Llm.Tool.Call.name call)))
     else
       match decode_tool (Config.tool_catalog config) call with
       | Error (Error.Tool tool_error) ->
@@ -762,9 +777,10 @@ module Run = struct
   let start config ~id ~input ~model ?options ?mode ?origin ?max_steps session =
     let* () = require_active_session session in
     let host_tools = List.map Llm.Tool.name (Config.host_tools config) in
+    let declarations = Config.declarations config in
     let turn =
-      Turn.make ~id ~input ~model ?options ?mode ?origin ?max_steps ~host_tools
-        ()
+      Turn.make ~id ~input ~model ?options ?mode ?origin ?max_steps ~declarations
+        ~host_tools ()
     in
     normalize config session [ Event.turn_started turn ]
 

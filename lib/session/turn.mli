@@ -142,8 +142,9 @@ type t
 (** The type for an accepted turn start.
 
     Invariant: [mode] and [origin], when present, are non-empty. [max_steps],
-    when present, is positive. State replay also requires the turn id to be
-    unique and no other turn to be active. *)
+    when present, is positive. Declaration names and host-tool names are unique,
+    and every host-tool name has a declaration. State replay also requires the
+    turn id to be unique and no other turn to be active. *)
 
 val make :
   id:Id.t ->
@@ -153,10 +154,12 @@ val make :
   ?mode:string ->
   ?origin:string ->
   ?max_steps:int ->
-  ?host_tools:string list ->
+  declarations:Spice_llm.Tool.t list ->
+  host_tools:string list ->
   unit ->
   t
-(** [make ~id ~input ~model ?options ?mode ?origin ?max_steps ?host_tools ()] is
+(** [make ~id ~input ~model ?options ?mode ?origin ?max_steps ~declarations
+    ~host_tools ()] is
     an accepted turn start.
 
     [options] defaults to {!Spice_llm.Request.Options.default}. [mode], when
@@ -165,11 +168,14 @@ val make :
     than a user prompt. Both are inert session data; interpretation belongs to
     the host and product projections, and an absent or unknown spelling degrades
     to the default there. [max_steps], when absent, is inherited from the
-    session executor. [host_tools] are the model-visible host-handled tool names
-    this turn ran with; they default to [[]].
+    session executor. [declarations] is the complete provider-facing tool
+    snapshot accepted for this turn. [host_tools] is the subset of declaration
+    names whose calls are handled by the product host rather than the executable
+    tool catalog.
 
     Raises [Invalid_argument] if [mode] or [origin] is empty, if [max_steps] is
-    present and not positive, or if a [host_tools] name is empty. *)
+    present and not positive, if declaration or host-tool names are duplicated,
+    or if a host-tool name has no declaration. *)
 
 val id : t -> Id.t
 (** [id t] is [t]'s stable id. *)
@@ -193,6 +199,9 @@ val origin : t -> string option
 val max_steps : t -> int option
 (** [max_steps t] is [t]'s execution-loop step limit, if recorded. *)
 
+val declarations : t -> Spice_llm.Tool.t list
+(** [declarations t] is the provider-facing tool snapshot accepted for [t]. *)
+
 val host_tools : t -> string list
 (** [host_tools t] are the model-visible host-handled tool names recorded for
     [t]. *)
@@ -206,4 +215,5 @@ val pp : Format.formatter -> t -> unit
 
 val jsont : t Jsont.t
 (** [jsont] maps turns to JSON values. Decoding validates local constructor
-    invariants; replay validity is checked by {!State.apply}. *)
+    invariants, including the declaration/host-tool contract; replay validity is
+    checked by {!State.apply}. *)

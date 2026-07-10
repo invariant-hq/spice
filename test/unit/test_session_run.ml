@@ -20,11 +20,15 @@ let model =
 
 let cwd = Spice_path.Abs.of_string_exn "/workspace"
 
+let review_tool_declaration =
+  Llm.Tool.make ~name:"review_tool" ~description:"Reviewed test tool."
+    ~input_schema:(Json.object' []) ()
+
 let turn =
   Session.Turn.make
     ~id:(Session.Turn.Id.of_string "turn-1")
     ~input:(Session.Turn.Input.user_text "Use the tool.")
-    ~model ()
+    ~model ~declarations:[ review_tool_declaration ] ~host_tools:[] ()
 
 let empty_session () =
   Session.create
@@ -419,6 +423,116 @@ let prelude_reaches_model_request () =
           | _ -> failf "unexpected prelude messages in request")
       | next -> failf "expected model request, got %a" Run.Step.pp_next next)
 
+let resumed_turn_keeps_accepted_tool_declarations () =
+  let host_tool description =
+    Llm.Tool.make ~name:"ask_user" ~description
+      ~input_schema:(Json.object' []) ()
+  in
+  let started =
+    match
+      Run.start
+        (config ~host_tools:[ host_tool "accepted" ] [])
+        ~id:(Session.Turn.Id.of_string "turn-1")
+        ~input:(Session.Turn.Input.user_text "Ask me.") ~model
+        (empty_session ())
+    with
+    | Ok step -> step
+    | Error error -> failf "start failed: %a" Run.Error.pp error
+  in
+  let saved =
+    decode Session.jsont (encode Session.jsont (Run.Step.session started))
+  in
+  match
+    Run.resume
+      (config ~host_tools:[ host_tool "replacement" ] [])
+      saved
+  with
+  | Error error -> failf "resume failed: %a" Run.Error.pp error
+  | Ok step -> (
+      match Run.Step.next step with
+      | Run.Step.Request_model request -> (
+          match Llm.Request.tools request with
+          | [ declaration ] ->
+              equal (option string) ~msg:"accepted declaration is durable"
+                (Some "accepted")
+                (Llm.Tool.description declaration)
+          | declarations ->
+              failf "expected one declaration, got %d"
+                (List.length declarations))
+      | next -> failf "expected model request, got %a" Run.Step.pp_next next)
+
+let resumed_turn_rejects_new_executable_tool () =
+  let started =
+    match
+      Run.start (config []) ~id:(Session.Turn.Id.of_string "turn-1")
+        ~input:(Session.Turn.Input.user_text "Continue.") ~model
+        (empty_session ())
+    with
+    | Ok step -> step
+    | Error error -> failf "start failed: %a" Run.Error.pp error
+  in
+  match
+    Run.accept_response
+      (config [ executable_tool () ])
+      (response (call ())) (Run.Step.session started)
+  with
+  | Error error -> failf "response failed: %a" Run.Error.pp error
+  | Ok step -> (
+      match Run.Step.next step with
+      | Run.Step.Request_model _ ->
+          let transcript =
+            Session.State.transcript (Session.state (Run.Step.session step))
+          in
+          is_true ~msg:"undeclared call receives a model-visible error"
+            (Llm.Transcript.is_ready transcript)
+      | next ->
+          failf "new executable escaped the accepted contract: %a"
+            Run.Step.pp_next next)
+
+let accepted_host_tool_keeps_routing () =
+  let declaration =
+    Llm.Tool.make ~name:"review_tool" ~input_schema:(Json.object' []) ()
+  in
+  let started =
+    match
+      Run.start
+        (config ~host_tools:[ declaration ] [])
+        ~id:(Session.Turn.Id.of_string "turn-1")
+        ~input:(Session.Turn.Input.user_text "Review this.") ~model
+        (empty_session ())
+    with
+    | Ok step -> step
+    | Error error -> failf "start failed: %a" Run.Error.pp error
+  in
+  match
+    Run.accept_response
+      (config [ executable_tool () ])
+      (response (call ())) (Run.Step.session started)
+  with
+  | Error error -> failf "response failed: %a" Run.Error.pp error
+  | Ok step -> (
+      match Run.Step.next step with
+      | Run.Step.Waiting (Session.Waiting.Host_tool _) -> ()
+      | next ->
+          failf "accepted host ownership changed on resume: %a"
+            Run.Step.pp_next next)
+
+let turn_tool_contract_is_checked () =
+  let declaration =
+    Llm.Tool.make ~name:"ask_user" ~input_schema:(Json.object' []) ()
+  in
+  let make declarations host_tools =
+    Session.Turn.make ~id:(Session.Turn.Id.of_string "turn-contract")
+      ~input:(Session.Turn.Input.user_text "Ask.") ~model ~declarations
+      ~host_tools ()
+  in
+  expect_invalid_arg "duplicate declarations raise" (fun () ->
+      make [ declaration; declaration ] []);
+  expect_invalid_arg "duplicate host ownership raises" (fun () ->
+      make [ declaration ] [ "ask_user"; "ask_user" ]);
+  expect_invalid_arg "host ownership requires a declaration" (fun () ->
+      make [] [ "ask_user" ])
+
 let resume_requires_active_lifecycle () =
   let config = config [] in
   let check status expected =
@@ -477,7 +591,7 @@ let answer_tool_records_tool_result () =
     Session.Turn.make
       ~id:(Session.Turn.Id.of_string "turn-1")
       ~input:(Session.Turn.Input.user_text "Use the host tool.")
-      ~model ~host_tools:[ "ask_user" ] ()
+      ~model ~declarations:[ host_tool ] ~host_tools:[ "ask_user" ] ()
   in
   let config = config ~host_tools:[ host_tool ] [] in
   let blocked =
@@ -560,7 +674,7 @@ let interrupt_answers_pending_host_tool_call () =
     Session.Turn.make
       ~id:(Session.Turn.Id.of_string "turn-1")
       ~input:(Session.Turn.Input.user_text "Use the host tool.")
-      ~model ~host_tools:[ "ask_user" ] ()
+      ~model ~declarations:[ host_tool ] ~host_tools:[ "ask_user" ] ()
   in
   let config = config ~host_tools:[ host_tool ] [] in
   let blocked =
@@ -893,6 +1007,12 @@ let () =
       test "interrupt finishes turn as cancelled"
         interrupt_finishes_turn_as_cancelled;
       test "config prelude reaches model request" prelude_reaches_model_request;
+      test "resumed turn keeps accepted tool declarations"
+        resumed_turn_keeps_accepted_tool_declarations;
+      test "resumed turn rejects new executable tool"
+        resumed_turn_rejects_new_executable_tool;
+      test "accepted host tool keeps routing" accepted_host_tool_keeps_routing;
+      test "turn tool contract is checked" turn_tool_contract_is_checked;
       test "resume requires active lifecycle" resume_requires_active_lifecycle;
       test "resolve permission deny answers blocked call"
         resolve_permission_deny_answers_blocked_call;
