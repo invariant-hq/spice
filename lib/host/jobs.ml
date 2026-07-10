@@ -621,4 +621,7 @@ let cancel t child =
   | Some (Error _) ->
       Error ("subagent run already settled: " ^ Spice_session.Id.to_string child)
 
+let is_pending t =
+  List.exists (fun (_, entry) -> Live.is_pending entry.live) t.entries
+
 let list t = List.rev_map (fun (_, entry) -> entry.record) t.entries

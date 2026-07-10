@@ -211,5 +211,9 @@ val subscribe : t -> (event -> unit) -> unit
 (** [subscribe t handler] subscribes [handler] to [t]'s event feed for the
     registry's lifetime. See {!event} for delivery discipline. *)
 
+val is_pending : t -> bool
+(** [is_pending t] is [true] iff one of [t]'s child attachments has work queued
+    or in progress. Runs parked on a waiting boundary are not pending. *)
+
 val list : t -> Spice_protocol.Subagent_run.t list
 (** [list t] is every registered run's latest ledger record, in spawn order. *)

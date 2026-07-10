@@ -199,6 +199,11 @@ val on_settled :
     session state no longer supports them (e.g. a continuation whose boundary is
     gone returns its own {!Spice_protocol.Error.t}). *)
 
+val is_pending : t -> bool
+(** [is_pending t] is [true] iff [t] has a command or amendment queued or in
+    progress. A detached attachment is not pending because it can no longer
+    deliver work to its subscribers. *)
+
 val document : t -> Spice_session_store.Document.t
 (** [document t] is the latest saved document — the current attachment state,
     without a store reload. A drain that ends in [Error _] does not advance it:

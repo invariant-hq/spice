@@ -65,6 +65,7 @@ type t = {
   mutable settled : (settled -> unit) list;
   mutable cancelling : bool;
   mutable detached : bool;
+  mutable working : bool;
   mutable drain_cancel : Eio.Switch.t option;
   signal : Eio.Condition.t;
 }
@@ -156,7 +157,8 @@ let drain t command =
               m "turn execution raised, recovered as internal failure: %s@.%s"
                 (Printexc.to_string exn)
                 (Printexc.raw_backtrace_to_string backtrace));
-          `Settled (Error (Spice_protocol.Error.Internal (Printexc.to_string exn)))
+          `Settled
+            (Error (Spice_protocol.Error.Internal (Printexc.to_string exn)))
     in
     match settled with
     | `Forced ->
@@ -241,10 +243,16 @@ let rec run t =
       t.jobs <- [];
       `Stop_daemon
   | Some (Command command) ->
-      drain t command;
+      t.working <- true;
+      Fun.protect
+        (fun () -> drain t command)
+        ~finally:(fun () -> t.working <- false);
       run t
   | Some (Job job) ->
-      run_job t job;
+      t.working <- true;
+      Fun.protect
+        (fun () -> run_job t job)
+        ~finally:(fun () -> t.working <- false);
       run t
 
 let attach ~sw ~runner document =
@@ -260,6 +268,7 @@ let attach ~sw ~runner document =
       settled = [];
       cancelling = false;
       detached = false;
+      working = false;
       drain_cancel = None;
       signal = Eio.Condition.create ();
     }
@@ -340,4 +349,10 @@ let write ?live ~store ~session ~f () =
 
 let events t handler = t.events <- t.events @ [ handler ]
 let on_settled t handler = t.settled <- t.settled @ [ handler ]
+
+let is_pending t =
+  (not t.detached)
+  && (t.working
+     || match (t.front, t.back, t.jobs) with [], [], [] -> false | _ -> true)
+
 let document t = t.document
