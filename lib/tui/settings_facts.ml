@@ -248,7 +248,7 @@ let usage_facts ~session ~model =
         scope = "";
       }
   | Some session ->
-      let metrics = Spice_session.Metrics.of_session session in
+      let metrics = Spice_session.metrics session in
       let usage = metrics.Spice_session.Metrics.usage in
       let lane label tokens = { Settings_screen.Usage.label; tokens } in
       let lanes =

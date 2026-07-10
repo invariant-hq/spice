@@ -137,7 +137,6 @@ val events : t -> Event.t list
 val state : t -> State.t
 (** [state t] is [t]'s validated semantic replay projection. *)
 
-(** Machine-readable metrics projected from durable session events. *)
 module Metrics : sig
   (** Machine-readable session spend and activity metrics. *)
 
@@ -161,21 +160,6 @@ module Metrics : sig
   }
   (** The type for cumulative session metrics. Counts are non-negative. *)
 
-  val of_events : Event.t list -> t
-  (** [of_events events] is the low-level cumulative metrics projection of an
-      already-validated event log.
-
-      Raises [Invalid_argument] if an integer lane overflows. *)
-
-  val of_session : session -> t
-  (** [of_session session] is the cumulative metrics projection of [session]'s
-      validated event log.
-
-      Raises [Invalid_argument] if an integer lane overflows. *)
-
-  val empty : t
-  (** [empty] is the zero metrics value. *)
-
   val equal : t -> t -> bool
   (** [equal a b] is [true] iff [a] and [b] have the same metrics. *)
 
@@ -184,8 +168,16 @@ module Metrics : sig
       syntax. *)
 
   val jsont : t Jsont.t
-  (** [jsont] maps metrics to JSON objects. *)
+  (** [jsont] maps metrics to JSON objects. Decoding rejects negative counters,
+      tool failures greater than tool calls, non-positive per-tool counts, and
+      duplicate, empty, or unsorted tool names. *)
 end
+
+val metrics : t -> Metrics.t
+(** [metrics session] is the cumulative metrics projection of [session]'s
+    validated event log.
+
+    Raises [Invalid_argument] if an integer lane overflows. *)
 
 val set_title : string option -> t -> t
 (** [set_title title t] is [t] with title [title].

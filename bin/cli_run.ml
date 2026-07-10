@@ -709,7 +709,7 @@ let outcome_string = Cli_block.outcome_string
 let result_document (document, _outcome) = document
 
 let metrics_json session =
-  Session.Metrics.of_session session |> json_encode Session.Metrics.jsont
+  Session.metrics session |> json_encode Session.Metrics.jsont
 
 let result_jsonl ~permission_of ~duration_ms (document, outcome) =
   let session = Store.Document.session document in
@@ -1134,7 +1134,7 @@ let drive_goal ~stdenv ~store ~json ~unattended ~mode ~max_steps
   in
   let rec exec runtime document command =
     let before_goal = goal_before () in
-    let before = Session.Metrics.of_session (Store.Document.session document) in
+    let before = Session.metrics (Store.Document.session document) in
     let started = monotonic_now stdenv in
     let result =
       resolve_unattended ~unattended runtime
@@ -1161,7 +1161,7 @@ let drive_goal ~stdenv ~store ~json ~unattended ~mode ~max_steps
         Error error
     | Ok ((document, outcome) as settled) -> (
         let after =
-          Session.Metrics.of_session (Store.Document.session document)
+          Session.metrics (Store.Document.session document)
         in
         let tokens = Goal_run.turn_tokens ~before ~after in
         let active_ms = duration_ms ~started stdenv in

@@ -145,7 +145,7 @@ let blocker_text (waiting : Spice_session.Waiting.t) =
 (* Terminal usage facts from the child's own event log: summed provider
    usage and the finished executable tool-call count. *)
 let usage_of session =
-  let metrics = Spice_session.Metrics.of_session session in
+  let metrics = Spice_session.metrics session in
   Spice_protocol.Subagent_run.Usage.make
     ~prompt_tokens:metrics.Spice_session.Metrics.usage.Spice_llm.Usage.input
     ~completion_tokens:
