@@ -139,29 +139,40 @@ let handle_subagent ~mode ~spawn document call spawn_request =
       (Some
          (result_text ~error:true call (disallowed_subagent_message ~mode role)))
 
-(* The dispatch a subagent runner carries. [message_parent] parks the child
-   turn on its waiting boundary — the run registry reads it as an ask; the
-   reply resumes the turn as the call's result. Every other recognized host
-   tool answers with a model-visible refusal: the root workflow tools would
-   act on the child session or park it where nothing resolves, and the
-   subagent lifecycle tools must not recurse. *)
-let child ~cancelled:_ _document call =
+let collaboration_tool_name name =
+  String.equal name Spice_protocol.Subagent.name
+  || String.equal name Spice_protocol.Subagent.Wait.name
+  || String.equal name Spice_protocol.Subagent.Cancel.name
+  || String.equal name Spice_protocol.Subagent.Message.name
+  || String.equal name Spice_protocol.Subagent.Message_parent.name
+
+(* A child carries the collaboration half of the root handler over the same
+   registry. [message_parent] is the one asymmetric operation: leaving it
+   unanswered parks the child so the registry can relay the ask. Root workflow
+   calls stay unavailable because they would mutate the child's session-local
+   artifacts or park on a boundary no root workflow surface owns. *)
+let subagent ~mode ~spawn ~wait ~cancel ~message ~cancelled document call =
   match Spice_protocol.Call.classify call with
   | None -> Ok None
   | Some (Spice_protocol.Call.Subagent_message_parent _) -> Ok None
+  | Some (Spice_protocol.Call.Subagent spawn_request) ->
+      handle_subagent ~mode ~spawn document call spawn_request
+  | Some (Spice_protocol.Call.Subagent_wait request) ->
+      answer call (wait ~cancelled request)
+  | Some (Spice_protocol.Call.Subagent_cancel request) ->
+      answer call (cancel request)
+  | Some (Spice_protocol.Call.Subagent_message request) ->
+      answer call (message request)
   | Some
       ( Spice_protocol.Call.Question _ | Spice_protocol.Call.Plan _
-      | Spice_protocol.Call.Todo _ | Spice_protocol.Call.Goal _
-      | Spice_protocol.Call.Subagent _ | Spice_protocol.Call.Subagent_wait _
-      | Spice_protocol.Call.Subagent_cancel _
-      | Spice_protocol.Call.Subagent_message _ ) ->
+      | Spice_protocol.Call.Todo _ | Spice_protocol.Call.Goal _ ) ->
       Ok
         (Some
            (result_text ~error:true call
               (Spice_llm.Tool.Call.name call
               ^ " is not available in a subagent session.")))
   | Some (Spice_protocol.Call.Invalid { name; error }) ->
-      if String.equal name Spice_protocol.Subagent.Message_parent.name then
+      if collaboration_tool_name name then
         Ok (Some (result_text ~error:true call error))
       else
         Ok

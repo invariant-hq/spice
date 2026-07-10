@@ -286,6 +286,18 @@ module Subagent_run : sig
       parent or child disagrees with [parent]/[child], is {!Error.Corrupt_file}.
   *)
 
+  val find_descendant :
+    fs:Eio.Fs.dir_ty Eio.Path.t ->
+    root:string ->
+    parent:Spice_session.Id.t ->
+    child:Spice_session.Id.t ->
+    (Spice_protocol.Subagent_run.t option, Error.t) result
+  (** [find_descendant ~fs ~root ~parent ~child] is the run for [child] below
+      the session-tree root [parent]. Lifecycle tools address runs by child id
+      alone, so this is the cross-process lookup for recursive descendants whose
+      immediate parent is not the registry root. Runs in another root's tree are
+      not visible; a lineage cycle is {!Error.Corrupt_file}. *)
+
   val list :
     fs:Eio.Fs.dir_ty Eio.Path.t ->
     root:string ->

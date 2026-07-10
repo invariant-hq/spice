@@ -5,6 +5,9 @@
 
 let ( let* ) = Result.bind
 
+let log_src = Logs.Src.create "spice.host.run"
+module Log = (val Logs.src_log log_src : Logs.LOG)
+
 let now stdenv =
   Eio.Time.now (Eio.Stdenv.clock stdenv)
   |> Spice_session.Time.of_unix_seconds_float
@@ -302,19 +305,31 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
       ~key:("subagent-run:" ^ Spice_session.Id.to_string child)
       ()
   in
+  let publish_parent_notice run notice =
+    let parent = Spice_protocol.Subagent_run.parent run in
+    if Spice_session.Id.equal parent session then
+      Notice_queue.publish notices notice
+    else
+      match Jobs.publish_notice jobs parent notice with
+      | Ok () -> ()
+      | Error message ->
+          Log.warn (fun m ->
+              m "could not deliver subagent settlement to parent %a: %s"
+                Spice_session.Id.pp parent message)
+  in
   Jobs.subscribe jobs (function
     | Jobs.Settled run -> (
         match Jobs.asked jobs (Spice_protocol.Subagent_run.child run) with
-        | Some message -> Notice_queue.publish notices (ask_notice run message)
-        | None -> Notice_queue.publish notices (settle_notice run))
+        | Some message -> publish_parent_notice run (ask_notice run message)
+        | None -> publish_parent_notice run (settle_notice run))
     | Jobs.Started _ | Jobs.Progress _ | Jobs.Blocked _ | Jobs.Asked _
     | Jobs.Resumed _ ->
         ());
   (* One wait result section per named run, in request order; a child that
      did not complete reads as such rather than failing the whole wait. An
      unknown run id fails the call before any blocking. *)
-  let wait_result ~cancelled run =
-    match Jobs.wait ~cancelled jobs run with
+  let wait_result ~caller ~cancelled run =
+    match Jobs.wait ~cancelled jobs ~caller run with
     | Error _ as error -> error
     | Ok (record, Jobs.Summary summary) ->
         Ok (completed_subagent_text record summary)
@@ -336,22 +351,22 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
               (Spice_protocol.Subagent_run.child record)
           ^ "); it is still running.")
   in
-  let wait_runs ~cancelled request =
+  let wait_runs ~caller ~cancelled request =
     let rec collect acc = function
       | [] -> Ok (String.concat "\n\n" (List.rev acc))
       | run :: rest -> (
-          match wait_result ~cancelled run with
+          match wait_result ~caller ~cancelled run with
           | Error _ as error -> error
           | Ok section -> collect (section :: acc) rest)
     in
     collect [] (Spice_protocol.Subagent.Wait.Request.runs request)
   in
-  let cancel_run request =
+  let cancel_run ~caller request =
     let run = Spice_protocol.Subagent.Cancel.Request.run request in
-    match Jobs.cancel jobs run with
+    match Jobs.cancel jobs ~caller run with
     | Error _ as error -> error
     | Ok () -> (
-        match Jobs.wait jobs run with
+        match Jobs.wait jobs ~caller run with
         | Error _ as error -> error
         | Ok (record, _) ->
             Ok
@@ -363,9 +378,10 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
                   (Spice_protocol.Subagent_run.child record)
               ^ ")."))
   in
-  let message_run ~runner request =
+  let message_run ~caller ~runner request =
     match
       Jobs.message ~runner ~origin:`Model jobs
+        ~caller
         (Spice_protocol.Subagent.Message.Request.run request)
         (Spice_protocol.Subagent.Message.Request.message request)
     with
@@ -488,36 +504,53 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
         Spice_protocol.Contract.policy contract ~configured:parent_policy
       in
       let child_max_steps = Config.Runtime.max_steps (Config.runtime config) in
-      (* A child's only host tool is [message_parent]: it can ask, but it
-         cannot spawn further children or touch the parent's workflow state. *)
+      (* Workflow state stays root-only. Collaboration composes recursively:
+         every descendant receives the same lifecycle tools and the registry
+         applies the shared depth and running-capacity bounds. *)
       Ok
         (Spice_session_run.Config.make ~tools:child_tools ~policy:child_policy
            ~host_tools:
              [
+               Spice_protocol.Call.Kind.tool
+                 Spice_protocol.Call.Kind.Subagent;
+               Spice_protocol.Call.Kind.tool
+                 Spice_protocol.Call.Kind.Subagent_wait;
+               Spice_protocol.Call.Kind.tool
+                 Spice_protocol.Call.Kind.Subagent_cancel;
+               Spice_protocol.Call.Kind.tool
+                 Spice_protocol.Call.Kind.Subagent_message;
                Spice_protocol.Call.Kind.tool
                  Spice_protocol.Call.Kind.Subagent_message_parent;
              ]
            ~denial_message ~prelude
            ?safety_step_cap:child_max_steps ())
     in
-    let child_runner role ~notices =
+    let rec child_runner role ~session:child_session ~depth ~notices =
       let* child_config =
         child_run_config role |> Result.map_error Host.Error.message
       in
+      let handler =
+        Handler.subagent ~mode ~spawn:(spawn_child ~parent_depth:depth)
+          ~wait:(wait_runs ~caller:child_session)
+          ~cancel:(cancel_run ~caller:child_session)
+          ~message:
+            (message_run ~caller:child_session ~runner:resume_runner)
+      in
       Ok
         (Runner.make ~store ~client ~model:(Spice_provider.Model.llm model)
-           ~mode:None ~run:child_config ~host_tool:Handler.child
+           ~mode:None ~run:child_config ~host_tool:handler
            ~hooks:
              (Session.with_notices ~before_request:(fun () -> ()) notices
                 Session.no_hooks)
            ())
-    in
-    let resume_runner run ~notices =
-      child_runner (Spice_protocol.Subagent_run.role run) ~notices
-    in
-    let spawn_child spawn ~parent =
+    and resume_runner run ~notices =
+      child_runner (Spice_protocol.Subagent_run.role run)
+        ~session:(Spice_protocol.Subagent_run.child run)
+        ~depth:(Spice_protocol.Subagent_run.depth run) ~notices
+    and spawn_child ~parent_depth spawn ~parent =
       let parent_session = Spice_session_store.Document.session parent in
       let role = Spice_protocol.Subagent.Spawn.role spawn in
+      let depth = parent_depth + 1 in
       let parent_call_id =
         match Spice_session.State.phase (Spice_session.state parent_session) with
         | Spice_session.State.Phase.Waiting
@@ -535,8 +568,8 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
           let child_spec =
             {
               Jobs.runner =
-                (fun (_ : Spice_session.Id.t) ~notices ->
-                  child_runner role ~notices);
+                (fun child_session ~notices ->
+                  child_runner role ~session:child_session ~depth ~notices);
               prompt = child_prompt spawn;
               title = child_session_title spawn;
               cwd =
@@ -547,7 +580,7 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
           match
             Jobs.spawn jobs
               ~parent:(Spice_session.id parent_session)
-              ~parent_turn ~parent_call_id ~spawn ~depth:1 child_spec
+              ~parent_turn ~parent_call_id ~spawn ~depth child_spec
           with
           | Error _ as error -> error
           | Ok child -> Ok (launched_subagent_text ~child spawn))
@@ -555,8 +588,9 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
     let handler =
       Handler.defaults ~fs ~root
         ~now:(fun () -> now stdenv)
-        ~mode ~spawn:spawn_child ~wait:wait_runs ~cancel:cancel_run
-        ~message:(message_run ~runner:resume_runner)
+        ~mode ~spawn:(spawn_child ~parent_depth:0)
+        ~wait:(wait_runs ~caller:session) ~cancel:(cancel_run ~caller:session)
+        ~message:(message_run ~caller:session ~runner:resume_runner)
     in
     Ok
       (Runner.make ~store ~client

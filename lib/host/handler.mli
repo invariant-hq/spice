@@ -48,15 +48,29 @@ val for_tool : string -> t -> t
     [name], and is [Ok None] for every other call. It gates a custom handler on
     a single tool. *)
 
-val child : t
-(** [child] is the host-tool dispatch for subagent runners. A valid
-    [message_parent] returns [Ok None]: the turn parks on the waiting boundary
-    the run registry reads as an ask (doc/plans/subagent-tui.md §5.6). Every
-    other recognized host tool — the root workflow tools and the subagent
-    lifecycle tools — answers with a model-visible "not available in a subagent
-    session" error, so a stray [propose_plan] can neither park the child nor
-    recurse; an undecodable [message_parent] answers with its decode error.
-    Calls that are not host tools are [Ok None]. *)
+val subagent :
+  mode:Spice_protocol.Mode.t ->
+  spawn:
+    (Spice_protocol.Subagent.Spawn.t ->
+    parent:Spice_session_store.Document.t ->
+    (string, string) result) ->
+  wait:
+    (cancelled:(unit -> bool) ->
+    Spice_protocol.Subagent.Wait.Request.t ->
+    (string, string) result) ->
+  cancel:(Spice_protocol.Subagent.Cancel.Request.t -> (string, string) result) ->
+  message:(Spice_protocol.Subagent.Message.Request.t -> (string, string) result) ->
+  t
+(** [subagent ~mode ~spawn ~wait ~cancel ~message] is the host-tool dispatch
+    for subagent runners. It gives a child the same bounded collaboration
+    operations as its parent: spawn (with [mode]'s role gate), wait, cancel, and
+    message. A valid [message_parent] returns [Ok None], parking the turn on the
+    waiting boundary the run registry reads as an ask.
+
+    Root workflow tools remain unavailable: questions, plans, todos, and goals
+    answer with a model-visible error, so a child cannot mutate or park on the
+    root session's workflow state. Calls that are not host tools are [Ok None].
+    Undecodable offered collaboration calls answer with their decode error. *)
 
 (** {1:defaults Default dispatch} *)
 

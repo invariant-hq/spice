@@ -625,6 +625,30 @@ module Subagent_run = struct
     let* runs = check [] runs in
     Ok (List.sort compare_run runs)
 
+  let find_descendant ~fs ~root ~parent ~child =
+    let rec search seen = function
+      | [] -> Ok None
+      | candidate_parent :: rest ->
+          let key = Spice_session.Id.to_string candidate_parent in
+          if List.mem key seen then
+            corrupt (parent_dir ~root candidate_parent)
+              ("subagent lineage contains a cycle at " ^ key)
+          else
+            let* runs = list ~fs ~root ~parent:candidate_parent in
+            match
+              List.find_opt
+                (fun run ->
+                  Spice_session.Id.equal child
+                    (Spice_protocol.Subagent_run.child run))
+                runs
+            with
+            | Some run -> Ok (Some run)
+            | None ->
+                search (key :: seen)
+                  (List.map Spice_protocol.Subagent_run.child runs @ rest)
+    in
+    search [] [ parent ]
+
   (* Child ids across every parent, from filenames alone: no file is decoded,
      so one corrupt run cannot hide the rest from a caller that only needs
      the id set (the session picker's child filter). *)

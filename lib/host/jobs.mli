@@ -111,10 +111,10 @@ val create :
   max_exchanges:int ->
   t
 (** [create ~sw ~stdenv ~store ~parent ~max_concurrent ~max_depth
-    ~max_exchanges] is [parent]'s live registry. Child drain fibers run on [sw];
-    ledger artifacts live under [store]'s root. A child absent from the live
-    registry is loaded from [parent]'s durable run ledger when first addressed.
-    Registry lifetime is [sw]'s.
+    ~max_exchanges] is [parent]'s live session-tree registry. Child drain fibers
+    run on [sw]; ledger artifacts live under [store]'s root. A child absent from
+    the live registry is located among [parent]'s durable descendants and loaded
+    when first addressed. Registry lifetime is [sw]'s.
 
     [max_exchanges] caps parent<->child message exchanges per run — model-origin
     sends over the cap fail, asks over the cap park with the cap named as
@@ -146,13 +146,15 @@ val spawn :
 val wait :
   ?cancelled:(unit -> bool) ->
   t ->
+  caller:Spice_session.Id.t ->
   Spice_session.Id.t ->
   (Spice_protocol.Subagent_run.t * outcome, string) result
-(** [wait ?cancelled t run] loads [run] from durable storage when necessary,
+(** [wait ?cancelled t ~caller run] loads [run] from durable storage when necessary,
     blocks the calling fiber until it settles, and
     returns the settled ledger record with its caller-facing outcome. The ledger
     transition and {!Settled} publication happen before [wait] returns. Errors
-    when [run] is neither live nor recorded under the registry's parent.
+    when [run] is not a strict descendant of [caller]. This rejects self- and
+    ancestor-waits before blocking, so recursive runs cannot form a wait cycle.
 
     [cancelled] is sampled while blocked (it defaults to never cancelled); when
     it flips, [wait] returns {!Wait_interrupted} with the latest non-terminal
@@ -161,7 +163,9 @@ val wait :
 
     Blocking is cooperative: child drains progress while the caller waits. A
     settlement is final for its episode; a {!message}- or {!answer}-resumed run
-    settles again and [wait] observes the new settlement. *)
+    settles again and [wait] observes the new settlement. The durable fallback
+    searches [parent]'s whole tree, so recursive descendants remain addressable
+    after a process restart without exposing another root's runs. *)
 
 val drain : ?cancelled:(unit -> bool) -> t -> unit
 (** [drain ?cancelled t] waits for every run that is unsettled when [drain]
@@ -171,21 +175,25 @@ val drain : ?cancelled:(unit -> bool) -> t -> unit
     switch closes. Unknown-run errors are impossible for the captured registry
     entries and are ignored. *)
 
-val cancel : t -> Spice_session.Id.t -> (unit, string) result
-(** [cancel t run] cancels [run]: an unsettled run gets an interrupt on its
+val cancel :
+  t -> caller:Spice_session.Id.t -> Spice_session.Id.t -> (unit, string) result
+(** [cancel t ~caller run] cancels descendant [run]: an unsettled run gets an interrupt on its
     attachment and settles as cancelled through the ordinary settlement path; a
     run parked on a waiting boundary is cancelled directly — a pure ledger
     transition plus release of the held attachment, published as {!Settled}.
-    Errors when [run] is not registered or already settled terminally. *)
+    Errors when [run] is not a strict descendant of [caller], is not registered,
+    or already settled terminally. *)
 
 val message :
   runner:resume_runner ->
   origin:[ `Model | `User ] ->
   t ->
+  caller:Spice_session.Id.t ->
   Spice_session.Id.t ->
   string ->
   ([ `Delivered | `Resumed ], string) result
-(** [message ~runner ~origin t run text] delivers [text] to [run], resolving to
+(** [message ~runner ~origin t ~caller run text] delivers [text] to descendant
+    [run], resolving to
     exactly one of:
 
     - [`Delivered] — [run] is unsettled, or parked on a non-ask boundary: [text]
@@ -221,10 +229,11 @@ val asked : t -> Spice_session.Id.t -> string option
 val answer :
   runner:resume_runner ->
   t ->
+  caller:Spice_session.Id.t ->
   Spice_session.Id.t ->
   Spice_protocol.Command.t ->
   (unit, string) result
-(** [answer ~runner t run command] resumes a run parked on a waiting boundary
+(** [answer ~runner t ~caller run command] resumes a descendant run parked on a waiting boundary
     with the continuation [command] — a permission
     {!Spice_protocol.Command.Reply} or a host-tool
     {!Spice_protocol.Command.Answer} the surface built from the boundary it
@@ -239,6 +248,16 @@ val subscribe : t -> (event -> unit) -> unit
 val is_pending : t -> bool
 (** [is_pending t] is [true] iff one of [t]'s child attachments has work queued
     or in progress. Runs parked on a waiting boundary are not pending. *)
+
+val publish_notice :
+  t ->
+  Spice_session.Id.t ->
+  Spice_protocol.Notice.t ->
+  (unit, string) result
+(** [publish_notice t child notice] queues [notice] for [child]'s next model
+    request. It is the direct-parent delivery seam for recursive descendants:
+    {!Run} formats a grandchild settlement and publishes it to the child that
+    spawned that run. Errors when [child] is not recorded in the tree. *)
 
 val list : t -> Spice_protocol.Subagent_run.t list
 (** [list t] is every registered run's latest ledger record, in spawn order. *)

@@ -20,7 +20,8 @@ let no_handler ~cancelled:_ _document _call = Ok None
 (* A runner built without a plan resolver cannot resolve a [propose_plan]
    boundary: a [Resolve_plan] command against it is a configuration error, never
    a silent no-op. The runners that host plan-mode turns supply the real
-   resolver; a subagent runner (whose [Handler.child] refuses plans) keeps this. *)
+   resolver; a subagent runner (whose [Handler.subagent] refuses plans) keeps
+   this. *)
 let no_resolver ~decision:_ _proposal =
   Error (Spice_protocol.Error.Internal "plan resolution is not configured")
 

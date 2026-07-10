@@ -79,6 +79,7 @@ type t = {
   max_concurrent : int;
   max_depth : int;
   max_exchanges : int;
+  mutable running : int;
   mutable entries : (Spice_session.Id.t * entry) list; (* newest first *)
   mutable subscribers : (event -> unit) list;
 }
@@ -94,6 +95,7 @@ let create ~sw ~stdenv ~store ~parent ~max_concurrent ~max_depth ~max_exchanges 
     max_concurrent;
     max_depth;
     max_exchanges;
+    running = 0;
     entries = [];
     subscribers = [];
   }
@@ -199,7 +201,8 @@ let settlement_of_record record =
 
 let hydrate t child =
   match
-    Artifacts.Subagent_run.load ~fs:t.fs ~root:t.root ~parent:t.parent ~child
+    Artifacts.Subagent_run.find_descendant ~fs:t.fs ~root:t.root
+      ~parent:t.parent ~child
   with
   | Error error -> Error (Artifacts.Error.message error)
   | Ok None ->
@@ -213,7 +216,9 @@ let hydrate t child =
         match settlement_of_record record with
         | Ok _ -> Ok record
         | Error message ->
-            update_run t ~parent:t.parent ~child ~f:(fun record ->
+            update_run t
+              ~parent:(Spice_protocol.Subagent_run.parent record)
+              ~child ~f:(fun record ->
                 Spice_protocol.Subagent_run.fail ~failed_at:(now t.stdenv)
                   ~message record)
       in
@@ -246,11 +251,52 @@ let find t child =
   | Some entry -> Ok entry
   | None -> hydrate t child
 
+let find_descendant t ~caller child =
+  if Spice_session.Id.equal caller child then
+    Error
+      ("a subagent cannot target its own session: "
+      ^ Spice_session.Id.to_string child)
+  else
+    match
+      Artifacts.Subagent_run.find_descendant ~fs:t.fs ~root:t.root
+        ~parent:caller ~child
+    with
+    | Error error -> Error (Artifacts.Error.message error)
+    | Ok None ->
+        Error
+          ("subagent run " ^ Spice_session.Id.to_string child
+         ^ " is not a descendant of session "
+          ^ Spice_session.Id.to_string caller)
+    | Ok (Some _) -> find t child
+
+let publish_notice t child notice =
+  let* entry = find t child in
+  Notice_queue.publish entry.notices notice;
+  Ok ()
+
+let reserve_running t =
+  if t.running >= t.max_concurrent then
+    Error
+      (Printf.sprintf
+         "%d subagents are already running, the configured limit \
+          (run.subagent_max_concurrent); wait for one to settle or cancel one \
+          before spawning"
+         t.max_concurrent)
+  else begin
+    t.running <- t.running + 1;
+    Ok ()
+  end
+
+let release_running t =
+  if t.running <= 0 then invalid_arg "subagent running capacity underflow";
+  t.running <- t.running - 1
+
 (* Settle [entry]: transition the ledger from the drain result and publish.
    Terminal settlements release the attachment; a Blocked settlement keeps it,
    so an answer or a message can resume the parked turn in place. Runs on the
    child's drain fiber. *)
 let settle t entry ~parent ~child result =
+  release_running t;
   let settled_at = now t.stdenv in
   (match result with
   | Ok (document, _) -> entry.document <- document
@@ -395,38 +441,14 @@ let child_id t ~parent ~parent_call_id =
       ^ "-sub-"
       ^ escaped_id_component parent_call_id)
 
-let running_count t =
-  List.length
-    (List.filter
-       (fun (_, entry) ->
-         match Spice_protocol.Subagent_run.status entry.record with
-         | Spice_protocol.Subagent_run.Status.Running _ -> true
-         | Spice_protocol.Subagent_run.Status.Queued
-         | Spice_protocol.Subagent_run.Status.Blocked _
-         | Spice_protocol.Subagent_run.Status.Completed _
-         | Spice_protocol.Subagent_run.Status.Failed _
-         | Spice_protocol.Subagent_run.Status.Cancelled _ ->
-             false)
-       t.entries)
-
-let check_running_capacity t =
-  if running_count t >= t.max_concurrent then
-    Error
-      (Printf.sprintf
-         "%d subagents are already running, the configured limit \
-          (run.subagent_max_concurrent); wait for one to settle or cancel one \
-          before spawning"
-         t.max_concurrent)
-  else Ok ()
-
-let check_spawn_caps t ~depth =
+let reserve_spawn t ~depth =
   if depth > t.max_depth then
     Error
       (Printf.sprintf
          "subagent depth %d exceeds the configured limit %d \
           (run.subagent_max_depth)"
          depth t.max_depth)
-  else check_running_capacity t
+  else reserve_running t
 
 let rollback_spawn t ~document ?run error =
   let ledger_errors =
@@ -449,9 +471,8 @@ let rollback_spawn t ~document ?run error =
   | cleanup ->
       Error (error ^ "; spawn rollback failed: " ^ String.concat "; " cleanup)
 
-let spawn t ~parent ~parent_turn ~parent_call_id ~spawn ~depth
+let spawn_reserved t ~parent ~parent_turn ~parent_call_id ~spawn ~depth
     (child_spec : child) =
-  let* () = check_spawn_caps t ~depth in
   let child = child_id t ~parent ~parent_call_id in
   let created_at = now t.stdenv in
   (* Build the fallible runner before any durable write, so a runner-assembly
@@ -509,6 +530,17 @@ let spawn t ~parent ~parent_turn ~parent_call_id ~spawn ~depth
   Live.submit live (Spice_protocol.Command.Start request);
   Ok child
 
+let spawn t ~parent ~parent_turn ~parent_call_id ~spawn ~depth child_spec =
+  let* () = reserve_spawn t ~depth in
+  match
+    spawn_reserved t ~parent ~parent_turn ~parent_call_id ~spawn ~depth
+      child_spec
+  with
+  | Ok _ as launched -> launched
+  | Error _ as error ->
+      release_running t;
+      error
+
 (* Re-arm the settlement promise; the next drain settlement resolves the new
    promise, and later [wait]s observe the new episode. *)
 let rearm entry =
@@ -517,23 +549,25 @@ let rearm entry =
   entry.resolve <- resolve
 
 let resume_ledger t entry ~child =
-  let* () = check_running_capacity t in
+  let* () = reserve_running t in
   let previous = entry.record in
   let resumed_at = now t.stdenv in
-  let* reserved = Spice_protocol.Subagent_run.resume ~resumed_at previous in
-  (* Reserve the slot in memory before the ledger write can suspend. Other
-     resume attempts therefore observe this run as running; a failed write
-     restores the settled record. *)
-  entry.record <- reserved;
-  match
+  let resume () =
+    let* reserved = Spice_protocol.Subagent_run.resume ~resumed_at previous in
+    (* Reserve both the counter and the record before the ledger write can
+       suspend. Other attempts therefore observe the consumed running slot and
+       this run as active. *)
+    entry.record <- reserved;
     update_run t ~parent:(Spice_protocol.Subagent_run.parent previous) ~child
       ~f:(Spice_protocol.Subagent_run.resume ~resumed_at)
-  with
+  in
+  match resume () with
   | Ok record ->
       entry.record <- record;
       Ok record
   | Error _ as error ->
       entry.record <- previous;
+      release_running t;
       error
 
 (* The parked host-tool boundary of a blocked child, from its held document. *)
@@ -583,8 +617,8 @@ let resume_terminal t entry ~child ~runner text =
   Live.submit live (Spice_protocol.Command.Start request);
   Ok ()
 
-let message ~runner ~origin t child text =
-  let* entry = find t child in
+let message ~runner ~origin t ~caller child text =
+  let* entry = find_descendant t ~caller child in
   let* () =
     match origin with
     | `User -> Ok ()
@@ -652,8 +686,8 @@ let asked t child =
   | None -> None
   | Some entry -> entry.asked
 
-let answer ~runner t child command =
-  let* entry = find t child in
+let answer ~runner t ~caller child command =
+  let* entry = find_descendant t ~caller child in
   match Eio.Promise.peek entry.settled with
   | Some (Ok (record, _))
     when match Spice_protocol.Subagent_run.status record with
@@ -666,8 +700,7 @@ let answer ~runner t child command =
         ("subagent run is not parked on a boundary: "
         ^ Spice_session.Id.to_string child)
 
-let wait ?(cancelled = fun () -> false) t child =
-  let* entry = find t child in
+let await ?(cancelled = fun () -> false) t entry =
   (* Sampling, not awaiting: the interrupt signal is a flag Live flips with
      no condition to broadcast, so a blocked wait polls it between short
      sleeps. An interrupted wait returns the latest non-terminal record with
@@ -685,17 +718,21 @@ let wait ?(cancelled = fun () -> false) t child =
   in
   await ()
 
+let wait ?cancelled t ~caller child =
+  let* entry = find_descendant t ~caller child in
+  await ?cancelled t entry
+
 let drain ?cancelled t =
-  let entries = List.rev t.entries in
+  let entries = List.rev_map snd t.entries in
   List.iter
-    (fun (child, entry) ->
+    (fun entry ->
       match Eio.Promise.peek entry.settled with
       | Some _ -> ()
-      | None -> ignore (wait ?cancelled t child : _ result))
+      | None -> ignore (await ?cancelled t entry : _ result))
     entries
 
-let cancel t child =
-  let* entry = find t child in
+let cancel t ~caller child =
+  let* entry = find_descendant t ~caller child in
   match Eio.Promise.peek entry.settled with
   | None ->
       (match entry.live with
