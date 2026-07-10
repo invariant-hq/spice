@@ -34,6 +34,9 @@ overview when changing how the libraries compose.
   models.
 - [Deterministic TUI tests](dev/tui-testing.md) — the in-process harness,
   virtual clock, and settling rules.
+- [Evaluation and the research lab](dev/lab.md) — the eval instrument, session
+  capture and trace analysis, subject blindness, and the `spice-lab` campaign
+  loop.
 
 ## Sources of truth
 
