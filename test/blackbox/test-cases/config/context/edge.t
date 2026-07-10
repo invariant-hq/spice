@@ -1,6 +1,5 @@
 Edge cases for workspace-context discovery and projection.
 
-  $ mkdir .git
   $ digests () { sed -E 's/sha256:[0-9a-f]+/sha256:HASH/g'; }
 
 A directory named like a candidate is a visible skip fact, not a silent drop,

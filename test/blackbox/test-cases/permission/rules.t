@@ -2,8 +2,6 @@ Durable permission rules are hand-authored config facts: portable matcher
 forms, content-derived ids that survive file reordering, inspection in
 evaluation order, and removal that edits exactly one config file.
 
-  $ git init -q
-
 The list shows the active preset's rules even before any durable rule exists.
 
   $ spice permission list

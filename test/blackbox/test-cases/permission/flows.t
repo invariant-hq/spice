@@ -3,8 +3,6 @@ each reviewed access with render-time policy provenance, and host-computed
 planned-change evidence — in the human text, the status JSON, and the JSONL
 events, from the same projection.
 
-  $ git init -q
-
 The file-mutation editor is model-conditional (a GPT model receives the
 apply_patch family, without edit_file/write_file), so these runs pin the
 string-replace family explicitly; the model stays gpt-5.5 for the fake

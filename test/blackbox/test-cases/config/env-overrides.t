@@ -1,7 +1,5 @@
 Environment variables override effective config without being persisted.
 
-  $ git init -q
-
 On Unix, COMSPEC from cross-platform environments does not override SHELL for
 the default shell program.
 

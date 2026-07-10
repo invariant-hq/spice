@@ -1,7 +1,5 @@
 Spice config edits preserve unknown JSON fields.
 
-  $ git init -q
-
 Seed user config with known and unknown fields.
 
   $ mkdir -p "$XDG_CONFIG_HOME/spice"

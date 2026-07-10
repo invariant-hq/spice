@@ -5,8 +5,6 @@ presence only. Phases drive exit codes: ready and unchecked routes exit 0,
 missing and blocked routes exit 1, degraded routes exit 0 because their
 problems self-heal.
 
-  $ git init -q
-
   $ export OPENAI_API_KEY=sk-test-abcd1234
   $ export SPICE_MODEL=openai/gpt-5.5
 

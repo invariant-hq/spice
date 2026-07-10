@@ -1,8 +1,6 @@
 OAuth login flows are TTY-sensitive and testable against a local fake auth
 issuer through the auth base-URL override.
 
-  $ git init -q
-
 Without a terminal, plain `spice auth login openai` refuses to pick a method
 silently: the default is the browser flow, which needs a TTY.
 

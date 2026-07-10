@@ -1,10 +1,6 @@
 Spice debug context reports workspace facts, instruction sources in
 deterministic order, the projection identity, and warnings.
 
-The testcase pins its own workspace root so discovery does not walk up into
-the repository that runs the tests.
-
-  $ mkdir .git
   $ digests () { sed -E 's/(rendered digest: sha256:[0-9a-f]+):[0-9]+/\1:LEN/; s/("rendered_digest":"sha256:[0-9a-f]+):[0-9]+/\1:LEN/; s/sha256:[0-9a-f]+/sha256:HASH/g'; }
 
 With no instruction files, workspace facts and a stable projection are still

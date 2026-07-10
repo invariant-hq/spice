@@ -1,10 +1,6 @@
 Live execution projects workspace context into provider input and reports the
 projection identity on JSONL events.
 
-The testcase pins its own workspace root so discovery does not walk up into
-the repository that runs the tests.
-
-  $ mkdir .git
   $ cat > AGENTS.md <<'EOF'
   > Root instruction.
   > EOF

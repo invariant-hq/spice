@@ -1,7 +1,5 @@
 Spice config repair commands do not require effective config resolution.
 
-  $ git init -q
-
 Path discovery works even when an unrelated environment config value is
 invalid.
 

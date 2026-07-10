@@ -3,8 +3,6 @@ output, and strict validation in user-facing language. Help output is long, so
 these checks grep for the load-bearing pieces instead of pinning full pages,
 and use --help=plain so the rendering does not depend on the terminal.
 
-  $ git init -q
-
 The command group help lists every supported config key with its vocabulary.
 
   $ spice config --help=plain | grep -o 'CONFIG KEYS'

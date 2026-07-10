@@ -2,8 +2,6 @@ Durable rules and presets compose as one visible first-match order: durable
 config rules decide before the preset — including denies under bypass — and
 workspace files never contribute rules at all.
 
-  $ git init -q
-
 A hand-written portable rule allows the matching write without review. The
 test directory is a fresh checkout every run, so this also pins that relative
 path rules carry no machine-derived root key.

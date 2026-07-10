@@ -2,8 +2,6 @@ Logout with --revoke attempts provider revocation for stored OAuth
 credentials before removing them locally. Revocation failure never strands
 the user: the local credential is removed anyway, with a warning saying so.
 
-  $ git init -q
-
   $ mkdir -p "$XDG_CONFIG_HOME/spice"
   $ oauth_credential () {
   >   printf '{"version":1,"credentials":{"openai":{"default":{"kind":"oauth","access_token":"oauth-access-9999","refresh_token":"refresh-r1","account_id":"acct-42"}}}}' > "$XDG_CONFIG_HOME/spice/auth.json"

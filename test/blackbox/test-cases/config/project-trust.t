@@ -1,7 +1,5 @@
 Project config applies without a trust decision.
 
-  $ git init -q
-
 Workspace config layers load unconditionally; safety comes from the
 allowlist filter, not from a trust gate.
 

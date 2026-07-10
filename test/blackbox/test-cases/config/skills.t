@@ -1,8 +1,6 @@
 Skills config keys: enablement booleans, the extra-roots list, and the
 catalog byte budget.
 
-  $ git init -q
-
 Defaults are resolved built-ins.
 
   $ spice config get skills.enabled

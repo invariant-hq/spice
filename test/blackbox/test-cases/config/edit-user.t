@@ -1,7 +1,5 @@
 Spice config edits user configuration through typed keys.
 
-  $ git init -q
-
 Initialize the user config file.
 
   $ spice config init

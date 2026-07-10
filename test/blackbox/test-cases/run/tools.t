@@ -3,8 +3,6 @@ requests: every declaration a run sends to the provider, with description text
 and input schema. This snapshot is the review surface for tool prompts: any
 change to prompts/tools/* or to an input schema shows up in this diff.
 
-  $ mkdir .git
-
 The file-mutation editor family is model-conditional. A GPT-family model is
 trained on the apply_patch format, so it receives apply_patch alone; the header
 line states the resolved family and why. This is the prompt-review surface for

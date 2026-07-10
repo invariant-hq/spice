@@ -1,7 +1,5 @@
 Auth status is passive, local, and credential-free.
 
-  $ git init -q
-
 With no credentials, one provider has an exact missing status shape.
 
   $ spice auth status openai --json

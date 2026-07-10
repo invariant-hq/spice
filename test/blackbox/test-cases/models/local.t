@@ -2,8 +2,6 @@ Local models carry memory-fit verdicts. The suite pins a 24 GiB budget
 (SPICE_LOCAL_MEMORY_BUDGET in the setup script) so verdicts do not depend on
 the machine running the tests; hosted models show no verdict.
 
-  $ git init -q
-
   $ spice models --provider local
   MODEL                    STATUS  CONTEXT  COST $/MTOK  FIT
   local/qwen3-coder-30b *  stable  262144   -            fits (~21.9 GiB of 24.0 GiB)

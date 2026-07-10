@@ -1,7 +1,5 @@
 Spice config reports usage errors for invalid keys and values.
 
-  $ git init -q
-
 Unknown keys are rejected before config files are edited.
 
   $ spice config get nope

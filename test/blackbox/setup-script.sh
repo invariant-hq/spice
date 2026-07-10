@@ -41,6 +41,12 @@ export SPICE_LOCAL_SERVER_BINARY=spice-test-llama-server
 
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME"
 
+# Dune runs cram cases below the developer checkout. Establish a project
+# marker at the fixture root so Spice never discovers configuration or skills
+# from that checkout. Tests that need a functioning repository initialize this
+# directory explicitly.
+mkdir -p .git
+
 find_up () {
   local path="$1"
   local dir="$PWD"

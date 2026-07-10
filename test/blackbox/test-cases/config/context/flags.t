@@ -1,6 +1,5 @@
 Instruction flags override config enablement for one invocation.
 
-  $ mkdir .git
   $ digests () { sed -E 's/(rendered digest: sha256:[0-9a-f]+):[0-9]+/\1:LEN/; s/("rendered_digest":"sha256:[0-9a-f]+):[0-9]+/\1:LEN/; s/sha256:[0-9a-f]+/sha256:HASH/g'; }
   $ cat > AGENTS.md <<EOF
   > Root instruction.
