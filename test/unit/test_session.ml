@@ -1265,6 +1265,27 @@ let resolve_anchor_cuts_at_boundaries () =
     (List.length (Session.events session))
     (resolve (Session.Anchor.after_turn (turn_id "turn-2")))
 
+let first_turn_prefix_keeps_idle_events () =
+  let idle = Session.Event.message_appended (Llm.Message.developer "preamble") in
+  let session = session_of (idle :: turn_events ~id:"turn-1" "one") in
+  let anchor = Session.Anchor.before_turn (turn_id "turn-1") in
+  (match Session.resolve_anchor anchor session with
+  | Ok copied -> equal int ~msg:"first-turn prefix includes the preamble" 1 copied
+  | Error error -> failf "resolve failed: %a" Session.Error.pp error);
+  let rewound =
+    match
+      Session.rewind ~id:(Session.Id.of_string "session-preamble") ~cwd
+        ~created_at:(time 2) anchor session
+    with
+    | Ok session -> session
+    | Error error -> failf "rewind failed: %a" Session.Error.pp error
+  in
+  match Session.events rewound with
+  | [ kept ] ->
+      is_true ~msg:"rewind retains the exact idle event"
+        (Session.Event.equal idle kept)
+  | events -> failf "expected one retained event, got %d" (List.length events)
+
 let resolve_anchor_error_taxonomy () =
   let session = idle_session () in
   expect_session_error "unknown turn on a Before anchor"
@@ -1500,6 +1521,8 @@ let () =
       test "fork rejects active turn" fork_rejects_active_turn;
       test "anchor names turn and edge" anchor_names_turn_and_edge;
       test "resolve anchor cuts at boundaries" resolve_anchor_cuts_at_boundaries;
+      test "first turn prefix keeps idle events"
+        first_turn_prefix_keeps_idle_events;
       test "resolve anchor error taxonomy" resolve_anchor_error_taxonomy;
       test "dropped turns is edge uniform" dropped_turns_is_edge_uniform;
       test "rewind past compaction uncompacts" rewind_past_compaction_uncompacts;

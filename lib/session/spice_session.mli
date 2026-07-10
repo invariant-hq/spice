@@ -246,8 +246,9 @@ val resolve_anchor : Anchor.t -> t -> (int, Error.t) result
     Adjacent turns' [Before]/[After] edges therefore differ by any idle messages
     between them: [after_turn (n - 1)] resolves to a shorter prefix than
     [before_turn n] whenever such messages sit between turn [n - 1] and turn
-    [n]. [before_turn] of the first turn resolves to [0] — a valid empty-log
-    prefix equivalent to a fresh {!create}.
+    [n]. [before_turn] of the first turn keeps every idle event before that
+    turn. It resolves to [0], producing a valid empty-log prefix equivalent to
+    a fresh {!create}, only when that [Turn_started] is the first event.
 
     Returns {!Error.Unknown_turn} if the anchored turn is not in [t], and
     {!Error.Turn_not_finished} for an {!Anchor.After} anchor on a turn that has
