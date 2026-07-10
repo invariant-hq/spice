@@ -296,7 +296,7 @@ module Mode_tests = struct
     Session.Turn.make
       ~id:(Session.Turn.Id.of_string "turn-1")
       ~input:(Session.Turn.Input.user_text "Go.")
-      ~model ?mode ~declarations:[] ~host_tools:[] ()
+      ~model ?mode ~declarations:[] ~host_tools:[] ~max_steps:max_int ()
 
   let kind_names kinds = List.map Call.Kind.name kinds
 
@@ -999,7 +999,7 @@ module Artifacts_tests = struct
              ~provider:(Llm.Provider.make "openai")
              ~api:(Llm.Model.Api.make "responses")
              ~id:"gpt-5")
-        ?origin ~declarations:[] ~host_tools:[] ()
+        ?origin ~declarations:[] ~host_tools:[] ~max_steps:max_int ()
     in
     is_true ~msg:"goal origin marks a continuation turn"
       (Goal.is_continuation_turn (turn ~origin:Goal.turn_origin ()));
@@ -1266,7 +1266,7 @@ module Summary_tests = struct
         ~id:(Session.Turn.Id.of_string "turn-1")
         ~input:
           (Session.Turn.Input.user_text "Refactor    the\n  parser please.")
-        ~model ~declarations:[] ~host_tools:[] ()
+        ~model ~declarations:[] ~host_tools:[] ~max_steps:max_int ()
     in
     match Session.Log.append (Session.Event.turn_started turn) session with
     | Ok session -> session
@@ -1357,7 +1357,7 @@ module Event_tests = struct
     in
     Session.Turn.make ~id:(turn_id id)
       ~input:(Session.Turn.Input.user_text text)
-      ~model ~declarations ~host_tools ()
+      ~model ~declarations ~host_tools ~max_steps:max_int ()
 
   let response assistant = Llm.Response.make ~model assistant
   let call ~id ~name ~input = Llm.Tool.Call.make ~id ~name ~input ()

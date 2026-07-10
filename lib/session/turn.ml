@@ -162,7 +162,7 @@ type t = {
   options : Spice_llm.Request.Options.t;
   mode : string option;
   origin : string option;
-  max_steps : int option;
+  max_steps : int;
   declarations : Spice_llm.Tool.t list;
   host_tools : string list;
 }
@@ -177,10 +177,8 @@ let check_origin = function
   | Some origin ->
       if String.is_empty origin then invalid "make" "origin must not be empty"
 
-let check_max_steps = function
-  | None -> ()
-  | Some max_steps ->
-      if max_steps <= 0 then invalid "make" "max_steps must be positive"
+let check_max_steps max_steps =
+  if max_steps <= 0 then invalid "make" "max_steps must be positive"
 
 let check_tool_contract declarations host_tools =
   let declaration_names = List.map Spice_llm.Tool.name declarations in
@@ -200,7 +198,7 @@ let check_tool_contract declarations host_tools =
     host_tools
 
 let make ~id ~input ~model ?(options = Spice_llm.Request.Options.default) ?mode
-    ?origin ?max_steps ~declarations ~host_tools () =
+    ?origin ~max_steps ~declarations ~host_tools () =
   check_mode mode;
   check_origin origin;
   check_max_steps max_steps;
@@ -235,7 +233,7 @@ let pp ppf t =
 let jsont =
   let make id input model options mode origin max_steps declarations host_tools =
     decode_invalid_arg (fun () ->
-        make ~id ~input ~model ~options ?mode ?origin ?max_steps ~declarations
+        make ~id ~input ~model ~options ?mode ?origin ~max_steps ~declarations
           ~host_tools ())
   in
   Jsont.Object.map ~kind:"session turn" make
@@ -245,7 +243,7 @@ let jsont =
   |> Jsont.Object.mem "options" Spice_llm.Request.Options.jsont ~enc:options
   |> Jsont.Object.opt_mem "mode" Jsont.string ~enc:mode
   |> Jsont.Object.opt_mem "origin" Jsont.string ~enc:origin
-  |> Jsont.Object.opt_mem "max_steps" Jsont.int ~enc:max_steps
+  |> Jsont.Object.mem "max_steps" Jsont.int ~enc:max_steps
   |> Jsont.Object.mem "declarations" (Jsont.list Spice_llm.Tool.jsont)
        ~enc:declarations
   |> Jsont.Object.mem "host_tools" (Jsont.list Jsont.string) ~enc:host_tools

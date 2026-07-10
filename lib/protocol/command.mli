@@ -33,9 +33,11 @@ module Start : sig
     unit ->
     t
   (** [make ~id ~input ?options ?origin ?max_steps ()] requests a new turn.
-      The fields have the same meaning and validation as their
-      {!Spice_session.Turn.make} counterparts. Raises [Invalid_argument] when a
-      present [origin] is empty or [max_steps] is not positive. *)
+      [options] and [origin] have the same meaning as their
+      {!Spice_session.Turn.make} counterparts. [max_steps] requests a positive
+      per-turn limit; the session runner may clamp it to its safety cap. Raises
+      [Invalid_argument] when a present [origin] is empty or [max_steps] is not
+      positive. *)
 
   val id : t -> Spice_session.Turn.Id.t
   (** [id t] is the requested turn id. *)

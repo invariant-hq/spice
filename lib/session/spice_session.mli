@@ -391,7 +391,7 @@ module Run : sig
 
     type t
     (** The type for checked executable tools, host-handled model-visible tools,
-        permission policy, request prelude, and default step limit.
+        permission policy, request prelude, and live safety step cap.
 
         A config carries no model client, scheduler, store, workspace, or
         mutable run state. *)
@@ -401,12 +401,12 @@ module Run : sig
       ?host_tools:Spice_llm.Tool.t list ->
       policy:Spice_permission.Policy.t ->
       ?prelude:Spice_llm.Request.Prelude.t ->
-      ?max_steps:int ->
+      ?safety_step_cap:int ->
       ?denial_message:(Spice_permission.Policy.Denial.t -> string) ->
       unit ->
       t
-    (** [make ~tools ?host_tools ~policy ?prelude ?max_steps ?denial_message ()]
-        is a checked run config.
+    (** [make ~tools ?host_tools ~policy ?prelude ?safety_step_cap
+        ?denial_message ()] is a checked run config.
 
         [tools] are executable host capabilities. [host_tools] are model-visible
         tools whose calls block the run for product-owned host handling. A call
@@ -418,9 +418,10 @@ module Run : sig
         every model request built from this config. It does not become session
         transcript state.
 
-        [max_steps] defaults to [max_int] (effectively unbounded; interrupt is
-        the safety valve) and is used when the active {!Turn.t} has no recorded
-        limit.
+        [safety_step_cap] defaults to [max_int] (effectively unbounded;
+        interrupt is the safety valve). It is the default accepted limit for a
+        new turn and may tighten an active turn, but cannot widen that turn's
+        durable limit.
 
         [denial_message] renders the model-visible tool error text for a tool
         call denied by policy without review. It defaults to a stable generic
@@ -430,7 +431,7 @@ module Run : sig
         Raises [Invalid_argument] if [tools] contains duplicate tool names, if
         an executable tool cannot be projected to a model-visible declaration,
         if a host-tool name is duplicated or also used by an executable tool, or
-        if [max_steps] is not positive. *)
+        if [safety_step_cap] is not positive. *)
 
     val tools : t -> Spice_tool.t list
     (** [tools t] are [t]'s executable host capabilities. *)
@@ -443,9 +444,6 @@ module Run : sig
 
     val prelude : t -> Spice_llm.Request.Prelude.t
     (** [prelude t] is [t]'s model request prelude. *)
-
-    val max_steps : t -> int
-    (** [max_steps t] is [t]'s default positive model-response limit. *)
 
     val declarations : t -> Spice_llm.Tool.t list
     (** [declarations t] are the model-visible declarations accepted by a new
@@ -543,9 +541,10 @@ module Run : sig
 
       The complete declaration list and host-tool ownership subset are stamped
       from [config]. [options] defaults to {!Spice_llm.Request.Options.default}.
-      [max_steps], when absent, is inherited from [config] during planning.
-      [mode] and [origin], when present, are durable host metadata interpreted
-      outside replay.
+      [max_steps], when absent, uses [config]'s safety cap; a larger explicit
+      value is clamped to that cap. The effective positive limit is recorded on
+      the turn. [mode] and [origin], when present, are durable host metadata
+      interpreted outside replay.
 
       The returned step includes the turn-started event and any immediately
       planned events, such as a permission request or tool claim. Returns
@@ -557,7 +556,8 @@ module Run : sig
       external boundary.
 
       Existing waiting states are reported unchanged. A ready transcript becomes
-      {!Step.Request_model}, unless the model-response limit is reached. A
+      {!Step.Request_model}, unless the accepted model-response limit or current
+      safety cap is reached. A
       pending executable tool call is decoded, permission-checked, and either
       claimed, blocked for review, denied with a model-visible error result, or
       answered with a dispatch error result.

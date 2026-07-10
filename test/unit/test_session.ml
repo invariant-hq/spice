@@ -53,7 +53,7 @@ let turn_id id = Session.Turn.Id.of_string id
 let turn ?(id = "turn-1") ?(input = Session.Turn.Input.user_text "Refactor.")
     ?(model = model) () =
   Session.Turn.make ~id:(turn_id id) ~input ~model ~declarations:[]
-    ~host_tools:[] ()
+    ~host_tools:[] ~max_steps:max_int ()
 
 let response ?(model = model) assistant = Llm.Response.make ~model assistant
 let assistant_text text = Llm.Message.Assistant.text text

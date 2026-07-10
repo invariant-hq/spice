@@ -39,7 +39,7 @@ let turn_started ?(id = "turn-1") () =
     (Session.Turn.make
        ~id:(Session.Turn.Id.of_string id)
        ~input:(Session.Turn.Input.user_text "Run.")
-       ~model ~declarations:[] ~host_tools:[] ())
+       ~model ~declarations:[] ~host_tools:[] ~max_steps:max_int ())
 
 let permission_denied ?(id = "permission-1") call =
   Session.Event.permission_resolved

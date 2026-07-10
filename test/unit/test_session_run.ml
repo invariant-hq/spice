@@ -28,7 +28,8 @@ let turn =
   Session.Turn.make
     ~id:(Session.Turn.Id.of_string "turn-1")
     ~input:(Session.Turn.Input.user_text "Use the tool.")
-    ~model ~declarations:[ review_tool_declaration ] ~host_tools:[] ()
+    ~model ~declarations:[ review_tool_declaration ] ~host_tools:[]
+    ~max_steps:max_int ()
 
 let empty_session () =
   Session.create
@@ -111,13 +112,15 @@ let raising_permissions_tool () =
     ~run:(fun _context () -> Tool.Result.completed ~output:() ())
     ()
 
-let config ?(policy = Permission.Policy.default) ?host_tools ?prelude tools =
-  Run.Config.make ~tools ?host_tools ~policy ?prelude ()
+let config ?(policy = Permission.Policy.default) ?host_tools ?prelude ?max_steps
+    tools =
+  Run.Config.make ~tools ?host_tools ~policy ?prelude
+    ?safety_step_cap:max_steps ()
 
 let config_construction_is_programmer_local () =
-  expect_invalid_arg "non-positive max_steps raises" (fun () ->
-      Run.Config.make ~tools:[] ~policy:Permission.Policy.default ~max_steps:0
-        ());
+  expect_invalid_arg "non-positive safety cap raises" (fun () ->
+      Run.Config.make ~tools:[] ~policy:Permission.Policy.default
+        ~safety_step_cap:0 ());
   expect_invalid_arg "duplicate tool names raise" (fun () ->
       Run.Config.make
         ~tools:[ executable_tool (); executable_tool () ]
@@ -340,6 +343,120 @@ let finish_tool_uses_saved_claim_id () =
             (Session.Tool_claim.Started.equal saved started)
       | _ -> failf "expected one finished saved claim")
 
+let accepted_step_limit_cannot_be_widened () =
+  let policy =
+    Permission.Policy.make [ Permission.Policy.Rule.allow_all_dangerously ]
+  in
+  let tool = executable_tool () in
+  let accepted = config ~policy ~max_steps:1 [ tool ] in
+  let resumed = config ~policy ~max_steps:100 [ tool ] in
+  let turn_id = Session.Turn.Id.of_string "turn-limit" in
+  let started =
+    match
+      Run.start accepted ~id:turn_id
+        ~input:(Session.Turn.Input.user_text "Use the tool.") ~model
+        (empty_session ())
+    with
+    | Ok step -> step
+    | Error error -> failf "start failed: %a" Run.Error.pp error
+  in
+  let count message session expected =
+    equal (option int) ~msg:message (Some expected)
+      (Session.State.turn_response_count turn_id (Session.state session))
+  in
+  count "new turn starts at zero responses" (Run.Step.session started) 0;
+  let claimed =
+    match
+      Run.accept_response accepted (response (call ()))
+        (Run.Step.session started)
+    with
+    | Ok step -> step
+    | Error error -> failf "response failed: %a" Run.Error.pp error
+  in
+  count "accepted response increments the durable count"
+    (Run.Step.session claimed) 1;
+  let claim = tool_claim_from_step claimed in
+  match
+    Run.finish_tool resumed (Session.Tool_claim.Started.id claim)
+      (Tool.Result.completed ~output:(output ()) ())
+      (Run.Step.session claimed)
+  with
+  | Error error -> failf "finish failed: %a" Run.Error.pp error
+  | Ok step -> (
+      let terminal_events =
+        List.filter
+          (function Session.Event.Turn_finished _ -> true | _ -> false)
+          (Run.Step.events step)
+      in
+      equal int ~msg:"step-limit finish appends one terminal event" 1
+        (List.length terminal_events);
+      match Run.Step.next step with
+      | Run.Step.Finished { outcome = Session.Turn.Outcome.Step_limit; _ } -> ()
+      | next ->
+          failf "looser resume widened the accepted limit: %a"
+            Run.Step.pp_next next)
+
+let accepted_step_limit_is_resolved_and_clamped () =
+  let check ?max_steps safety_step_cap expected =
+    let config = config ~max_steps:safety_step_cap [] in
+    let id = Session.Turn.Id.of_string "turn-limit" in
+    let started =
+      match
+        Run.start config ~id
+          ~input:(Session.Turn.Input.user_text "Continue.") ~model ?max_steps
+          (empty_session ())
+      with
+      | Ok step -> Run.Step.session step
+      | Error error -> failf "start failed: %a" Run.Error.pp error
+    in
+    match Session.State.turn id (Session.state started) with
+    | None -> failf "accepted turn is missing"
+    | Some turn ->
+        equal int ~msg:"effective limit is durable" expected
+          (Session.Turn.max_steps turn)
+  in
+  check 3 3;
+  check ~max_steps:1 3 1;
+  check ~max_steps:10 3 3
+
+let current_step_cap_can_tighten () =
+  let policy =
+    Permission.Policy.make [ Permission.Policy.Rule.allow_all_dangerously ]
+  in
+  let tool = executable_tool () in
+  let accepted = config ~policy ~max_steps:100 [ tool ] in
+  let tightened = config ~policy ~max_steps:1 [ tool ] in
+  let started =
+    match
+      Run.start accepted ~id:(Session.Turn.Id.of_string "turn-limit")
+        ~input:(Session.Turn.Input.user_text "Use the tool.") ~model
+        (empty_session ())
+    with
+    | Ok step -> step
+    | Error error -> failf "start failed: %a" Run.Error.pp error
+  in
+  let claimed =
+    match
+      Run.accept_response accepted (response (call ()))
+        (Run.Step.session started)
+    with
+    | Ok step -> step
+    | Error error -> failf "response failed: %a" Run.Error.pp error
+  in
+  let claim = tool_claim_from_step claimed in
+  match
+    Run.finish_tool tightened (Session.Tool_claim.Started.id claim)
+      (Tool.Result.completed ~output:(output ()) ())
+      (Run.Step.session claimed)
+  with
+  | Error error -> failf "finish failed: %a" Run.Error.pp error
+  | Ok step -> (
+      match Run.Step.next step with
+      | Run.Step.Finished { outcome = Session.Turn.Outcome.Step_limit; _ } -> ()
+      | next ->
+          failf "current safety cap did not tighten the turn: %a"
+            Run.Step.pp_next next)
+
 let block_turn_string block =
   Session.Turn.Id.to_string (Session.Waiting.turn block)
 
@@ -521,17 +638,19 @@ let turn_tool_contract_is_checked () =
   let declaration =
     Llm.Tool.make ~name:"ask_user" ~input_schema:(Json.object' []) ()
   in
-  let make declarations host_tools =
+  let make ?(max_steps = max_int) declarations host_tools =
     Session.Turn.make ~id:(Session.Turn.Id.of_string "turn-contract")
       ~input:(Session.Turn.Input.user_text "Ask.") ~model ~declarations
-      ~host_tools ()
+      ~host_tools ~max_steps ()
   in
   expect_invalid_arg "duplicate declarations raise" (fun () ->
       make [ declaration; declaration ] []);
   expect_invalid_arg "duplicate host ownership raises" (fun () ->
       make [ declaration ] [ "ask_user"; "ask_user" ]);
   expect_invalid_arg "host ownership requires a declaration" (fun () ->
-      make [] [ "ask_user" ])
+      make [] [ "ask_user" ]);
+  expect_invalid_arg "turn limit must be positive" (fun () ->
+      make ~max_steps:0 [] [])
 
 let resume_requires_active_lifecycle () =
   let config = config [] in
@@ -591,7 +710,8 @@ let answer_tool_records_tool_result () =
     Session.Turn.make
       ~id:(Session.Turn.Id.of_string "turn-1")
       ~input:(Session.Turn.Input.user_text "Use the host tool.")
-      ~model ~declarations:[ host_tool ] ~host_tools:[ "ask_user" ] ()
+      ~model ~declarations:[ host_tool ] ~host_tools:[ "ask_user" ]
+      ~max_steps:max_int ()
   in
   let config = config ~host_tools:[ host_tool ] [] in
   let blocked =
@@ -674,7 +794,8 @@ let interrupt_answers_pending_host_tool_call () =
     Session.Turn.make
       ~id:(Session.Turn.Id.of_string "turn-1")
       ~input:(Session.Turn.Input.user_text "Use the host tool.")
-      ~model ~declarations:[ host_tool ] ~host_tools:[ "ask_user" ] ()
+      ~model ~declarations:[ host_tool ] ~host_tools:[ "ask_user" ]
+      ~max_steps:max_int ()
   in
   let config = config ~host_tools:[ host_tool ] [] in
   let blocked =
@@ -1002,6 +1123,11 @@ let () =
         permission_planner_exceptions_become_tool_errors;
       test "deterministic tool claim ids" deterministic_tool_claim_ids;
       test "finish tool uses saved claim id" finish_tool_uses_saved_claim_id;
+      test "accepted step limit cannot be widened"
+        accepted_step_limit_cannot_be_widened;
+      test "accepted step limit is resolved and clamped"
+        accepted_step_limit_is_resolved_and_clamped;
+      test "current step cap can tighten" current_step_cap_can_tighten;
       test "block accessors identify call and turn"
         block_accessors_identify_call_and_turn;
       test "interrupt finishes turn as cancelled"

@@ -325,7 +325,7 @@ module Run = struct
       host_tools : Llm.Tool.t list;
       policy : Spice_permission.Policy.t;
       prelude : Llm.Request.Prelude.t;
-      max_steps : int;
+      safety_step_cap : int;
       denial_message : Spice_permission.Policy.Denial.t -> string;
       declarations : Llm.Tool.t list;
     }
@@ -363,11 +363,12 @@ module Run = struct
       loop [] host_tools
 
     let make ~tools ?(host_tools = []) ~policy
-        ?(prelude = Llm.Request.Prelude.empty) ?(max_steps = max_int)
+        ?(prelude = Llm.Request.Prelude.empty) ?(safety_step_cap = max_int)
         ?(denial_message = default_denial_message) () =
-      if max_steps <= 0 then
+      if safety_step_cap <= 0 then
         invalid_config
-          (Printf.sprintf "max_steps must be positive, got %d" max_steps);
+          (Printf.sprintf "safety_step_cap must be positive, got %d"
+             safety_step_cap);
       match Tool.Catalog.make tools with
       | Error error -> invalid_config (Tool.Error.message error)
       | Ok tools ->
@@ -379,7 +380,7 @@ module Run = struct
             host_tools;
             policy;
             prelude;
-            max_steps;
+            safety_step_cap;
             denial_message;
             declarations;
           }
@@ -389,7 +390,7 @@ module Run = struct
     let host_tools t = t.host_tools
     let policy t = t.policy
     let prelude t = t.prelude
-    let max_steps t = t.max_steps
+    let safety_step_cap t = t.safety_step_cap
     let denial_message t = t.denial_message
 
     let declarations t = t.declarations
@@ -453,10 +454,8 @@ module Run = struct
     let event = Event.turn_finished ~turn outcome in
     Step.make ~session ~events:[ event ] ~next:(Step.Finished { turn; outcome })
 
-  let max_steps config turn =
-    match Turn.max_steps turn with
-    | Some n -> n
-    | None -> Config.max_steps config
+  let effective_step_limit config turn =
+    min (Turn.max_steps turn) (Config.safety_step_cap config)
 
   let model_action config session turn_id turn =
     let state = state session in
@@ -465,7 +464,7 @@ module Run = struct
       | Some count -> count
       | None -> 0
     in
-    if response_count >= max_steps config turn then
+    if response_count >= effective_step_limit config turn then
       finish session turn_id Turn.Outcome.step_limit
     else
       let* request = request_for_turn config session turn in
@@ -778,8 +777,12 @@ module Run = struct
     let* () = require_active_session session in
     let host_tools = List.map Llm.Tool.name (Config.host_tools config) in
     let declarations = Config.declarations config in
+    let safety_step_cap = Config.safety_step_cap config in
+    let max_steps =
+      min (Option.value max_steps ~default:safety_step_cap) safety_step_cap
+    in
     let turn =
-      Turn.make ~id ~input ~model ?options ?mode ?origin ?max_steps ~declarations
+      Turn.make ~id ~input ~model ?options ?mode ?origin ~max_steps ~declarations
         ~host_tools ()
     in
     normalize config session [ Event.turn_started turn ]

@@ -37,21 +37,21 @@ let prompt_session_titled project id ~title ~prompt =
   write_data project
     (Filename.concat "sessions" (Filename.concat id "session.json"))
     (Printf.sprintf
-       {|{"version":1,"id":"%s","metadata":{"title":"%s","status":"active","cwd":"%s","created_at":1,"updated_at":1},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"%s"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"declarations":[],"host_tools":[]}},{"type":"turn_finished","turn":"turn-1","outcome":{"type":"completed"}}]}|}
+       {|{"version":1,"id":"%s","metadata":{"title":"%s","status":"active","cwd":"%s","created_at":1,"updated_at":1},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"%s"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"max_steps":100,"declarations":[],"host_tools":[]}},{"type":"turn_finished","turn":"turn-1","outcome":{"type":"completed"}}]}|}
        id title (Project.root project) prompt)
 
 let prompt_session project id ~prompt =
   write_data project
     (Filename.concat "sessions" (Filename.concat id "session.json"))
     (Printf.sprintf
-       {|{"version":1,"id":"%s","metadata":{"status":"active","cwd":"%s","created_at":1,"updated_at":1},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"%s"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"declarations":[],"host_tools":[]}},{"type":"turn_finished","turn":"turn-1","outcome":{"type":"completed"}}]}|}
+       {|{"version":1,"id":"%s","metadata":{"status":"active","cwd":"%s","created_at":1,"updated_at":1},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"%s"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"max_steps":100,"declarations":[],"host_tools":[]}},{"type":"turn_finished","turn":"turn-1","outcome":{"type":"completed"}}]}|}
        id (Project.root project) prompt)
 
 let reasoning_session project id =
   write_data project
     (Filename.concat "sessions" (Filename.concat id "session.json"))
     (Printf.sprintf
-       {|{"version":1,"id":"%s","metadata":{"title":"Thinking","status":"active","cwd":"%s","created_at":1,"updated_at":1},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"think"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"declarations":[],"host_tools":[]}},{"type":"response_appended","response":{"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"reasoning_summary":["hidden thought"],"assistant":{"parts":[{"type":"text","text":"visible answer"}]}}},{"type":"turn_finished","turn":"turn-1","outcome":{"type":"completed"}}]}|}
+       {|{"version":1,"id":"%s","metadata":{"title":"Thinking","status":"active","cwd":"%s","created_at":1,"updated_at":1},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"think"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"max_steps":100,"declarations":[],"host_tools":[]}},{"type":"response_appended","response":{"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"reasoning_summary":["hidden thought"],"assistant":{"parts":[{"type":"text","text":"visible answer"}]}}},{"type":"turn_finished","turn":"turn-1","outcome":{"type":"completed"}}]}|}
        id (Project.root project))
 
 (* A persisted subagent run record linking [parent] to [child], below the

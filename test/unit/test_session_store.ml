@@ -30,7 +30,7 @@ let turn =
   Session.Turn.make
     ~id:(Session.Turn.Id.of_string "turn-1")
     ~input:(Session.Turn.Input.user_text "Continue.")
-    ~model ~declarations:[] ~host_tools:[] ()
+    ~model ~declarations:[] ~host_tools:[] ~max_steps:max_int ()
 
 let revision_string document =
   Session.Revision.to_string (Store.Document.revision document)

@@ -35,7 +35,7 @@ let turn ?(id = "turn-1") ?(input = "Refactor.") () =
   Session.Turn.make
     ~id:(Session.Turn.Id.of_string id)
     ~input:(Session.Turn.Input.user_text input)
-    ~model:llm_model ~declarations:[] ~host_tools:[] ()
+    ~model:llm_model ~declarations:[] ~host_tools:[] ~max_steps:max_int ()
 
 let response ?usage text =
   Llm.Response.make ~model:llm_model ?usage (Llm.Message.Assistant.text text)

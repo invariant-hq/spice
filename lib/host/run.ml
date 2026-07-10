@@ -446,7 +446,7 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
     in
     let run_config =
       Spice_session.Run.Config.make ~tools ~host_tools ~policy ~denial_message
-        ~prelude ?max_steps ()
+        ~prelude ?safety_step_cap:max_steps ()
     in
     (* Disabling automatic compaction is the absence of the policy: the
        interpreter performs neither pressure compaction nor overflow recovery
@@ -486,7 +486,8 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
                Spice_protocol.Call.Kind.tool
                  Spice_protocol.Call.Kind.Subagent_message_parent;
              ]
-           ~denial_message ~prelude ?max_steps:child_max_steps ())
+           ~denial_message ~prelude
+           ?safety_step_cap:child_max_steps ())
     in
     let spawn_child spawn ~parent =
       let parent_session = Spice_session_store.Document.session parent in
