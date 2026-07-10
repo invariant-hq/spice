@@ -1,7 +1,7 @@
 Under an enforcing workspace-write sandbox, the default permission preset runs
-workspace edits and sandbox-confined commands without review: the sandbox bounds
-their blast radius, so prompting for them would add friction without safety.
-Running without confinement still reviews the same operations.
+native workspace edits without review because their implementation uses the
+workspace boundary. Commands remain reviewable: workspace-write confinement
+does not prove that every command-bearing tool uses that sandbox.
 
 The GPT family ships apply_patch rather than write_file, so pin the
 string-replace editor family to keep write_file in the catalog.
@@ -10,33 +10,31 @@ string-replace editor family to keep write_file in the catalog.
   $ git init -q . 2>/dev/null
   $ spice config set tools.editor string-replace
 
-A default-preset run edits a file with a native edit tool and runs a shell
-command, and completes with no permission wait under real Seatbelt enforcement.
+A default-preset run edits a file with a native edit tool, then requests a shell
+command. The edit completes without review, while the command parks the run.
 
   $ cat > backed.jsonl <<'JSONL'
-  > {"expect":{"body_contains":["backed prompt","\"name\":\"shell\""]},"response":{"id":"resp-backed-1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-b1","call_id":"call-s1","name":"shell","arguments":"{\"command\":\"echo ok > inside.txt\"}"}]}}
-  > {"expect":{"body_contains":["function_call_output","call-s1","exited 0"]},"response":{"id":"resp-backed-2","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-b2","call_id":"call-w1","name":"write_file","arguments":"{\"path\":\"approved.txt\",\"contents\":\"approved contents\"}"}]}}
-  > {"expect":{"body_contains":["function_call_output","call-w1","created"]},"response":{"id":"resp-backed-3","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"backed final"}]}]}}
+  > {"expect":{"body_contains":["backed prompt","\"name\":\"write_file\""]},"response":{"id":"resp-backed-1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-b1","call_id":"call-w1","name":"write_file","arguments":"{\"path\":\"approved.txt\",\"contents\":\"approved contents\"}"}]}}
+  > {"expect":{"body_contains":["function_call_output","call-w1","created"]},"response":{"id":"resp-backed-2","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-b2","call_id":"call-s1","name":"shell","arguments":"{\"command\":\"echo ok > inside.txt\"}"}]}}
   > JSONL
   $ SPICE_FAKE_PROVIDER_ACCEPT_TIMEOUT=12 start_fake_openai backed.jsonl backed-capture backed-port
-  $ spice run --cwd "$PWD" --json --id backed-run "backed prompt" | grep -o '"outcome":"completed"'
-  spice: session saved; resume with: spice resume 'backed-run'
-  "outcome":"completed"
+  $ spice run --cwd "$PWD" --json --id backed-run "backed prompt" >backed.out 2>&1; echo exit:$?
+  exit:3
+  $ grep -o 'session blocked' backed.out
+  session blocked
   $ wait_fake_server
 
-Both effects landed and no permission was requested.
+The native edit landed, while the reviewed command did not run.
 
-  $ cat inside.txt
-  ok
   $ cat approved.txt
   approved contents
-  $ spice session export backed-run | grep -o '"type":"permission_requested"' || echo no-permission-requested
-  no-permission-requested
+  $ test -e inside.txt || echo command-not-run-before-approval
+  command-not-run-before-approval
+  $ spice session export backed-run | grep -o '"type":"permission_requested"'
+  "type":"permission_requested"
 
-A destructive command stays reviewable even though the sandbox would confine
-it: the sandbox bounds where it writes, not whether the deletion is
-recoverable. The run parks on review; the review shows the command as a command
-and attributes it to the destructive rule, and the file survives.
+A destructive command is likewise reviewable. The run parks on review, reports
+the command access as unmatched, and leaves the file untouched.
 
   $ echo keep > victim.txt
   $ cat > destructive.jsonl <<'JSONL'
@@ -47,8 +45,8 @@ and attributes it to the destructive rule, and the file survives.
   exit:3
   $ grep -oF "command exec 'rm' '-rf' 'victim.txt'" destructive.out
   command exec 'rm' '-rf' 'victim.txt'
-  $ grep -o 'review: rule' destructive.out
-  review: rule
+  $ grep -o 'review: no rule or grant' destructive.out
+  review: no rule or grant
   $ wait_fake_server
   $ cat victim.txt
   keep

@@ -64,17 +64,11 @@ module Preset : sig
       sandbox enforces workspace-write confinement, appended after {!rules} by
       {!Run.with_sandbox_backing}.
 
-      Under an enforcing workspace-write sandbox a command's blast radius is
-      bounded to the writable set and a native workspace edit is already
-      contained, so the review that {!rules} would otherwise require adds
-      friction without safety. [Default] gains workspace creates, modifies,
-      deletes, and commands; [Accept_edits] already allows the workspace writes
-      and gains only commands; [Plan] and [Bypass] gain nothing — [Plan] keeps
-      steering to the read-only tools and [Bypass] already allows everything.
-
-      Escalation requests (the shell tool's [shell.escalate] custom access) are
-      not command accesses, so they stay unmatched and escaping the sandbox
-      still needs review. *)
+      An enforcing workspace-write sandbox backs native workspace mutation, so
+      [Default] gains workspace creates, modifies, and deletes. It does not
+      prove that every command-bearing tool uses that sandbox, so no preset
+      gains command rules. [Accept_edits] already allows workspace writes;
+      [Plan] and [Bypass] need no additional rules. *)
 
   val equal : t -> t -> bool
   (** [equal a b] is [true] iff [a] and [b] are the same preset. *)
@@ -187,8 +181,8 @@ module Run : sig
       existing row, so durable configuration and the preset's own rules still
       decide first. Run assembly derives [sandbox_backed] from the resolved
       sandbox — {!Spice_host.Sandbox.enforces_workspace_write} — so it is [true]
-      only for an enforcing workspace-write sandbox: a run with no confinement
-      never allows commands without review. *)
+      only for an enforcing workspace-write sandbox. Command accesses remain
+      reviewable unless another explicit rule decides them. *)
 
   val with_session_rules :
     Spice_permission.Policy.Rule.t list -> 'src t -> 'src t

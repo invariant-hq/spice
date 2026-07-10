@@ -64,9 +64,8 @@ session grants. An unmatched, ungranted access requires review. If any access
 in a grouped request is denied, the whole request is denied.
 
 This ordering makes broad durable allows powerful. For example, a durable rule
-allowing every command evaluates before the built-in destructive-command review
-rule and therefore suppresses that safety review. Prefer the narrowest matcher
-that describes the intended exception.
+allowing every command suppresses the normal command review. Prefer the
+narrowest matcher that describes the intended exception.
 
 ## Path matchers
 
