@@ -437,6 +437,9 @@ let pp_usage ppf = function
         usage.Usage.cache_read usage.Usage.cache_write
 
 let pp_digest ?(arg_bytes = 80) ?(result_bytes = 80) ppf t =
+  (match declared_tools t with
+  | [] -> ()
+  | tools -> Format.fprintf ppf "tools: %s@." (String.concat ", " tools));
   List.iteri
     (fun segment steps ->
       if segment > 0 then Format.fprintf ppf "-- compaction --@.";

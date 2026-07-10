@@ -460,6 +460,26 @@ let decodes_from_json_document () =
     ~msg:"decoded calls by name" direct.Metrics.calls_by_name
     round.Metrics.calls_by_name
 
+let digest_lists_declared_tools () =
+  let doc =
+    executed ~declarations:[ "shell"; "read_file" ]
+      [
+        (call ~id:"c1" ~name:"read_file" (path_input "lib/a.ml"), false, "body");
+      ]
+  in
+  let rendered =
+    Format.asprintf "%a"
+      (fun ppf t -> Trace.pp_digest ppf t)
+      (Trace.of_session doc)
+  in
+  let header =
+    List.find_opt
+      (fun line -> String.length line >= 6 && String.sub line 0 6 = "tools:")
+      (String.split_on_char '\n' rendered)
+  in
+  equal (option string) ~msg:"declared tool catalog header"
+    (Some "tools: read_file, shell") header
+
 let markers_scan () =
   let hits text = Eval.Markers.scan text in
   is_true ~msg:"eval_calc matches" (hits "eval_calc" <> []);
@@ -485,5 +505,6 @@ let () =
       test "breaks down shell families" shell_families;
       test "joins timing" timing_join;
       test "decodes from a json document" decodes_from_json_document;
+      test "digest lists declared tools" digest_lists_declared_tools;
       test "marker scan" markers_scan;
     ]

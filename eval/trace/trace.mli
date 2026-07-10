@@ -153,8 +153,8 @@ val segments : t -> Step.t list list
 val declared_tools : t -> string list
 (** [declared_tools t] is the sorted, deduplicated union of the tool names
     declared across [t]'s turns ([Turn_started]'s declarations) — the catalog
-    snapshot an analysis consults to avoid faulting a run for not using a tool
-    its catalog never offered. *)
+    snapshot {!pp_digest} surfaces for review, so a run is never faulted for not
+    using a tool its catalog never offered. *)
 
 val model : t -> Spice_llm.Model.t option
 (** [model t] is the request model when every turn used the same one, else
@@ -199,7 +199,8 @@ val shell_families : t -> (string * int) list
 val pp_digest :
   ?arg_bytes:int -> ?result_bytes:int -> Format.formatter -> t -> unit
 (** [pp_digest ?arg_bytes ?result_bytes ppf t] renders [t] compactly for LLM
-    review: each segment, each step's usage, and each call's name, elided
-    arguments, status, and elided result. Arguments and results are bounded to
-    [arg_bytes] (default [80]) and [result_bytes] (default [80]) head-and-tail
-    bytes so the whole rendering stays token-bounded. *)
+    review: the declared tool catalog (when non-empty), then each segment, each
+    step's usage, and each call's name, elided arguments, status, and elided
+    result. Arguments and results are bounded to [arg_bytes] (default [80]) and
+    [result_bytes] (default [80]) head-and-tail bytes so the whole rendering
+    stays token-bounded. *)
