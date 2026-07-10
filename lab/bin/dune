@@ -1,0 +1,4 @@
+(executable
+ (public_name spice-lab)
+ (name main)
+ (libraries cmdliner jsont jsont.bytesrw spice_eval unix))

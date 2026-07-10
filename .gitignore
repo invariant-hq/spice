@@ -7,6 +7,9 @@ _build/
 # Eval output directories
 _evals/
 
+# Lab campaign state
+_lab/
+
 # Spice session stores
 .spice/
 
