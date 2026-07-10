@@ -230,6 +230,7 @@
   test_support
   jsont
   spice_session
+  spice_session_run
   spice_llm
   spice_tool
   spice_path

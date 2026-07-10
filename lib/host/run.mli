@@ -154,7 +154,7 @@ val runner :
 
     It extends the context prelude with [mode]'s messages, builds the {!Toolset}
     catalog for [model] filtered by [mode]'s {!Spice_protocol.Contract},
-    assembles the {!Spice_session.Run.Config}, derives the compaction policy
+    assembles the {!Spice_session_run.Config}, derives the compaction policy
     from [model], and constructs the interpreter over the run's store and
     [client] whose host-tool dispatch is {!Handler.defaults} — with subagent
     spawning owned here, children bound to this contract's [client] — and whose

@@ -55,6 +55,7 @@
   spice_provider_builtin
   spice_sandbox
   spice_session
+  spice_session_run
   spice_session_store
   spice_tui
   spice_tool

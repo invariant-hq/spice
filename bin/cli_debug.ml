@@ -338,13 +338,13 @@ let declarations ~sw ~stdenv host ~model mode =
       ~configured:(Spice_host.Permission.Run.policy permission)
   in
   let run =
-    Spice_session.Run.Config.make ~tools
+    Spice_session_run.Config.make ~tools
       ~host_tools:
         (List.map Spice_protocol.Call.Kind.tool
            (Spice_protocol.Mode.host_tools mode))
       ~policy ~prelude ()
   in
-  Ok (Spice_session.Run.Config.declarations run)
+  Ok (Spice_session_run.Config.declarations run)
 
 let tools_json mode ~editor ~reason declarations =
   json_envelope ~type_:"debug_tools"

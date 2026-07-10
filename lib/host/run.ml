@@ -445,7 +445,7 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
       |> List.map Spice_protocol.Call.Kind.tool
     in
     let run_config =
-      Spice_session.Run.Config.make ~tools ~host_tools ~policy ~denial_message
+      Spice_session_run.Config.make ~tools ~host_tools ~policy ~denial_message
         ~prelude ?safety_step_cap:max_steps ()
     in
     (* Disabling automatic compaction is the absence of the policy: the
@@ -480,7 +480,7 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
       (* A child's only host tool is [message_parent]: it can ask, but it
          cannot spawn further children or touch the parent's workflow state. *)
       Ok
-        (Spice_session.Run.Config.make ~tools:child_tools ~policy:child_policy
+        (Spice_session_run.Config.make ~tools:child_tools ~policy:child_policy
            ~host_tools:
              [
                Spice_protocol.Call.Kind.tool

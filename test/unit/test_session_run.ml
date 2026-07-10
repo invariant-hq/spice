@@ -6,7 +6,7 @@
 open Windtrap
 open Test_support
 module Session = Spice_session
-module Run = Spice_session.Run
+module Run = Spice_session_run
 module Llm = Spice_llm
 module Tool = Spice_tool
 module Permission = Spice_permission

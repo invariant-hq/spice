@@ -11,7 +11,13 @@
 (executable
  (name bench_session)
  (modules bench_session)
- (libraries jsont spice_llm spice_path spice_permission spice_session))
+ (libraries
+  jsont
+  spice_llm
+  spice_path
+  spice_permission
+  spice_session
+  spice_session_run))
 
 (rule
  (alias bench)

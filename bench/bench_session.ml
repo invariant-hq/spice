@@ -7,7 +7,7 @@ module Json = Jsont.Json
 module Llm = Spice_llm
 module Permission = Spice_permission
 module Session = Spice_session
-module Run = Session.Run
+module Run = Spice_session_run
 
 type result = {
   operations : int;

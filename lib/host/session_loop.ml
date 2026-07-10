@@ -74,25 +74,25 @@ let of_compaction (error : Compaction_run.error) : Spice_protocol.Error.t =
   | Compaction_run.Store error -> of_store error
   | Compaction_run.Internal message -> Spice_protocol.Error.Internal message
 
-let run_error session (error : Spice_session.Run.Error.t) :
+let run_error session (error : Spice_session_run.Error.t) :
     Spice_protocol.Error.t =
   match error with
-  | Spice_session.Run.Error.No_active_turn ->
+  | Spice_session_run.Error.No_active_turn ->
       Spice_protocol.Error.No_active_turn
-  | Spice_session.Run.Error.Permission_not_pending id ->
+  | Spice_session_run.Error.Permission_not_pending id ->
       Spice_protocol.Error.Permission_not_pending id
-  | Spice_session.Run.Error.Tool_claim_not_pending id ->
+  | Spice_session_run.Error.Tool_claim_not_pending id ->
       Spice_protocol.Error.Tool_claim_not_pending id
-  | Spice_session.Run.Error.Tool_call_not_pending { call_id; name } ->
+  | Spice_session_run.Error.Tool_call_not_pending { call_id; name } ->
       Spice_protocol.Error.Tool_call_not_pending { call_id; name }
-  | Spice_session.Run.Error.Archived ->
+  | Spice_session_run.Error.Archived ->
       Spice_protocol.Error.Archived (Spice_session.id session)
-  | Spice_session.Run.Error.Deleted ->
+  | Spice_session_run.Error.Deleted ->
       Spice_protocol.Error.Deleted (Spice_session.id session)
-  | Spice_session.Run.Error.Request _ | Spice_session.Run.Error.Tool _
-  | Spice_session.Run.Error.Tool_result_mismatch _
-  | Spice_session.Run.Error.State _ ->
-      Spice_protocol.Error.Internal (Spice_session.Run.Error.message error)
+  | Spice_session_run.Error.Request _ | Spice_session_run.Error.Tool _
+  | Spice_session_run.Error.Tool_result_mismatch _
+  | Spice_session_run.Error.State _ ->
+      Spice_protocol.Error.Internal (Spice_session_run.Error.message error)
 
 let map_run session result = Result.map_error (run_error session) result
 
@@ -315,7 +315,7 @@ let emit_saved projector observe events =
     events
 
 let save_step ~store projector hooks document step =
-  let events = Spice_session.Run.Step.events step in
+  let events = Spice_session_run.Step.events step in
   match events with
   | [] -> Ok document
   | _ :: _ ->
@@ -393,8 +393,8 @@ let run_tool_result hooks execution call =
 let rec handle_step ~store ~projector ~pressure_compacted ~overflow_compacted
     ~model ~host_tool hooks ?compaction run document step =
   let* document = save_step ~store projector hooks document step in
-  match Spice_session.Run.Step.next step with
-  | Spice_session.Run.Step.Waiting
+  match Spice_session_run.Step.next step with
+  | Spice_session_run.Step.Waiting
       (Spice_session.Waiting.Host_tool waiting as block) -> (
       let call = waiting.Spice_session.Waiting.call in
       let kind = Spice_protocol.Call.classify call in
@@ -405,7 +405,7 @@ let rec handle_step ~store ~projector ~pressure_compacted ~overflow_compacted
       | Ok (Some result) ->
           let session = Spice_session_store.Document.session document in
           let* step =
-            Spice_session.Run.answer_host_tool_result run waiting result session
+            Spice_session_run.answer_host_tool_result run waiting result session
             |> map_run session
           in
           handle_step ~store ~projector ~pressure_compacted ~overflow_compacted
@@ -414,11 +414,11 @@ let rec handle_step ~store ~projector ~pressure_compacted ~overflow_compacted
           let outcome = Spice_protocol.Outcome.of_waiting block in
           hooks.terminal ~observe:hooks.observe (document, outcome);
           Ok (document, outcome))
-  | Spice_session.Run.Step.Waiting block ->
+  | Spice_session_run.Step.Waiting block ->
       let outcome = Spice_protocol.Outcome.of_waiting block in
       hooks.terminal ~observe:hooks.observe (document, outcome);
       Ok (document, outcome)
-  | Spice_session.Run.Step.Finished { turn; outcome = turn_outcome } ->
+  | Spice_session_run.Step.Finished { turn; outcome = turn_outcome } ->
       let final_text =
         Spice_session.State.turn_final_text turn
           (Spice_session.state (Spice_session_store.Document.session document))
@@ -429,19 +429,19 @@ let rec handle_step ~store ~projector ~pressure_compacted ~overflow_compacted
       let outcome = Spice_protocol.Outcome.finished ~turn ~outcome:turn_outcome in
       hooks.terminal ~observe:hooks.observe (document, outcome);
       Ok (document, outcome)
-  | Spice_session.Run.Step.(Request_model _ | Run_tool _)
+  | Spice_session_run.Step.(Request_model _ | Run_tool _)
     when hooks.cancelled () ->
       (* The host cancellation signal fired; finish the active turn as
          interrupted instead of performing the planned effect. The interrupt
          step always reports [Finished]. *)
       let session = Spice_session_store.Document.session document in
       let* step =
-        Spice_session.Run.interrupt ~reason:"cancelled" session
+        Spice_session_run.interrupt ~reason:"cancelled" session
         |> map_run session
       in
       handle_step ~store ~projector ~pressure_compacted ~overflow_compacted
         ~model ~host_tool hooks ?compaction run document step
-  | Spice_session.Run.Step.Request_model request ->
+  | Spice_session_run.Step.Request_model request ->
       (* Guard scoping: the pressure guard is a latch — set by a pressure
          compaction, held across consecutive over-limit boundaries (one summary
          request per pressure episode), released once a boundary projects under
@@ -512,7 +512,7 @@ let rec handle_step ~store ~projector ~pressure_compacted ~overflow_compacted
             prepared.commit ();
             let session = Spice_session_store.Document.session document in
             let* step =
-              Spice_session.Run.accept_response run response session
+              Spice_session_run.accept_response run response session
               |> map_run session
             in
             handle_step ~store ~projector ~pressure_compacted
@@ -532,7 +532,7 @@ let rec handle_step ~store ~projector ~pressure_compacted ~overflow_compacted
               result.Compactor.document
         end
       else call_model ()
-  | Spice_session.Run.Step.Run_tool { claim; call } ->
+  | Spice_session_run.Step.Run_tool { claim; call } ->
       projector.steps <- projector.steps + 1;
       Log.debug (fun m -> m "tool step=%d" projector.steps);
       let finish_tool_effect =
@@ -542,7 +542,7 @@ let rec handle_step ~store ~projector ~pressure_compacted ~overflow_compacted
       finish_tool_effect result;
       let session = Spice_session_store.Document.session document in
       let* step =
-        Spice_session.Run.finish_tool run
+        Spice_session_run.finish_tool run
           (Spice_session.Tool_claim.Started.id claim)
           result session
         |> map_run session
@@ -555,7 +555,7 @@ and advance ~store ~projector ~pressure_compacted ~overflow_compacted ~model
   let session = Spice_session_store.Document.session document in
   let* () = check_active_document session in
   let* () = require_active_turn session in
-  let* step = Spice_session.Run.resume run session |> map_run session in
+  let* step = Spice_session_run.resume run session |> map_run session in
   handle_step ~store ~projector ~pressure_compacted ~overflow_compacted ~model
     ~host_tool hooks ?compaction run document step
 
@@ -630,7 +630,7 @@ let execute ~store ~client ~host_tool ~resolve_plan ~turn_model ~turn_mode ~run
         let* () = require_no_active_turn session in
         let mode = Option.map Spice_protocol.Mode.to_string turn_mode in
         let* step =
-          Spice_session.Run.start run
+          Spice_session_run.start run
             ~id:(Spice_protocol.Command.Start.id request)
             ~input:(Spice_protocol.Command.Start.input request)
             ~model:turn_model
@@ -650,7 +650,7 @@ let execute ~store ~client ~host_tool ~resolve_plan ~turn_model ~turn_mode ~run
     | Spice_protocol.Command.Reply { permission; answer; via; message } ->
         let* () = check_active_document session in
         let* step =
-          Spice_session.Run.resolve_permission run ?message ?via permission
+          Spice_session_run.resolve_permission run ?message ?via permission
             answer session
           |> map_run session
         in
@@ -673,7 +673,7 @@ let execute ~store ~client ~host_tool ~resolve_plan ~turn_model ~turn_mode ~run
         in
         register_answer projector waiting.Spice_session.Waiting.call;
         let* step =
-          Spice_session.Run.answer_host_tool run waiting ~text session
+          Spice_session_run.answer_host_tool run waiting ~text session
           |> map_run session
         in
         continue_step document step
@@ -706,20 +706,20 @@ let execute ~store ~client ~host_tool ~resolve_plan ~turn_model ~turn_mode ~run
         let* text = resolve_plan ~decision proposal in
         register_answer projector waiting.Spice_session.Waiting.call;
         let* step =
-          Spice_session.Run.answer_host_tool run waiting ~text session
+          Spice_session_run.answer_host_tool run waiting ~text session
           |> map_run session
         in
         continue_step document step
     | Spice_protocol.Command.Finish_tool (id, result) -> (
         let* () = check_active_document session in
         let* step =
-          Spice_session.Run.finish_tool run id result session |> map_run session
+          Spice_session_run.finish_tool run id result session |> map_run session
         in
         continue_step document step)
     | Spice_protocol.Command.Interrupt { reason } ->
         let* () = check_active_document session in
         let* step =
-          Spice_session.Run.interrupt ?reason session |> map_run session
+          Spice_session_run.interrupt ?reason session |> map_run session
         in
         continue_step document step
   in

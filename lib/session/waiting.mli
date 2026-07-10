@@ -11,15 +11,14 @@
     Waiting values do not contain live waiters, callbacks, fibers, or product
     UI state.
 
-    Use {!State.waiting} for the read-time boundary and {!Run.Step.Waiting} when
-    interpreting a planned transition. *)
+    Use {!State.waiting} to reconstruct the current read-time boundary. *)
 
 type host_tool = private { turn : Turn.Id.t; call : Spice_llm.Tool.Call.t }
 (** The type for host-handled tool waits.
 
-    Values are produced by state replay and the run planner. They are accepted by
-    {!Run.answer_host_tool} to ensure host answers cannot bypass executable-tool
-    dispatch and permission policy by supplying raw call ids. *)
+    Values are produced by state replay and consumed by the run planner to ensure
+    host answers cannot bypass executable-tool dispatch and permission policy by
+    supplying raw call ids. *)
 
 (** The type for derived session waiting. *)
 type t =
@@ -39,8 +38,7 @@ val tool_claim : Tool_claim.Started.t -> t
 val host_tool : turn:Turn.Id.t -> Spice_llm.Tool.Call.t -> t
 (** [host_tool ~turn call] is a host-handled tool waiting.
 
-    This is exposed for replay projections and tests. Normal host continuation
-    code should use values returned by {!Run.Step.Waiting}. *)
+    This is exposed for replay projections and tests. *)
 
 val turn : t -> Turn.Id.t
 (** [turn t] is the turn waiting on [t]. *)

@@ -224,7 +224,7 @@ val execute :
   resolve_plan:plan_resolver ->
   turn_model:Spice_llm.Model.t ->
   turn_mode:Spice_protocol.Mode.t option ->
-  run:Spice_session.Run.Config.t ->
+  run:Spice_session_run.Config.t ->
   ?compaction:Compactor.Policy.t ->
   hooks:hooks ->
   Spice_session_store.Document.t ->

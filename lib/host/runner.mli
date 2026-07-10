@@ -26,7 +26,7 @@ val make :
   client:Spice_llm.Client.t ->
   model:Spice_llm.Model.t ->
   mode:Spice_protocol.Mode.t option ->
-  run:Spice_session.Run.Config.t ->
+  run:Spice_session_run.Config.t ->
   ?host_tool:Handler.t ->
   ?resolve_plan:Session_loop.plan_resolver ->
   ?compaction:Compactor.Policy.t ->
