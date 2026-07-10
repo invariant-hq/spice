@@ -2033,7 +2033,13 @@ let analyze_run dir =
   | Ok session ->
       let timing = load_timing dir in
       let trace = Trace.of_session ?timing session in
-      Ok (Trace_metrics.of_trace trace, Insight.detect Insight.builtin trace)
+      let digest =
+        Format.asprintf "%a" (fun ppf trace -> Trace.pp_digest ppf trace) trace
+      in
+      Ok
+        ( Trace_metrics.of_trace trace,
+          Insight.detect Insight.builtin trace,
+          digest )
 
 (* Prepend task and run_index to a codec-encoded object, keeping every codec
    field flat alongside them. *)
@@ -2068,6 +2074,9 @@ let analysis_markdown ~result_dir ~rows ~analyzed ~skipped ~errors =
   let add format = Printf.ksprintf (Buffer.add_string buffer) format in
   add "# Trace analysis\n\n";
   add "Result directory: `%s`\n\n" result_dir;
+  add
+    "Per-run transcript digests are under `analysis/digests/` — read them; \
+     detectors only catch what they were taught to see.\n\n";
   add "## Per-run\n\n";
   add
     "| Task | Run | Success | In tokens | Out tokens | Tool calls | Failures | \
@@ -2145,6 +2154,9 @@ let analyze_command =
       let rows =
         match read_rows result_dir with Ok rows -> rows | Error _ -> []
       in
+      let analysis_dir = Filename.concat result_dir "analysis" in
+      let digest_dir = Filename.concat analysis_dir "digests" in
+      ensure_dir digest_dir;
       let analyzed = ref [] and skipped = ref 0 and errors = ref [] in
       List.iter
         (fun (dir, task, run_index) ->
@@ -2152,14 +2164,19 @@ let analyze_command =
             incr skipped
           else
             match analyze_run dir with
-            | Ok (metrics, insights) ->
+            | Ok (metrics, insights, digest) ->
+                (* One readable transcript digest per run: the reviewable form
+                   of the session for humans and researcher agents; findings
+                   that no detector encodes are found by reading these. *)
+                write_file
+                  (Filename.concat digest_dir
+                     (Printf.sprintf "%s-%d.txt" task run_index))
+                  digest;
                 analyzed := (task, run_index, metrics, insights) :: !analyzed
             | Error message -> errors := (task, run_index, message) :: !errors)
         (run_dirs result_dir);
       let analyzed = List.rev !analyzed in
       let errors = List.rev !errors in
-      let analysis_dir = Filename.concat result_dir "analysis" in
-      ensure_dir analysis_dir;
       write_file
         (Filename.concat analysis_dir "trace-metrics.jsonl")
         (String.concat ""

@@ -52,7 +52,7 @@ that is a deliberate invariant of the event model — so wall-clock timing is
 recovered separately, from `agent.jsonl` joined with `agent.timing.jsonl`.
 
 `spice-eval analyze RESULT_DIR` decodes each run's `session.json`, builds a
-`Trace.t`, and writes three products:
+`Trace.t`, and writes four products:
 
 - `analysis/trace-metrics.jsonl` — one flat object per run: task id, run index,
   then every `Trace_metrics` field (token lanes, tool calls and failures,
@@ -60,6 +60,12 @@ recovered separately, from `agent.jsonl` joined with `agent.timing.jsonl`.
   re-read and repeated-call counts, the longest failure streak, the shell
   command-family histogram, and the recovered model and reasoning effort).
 - `analysis/insights.jsonl` — one object per structured detector observation.
+- `analysis/digests/<task>-<n>.txt` — one readable transcript digest per run:
+  every step's usage lanes and every tool call with elided arguments and
+  result head. The digests are the reviewable form of the session and the
+  primary source of new hypotheses; detectors only catch what they were
+  taught to see, and the research program requires reading digests before
+  picking a treatment.
 - `analysis.md` — a per-run table joined with each row's success, and a
   top-insights summary grouped by detector.
 

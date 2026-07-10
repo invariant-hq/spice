@@ -69,11 +69,24 @@ every ledger row so the choice is auditable.
 
 LOOP until budget is exhausted or the user stops you:
 
-1. Pick the highest-value open hypothesis from `HYPOTHESES.md` (or add one from
-   analysis findings). Apply the treatment on the branch. T3 requires a
-   `design-note.md` in the experiment dir first (problem, alternatives, `.mli`
-   sketch; load the relevant `ocaml-*` design skill). Commit.
-2. Screen:
+1. **Review transcripts first — hypotheses come from session evidence, not
+   introspection.** Read the per-run transcript digests under the most recent
+   arm's `analysis/digests/` (the calibration arm on the first iteration): at
+   minimum the most expensive run per task, every failed run's digest, and
+   one success for contrast. A digest shows each step's usage lanes
+   (`in`/`out`/`reason`/`cache_r`/`cache_w`) and each tool call with its
+   arguments and result head — the patterns that matter are visible only
+   here: a pinned `cache_r` while `in` grows, an oversized tool result
+   injected into context, a give-up after two steps, a missing verification
+   step. Detectors catch only what they were taught to see; the digests are
+   where new hypotheses and new detector ideas come from. Record every
+   observation in `HYPOTHESES.md` with an evidence pointer
+   (campaign/arm/task/run and step numbers).
+2. Pick the highest-value open hypothesis from `HYPOTHESES.md`. Apply the
+   treatment on the branch. T3 requires a `design-note.md` in the experiment
+   dir first (problem, alternatives, `.mli` sketch; load the relevant
+   `ocaml-*` design skill). Commit.
+3. Screen:
 
    ```
    spice-lab experiment run --campaign <tag> --name <n> --suite core --runs 3 [--model <m>]
@@ -85,10 +98,13 @@ LOOP until budget is exhausted or the user stops you:
    you know the change is data-only). `experiment compare` pairs per task on
    the task-set intersection under the pre-registered estimand and prints the
    verdict; it exits 0 on `candidate`, 1 on `discard`, 2 on `partial`/error.
-3. Read `_lab/<tag>/exp/<n>/compare.md` AND (when analysis is available)
-   `analysis.md`. Harvest new hypotheses from the insight findings into
-   `HYPOTHESES.md`.
-4. Candidate → confirm on the larger suite, and record the ledger row:
+4. Read `_lab/<tag>/exp/<n>/compare.md`, `analysis.md`, and the treated arm's
+   digests for at least the tasks whose numbers moved — in either direction. A
+   treatment that "worked" for the wrong reason (shorter because it stopped
+   verifying) and one that "failed" for an interesting reason (a new
+   behavior the metric does not reward) both only show up in the transcript.
+   Harvest into `HYPOTHESES.md`.
+5. Candidate → confirm on the larger suite, and record the ledger row:
 
    ```
    spice-lab experiment run --campaign <tag> --name <n>-confirm --suite all --runs 5 [--model <m>]
@@ -100,21 +116,20 @@ LOOP until budget is exhausted or the user stops you:
 
    Keep iff the confirm verdict says keep and the effect persists at ≥ half its
    screen size.
-5. Keep → the branch advances. Discard → `git reset` to the pre-treatment
+6. Keep → the branch advances. Discard → `git reset` to the pre-treatment
    commit. Build failure → `experiment run` writes a `crash` ledger row and
    exits non-zero; reset and move on.
-6. Every experiment gets a ledger row, including discards and crashes.
+7. Every experiment gets a ledger row, including discards and crashes.
    `spice-lab ledger list --campaign <tag>` renders the table; `ledger.md` is
    regenerated on every append.
-7. Every 5 keeps: compounding audit (tip vs campaign start, `--suite core
+8. Every 5 keeps: compounding audit (tip vs campaign start, `--suite core
    --runs 3`). If cumulative gains do not hold, say so and re-examine the kept
    set.
 
 Do not pause to ask whether to continue. Self-stop only for: budget exhausted,
-compounding-audit failure, instrument breakage. Out of ideas → mine the
-transcripts: read the worst runs' artifacts under `_lab/<tag>/exp/<n>/results/`
-(and `insights.jsonl` once analysis lands); there is always another hypothesis
-in the transcripts.
+compounding-audit failure, instrument breakage. There is no "out of ideas"
+state: step 1 always runs against fresh transcripts, and unreviewed digests
+are unread evidence.
 
 ## Decision rules (defaults; the numbers below own the thresholds)
 
