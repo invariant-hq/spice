@@ -75,6 +75,17 @@ Unknown document fields fail loudly.
   3
   [1]
 
+Structurally valid documents with an invalid semantic event identify its index
+and remain untouched after inspection.
+
+  $ mkdir -p $SPICE_TEST_DATA_HOME/sessions/semantic
+  $ printf '%s\n' "{\"version\":1,\"id\":\"semantic\",\"metadata\":{\"status\":\"active\",\"cwd\":\"$PWD\",\"created_at\":1,\"updated_at\":1},\"events\":[{\"type\":\"turn_finished\",\"turn\":\"missing\",\"outcome\":{\"type\":\"completed\"}}]}" > $SPICE_TEST_DATA_HOME/sessions/semantic/session.json
+  $ cp $SPICE_TEST_DATA_HOME/sessions/semantic/session.json semantic.before
+  $ spice session show semantic 2>&1 | grep 'event 0'
+  event 0: unknown turn: missing
+  [1]
+  $ cmp semantic.before $SPICE_TEST_DATA_HOME/sessions/semantic/session.json
+
 One corrupt document never disables discovery: listing reports each corrupt
 entry loudly on stderr while still listing valid sessions, and JSON carries the
 structured corrupt entries.
@@ -86,6 +97,7 @@ structured corrupt entries.
   spice: corrupt session document at $TESTCASE_ROOT/xdg-data/spice/sessions/bad-json/session.json
   spice: corrupt session document at $TESTCASE_ROOT/xdg-data/spice/sessions/no-cwd/session.json
   spice: corrupt session document at $TESTCASE_ROOT/xdg-data/spice/sessions/old-event/session.json
+  spice: corrupt session document at $TESTCASE_ROOT/xdg-data/spice/sessions/semantic/session.json
   spice: corrupt session document at $TESTCASE_ROOT/xdg-data/spice/sessions/unknown-field/session.json
   spice: corrupt session document at $TESTCASE_ROOT/xdg-data/spice/sessions/v2/session.json
   spice: corrupt session document at $TESTCASE_ROOT/xdg-data/spice/sessions/wanted/session.json

@@ -159,6 +159,23 @@ module Error = struct
   let pp ppf t = Format.pp_print_string ppf (message t)
 end
 
+module Replay_error = struct
+  type t = { index : int; event : Event.t; cause : Error.t }
+
+  let index t = t.index
+  let event t = t.event
+  let cause t = t.cause
+
+  let shift ~by t =
+    if by < 0 then invalid_arg "Spice_session.State.Replay_error.shift";
+    { t with index = t.index + by }
+
+  let message t =
+    Printf.sprintf "event %d: %s" t.index (Error.message t.cause)
+
+  let pp ppf t = Format.pp_print_string ppf (message t)
+end
+
 type turn_record = {
   turn : Turn.t;
   outcome : Turn.Outcome.t option;
@@ -758,13 +775,13 @@ let apply event t =
       apply_turn_finished ~turn ~outcome t
 
 let apply_all events t =
-  let rec loop t = function
+  let rec loop index t = function
     | [] -> Ok t
     | event :: events -> (
         match apply event t with
-        | Error _ as error -> error
-        | Ok t -> loop t events)
+        | Error cause -> Error { Replay_error.index = index; event; cause }
+        | Ok t -> loop (index + 1) t events)
   in
-  loop t events
+  loop 0 t events
 
 let of_events events = apply_all events empty

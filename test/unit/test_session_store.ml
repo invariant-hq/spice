@@ -166,9 +166,12 @@ let append_reports_session_errors () =
       Session.Turn.Outcome.completed
   in
   match Store.append store document [ invalid ] with
-  | Error (Store.Error.Session { id; error = Session.Error.State _ }) ->
+  | Error
+      (Store.Error.Session { id; error = Session.Error.Replay replay_error }) ->
       equal string ~msg:"session error carries the document id" "doc"
         (Session.Id.to_string id);
+      equal int ~msg:"session error carries the event index" 0
+        (Session.State.Replay_error.index replay_error);
       let loaded = ok_or_fail (Store.load store id) in
       equal string ~msg:"failed append leaves revision unchanged"
         (revision_string document) (revision_string loaded)

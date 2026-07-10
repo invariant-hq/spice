@@ -32,6 +32,10 @@ let expect_error msg expected = function
   | Ok _ -> failf "%s: expected state error" msg
   | Error error -> equal state_error ~msg expected error
 
+let expect_replay_error msg expected = function
+  | Ok _ -> failf "%s: expected replay error" msg
+  | Error error -> equal state_error ~msg expected (State.Replay_error.cause error)
+
 let expect_session_error msg expected = function
   | Ok _ -> failf "%s: expected session error" msg
   | Error error -> equal session_error ~msg expected error
@@ -212,7 +216,8 @@ let durable_events_and_session_round_trip () =
 let state events =
   match State.of_events events with
   | Ok state -> state
-  | Error error -> failf "state reconstruction failed: %a" State.Error.pp error
+  | Error error ->
+      failf "state reconstruction failed: %a" State.Replay_error.pp error
 
 let apply event state =
   match State.apply event state with
@@ -802,14 +807,14 @@ let clean_finish_rejects_pending_tool_calls () =
 
 let tool_results_require_active_turn () =
   let call = tool_call () in
-  expect_error "tool result without active turn"
+  expect_replay_error "tool result without active turn"
     (State.Error.Turn State.Error.Turn.No_active)
     (State.of_events
        [ Session.Event.message_appended (tool_result call "contents") ])
 
 let response_model_must_match_turn () =
   let turn = turn () in
-  expect_error "response model mismatch"
+  expect_replay_error "response model mismatch"
     (State.Error.Turn
        (State.Error.Turn.Response_model_mismatch
           {
@@ -881,7 +886,7 @@ let permission_request_requires_pending_tool_call () =
     permission_request ~turn:(Session.Turn.id turn) ~tool_call:other_call
       (extension_access "tool.pending")
   in
-  expect_error "permission rejects non-pending tool call"
+  expect_replay_error "permission rejects non-pending tool call"
     (State.Error.Permission
        (State.Error.Permission.Tool_call_not_pending
           {
@@ -1082,6 +1087,49 @@ let append_paths_preserve_event_order () =
   | Ok unchanged ->
       is_true ~msg:"empty append leaves inactive history unchanged"
         (same_events archived unchanged)
+
+let replay_errors_locate_invalid_events () =
+  let first_turn = turn ~id:"turn-located-first" () in
+  let second_turn = turn ~id:"turn-located-second" () in
+  let first = Session.Event.turn_started first_turn in
+  let invalid = Session.Event.turn_started second_turn in
+  let expected =
+    State.Error.Turn (State.Error.Turn.Active (Session.Turn.id first_turn))
+  in
+  (match State.of_events [ first; invalid ] with
+  | Ok _ -> failf "invalid replay succeeded"
+  | Error error ->
+      equal int ~msg:"batch-relative replay index" 1
+        (State.Replay_error.index error);
+      is_true ~msg:"replay error retains invalid event"
+        (Session.Event.equal invalid (State.Replay_error.event error));
+      equal state_error ~msg:"replay error retains structured cause" expected
+        (State.Replay_error.cause error));
+  let completed_turn = turn ~id:"turn-located-completed" () in
+  let session =
+    Session.create ~id:(Session.Id.of_string "session-located") ~cwd
+      ~created_at:(time 1) ()
+    |> Session.Log.append_all
+         [
+           Session.Event.turn_started completed_turn;
+           Session.Event.response_appended (response (assistant_text "Done."));
+           Session.Event.turn_finished ~turn:(Session.Turn.id completed_turn)
+             Session.Turn.Outcome.completed;
+         ]
+    |> function
+    | Ok session -> session
+    | Error error -> failf "valid prefix failed: %a" Session.Error.pp error
+  in
+  match Session.Log.append_all [ first; invalid ] session with
+  | Ok _ -> failf "invalid session append succeeded"
+  | Error (Session.Error.Replay error) ->
+      equal int ~msg:"absolute session-log index" 4
+        (State.Replay_error.index error);
+      is_true ~msg:"session error retains invalid event"
+        (Session.Event.equal invalid (State.Replay_error.event error));
+      equal state_error ~msg:"session error retains structured cause" expected
+        (State.Replay_error.cause error)
+  | Error error -> failf "unexpected session error: %a" Session.Error.pp error
 
 let permission_denial_result_must_match_blocked_call () =
   let turn = turn () in
@@ -1796,6 +1844,8 @@ let () =
         session_document_appends_and_tracks_state;
       test "append paths preserve event order"
         append_paths_preserve_event_order;
+      test "replay errors locate invalid events"
+        replay_errors_locate_invalid_events;
       test "permission denial result must match blocked call"
         permission_denial_result_must_match_blocked_call;
       test "permission decision eliminator" permission_decision_eliminator;

@@ -142,6 +142,35 @@ module Error : sig
       syntax. *)
 end
 
+module Replay_error : sig
+  (** Located batch replay failures. *)
+
+  type t
+  (** The type for the first invalid event encountered during batch replay. *)
+
+  val index : t -> int
+  (** [index e] is the zero-based index of the invalid event in the replayed
+      batch. A caller that composes batches may adjust it with {!shift}. *)
+
+  val event : t -> Event.t
+  (** [event e] is the event that failed semantic validation. *)
+
+  val cause : t -> Error.t
+  (** [cause e] is the structured semantic failure. *)
+
+  val shift : by:int -> t -> t
+  (** [shift ~by e] adds non-negative [by] to {!index} [e].
+
+      Raises [Invalid_argument] if [by] is negative. *)
+
+  val message : t -> string
+  (** [message e] is a human-readable diagnostic containing the event index and
+      semantic cause. *)
+
+  val pp : Format.formatter -> t -> unit
+  (** [pp ppf e] formats [e] for diagnostics. *)
+end
+
 (** {1:states States} *)
 
 type t
@@ -181,12 +210,13 @@ val apply : Event.t -> t -> (t, Error.t) result
     Returns [Error e] if [event] would violate a state invariant. The input
     state is immutable and can be reused after an error. *)
 
-val apply_all : Event.t list -> t -> (t, Error.t) result
+val apply_all : Event.t list -> t -> (t, Replay_error.t) result
 (** [apply_all events t] applies [events] to [t] in list order.
 
-    Returns the first error encountered. *)
+    Returns the first error encountered with its zero-based index relative to
+    [events]. *)
 
-val of_events : Event.t list -> (t, Error.t) result
+val of_events : Event.t list -> (t, Replay_error.t) result
 (** [of_events events] reconstructs state from [events] in list order.
 
     [of_events events] is [apply_all events empty]. *)

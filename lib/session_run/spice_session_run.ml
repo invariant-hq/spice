@@ -52,6 +52,8 @@ end
 
 let of_append_error = function
   | Spice_session.Error.State error -> Error.State error
+  | Spice_session.Error.Replay error ->
+      Error.State (State.Replay_error.cause error)
   | Spice_session.Error.Archived -> Error.Archived
   | Spice_session.Error.Deleted -> Error.Deleted
   (* [Log.append] guards only active lifecycle and [State.apply], so it

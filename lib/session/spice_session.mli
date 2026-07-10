@@ -62,8 +62,11 @@ module Error : sig
 
   type t =
     | State of State.Error.t
-        (** Semantic event replay failed while constructing or appending to the
-            session. *)
+        (** One known semantic event failed while appending to the session. *)
+    | Replay of State.Replay_error.t
+        (** Batch replay failed at a located event. Session construction reports
+            a zero-based event index; batch append reports an absolute event-log
+            index. *)
     | Archived  (** The operation requires a non-archived session. *)
     | Deleted  (** The operation requires a non-deleted session. *)
     | Active_turn of Turn.Id.t
@@ -118,7 +121,7 @@ val make :
   id:Id.t -> metadata:Metadata.t -> events:Event.t list -> (t, Error.t) result
 (** [make ~id ~metadata ~events] is a session reconstructed from saved parts.
 
-    Returns [Error (State e)] if [events] do not form a valid semantic session
+    Returns [Error (Replay e)] if [events] do not form a valid semantic session
     replay. Metadata is not replayed; an archived or deleted session can still
     be reconstructed if its semantic events are valid. *)
 
@@ -311,6 +314,6 @@ module Log : sig
   val append_all : Event.t list -> t -> (t, Error.t) result
   (** [append_all events t] appends [events] in list order.
 
-      Returns the first error that would be returned by {!append}. On error no
-      partial session is returned. *)
+      Returns the first located replay error with its absolute event-log index.
+      On error no partial session is returned. *)
 end

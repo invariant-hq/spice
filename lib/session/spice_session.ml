@@ -20,6 +20,7 @@ module Anchor = Anchor
 module Error = struct
   type t =
     | State of State.Error.t
+    | Replay of State.Replay_error.t
     | Archived
     | Deleted
     | Active_turn of Turn.Id.t
@@ -28,6 +29,7 @@ module Error = struct
 
   let message = function
     | State error -> State.Error.message error
+    | Replay error -> State.Replay_error.message error
     | Archived -> "session is archived"
     | Deleted -> "session has been deleted"
     | Active_turn turn ->
@@ -51,7 +53,7 @@ type session = t
 
 let make ~id ~metadata ~events =
   match State.of_events events with
-  | Error error -> Error (Error.State error)
+  | Error error -> Error (Error.Replay error)
   | Ok state -> Ok { id; metadata; events_rev = List.rev events; state }
 
 let create ~id ?title ~cwd ~created_at () =
@@ -97,7 +99,9 @@ let append_all events t =
       | Error _ as error -> error
       | Ok () -> (
           match State.apply_all events t.state with
-          | Error error -> Error (Error.State error)
+          | Error error ->
+              let by = List.length t.events_rev in
+              Error (Error.Replay (State.Replay_error.shift ~by error))
           | Ok state ->
               Ok
                 {

@@ -29,7 +29,8 @@ let transcript messages =
 let state events =
   match State.of_events events with
   | Ok state -> state
-  | Error error -> failf "state reconstruction failed: %a" State.Error.pp error
+  | Error error ->
+      failf "state reconstruction failed: %a" State.Replay_error.pp error
 
 let turn ?(id = "turn-1") ?(input = "Refactor.") () =
   Session.Turn.make

@@ -62,7 +62,8 @@ let session_document_diagnostic id error =
   | Spice_session.Error.Active_turn turn ->
       Spice_protocol.Error.diagnostic
         (Spice_protocol.Error.Active_turn_exists turn)
-  | Spice_session.Error.State _ | Spice_session.Error.Unknown_turn _
+  | Spice_session.Error.State _ | Spice_session.Error.Replay _
+  | Spice_session.Error.Unknown_turn _
   | Spice_session.Error.Turn_not_finished _ ->
       diagnostic (Spice_session.Error.message error)
 

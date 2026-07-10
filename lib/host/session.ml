@@ -145,7 +145,8 @@ let session_error ~id (error : Spice_session.Error.t) : Spice_protocol.Error.t =
   | Spice_session.Error.Deleted -> Spice_protocol.Error.Deleted id
   | Spice_session.Error.Active_turn turn ->
       Spice_protocol.Error.Active_turn_exists turn
-  | Spice_session.Error.State _ | Spice_session.Error.Unknown_turn _
+  | Spice_session.Error.State _ | Spice_session.Error.Replay _
+  | Spice_session.Error.Unknown_turn _
   | Spice_session.Error.Turn_not_finished _ ->
       Spice_protocol.Error.Internal (Spice_session.Error.message error)
 
