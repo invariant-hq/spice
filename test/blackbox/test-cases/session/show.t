@@ -115,8 +115,8 @@ no next step.
   created_at: $TIME
   updated_at: $TIME
   revision: sha256:$HASH
-  $ spice session show --json tombstone | grep -o '"phase":"idle","lifecycle":"deleted"'
-  [1]
+  $ spice session show --json tombstone | sed -E 's/.*"lifecycle":"([^"]+)","phase":"([^"]+)".*/lifecycle=\1 phase=\2/'
+  lifecycle=deleted phase=idle
 
 A hand-edited archived session with a stranded active turn still
 renders honestly: the phase token carries the lifecycle, and the next step is
@@ -140,8 +140,8 @@ restore, not a continuation command the lifecycle gate would reject.
   revision: sha256:$HASH
   waiting: permission permission-1 tool=review_tool turn=turn-1 call=call-1
   restore first: spice session restore 'archived-blocked'
-  $ spice session show --json archived-blocked | grep -o '"phase":"waiting","lifecycle":"archived"'
-  [1]
+  $ spice session show --json archived-blocked | sed -E 's/.*"lifecycle":"([^"]+)","phase":"([^"]+)".*/lifecycle=\1 phase=\2/'
+  lifecycle=archived phase=waiting
 
 Workflow sidecars are projected through session status and show, not standalone
 plan or todo commands.
