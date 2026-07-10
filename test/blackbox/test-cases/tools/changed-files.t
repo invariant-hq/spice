@@ -78,6 +78,21 @@ unchanged, and do not record changed-file evidence for a failed-only run.
   $ cat fail.txt
   red red blue
 
+A failed mutation-ledger rename removes the temporary file. The target is a
+directory here solely to force the real atomic-write failure; mutation evidence
+degrades without changing the model run.
+
+  $ mkdir -p "$SPICE_TEST_DATA_HOME/sessions/mutation-cleanup/mutations.jsonl"
+  $ cat > mutation-cleanup.jsonl <<'JSONL'
+  > {"expect":{"body_contains":["\"name\":\"write_file\""]},"response":{"id":"resp-cleanup-1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-cleanup-1","call_id":"call-cleanup-1","name":"write_file","arguments":"{\"path\":\"cleanup.txt\",\"contents\":\"cleaned\\n\"}"}]}}
+  > {"expect":{"body_contains":["function_call_output","call-cleanup-1"]},"response":{"id":"resp-cleanup-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"cleanup exercised"}]}]}}
+  > JSONL
+  $ start_fake_openai mutation-cleanup.jsonl capture-cleanup port-cleanup
+  $ spice run --cwd "$PWD" --permission-mode bypass --id mutation-cleanup "force ledger rename failure" > /dev/null 2>&1
+  $ wait_fake_server
+  $ find "$SPICE_TEST_DATA_HOME/sessions/mutation-cleanup" -name 'mutations.jsonl.tmp.*' | wc -l | tr -d ' '
+  0
+
 Runtime paths that need escaping remain display-safe in diff headers.
 
   $ cat > newline-path.jsonl <<'JSONL'

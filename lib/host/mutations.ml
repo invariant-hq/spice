@@ -70,7 +70,16 @@ module Log = struct
       io tmp (fun () ->
           Eio.Path.save ~create:(`Exclusive 0o600) (fs_path t tmp) contents)
     in
-    io path (fun () -> Eio.Path.rename (fs_path t tmp) (fs_path t path))
+    match
+      io path (fun () -> Eio.Path.rename (fs_path t tmp) (fs_path t path))
+    with
+    | Ok () -> Ok ()
+    | Error error -> (
+        match io tmp (fun () -> Eio.Path.unlink (fs_path t tmp)) with
+        | Ok () -> Error error
+        | Error cleanup ->
+            Error
+              (error ^ "; temporary-file cleanup failed: " ^ cleanup))
 
   let with_lock t path f =
     let rec lockf fd command =
