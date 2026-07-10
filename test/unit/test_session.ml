@@ -241,6 +241,114 @@ let turn_starts_and_finishes () =
     (Some Session.Turn.Outcome.completed)
     (State.turn_outcome (Session.Turn.id turn) state)
 
+let reducer_transition_errors_are_structured () =
+  let turn = turn () in
+  let turn_id = Session.Turn.id turn in
+  let call = tool_call ~id:"call-transition" ~name:"read_file" () in
+  let other_call = tool_call ~id:"call-other" ~name:"read_file" () in
+  let started = [ Session.Event.turn_started turn ] in
+  let pending_call =
+    started
+    @ [ Session.Event.response_appended (response (assistant_tool_call call)) ]
+  in
+  let completed =
+    Session.Event.turn_finished ~turn:turn_id Session.Turn.Outcome.completed
+  in
+  let finished_turn =
+    started
+    @ [
+        Session.Event.response_appended (response (assistant_text "Done."));
+        completed;
+      ]
+  in
+  let permission =
+    permission_request ~id:"permission-transition" ~turn:turn_id ~tool_call:call
+      (extension_access "tool.transition")
+  in
+  let permission_id = Session.Permission.Requested.id permission in
+  let permission_event = Session.Event.permission_requested permission in
+  let pending_permission = pending_call @ [ permission_event ] in
+  let permission_allowed =
+    Session.Event.permission_resolved
+      (Session.Permission.Resolved.allow_once ~id:permission_id)
+  in
+  let resolved_permission = pending_permission @ [ permission_allowed ] in
+  let claim =
+    Session.Tool_claim.Started.make
+      ~id:(Session.Tool_claim.Id.of_string "claim-transition") ~turn:turn_id
+      ~call
+  in
+  let claim_id = Session.Tool_claim.Started.id claim in
+  let claim_event = Session.Event.tool_claim_started claim in
+  let pending_claim = pending_call @ [ claim_event ] in
+  let finished_claim =
+    Session.Tool_claim.Finished.make ~id:claim_id ~output:None
+      (Llm.Tool.Result.text call "contents")
+  in
+  let claim_finished_event = Session.Event.tool_claim_finished finished_claim in
+  let finished_claim_events = pending_claim @ [ claim_finished_event ] in
+  let check label prefix event expected =
+    expect_error label expected (State.apply event (state prefix))
+  in
+  check "active turn precedes duplicate turn" started
+    (Session.Event.turn_started turn)
+    (State.Error.Turn (State.Error.Turn.Active turn_id));
+  check "duplicate turn is rejected after finish" finished_turn
+    (Session.Event.turn_started turn)
+    (State.Error.Turn (State.Error.Turn.Duplicate turn_id));
+  check "unknown turn precedes lifecycle state" [] completed
+    (State.Error.Turn (State.Error.Turn.Unknown turn_id));
+  check "finished turn precedes missing active turn" finished_turn completed
+    (State.Error.Turn (State.Error.Turn.Finished turn_id));
+  check "idle-only message rejects an active turn" started
+    (Session.Event.message_appended (Llm.Message.developer "note"))
+    (State.Error.Turn (State.Error.Turn.Active turn_id));
+  check "duplicate permission precedes waiting checks" pending_permission
+    permission_event
+    (State.Error.Permission (State.Error.Permission.Duplicate permission_id));
+  check "unknown permission precedes lifecycle state" [] permission_allowed
+    (State.Error.Permission (State.Error.Permission.Unknown permission_id));
+  let mismatched_denial =
+    Session.Event.permission_resolved
+      (Session.Permission.Resolved.deny ~id:permission_id
+         (Llm.Tool.Result.text ~error:true other_call "denied"))
+  in
+  check "resolved permission precedes result mismatch" resolved_permission
+    mismatched_denial
+    (State.Error.Permission (State.Error.Permission.Not_pending permission_id));
+  check "duplicate claim precedes waiting checks" pending_claim claim_event
+    (State.Error.Tool_claim (State.Error.Tool_claim.Duplicate claim_id));
+  check "unknown claim precedes result checks" [] claim_finished_event
+    (State.Error.Tool_claim (State.Error.Tool_claim.Unknown claim_id));
+  let mismatched_finish =
+    Session.Event.tool_claim_finished
+      (Session.Tool_claim.Finished.make ~id:claim_id ~output:None
+         (Llm.Tool.Result.text other_call "wrong"))
+  in
+  check "finished claim precedes result mismatch" finished_claim_events
+    mismatched_finish
+    (State.Error.Tool_claim (State.Error.Tool_claim.Not_pending claim_id));
+  check "claim requires a pending transcript call" started claim_event
+    (State.Error.Tool_claim
+       (State.Error.Tool_claim.Tool_call_not_pending
+          { execution = claim_id; call_id = Llm.Tool.Call.id call }));
+  let before = state pending_claim in
+  expect_error "rejected duplicate leaves input reusable"
+    (State.Error.Tool_claim (State.Error.Tool_claim.Duplicate claim_id))
+    (State.apply claim_event before);
+  let recovered = apply claim_finished_event before in
+  let expected = state finished_claim_events in
+  equal message_list_value ~msg:"recovery transcript matches clean replay"
+    (Llm.Transcript.messages (State.transcript expected))
+    (Llm.Transcript.messages (State.transcript recovered));
+  let equal_claim_record (started_a, finished_a) (started_b, finished_b) =
+    Session.Tool_claim.Started.equal started_a started_b
+    && Option.equal Session.Tool_claim.Finished.equal finished_a finished_b
+  in
+  is_true ~msg:"recovery claim history matches clean replay"
+    (List.equal equal_claim_record (State.tool_claims expected)
+       (State.tool_claims recovered))
+
 let final_text_projects_latest_assistant () =
   equal (option string) ~msg:"empty state has no final text" None
     (State.final_text State.empty);
@@ -1554,6 +1662,8 @@ let () =
   run "spice.session"
     [
       test "turn starts and finishes" turn_starts_and_finishes;
+      test "reducer transition errors are structured"
+        reducer_transition_errors_are_structured;
       test "event equality ignores retained output"
         event_equality_ignores_retained_output;
       test "durable events and session round trip"
