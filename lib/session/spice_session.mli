@@ -350,6 +350,8 @@ module Run : sig
           (** The active turn id is not present in reconstructed state. *)
       | Permission_not_pending of Permission.Id.t
           (** A permission answer referenced no pending permission request. *)
+      | Tool_claim_not_pending of Tool_claim.Id.t
+          (** A tool result referenced no pending durable tool claim. *)
       | Tool_call_not_pending of { call_id : string; name : string }
           (** A host-tool answer referenced no pending matching tool call. *)
       | Tool_result_mismatch of {
@@ -578,19 +580,20 @@ module Run : sig
 
   val finish_tool :
     Config.t ->
-    Tool_claim.Started.t ->
+    Tool_claim.Id.t ->
     Spice_tool.Output.t Spice_tool.Result.t ->
     session ->
     (Step.t, Error.t) result
-  (** [finish_tool config claim result session] records [result] for [claim] and
-      advances to the next external boundary.
+  (** [finish_tool config id result session] records [result] for pending claim
+      [id] and advances to the next external boundary.
 
       Completed results become normal model-visible tool results. Failed and
       interrupted results become error tool results, including their message or
       reason and any encoded output text.
 
-      Returns {!Error.State} if [claim] is not pending or if recording the
-      result would violate session replay invariants. *)
+      Returns {!Error.Tool_claim_not_pending} if [id] is not pending. Returns
+      {!Error.State} if recording the result would violate session replay
+      invariants. *)
 
   val resolve_permission :
     Config.t ->

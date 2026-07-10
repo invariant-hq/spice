@@ -267,6 +267,7 @@ module Run = struct
       | No_active_turn
       | Unknown_active_turn of Turn.Id.t
       | Permission_not_pending of Permission.Id.t
+      | Tool_claim_not_pending of Tool_claim.Id.t
       | Tool_call_not_pending of { call_id : string; name : string }
       | Tool_result_mismatch of {
           expected_call_id : string;
@@ -287,6 +288,8 @@ module Run = struct
             (Turn.Id.to_string turn)
       | Permission_not_pending id ->
           Format.asprintf "permission is not pending: %a" Permission.Id.pp id
+      | Tool_claim_not_pending id ->
+          Format.asprintf "tool claim is not pending: %a" Tool_claim.Id.pp id
       | Tool_call_not_pending { call_id; name } ->
           Printf.sprintf "tool call is not pending: %s (%s)" call_id name
       | Tool_result_mismatch
@@ -760,15 +763,16 @@ module Run = struct
         ~events:[ response_event; finish_event ]
         ~next:(Step.Finished { turn = turn_id; outcome })
 
-  let finish_tool config execution result session =
-    let call = Tool_claim.Started.call execution in
-    let finished =
-      Tool_claim.Finished.make
-        ~id:(Tool_claim.Started.id execution)
-        ~output:(Tool.Result.output result)
-        (tool_result_from_output call result)
-    in
-    normalize config session [ Event.tool_claim_finished finished ]
+  let finish_tool config id result session =
+    match State.pending_tool_claim id (state session) with
+    | None -> Error (Error.Tool_claim_not_pending id)
+    | Some saved ->
+        let call = Tool_claim.Started.call saved in
+        let finished =
+          Tool_claim.Finished.make ~id ~output:(Tool.Result.output result)
+            (tool_result_from_output call result)
+        in
+        normalize config session [ Event.tool_claim_finished finished ]
 
   let resolve_permission config ?(message = "Permission denied.") ?via id answer
       session =

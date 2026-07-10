@@ -13,7 +13,7 @@
     Tool claims are durable so a resumed session never automatically repeats a
     possibly non-idempotent tool after a crash. A started claim blocks the
     active turn until a matching finished claim records the model-visible
-    result, or until the turn is failed or interrupted. *)
+    result. A turn cannot finish while one of its claims is unresolved. *)
 
 (** {1:ids Identifiers} *)
 

@@ -51,6 +51,10 @@ module Error = struct
       | Duplicate of Session_tool_claim.Id.t
       | Unknown of Session_tool_claim.Id.t
       | Not_pending of Session_tool_claim.Id.t
+      | Result_bypasses_claim of {
+          execution : Session_tool_claim.Id.t;
+          call_id : string;
+        }
       | Tool_call_not_pending of {
           execution : Session_tool_claim.Id.t;
           call_id : string;
@@ -119,6 +123,10 @@ module Error = struct
     | Tool_claim (Tool_claim.Not_pending id) ->
         Format.asprintf "tool claim is not pending: %a" Session_tool_claim.Id.pp
           id
+    | Tool_claim
+        (Tool_claim.Result_bypasses_claim { execution; call_id }) ->
+        Format.asprintf "tool result for %s bypasses pending tool claim %a"
+          call_id Session_tool_claim.Id.pp execution
     | Tool_claim (Tool_claim.Tool_call_not_pending { execution; call_id }) ->
         Format.asprintf "tool claim %a references non-pending tool call: %s"
           Session_tool_claim.Id.pp execution call_id
@@ -333,6 +341,12 @@ let result_matches_call result call =
        (Spice_llm.Tool.Result.name result)
        (Spice_llm.Tool.Call.name call)
 
+let pending_tool_claim_for_result result t =
+  List.find_opt
+    (fun execution ->
+      result_matches_call result (Tool_claim.Started.call execution))
+    (pending_tool_claims t)
+
 let require_no_active_turn t =
   match t.active_turn with
   | None -> Ok ()
@@ -410,10 +424,19 @@ let apply_turn_started turn t =
 
 let apply_message_appended message t =
   match message with
-  | Spice_llm.Message.Tool_result _ -> (
+  | Spice_llm.Message.Tool_result result -> (
       match require_active_turn t with
       | Error _ as error -> error
-      | Ok _ -> add_transcript message t)
+      | Ok _ -> (
+          match pending_tool_claim_for_result result t with
+          | Some execution ->
+              tool_claim_error
+                (Error.Tool_claim.Result_bypasses_claim
+                   {
+                     execution = Tool_claim.Started.id execution;
+                     call_id = Spice_llm.Tool.Result.call_id result;
+                   })
+          | None -> add_transcript message t))
   | Spice_llm.Message.System _ | Spice_llm.Message.Developer _
   | Spice_llm.Message.User _ -> (
       match require_no_active_turn t with
@@ -613,11 +636,7 @@ let apply_tool_claim_finished finished t =
                       t.tool_claims;
                 })
 
-let clean_outcome = function
-  | Turn.Outcome.Completed | Session_turn.Outcome.Step_limit -> true
-  | Session_turn.Outcome.Failed _ | Session_turn.Outcome.Interrupted _ -> false
-
-let require_clean_finish turn t =
+let require_finish turn t =
   if waiting t <> [] then turn_error (Error.Turn.Unresolved_waiting turn)
   else
     match Transcript.require_ready t.transcript with
@@ -628,9 +647,7 @@ let apply_turn_finished ~turn ~outcome t =
   match require_active_turn_id turn t with
   | Error _ as error -> error
   | Ok () -> (
-      match
-        if clean_outcome outcome then require_clean_finish turn t else Ok ()
-      with
+      match require_finish turn t with
       | Error _ as error -> error
       | Ok () ->
           let record = Turn_map.find turn t.turns in

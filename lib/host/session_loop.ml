@@ -81,6 +81,8 @@ let run_error session (error : Spice_session.Run.Error.t) :
       Spice_protocol.Error.No_active_turn
   | Spice_session.Run.Error.Permission_not_pending id ->
       Spice_protocol.Error.Permission_not_pending id
+  | Spice_session.Run.Error.Tool_claim_not_pending id ->
+      Spice_protocol.Error.Tool_claim_not_pending id
   | Spice_session.Run.Error.Tool_call_not_pending { call_id; name } ->
       Spice_protocol.Error.Tool_call_not_pending { call_id; name }
   | Spice_session.Run.Error.Archived ->
@@ -544,7 +546,9 @@ let rec handle_step ~store ~projector ~pressure_compacted ~overflow_compacted
       finish_tool_effect result;
       let session = Spice_session_store.Document.session document in
       let* step =
-        Spice_session.Run.finish_tool run claim result session
+        Spice_session.Run.finish_tool run
+          (Spice_session.Tool_claim.Started.id claim)
+          result session
         |> map_run session
       in
       handle_step ~store ~projector ~pressure_compacted ~overflow_compacted
@@ -727,17 +731,10 @@ let execute ~store ~client ~host_tool ~resolve_plan ~turn_model ~turn_mode ~run
         continue_step document step
     | Spice_protocol.Command.Finish_tool (id, result) -> (
         let* () = check_active_document session in
-        match
-          Spice_session.State.pending_tool_claim id
-            (Spice_session.state session)
-        with
-        | None -> Error (Spice_protocol.Error.Tool_claim_not_pending id)
-        | Some execution ->
-            let* step =
-              Spice_session.Run.finish_tool run execution result session
-              |> map_run session
-            in
-            continue_step document step)
+        let* step =
+          Spice_session.Run.finish_tool run id result session |> map_run session
+        in
+        continue_step document step)
     | Spice_protocol.Command.Interrupt { reason } ->
         let* () = check_active_document session in
         let* step =

@@ -379,14 +379,11 @@ let compaction_preserves_active_turn () =
 let compaction_requires_ready_current_transcript () =
   let turn = turn () in
   let call = tool_call () in
-  let interrupted =
+  let pending =
     state
       [
         Session.Event.turn_started turn;
         Session.Event.response_appended (response (assistant_tool_call call));
-        Session.Event.turn_finished ~turn:(Session.Turn.id turn)
-          (Session.Turn.Outcome.interrupted ~reason:"cancelled" ~cancelled:true
-             ());
       ]
   in
   let replacement =
@@ -403,7 +400,7 @@ let compaction_requires_ready_current_transcript () =
             (Llm.Tool.Call.id pending)
       | error ->
           failf "unexpected transcript error: %a" Llm.Transcript.Error.pp error)
-    (State.apply (Session.Event.compaction_installed compaction) interrupted)
+    (State.apply (Session.Event.compaction_installed compaction) pending)
 
 let compaction_requires_ready_replacement_transcript () =
   let call = tool_call () in
@@ -619,7 +616,7 @@ let permission_request_json_requires_tool_call () =
   expect_decode_error "permission request JSON requires tool_call"
     Session.Permission.Requested.jsont missing_tool_call_json
 
-let failed_turn_abandons_waitings () =
+let terminal_turns_reject_unresolved_waiting () =
   let turn = turn () in
   let call = tool_call ~name:"tool_confirm" () in
   let request =
@@ -634,25 +631,18 @@ let failed_turn_abandons_waitings () =
         Session.Event.permission_requested request;
       ]
   in
-  let failed =
-    apply
-      (Session.Event.turn_finished ~turn:(Session.Turn.id turn)
-         (Session.Turn.Outcome.failed ~message:"permission prompt cancelled"))
-      blocked
+  let expect_rejected label outcome =
+    expect_error label
+      (State.Error.Turn
+         (State.Error.Turn.Unresolved_waiting (Session.Turn.id turn)))
+      (State.apply
+         (Session.Event.turn_finished ~turn:(Session.Turn.id turn) outcome)
+         blocked)
   in
-  equal (option turn_id_value) ~msg:"failed turn is no longer active" None
-    (State.active_turn failed);
-  equal int ~msg:"finished turn has no pending waiting" 0
-    (List.length (State.pending_permissions failed));
-  expect_error "abandoned permission is not pending"
-    (State.Error.Permission
-       (State.Error.Permission.Not_pending
-          (Session.Permission.Requested.id request)))
-    (State.apply
-       (Session.Event.permission_resolved
-          (Session.Permission.Resolved.allow_once
-             ~id:(Session.Permission.Requested.id request)))
-       failed)
+  expect_rejected "failed turn rejects unresolved waiting"
+    (Session.Turn.Outcome.failed ~message:"permission prompt cancelled");
+  expect_rejected "interrupted turn rejects unresolved waiting"
+    (Session.Turn.Outcome.interrupted ~reason:"cancelled" ~cancelled:true ())
 
 let session_document_appends_and_tracks_state () =
   let turn = turn () in
@@ -841,6 +831,21 @@ let tool_claim_blocks_until_finished () =
        (Session.Event.turn_finished ~turn:(Session.Turn.id turn)
           Session.Turn.Outcome.completed)
        started);
+  expect_error "failed finish rejects unfinished tool claim"
+    (State.Error.Turn
+       (State.Error.Turn.Unresolved_waiting (Session.Turn.id turn)))
+    (State.apply
+       (Session.Event.turn_finished ~turn:(Session.Turn.id turn)
+          (Session.Turn.Outcome.failed ~message:"tool failed"))
+       started);
+  expect_error "interrupted finish rejects unfinished tool claim"
+    (State.Error.Turn
+       (State.Error.Turn.Unresolved_waiting (Session.Turn.id turn)))
+    (State.apply
+       (Session.Event.turn_finished ~turn:(Session.Turn.id turn)
+          (Session.Turn.Outcome.interrupted ~reason:"cancelled" ~cancelled:true
+             ()))
+       started);
   let finished =
     Session.Tool_claim.Finished.make
       ~id:(Session.Tool_claim.Started.id execution)
@@ -852,6 +857,33 @@ let tool_claim_blocks_until_finished () =
     (List.length (State.pending_tool_claims ready));
   is_true ~msg:"tool result answers the transcript"
     (Llm.Transcript.is_ready (State.transcript ready))
+
+let raw_tool_result_cannot_bypass_claim () =
+  let turn = turn () in
+  let call = tool_call ~id:"claimed-call" ~name:"read_file" () in
+  let execution =
+    Session.Tool_claim.Started.make
+      ~id:(Session.Tool_claim.Id.of_string "claimed-execution")
+      ~turn:(Session.Turn.id turn) ~call
+  in
+  let claimed =
+    state
+      [
+        Session.Event.turn_started turn;
+        Session.Event.response_appended (response (assistant_tool_call call));
+        Session.Event.tool_claim_started execution;
+      ]
+  in
+  expect_error "raw tool result cannot bypass claim"
+    (State.Error.Tool_claim
+       (State.Error.Tool_claim.Result_bypasses_claim
+          {
+            execution = Session.Tool_claim.Started.id execution;
+            call_id = Llm.Tool.Call.id call;
+          }))
+    (State.apply
+       (Session.Event.message_appended (tool_result call "bypassed"))
+       claimed)
 
 let tool_claim_result_must_match_started_call () =
   let turn = turn () in
@@ -1312,7 +1344,8 @@ let () =
         permission_request_requires_pending_tool_call;
       test "permission request JSON requires tool call"
         permission_request_json_requires_tool_call;
-      test "failed turn abandons waiting" failed_turn_abandons_waitings;
+      test "terminal turns reject unresolved waiting"
+        terminal_turns_reject_unresolved_waiting;
       test "session document appends and tracks state"
         session_document_appends_and_tracks_state;
       test "permission denial result must match blocked call"
@@ -1323,6 +1356,8 @@ let () =
       test "allow-session respects non-grantable requests"
         allow_session_respects_non_grantable_requests;
       test "tool claim blocks until finished" tool_claim_blocks_until_finished;
+      test "raw tool result cannot bypass claim"
+        raw_tool_result_cannot_bypass_claim;
       test "tool claim result must match started call"
         tool_claim_result_must_match_started_call;
       test "finished tool claim JSON requires output"

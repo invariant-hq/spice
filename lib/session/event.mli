@@ -47,9 +47,8 @@ type t = private
       (** A claimed executable tool call finished. Applying this event appends
           its model-visible tool result to the transcript. *)
   | Turn_finished of { turn : Turn.Id.t; outcome : Turn.Outcome.t }
-      (** An accepted turn reached a terminal outcome. Clean outcomes require a
-          ready transcript and no unresolved waiting; failed or interrupted
-          outcomes may abandon waiting. *)
+      (** An accepted turn reached a terminal outcome. Every outcome requires a
+          ready transcript and no unresolved waiting. *)
 
 val turn_started : Turn.t -> t
 (** [turn_started turn] records accepted turn [turn]. *)

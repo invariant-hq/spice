@@ -236,6 +236,28 @@ let deterministic_tool_claim_ids () =
        (Session.Tool_claim.Started.id first)
        (Session.Tool_claim.Started.id changed))
 
+let finish_tool_uses_saved_claim_id () =
+  let tool = executable_tool () in
+  let policy =
+    Permission.Policy.make [ Permission.Policy.Rule.allow_all_dangerously ]
+  in
+  let config = config ~policy [ tool ] in
+  let claimed = run_response config (response (call ())) in
+  let saved = tool_claim_from_step claimed in
+  match
+    Run.finish_tool config (Session.Tool_claim.Started.id saved)
+      (Tool.Result.completed ~output:(output ()) ())
+      (Run.Step.session claimed)
+  with
+  | Error error -> failf "finish failed: %a" Run.Error.pp error
+  | Ok step ->
+      let state = Session.state (Run.Step.session step) in
+      (match Session.State.tool_claims state with
+      | [ (started, Some _) ] ->
+          is_true ~msg:"finish resolves the saved claim"
+            (Session.Tool_claim.Started.equal saved started)
+      | _ -> failf "expected one finished saved claim")
+
 let block_turn_string block =
   Session.Turn.Id.to_string (Session.Waiting.turn block)
 
@@ -520,11 +542,27 @@ let interrupt_finishes_pending_claim () =
           "the interrupted transcript is provider-well-formed after a pending \
            claim"
         (Llm.Transcript.is_ready (Session.State.transcript state));
-      is_true ~msg:"the pending claim was finished by the interrupt"
-        (Option.is_none
-           (Session.State.pending_tool_claim
-              (Session.Tool_claim.Started.id claim)
-              state))
+      (match Run.Step.events step with
+      | [
+       Session.Event.Tool_claim_finished finished;
+       Session.Event.Turn_finished
+         { outcome = Session.Turn.Outcome.Interrupted _; _ };
+      ] ->
+          is_true ~msg:"interrupt finishes the original claim id"
+            (Session.Tool_claim.Id.equal
+               (Session.Tool_claim.Started.id claim)
+               (Session.Tool_claim.Finished.id finished));
+          is_true ~msg:"interrupt records an error tool result"
+            (Llm.Tool.Result.is_error
+               (Session.Tool_claim.Finished.result finished));
+          (match Session.State.tool_claims state with
+          | [ (started, Some recorded) ] ->
+              is_true ~msg:"claim history retains the original start"
+                (Session.Tool_claim.Started.equal claim started);
+              is_true ~msg:"claim history retains the interrupt finish"
+                (Session.Tool_claim.Finished.equal finished recorded)
+          | _ -> failf "expected one durably finished claim")
+      | _ -> failf "interrupt did not durably finish the pending claim")
 
 let policy_denial_uses_configured_message () =
   let deny_rule =
@@ -755,6 +793,7 @@ let () =
       test "permission planner exceptions become tool errors"
         permission_planner_exceptions_become_tool_errors;
       test "deterministic tool claim ids" deterministic_tool_claim_ids;
+      test "finish tool uses saved claim id" finish_tool_uses_saved_claim_id;
       test "block accessors identify call and turn"
         block_accessors_identify_call_and_turn;
       test "interrupt finishes turn as cancelled"

@@ -93,6 +93,12 @@ module Error : sig
       | Not_pending of Tool_claim.Id.t
           (** A finished tool claim referenced a claim that is no longer
               pending. *)
+      | Result_bypasses_claim of {
+          execution : Tool_claim.Id.t;
+          call_id : string;
+        }
+          (** A raw tool-result event attempted to answer a call owned by a
+              pending durable claim. *)
       | Tool_call_not_pending of {
           execution : Tool_claim.Id.t;
           call_id : string;
@@ -155,10 +161,8 @@ type t
       call;
     - tool claim results reference pending claims and answer the exact started
       model tool call;
-    - {!Turn.Outcome.Completed} and {!Turn.Outcome.Step_limit} require no
-      unresolved waiting boundaries and a request-ready transcript;
-    - {!Turn.Outcome.Failed} and {!Turn.Outcome.Interrupted} may abandon
-      unresolved waiting boundaries by terminating the active turn;
+    - every terminal turn outcome requires no unresolved waiting boundaries and
+      a request-ready transcript;
     - transcript updates preserve {!Spice_llm.Transcript} invariants. *)
 
 val empty : t
@@ -259,8 +263,7 @@ val pending_permission : Permission.Id.t -> t -> Permission.Requested.t option
 val permissions :
   t -> (Permission.Requested.t * Permission.Resolved.t option) list
 (** [permissions t] is every permission request and its optional reply, in
-    request order. Requests abandoned by failed or interrupted turns remain in
-    this history with [None], but are not pending. *)
+    request order. *)
 
 (** {1:tool_claims Tool claims} *)
 
@@ -275,8 +278,7 @@ val pending_tool_claim : Tool_claim.Id.t -> t -> Tool_claim.Started.t option
 val tool_claims :
   t -> (Tool_claim.Started.t * Tool_claim.Finished.t option) list
 (** [tool_claims t] is every tool claim and its optional result, in start order.
-    Executions abandoned by failed or interrupted turns remain in this history
-    with [None], but are not pending. *)
+    A valid terminal turn has no unfinished claim. *)
 
 val waiting : t -> Waiting.t list
 (** [waiting t] is the current active turn's durable waiting boundaries, with
