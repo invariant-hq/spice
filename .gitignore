@@ -22,5 +22,7 @@ _*/
 # Release build staging (scripts/release/alpine-build.sh)
 dist/
 
-# Claude
+# Agents
 .claude/
+.spice/
+.codex/
