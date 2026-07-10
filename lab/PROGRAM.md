@@ -32,7 +32,7 @@ The commands below use `spice-lab` as shorthand for the built binary.
 3. Calibrate the campaign baseline and pin the instrument:
 
    ```
-   spice-lab calibrate --campaign <tag> --suite core --runs 5 [--model <m>] [--agent <a>]
+   spice-lab calibrate --campaign <tag> --suite screen --runs 5 [--model <m>] [--agent <a>]
    ```
 
    This records `campaign.json` (start ref, baseline binary digest, and a
@@ -48,7 +48,7 @@ The commands below use `spice-lab` as shorthand for the built binary.
    rules actually produce:
 
    ```
-   spice-lab experiment run --campaign <tag> --name aa --suite core --runs 5 --aa [--model <m>] [--agent <a>]
+   spice-lab experiment run --campaign <tag> --name aa --suite screen --runs 5 --aa [--model <m>] [--agent <a>]
    spice-lab experiment compare --campaign <tag> aa
    ```
 
@@ -58,12 +58,12 @@ The commands below use `spice-lab` as shorthand for the built binary.
 5. Confirm budget with the user: per-experiment and campaign ceilings (tokens
    and wall-clock; cost only if the model is metered).
 
-Note on suites: the curated `screen`/`confirm` suites (with holdouts) arrive
-with the reference-anchored corpus (spec §6.7, §9 Phase 3). Until then use the
-existing suites — `smoke` (single micro task, cheap smoke test), `core`
-(the standard micro corpus), `long`, `robustness`, `all`. Treat `core` as the
-screening suite and `all` as the confirmation suite, and record the suite in
-every ledger row so the choice is auditable.
+Note on suites: `screen` (a cheap 6-task subset of `core` spanning
+categories) is the screening suite; `core` is the confirmation suite until
+the reference-anchored corpus brings curated holdouts (spec §6.7, §9
+Phase 3). `smoke` is a single micro task for harness checks; `long` and
+`robustness` fill as tasks pass the rubric. Record the suite in every ledger
+row so the choice is auditable.
 
 ## The experiment loop
 
@@ -89,7 +89,7 @@ LOOP until budget is exhausted or the user stops you:
 3. Screen:
 
    ```
-   spice-lab experiment run --campaign <tag> --name <n> --suite core --runs 3 [--model <m>]
+   spice-lab experiment run --campaign <tag> --name <n> --suite screen --runs 3 [--model <m>]
    spice-lab experiment compare --campaign <tag> <n> [--threshold <pct>]
    ```
 
@@ -107,7 +107,7 @@ LOOP until budget is exhausted or the user stops you:
 5. Candidate → confirm on the larger suite, and record the ledger row:
 
    ```
-   spice-lab experiment run --campaign <tag> --name <n>-confirm --suite all --runs 5 [--model <m>]
+   spice-lab experiment run --campaign <tag> --name <n>-confirm --suite core --runs 5 [--model <m>]
    spice-lab experiment compare --campaign <tag> <n>-confirm
    spice-lab ledger add --campaign <tag> --name <n>-confirm \
      --verdict keep|discard --hypothesis "<H>" --tier T1|T2|T3 \
