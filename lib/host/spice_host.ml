@@ -75,17 +75,26 @@ let with_model_artifact_prepare ~sw ~stdenv ?observe_model_artifact adapter
   | None -> client
   | Some { Host.Adapter.prepare; _ } ->
       let prepared = ref false in
+      let preparing = Eio.Mutex.create () in
       let observe =
         Option.value observe_model_artifact ~default:(fun _progress -> ())
       in
       let run ~cancelled request =
-        if !prepared then Spice_llm.Client.stream ~cancelled client request
-        else
-          match prepare ~sw ~stdenv ~cancelled ~observe model with
-          | Error error -> Error error
-          | Ok () ->
-              prepared := true;
-              Spice_llm.Client.stream ~cancelled client request
+        let preparation =
+          if !prepared then Ok ()
+          else
+            Eio.Mutex.use_ro preparing (fun () ->
+                if !prepared then Ok ()
+                else
+                  match prepare ~sw ~stdenv ~cancelled ~observe model with
+                  | Error _ as error -> error
+                  | Ok () ->
+                      prepared := true;
+                      Ok ())
+        in
+        match preparation with
+        | Error _ as error -> error
+        | Ok () -> Spice_llm.Client.stream ~cancelled client request
       in
       Spice_llm.Client.make ~provider:(Spice_llm.Client.provider client) ~run ()
 

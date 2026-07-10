@@ -276,6 +276,7 @@
   spice_host
   spice_llm
   spice_provider
+  eio
   eio_main))
 
 (test

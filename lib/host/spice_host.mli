@@ -178,7 +178,9 @@ val client :
     If the adapter exposes a model-artifact preparation capability, the returned
     client prepares [model] before the first stream and reports progress through
     [observe_model_artifact] when supplied. Preparation failures are returned as
-    provider-boundary {!Spice_llm.Error.t} values from the stream call.
+    provider-boundary {!Spice_llm.Error.t} values from the stream call. Shared
+    callers prepare once: concurrent first streams wait for the same preparation
+    boundary, and a failed preparation leaves a later stream free to retry.
 
     All failure modes are {!Host.Error.t}: {!Host.Error.Unknown_provider},
     {!Host.Error.Credentials}, {!Host.Error.Blocked_credential},
