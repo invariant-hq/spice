@@ -116,9 +116,11 @@ LOOP until budget is exhausted or the user stops you:
 
    Keep iff the confirm verdict says keep and the effect persists at ≥ half its
    screen size.
-6. Keep → the branch advances. Discard → `git reset` to the pre-treatment
-   commit. Build failure → `experiment run` writes a `crash` ledger row and
-   exits non-zero; reset and move on.
+6. Keep → the branch advances. Discard → `git revert --no-edit` the treatment
+   commit(s); never `git reset --hard` and never restore files you did not
+   change — the worktree may hold a co-editor's uncommitted work, and
+   destroying it is unrecoverable. Build failure → `experiment run` writes a
+   `crash` ledger row and exits non-zero; revert and move on.
 7. Every experiment gets a ledger row, including discards and crashes.
    `spice-lab ledger list --campaign <tag>` renders the table; `ledger.md` is
    regenerated on every append.
