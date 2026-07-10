@@ -22,6 +22,7 @@
 ## next
 
 - knowledge base?
+- linter
 - runbook with doc
 - eval suite expansion to non-trivial tasks
 - ? client/server architecture with web ui
