@@ -55,12 +55,16 @@ val no_hooks : hooks
 (** [no_hooks] installs nothing. *)
 
 val with_prepare_request :
-  (Spice_llm.Request.t -> (request_preparation, Spice_protocol.Error.t) result) ->
+  (observe:(Spice_protocol.Event.t -> unit) ->
+  Spice_llm.Request.t ->
+  (request_preparation, Spice_protocol.Error.t) result) ->
   hooks ->
   hooks
 (** [with_prepare_request prepare hooks] adds request preparation for ordinary
     model requests. Summary requests used by compaction do not run this hook.
-    Load-bearing: {!with_notices} is built on it. *)
+    [prepare] receives the final observer at fire time, so later hook composition
+    cannot make its events bypass the live sink. Load-bearing: {!with_notices}
+    is built on it. *)
 
 val with_after_save :
   (Spice_session_store.Document.t -> Spice_session.Event.t list -> unit) ->

@@ -128,7 +128,9 @@ let rollback_if_raises prepared f =
 
 type hooks = {
   prepare_request :
-    Spice_llm.Request.t -> (request_preparation, Spice_protocol.Error.t) result;
+    observe:(Spice_protocol.Event.t -> unit) ->
+    Spice_llm.Request.t ->
+    (request_preparation, Spice_protocol.Error.t) result;
   after_save :
     Spice_session_store.Document.t -> Spice_session.Event.t list -> unit;
   around_tool :
@@ -145,7 +147,7 @@ type hooks = {
   cancelled : unit -> bool;
 }
 
-let no_prepare_request request =
+let no_prepare_request ~observe:_ request =
   Ok { request; commit = ignore; rollback = ignore }
 
 let no_around_tool ~observe:_ _document _execution _result = ()
@@ -199,7 +201,7 @@ let request_with_notices request notices =
           Spice_protocol.Error.Internal (Spice_llm.Request.Error.message error))
 
 let with_notices ?(before_request = ignore) queue hooks =
-  let prepare_request request =
+  let prepare_request ~observe request =
     before_request ();
     let batch = Notice_queue.take queue in
     let notices = Notice_queue.notices batch in
@@ -211,7 +213,7 @@ let with_notices ?(before_request = ignore) queue hooks =
         (match notices with
         | [] -> ()
         | _ :: _ ->
-            hooks.observe (Spice_protocol.Event.Notices_injected notices));
+            observe (Spice_protocol.Event.Notices_injected notices));
         Ok
           {
             request;
@@ -476,7 +478,7 @@ let rec handle_step ~store ~projector ~pressure_compacted ~overflow_compacted
       in
       let pressure_compacted = pressure_compacted && unsafe in
       let call_model () =
-        let* prepared = hooks.prepare_request request in
+        let* prepared = hooks.prepare_request ~observe:hooks.observe request in
         let model_result =
           rollback_if_raises prepared (fun () ->
             projector.steps <- projector.steps + 1;

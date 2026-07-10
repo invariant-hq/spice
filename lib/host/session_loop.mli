@@ -40,10 +40,13 @@ type request_preparation = {
 
 type hooks = {
   prepare_request :
-    Spice_llm.Request.t -> (request_preparation, Spice_protocol.Error.t) result;
+    observe:(Spice_protocol.Event.t -> unit) ->
+    Spice_llm.Request.t ->
+    (request_preparation, Spice_protocol.Error.t) result;
       (** Runs immediately before each ordinary model request. Summary requests
-          built by compaction do not run it. Notice injection installs itself
-          here. *)
+          built by compaction do not run it. [observe] is the final event sink,
+          passed at fire time so request preparation does not capture an older
+          observer. Notice injection installs itself here. *)
   after_save :
     Spice_session_store.Document.t -> Spice_session.Event.t list -> unit;
       (** Runs after each saved event suffix — both the interpreter's own saves
@@ -101,10 +104,13 @@ val not_cancelled : unit -> bool
     the signal manual compaction runs under. *)
 
 val with_prepare_request :
-  (Spice_llm.Request.t -> (request_preparation, Spice_protocol.Error.t) result) ->
+  (observe:(Spice_protocol.Event.t -> unit) ->
+  Spice_llm.Request.t ->
+  (request_preparation, Spice_protocol.Error.t) result) ->
   hooks ->
   hooks
-(** [with_prepare_request prepare hooks] replaces {!field:prepare_request}. *)
+(** [with_prepare_request prepare hooks] replaces {!field:prepare_request}.
+    [prepare] receives the final observer at fire time. *)
 
 val with_after_save :
   (Spice_session_store.Document.t -> Spice_session.Event.t list -> unit) ->

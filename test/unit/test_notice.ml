@@ -87,6 +87,60 @@ let title_only_notice_has_no_blank_body () =
         text
   | _ -> failf "notice should render as a developer message"
 
+let notice_injection_uses_final_observer () =
+  Eio_main.run @@ fun env ->
+  let fs = Eio.Stdenv.fs env in
+  let root = Filename.temp_dir "spice_notice_observer" "" in
+  let store =
+    Store.make ~fs ~clock:(Eio.Stdenv.clock env)
+      ~root:(Spice_path.Abs.of_string_exn root)
+  in
+  let session =
+    Session.create ~id:(Session.Id.of_string "session-observer") ~cwd
+      ~created_at:(Session.Time.of_unix_ms 1L) ()
+  in
+  let document =
+    match Store.create store session with
+    | Ok document -> document
+    | Error error -> failf "session create failed: %a" Store.Error.pp error
+  in
+  let queue = Notice_queue.create () in
+  Notice_queue.publish queue (notice "visible" "visible");
+  let response =
+    Llm.Response.make ~model (Llm.Message.Assistant.text "Done.")
+  in
+  let client =
+    Llm.Client.make ~provider
+      ~run:(fun ~cancelled:_ _ ->
+        Ok (Llm.Stream.of_list [ Llm.Stream.Finished response ]))
+      ()
+  in
+  let injected = ref [] in
+  let hooks =
+    Host_session.no_hooks
+    |> Host_session.with_notices queue
+    |> Host_session.with_observe (function
+         | Spice_protocol.Event.Notices_injected notices ->
+             injected := titles notices
+         | _ -> ())
+  in
+  let run =
+    Session.Run.Config.make ~tools:[]
+      ~policy:Spice_permission.Policy.default ()
+  in
+  let runner = Runner.make ~store ~client ~model ~mode:None ~run ~hooks () in
+  let start =
+    Spice_protocol.Command.Start.make
+      ~id:(Session.Turn.Id.of_string "turn-observer")
+      ~input:(Session.Turn.Input.user_text "Continue.") ()
+  in
+  (match Runner.execute runner document (Spice_protocol.Command.Start start) with
+  | Ok _ -> ()
+  | Error error ->
+      failf "notice-bearing turn failed: %a" Spice_protocol.Error.pp error);
+  equal (list string) ~msg:"late observer sees the injected notice"
+    [ "visible" ] !injected
+
 exception Model_failure
 
 let raised_model_call_rolls_notices_back () =
@@ -145,6 +199,8 @@ let () =
       test "capacity drops oldest notices" capacity_drops_oldest_notices;
       test "title-only notice has no blank body"
         title_only_notice_has_no_blank_body;
+      test "notice injection uses the final observer"
+        notice_injection_uses_final_observer;
       test "raised model call rolls notices back"
         raised_model_call_rolls_notices_back;
     ]
