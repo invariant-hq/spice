@@ -105,10 +105,11 @@ val create :
 
     [max_exchanges] caps parent<->child message exchanges per run — model-origin
     sends over the cap fail, asks over the cap park with the cap named as
-    blocker, user-origin sends are exempt. [max_concurrent] caps unsettled runs
-    over the whole tree — it is also the provider fan-out bound, since every
-    running child holds a client slot. [max_depth] caps nesting; root children
-    are depth [1]. A spawn over either cap fails with a model-visible error
+    blocker, user-origin sends are exempt. [max_concurrent] caps running
+    episodes over the whole tree — it is also the provider fan-out bound, since
+    every running child holds a client slot. Spawning or resuming a child over
+    the bound fails before its ledger transitions to running. [max_depth] caps
+    nesting; root children are depth [1]. A spawn over the depth cap fails
     before any minting. *)
 
 val spawn :
@@ -190,8 +191,9 @@ val message :
 
     [origin] is exchange-cap accounting: [`Model] counts against the per-run cap
     and errors once it is reached; [`User] — the drill-in composer — bypasses
-    the cap so a person can always steer or unpark a run. Errors also on an
-    unknown run. *)
+    the exchange cap so a person can always steer or unpark a run. Resuming a
+    settled child still errors when the running-child capacity is full. Errors
+    also on an unknown run. *)
 
 val asked : t -> Spice_session.Id.t -> string option
 (** [asked t run] is the pending unanswered [message_parent] text when [run] is

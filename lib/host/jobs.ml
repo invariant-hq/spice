@@ -322,17 +322,19 @@ let child_id t ~parent ~parent_call_id =
 let running_count t =
   List.length
     (List.filter
-       (fun (_, entry) -> Option.is_none (Eio.Promise.peek entry.settled))
+       (fun (_, entry) ->
+         match Spice_protocol.Subagent_run.status entry.record with
+         | Spice_protocol.Subagent_run.Status.Running _ -> true
+         | Spice_protocol.Subagent_run.Status.Queued
+         | Spice_protocol.Subagent_run.Status.Blocked _
+         | Spice_protocol.Subagent_run.Status.Completed _
+         | Spice_protocol.Subagent_run.Status.Failed _
+         | Spice_protocol.Subagent_run.Status.Cancelled _ ->
+             false)
        t.entries)
 
-let check_caps t ~depth =
-  if depth > t.max_depth then
-    Error
-      (Printf.sprintf
-         "subagent depth %d exceeds the configured limit %d \
-          (run.subagent_max_depth)"
-         depth t.max_depth)
-  else if running_count t >= t.max_concurrent then
+let check_running_capacity t =
+  if running_count t >= t.max_concurrent then
     Error
       (Printf.sprintf
          "%d subagents are already running, the configured limit \
@@ -340,6 +342,15 @@ let check_caps t ~depth =
           before spawning"
          t.max_concurrent)
   else Ok ()
+
+let check_spawn_caps t ~depth =
+  if depth > t.max_depth then
+    Error
+      (Printf.sprintf
+         "subagent depth %d exceeds the configured limit %d \
+          (run.subagent_max_depth)"
+         depth t.max_depth)
+  else check_running_capacity t
 
 let rollback_spawn t ~document ?run error =
   let ledger_errors =
@@ -364,7 +375,7 @@ let rollback_spawn t ~document ?run error =
 
 let spawn t ~parent ~parent_turn ~parent_call_id ~spawn ~depth
     (child_spec : child) =
-  let* () = check_caps t ~depth in
+  let* () = check_spawn_caps t ~depth in
   let child = child_id t ~parent ~parent_call_id in
   let created_at = now t.stdenv in
   (* Build the fallible runner before any durable write, so a runner-assembly
@@ -430,13 +441,24 @@ let rearm entry =
   entry.resolve <- resolve
 
 let resume_ledger t entry ~child =
-  let* record =
-    update_run t ~parent:(Spice_protocol.Subagent_run.parent entry.record)
-      ~child ~f:(fun run ->
-        Spice_protocol.Subagent_run.resume ~resumed_at:(now t.stdenv) run)
-  in
-  entry.record <- record;
-  Ok record
+  let* () = check_running_capacity t in
+  let previous = entry.record in
+  let resumed_at = now t.stdenv in
+  let* reserved = Spice_protocol.Subagent_run.resume ~resumed_at previous in
+  (* Reserve the slot in memory before the ledger write can suspend. Other
+     resume attempts therefore observe this run as running; a failed write
+     restores the settled record. *)
+  entry.record <- reserved;
+  match
+    update_run t ~parent:(Spice_protocol.Subagent_run.parent previous) ~child
+      ~f:(Spice_protocol.Subagent_run.resume ~resumed_at)
+  with
+  | Ok record ->
+      entry.record <- record;
+      Ok record
+  | Error _ as error ->
+      entry.record <- previous;
+      error
 
 (* The parked host-tool boundary of a blocked child, from its held document. *)
 let parked_boundary entry =
