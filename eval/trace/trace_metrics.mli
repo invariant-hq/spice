@@ -9,9 +9,9 @@
     JSON codec for the analysis sidecar. Fields an analysis cannot recover are
     options left absent rather than zeroed.
 
-    These numbers are diagnostic. The behavior counts here (reread,
-    repeated-call, failure streak) are syntactic and gameable by prompt
-    treatments, so they inform hypotheses but are never decision metrics. *)
+    These numbers are diagnostic. Syntactic counts here (re-reads, repeated
+    calls, the longest failure streak) are gameable by prompt treatments, so
+    they inform hypotheses but are never decision metrics. *)
 
 type t = {
   responses : int;  (** Number of provider responses (steps). *)

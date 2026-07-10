@@ -6,11 +6,11 @@
 (** The ordered, usage-attributed view of one session.
 
     A {!t} is the narrow waist of trace analysis: {!of_session} produces it from
-    a decoded session document, and {!Trace_metrics} consumes it. It
-    reconstructs, in causal order, the provider responses of a run ({!Step.t}),
-    the executable tool calls each response issued and their model-visible
-    results ({!Call.t}), the compaction resets that delimit segments, and the
-    per-turn tool declarations.
+    a decoded session document, {!Trace_metrics} derives flat numbers from it,
+    and {!pp_digest} renders it for trace review. It reconstructs, in causal
+    order, the provider responses of a run ({!Step.t}), the executable tool
+    calls each response issued and their model-visible results ({!Call.t}), the
+    compaction resets that delimit segments, and the per-turn tool declarations.
 
     The reconstruction follows the session's own event semantics
     ({!Spice_session.Event}): a step is one [Response_appended]; an executed
@@ -168,8 +168,8 @@ val reasoning_effort : t -> Spice_llm.Request.Options.Reasoning_effort.t option
 
 (** {1:derivations Shared derivations}
 
-    These are the canonical orderings {!Trace_metrics} consumes, so every
-    derived counter shares one definition. *)
+    These are the canonical orderings {!Trace_metrics} builds on, so related
+    metrics never drift. *)
 
 val rereads : t -> (Call.t * Call.t) list
 (** [rereads t] are the [(original, reread)] pairs where [reread] is a
