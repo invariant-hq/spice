@@ -19,6 +19,25 @@
  (preprocess
   (pps ppx_windtrap)))
 
+(executable
+ (name test_settlement)
+ (modules test_settlement)
+ (libraries
+  unix
+  windtrap
+  tui_harness
+  eio
+  eio_main
+  jsont
+  spice_host
+  spice_host_builtin
+  spice_llm
+  spice_protocol
+  spice_session
+  spice_workspace)
+ (preprocess
+  (pps ppx_windtrap)))
+
 (rule
  (alias runtest)
  (deps test_home.exe)
@@ -34,6 +53,14 @@
   (progn
    (run ./test_turn.exe)
    (diff? test_turn.ml test_turn.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_settlement.exe)
+ (action
+  (progn
+   (run ./test_settlement.exe)
+   (diff? test_settlement.ml test_settlement.ml.corrected))))
 
 (rule
  (alias runtest)

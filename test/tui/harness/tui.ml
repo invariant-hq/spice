@@ -297,8 +297,8 @@ let await_probe_clear t name what =
   in
   loop 0
 
-(* A force-interrupt can end the main turn while its provider gate remains
-   nominally held. Wait for the main-session terminal boundary, then settle the
+(* A force-interrupt can settle the main turn while its provider gate remains
+   nominally held. Wait for Live to publish that settlement, then settle the
    message and render checks it produced. *)
 let settle_turn t =
   await_probe_clear t live_pending "ended a turn";
@@ -403,9 +403,10 @@ let release_response t name =
   in
   await_served 0
 
-(* Release a held response and wait for the main-session terminal boundary. The
-   probe remains pending across the socket read, session save, and terminal
-   event delivery, so no provider counter or screen-state proxy is needed. *)
+(* Release a held response and wait for the main-session settlement. The probe
+   remains pending across the socket read, session save, terminal event, and
+   settlement delivery, so no provider counter or screen-state proxy is needed.
+*)
 let release t name =
   Provider_runtime.release (provider t) name;
   settle_turn t

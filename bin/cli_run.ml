@@ -483,6 +483,9 @@ type runtime = {
   notices : Spice_host.Notice_queue.t;
       (** The run's notice queue, for the ephemeral goal-context notice on
           user-initiated goal turns. *)
+  drain_jobs : unit -> unit;
+      (** Waits for detached children only after the root result has been
+          rendered. This is process teardown, never interpreter settlement. *)
   stop_dune : unit -> unit;
   permission_of : Session.State.t -> Cli_block.permission_context;
       (** The one projection behind blocked rendering and saved-event metadata,
@@ -700,6 +703,7 @@ let assemble ?cwd_override_abs ?skills:preloaded_skills ~sw ~stdenv ~json ~store
       cwd;
       runner;
       notices = Spice_host.Run.notices run;
+      drain_jobs = (fun () -> Spice_host.Jobs.drain (Spice_host.Run.jobs run));
       stop_dune;
       permission_of;
     }
@@ -1366,6 +1370,7 @@ let start json raw_id title model reasoning_effort workflow_mode permission_mode
          ~duration_ms:(duration_ms ~started stdenv)
          result
      in
+     runtime.drain_jobs ();
      if not ephemeral then
        maybe_generate_title ~sw ~stdenv host store (result_document result);
      Ok status)
@@ -1415,6 +1420,7 @@ let resume_document_in_host ~stdenv host json model reasoning_effort
          ~duration_ms:(duration_ms ~started stdenv)
          result
      in
+     runtime.drain_jobs ();
      maybe_generate_title ~sw ~stdenv host store (result_document result);
      Ok status)
 
@@ -1556,10 +1562,13 @@ let continue json model reasoning_effort workflow_mode permission_mode
                        (Spice_protocol.Command.Finish_tool (id, result))))
          in
          print_changed_trailer ~json ~stdenv ~store result;
-         Ok
-           (print_result ~json ~permission_of
-              ~duration_ms:(duration_ms ~started stdenv)
-              result))
+         let status =
+           print_result ~json ~permission_of
+             ~duration_ms:(duration_ms ~started stdenv)
+             result
+         in
+         runtime.drain_jobs ();
+         Ok status)
 
 (* Goal lifecycle verbs are session-scoped continuations that mutate the goal
    artifact, not the session transcript. Pause, edit, and clear need no
@@ -1667,10 +1676,13 @@ let goal_reply json model reasoning_effort workflow_mode permission_mode
                             (Spice_protocol.Command.Start turn)))
                  in
                  print_changed_trailer ~json ~stdenv ~store result;
-                 Ok
-                   (print_result ~json ~permission_of
-                      ~duration_ms:(duration_ms ~started stdenv)
-                      result)))
+                 let status =
+                   print_result ~json ~permission_of
+                     ~duration_ms:(duration_ms ~started stdenv)
+                     result
+                 in
+                 runtime.drain_jobs ();
+                 Ok status))
 
 (* Dispatch *)
 

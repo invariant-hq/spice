@@ -98,9 +98,9 @@ val await_suspend : t -> unit
     is rendered. *)
 
 val settle_turn : t -> unit
-(** [settle_turn session] waits for the main-session terminal boundary and
-    settles its resulting frame while allowing a held provider request to
-    remain outstanding. *)
+(** [settle_turn session] waits for the main-session settlement and settles its
+    resulting frame while allowing a held provider request to remain
+    outstanding. *)
 
 val await_review_refresh : t -> (unit -> unit) -> unit
 (** [await_review_refresh session change] applies [change], waits for the real

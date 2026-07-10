@@ -104,8 +104,8 @@ val run :
     and sleep (default [Eio.Stdenv.clock stdenv]); [matrix] is the terminal
     backend (default a [Matrix_eio] backend over [stdenv]'s TTY — supplying one
     skips the interactive-TTY gate); [probe] receives the {!Mosaic.Probe.t} for
-    the run before the loop starts, including Spice's main-session terminal and
-    child-run drain checks; [process_env] is the environment snapshot host
+    the run before the loop starts, including Spice's main-session settlement
+    and child-run drain checks; [process_env] is the environment snapshot host
     configuration reads (default {!Spice_host.Env.current}). Deterministic test
     harnesses drive the TUI through these — a headless [matrix.test] backend, a
     mock clock, and a pinned environment. *)

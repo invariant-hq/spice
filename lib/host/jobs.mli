@@ -17,10 +17,10 @@
     attachments remain scoped to the switch passed to {!create}.
 
     Spawns are detached from the parent turn: {!spawn} returns once the child is
-    launched, and the parent model can continue or explicitly call {!wait}. A
-    CLI process still owns the child fibers, so callers that are about to tear
-    down the registry must call {!drain} to let unsettled children persist their
-    terminal or blocked ledger state first. *)
+    launched, and the parent model can continue or explicitly call {!wait}.
+    Child teardown is never part of a parent command's settlement. A CLI process
+    that is about to destroy the registry may call {!drain} explicitly after it
+    has published the root result. *)
 
 type t
 (** The type for a session tree's run registry. *)
@@ -169,11 +169,12 @@ val wait :
 
 val drain : ?cancelled:(unit -> bool) -> t -> unit
 (** [drain ?cancelled t] waits for every run that is unsettled when [drain]
-    starts. It is the process-teardown companion to detached spawning: child
-    fibers live under the registry switch, so draining gives them a chance to
-    write their completed, blocked, failed, or cancelled ledger state before the
-    switch closes. Unknown-run errors are impossible for the captured registry
-    entries and are ignored. *)
+    starts. It is an explicit process-teardown operation, never a session
+    interpreter hook: child fibers live under the registry switch, so draining
+    gives them a chance to write their completed, blocked, failed, or cancelled
+    ledger state before the switch closes. Callers publish the root settlement
+    first. Unknown-run errors are impossible for the captured registry entries
+    and are ignored. *)
 
 val cancel :
   t -> caller:Spice_session.Id.t -> Spice_session.Id.t -> (unit, string) result

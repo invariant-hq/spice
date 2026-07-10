@@ -1384,10 +1384,11 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
         let created_session = ref None in
         let job_registries = ref [] in
         let main_pending = ref false in
-        (* [Live] can keep draining child jobs after it emits [Turn_finished].
-           The UI is stable at that terminal event, so the main-session check
-           tracks the user-visible turn boundary; child work remains visible
-           independently through the [spice.jobs] check below. *)
+        (* A terminal event is durable progress, not command completion. Keep
+           the main check pending until Live publishes the matching settlement;
+           otherwise a test can declare quiescence inside the post-commit
+           interval where the result owner is still blocked. Child work remains
+           visible independently through [spice.jobs] below. *)
         (* A resume/fork in flight, armed SYNCHRONOUSLY in the command
            interpreter (before its perform fork) and resolved once the document
            is loaded (or forked). While set, [ensure_attachment] awaits it and
@@ -1428,10 +1429,7 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
         in
         let subscribe live =
           Spice_host.Live.events live (fun event ->
-              deliver (App.live_event ~now:(Eio.Time.now clock) event);
-              match event with
-              | Spice_protocol.Event.Turn_finished _ -> main_pending := false
-              | _ -> ());
+              deliver (App.live_event ~now:(Eio.Time.now clock) event));
           Spice_host.Live.on_settled live (fun result ->
               main_pending := false;
               deliver

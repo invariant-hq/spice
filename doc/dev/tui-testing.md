@@ -51,8 +51,8 @@ The app runs under `Spice_tui.run` with its environment swapped through public
 seams: a headless `Matrix_test` backend (mosaic's `matrix.test`), one virtual
 clock, a pinned process-environment snapshot, and one composable
 `Mosaic.Probe.t`. Mosaic contributes message, perform, and render checks; Spice
-adds main-session work through its terminal event or settlement and child-run
-Live drains to that same value. The Mosaic loop runs in one Eio fiber and parks
+adds main-session work through settlement and child-run drains to that same
+value. The Mosaic loop runs in one Eio fiber and parks
 in the backend's `on_idle`; the test script runs in another. A test:
 
 - **drives** with `Tui.keys` / `Tui.enter` / `Tui.paste` / `Tui.resize` (raw
@@ -153,7 +153,7 @@ several tool calls, and plain HTTP responses. Choose the synchronization helper
 for the transition being observed:
 
 - After `Tui.await_request`, a named provider gate keeps a mid-flight frame
-  stable. `Tui.release` waits for the main-session terminal boundary and
+  stable. `Tui.release` waits for the main-session settlement and
   settles the resulting frame. No provider counter or spinner-state proxy is
   involved.
 - After a tool-call request that should suspend into a question or permission

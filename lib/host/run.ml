@@ -452,7 +452,6 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
     |> Session.with_notices
          ~before_request:(Producers.before_request producers)
          notices
-    |> Session.with_terminal_observed (fun ~observe:_ _ -> Jobs.drain jobs)
     |> Mutations.hook mutations
   in
   (* The per-turn derivation: everything the turn's contract — mode, model,

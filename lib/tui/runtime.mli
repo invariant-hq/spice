@@ -36,8 +36,8 @@ val run :
       [stdenv]'s TTY; supplying one skips the interactive-TTY gate, since the
       backend owns its own I/O.
     - [probe] receives the {!Mosaic.Probe.t} before the loop starts, extended
-      with [spice.live] for main-session work through its terminal event or
-      settlement, and [spice.jobs] for child-run drains owned outside Mosaic.
+      with [spice.live] for main-session work through settlement and
+      [spice.jobs] for child-run drains owned outside Mosaic.
     - [process_env] is the environment snapshot host configuration reads.
       Defaults to {!Spice_host.Env.current}.
 
