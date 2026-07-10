@@ -3,11 +3,10 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-(* Blackbox pty tests for the [spice tui-next] exit goodbye (the parting frame
+(* Blackbox pty tests for the Spice TUI exit goodbye (the parting frame
    printed to the normal terminal once the TUI restores the alternate screen).
-   The old TUI is the semantic ground truth (bin/cli_tui.ml): the brand lockup
-   always prints, and a resume hint prints only when a session exists — a prelude
-   quit with no conversation prints the lockup alone.
+   The brand lockup always prints, and a resume hint prints only when a session
+   exists — a prelude quit with no conversation prints the lockup alone.
 
    The goodbye lands on the primary screen after the alternate screen restores,
    so the assertions read the final captured frame once spice has exited
@@ -16,7 +15,7 @@
    distinguishes the restored goodbye from the running UI — the lockup alone would
    also match the banner record still on the alternate screen. *)
 
-open Tui_harness
+open Tui_pty_harness
 
 let reduced_motion = [ ("SPICE_REDUCED_MOTION", "1") ]
 let print_fact = Util.print_fact
@@ -77,4 +76,4 @@ let%expect_test
     lockup on the restored screen: true
     no resume hint without a session: true|}]
 
-[%%run_tests "spice.tui-next.exit"]
+[%%run_tests "spice.tui-pty.goodbye"]

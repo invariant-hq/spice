@@ -3,7 +3,7 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-open Tui_next_harness
+open Tui_harness
 
 (* Input robustness. The composer must survive real terminal input the old suite
    never exercised: wide (CJK) and multi-byte (accented, emoji) graphemes, edits
@@ -46,7 +46,7 @@ let%expect_test "wide and multi-byte characters land in the composer" =
 21 |
 22 |
 23 |
-24 |   ! not logged in · /login · …i-next-input-unicode · gpt-5.5 medium · dune: ✗|}]
+24 |   ! not logged in · /login · $PROJECT · gpt-5.5 medium · dune: ✗|}]
 
 (* Editing interleaved with cursor motion: type a word, walk the cursor left
    into it, and insert — the character lands at the cursor, not the end, proving
@@ -84,7 +84,7 @@ let%expect_test "interleaved typing and cursor motion edit in place" =
 21 |
 22 |
 23 |
-24 |   ! not logged in · /login · …ext-input-interleave · gpt-5.5 medium · dune: ✗|}]
+24 |   ! not logged in · /login · $PROJECT · gpt-5.5 medium · dune: ✗|}]
 
 (* A short (sub-threshold) bracketed paste carrying Unicode inserts inline as
    normal draft text rather than collapsing to a [Pasted text] chunk — the
@@ -119,7 +119,7 @@ let%expect_test "a small unicode paste inserts inline" =
 21 |
 22 |
 23 |
-24 |   ! not logged in · /login · …tui-next-input-paste · gpt-5.5 medium · dune: ✗|}]
+24 |   ! not logged in · /login · $PROJECT · gpt-5.5 medium · dune: ✗|}]
 
 (* The ctrl+o verbose lens on the transcript. This pins whatever the byte
    0x0F currently decodes to: a working ctrl+o raises the verbose row, a
@@ -166,4 +166,4 @@ let%expect_test "ctrl+o on the transcript (regression guard)" =
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ message spice
 23 | ────────────────────────────────────────────────────────────────────────────────
-24 |   …/tmp/spice-tui-next-input-ctrlo · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗       ? for shortcuts|}]

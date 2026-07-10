@@ -214,6 +214,45 @@ let settle t =
   settle_from t 0;
   mark "settle: end"
 
+(* Settle the rendered application while one long-lived perform deliberately
+   remains pending. Auth browser/device flows publish their challenge and then
+   wait for completion or cancellation inside the same perform; ordinary
+   [settle] correctly treats that as unfinished work and would wait forever.
+   This helper instead requires a pending perform as a positive signal, drains
+   every queued message/redraw/render at the current virtual instant, and only
+   returns after a short quiet confirmation. *)
+let settle_pending_perform t =
+  let rec loop spent quiet =
+    if spent > settle_budget then
+      Util.failf "tui harness: a pending perform never reached a stable frame";
+    wait_parked t;
+    let probe = Option.get t.probe in
+    if
+      Mosaic.Probe.messages_pending probe
+      || Matrix.redraw_requested (Matrix_test.app t.backend)
+    then (
+      round_trip t;
+      loop (spent + 1) 0)
+    else if Mosaic.Probe.render_pending probe then (
+      Matrix.request_redraw (Matrix_test.app t.backend);
+      round_trip t;
+      loop (spent + 1) 0)
+    else if Mosaic.Probe.performs_pending probe then
+      if quiet >= 3 then ()
+      else (
+        let before = (t.idles, t.wakes, t.async_wakes) in
+        breathe t;
+        let quiet =
+          if t.parked && before = (t.idles, t.wakes, t.async_wakes) then quiet + 1
+          else 0
+        in
+        loop (spent + 1) quiet)
+    else (
+      breathe t;
+      loop (spent + 1) 0)
+  in
+  loop 0 0
+
 (* The turn has left the working regime. While a turn runs, the working-line
    spinner's [Sub.every] keeps the loop's park timeout at the spinner interval
    (~0.1 s); a settled turn parks either with no timer or on the idle chat's slow
@@ -315,6 +354,36 @@ let advance t dt =
   step_to t (Matrix_test.now t.backend +. dt);
   settle_from t 0
 
+(* A review worktree change arrives through a real fswatch systhread, then the
+   review live protocol debounces it for 0.5 seconds on the virtual clock. Wait
+   for the out-of-loop watcher wake, park on the pending debounce perform, move
+   exactly through that deadline, and settle the resulting reload. *)
+let await_review_refresh t change =
+  (* The watcher is installed by an asynchronous review-open effect. Give its
+     initial scan a scheduler window, then drive one empty polling interval so
+     the snapshot is known to predate the mutation. *)
+  for _ = 1 to 30 do
+    breathe t
+  done;
+  step_to t (Matrix_test.now t.backend +. 0.25);
+  let wake0 = t.async_wakes in
+  change ();
+  (* Native backends settle an event for 50ms; the polling fallback samples at
+     250ms. Driving the larger interval covers both without wall-clock timing. *)
+  step_to t (Matrix_test.now t.backend +. 0.25);
+  let rec await_wake spent =
+    if t.async_wakes > wake0 then ()
+    else if spent > settle_budget then
+      Util.failf "tui harness: review worktree watcher never fired"
+    else (
+      check_alive t;
+      breathe t;
+      await_wake (spent + 1))
+  in
+  await_wake 0;
+  settle_pending_perform t;
+  advance t 0.5
+
 (* A lone trailing ESC byte is ambiguous (Escape vs. the start of an Alt/CSI
    sequence), so the parser buffers it behind a 50 ms disambiguation deadline
    and emits the [Escape] key only once that deadline passes. Model the timeout
@@ -403,6 +472,22 @@ let release t name =
   await_served 0;
   await_turn_settled t (Printf.sprintf "released gate %S" name)
 
+let release_background t name =
+  let async0 = t.async_wakes in
+  release t name;
+  let rec await_delivery spent =
+    if t.async_wakes > async0 then ()
+    else if spent > settle_budget then
+      Util.failf "tui harness: released background gate %S without delivery"
+        name
+    else (
+      check_alive t;
+      breathe t;
+      await_delivery (spent + 1))
+  in
+  await_delivery 0;
+  settle t
+
 (* Await the [index]th request while pumping the app: the turn pipeline
    interleaves host work with messages the shell must process (and small
    cadence-gated delays), so a plain condition wait can starve it. Each round
@@ -443,8 +528,23 @@ let outcome t =
       Util.failf "tui harness: %s" (Spice_tui.Error.message error)
   | None -> failwith "tui harness: the TUI has not exited (await_exit first)"
 
+type sandbox = [ `Read_only | `Workspace_write | `Danger_full_access ]
+
+let sandbox_mode = function
+  | `Read_only -> Spice_host.Sandbox.Mode.Read_only
+  | `Workspace_write -> Spice_host.Sandbox.Mode.Workspace_write
+  | `Danger_full_access -> Spice_host.Sandbox.Mode.Danger_full_access
+
+let auth_base_url provider =
+  let base = Provider.base_url provider in
+  let suffix = "/v1" in
+  if String.ends_with ~suffix base then
+    String.sub base 0 (String.length base - String.length suffix)
+  else base
+
 let run ?(size = (80, 24)) ?(env = []) ?(unordered = false) ?(review = false)
-    ?provider:script ?session ?draft ?submit ?seed ~name f =
+    ?(openai_auth = false) ?sandbox ?provider:script ?session ?draft ?submit
+    ?(unset = []) ?seed ~name f =
   t0 := Unix.gettimeofday ();
   mark "run: start";
   Project.with_temp name @@ fun project ->
@@ -469,13 +569,20 @@ let run ?(size = (80, 24)) ?(env = []) ?(unordered = false) ?(review = false)
         Provider.start ~sw ~net:(Eio.Stdenv.net stdenv) ~unordered script)
       script
   in
+  let env =
+    match (openai_auth, provider) with
+    | true, Some provider ->
+        ("SPICE_OPENAI_AUTH_BASE_URL", auth_base_url provider) :: env
+    | false, _ -> env
+    | true, None -> failwith "tui harness: openai_auth requires a provider"
+  in
   let overrides =
     Project.bindings
       ?openai_base_url:(Option.map Provider.base_url provider)
-      ~extra:env project
+      ~unset ~extra:env project
   in
   Project.apply overrides;
-  let process_env = Project.env_snapshot overrides in
+  let process_env = Project.env_snapshot ~unset overrides in
   let clock = Eio_mock.Clock.make () in
   Eio_mock.Clock.set_time clock epoch;
   let width, height = size in
@@ -555,7 +662,7 @@ let run ?(size = (80, 24)) ?(env = []) ?(unordered = false) ?(review = false)
     Spice_tui.Startup.make
       ~cwd:(Spice_path.Abs.of_string_exn (Project.root project))
       ?session:(Option.map Spice_session.Id.of_string session)
-      ?launch ~input ()
+      ?launch ?sandbox:(Option.map sandbox_mode sandbox) ~input ()
   in
   mark "run: launching";
   Eio.Fiber.both

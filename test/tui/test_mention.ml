@@ -3,143 +3,251 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-(* Blackbox pty tests for the unified [@] completion (doc/ui-design/03-composer.md
-   §File completion open, doc/plans/tui-next-composer.md). Each test writes a real
-   file tree into the temp project so the lazy Load_dir enumeration has known
-   content, then drives the list through the live app wiring. No turns run, so
-   like the palette tests these need only the real spice binary; every assertion
-   waits on a real screen marker. *)
-
 open Tui_harness
 
-let reduced_motion = [ ("SPICE_REDUCED_MOTION", "1") ]
-let print_fact = Util.print_fact
-let run ?env ?rows ?cols project f = Term.run ?env ?rows ?cols project f
+(* The unified [@] file completion (doc/ui-design/03-composer.md §File
+   completion), exercised on the transcript — where a session composes most of
+   its messages. A real file tree is written into the temp project so the lazy
+   directory enumeration has known content; one settled turn runs first so the
+   list opens over a transcript, not the home stage. *)
 
-(* A small workspace: one directory with a nested subdirectory, a top-level
-   file, and an ignored [node_modules] that must never surface. *)
-let seed project =
-  Project.write project "lib/foo.ml" "let foo = 1\n";
-  Project.write project "lib/sub/bar.ml" "let bar = 2\n";
-  Project.write project "node_modules/junk.js" "module.exports = 0\n";
-  Project.write project "readme.md" "# fixture\n"
+let script =
+  [
+    Provider.message ~expect:[ "say hello" ] ~id:"resp-1"
+      "Hello from the fake provider.";
+  ]
 
-(* Typing "@" on the empty draft opens the unified list above the frame: the
-   directory rows carry a trailing "/", every row a "+" glyph, and the ignored
-   [node_modules] directory is absent. *)
-let%expect_test "@ opens the list, dirs carry a trailing slash, ignores hidden"
-    =
-  Project.with_temp "next-mention-open" @@ fun project ->
-  seed project;
-  run project ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
-  Term.wait t (Screen.has "dune:");
-  Term.send t "@";
-  Term.wait t (Screen.has "+ lib/");
-  print_fact "directory row with trailing slash"
-    (Screen.has "+ lib/" (Term.screen t));
-  print_fact "top-level file row" (Screen.has "+ readme.md" (Term.screen t));
-  print_fact "ignored directory hidden"
-    (Screen.lacks "node_modules" (Term.screen t));
-  [%expect
-    {|
-    directory row with trailing slash: true
-    top-level file row: true
-    ignored directory hidden: true|}]
+let seed p =
+  Project.write p "lib/foo.ml" "let foo = 1\n";
+  Project.write p "lib/sub/bar.ml" "let bar = 2\n";
+  Project.write p "node_modules/junk.js" "module.exports = 0\n";
+  Project.write p "readme.md" "# fixture\n"
 
-(* The [@]-token after the "@" is the filter (the text-is-the-filter law); a
-   query that matches nothing shows the note row. *)
-let%expect_test "typing after @ filters, no match shows the note" =
-  Project.with_temp "next-mention-filter" @@ fun project ->
-  seed project;
-  run project ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
-  Term.wait t (Screen.has "dune:");
-  Term.send t "@";
-  Term.wait t (Screen.has "+ lib/");
-  Term.send t "zzz";
-  Term.wait t (Screen.has "no matching files");
-  print_fact "no match note" (Screen.has "no matching files" (Term.screen t));
-  print_fact "rows gone" (Screen.lacks "+ lib/" (Term.screen t));
-  [%expect {|
-    no match note: true
-    rows gone: true|}]
+let reach_transcript t =
+  Tui.settle t;
+  Tui.keys t "say hello";
+  Tui.enter t;
+  ignore (Tui.await_request t 1 : string);
+  Tui.settle t
+
+(* "@" opens the unified list above the composer: directory rows carry a
+   trailing "/", every row a "+" glyph, and the ignored [node_modules] is
+   absent. A query narrows it (text-is-the-filter); a no-match query notes. *)
+let%expect_test "@ opens the list; dirs carry a slash; a no-match query notes" =
+  Tui.run ~name:"mention-open" ~provider:script ~seed @@ fun t ->
+  reach_transcript t;
+  Tui.keys t "@";
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 | ❯ + lib/
+19 |   + dune-project
+20 |   + readme.md
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ @
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗      ? for shortcuts|}];
+  Tui.keys t "zzz";
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |   no matching files
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ @zzz
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗      ? for shortcuts|}]
 
 (* Tab on the selected directory descends into it: its children load and inline
    below it, and the list stays open. *)
-let%expect_test
-    "tab descends into a directory, children appear, list stays open" =
-  Project.with_temp "next-mention-descend" @@ fun project ->
-  seed project;
-  run project ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
-  Term.wait t (Screen.has "dune:");
-  Term.send t "@";
-  Term.wait t (Screen.has "+ lib/");
-  Term.send t Keys.tab;
-  Term.wait t (Screen.has "lib/foo.ml");
-  print_fact "child file appeared" (Screen.has "lib/foo.ml" (Term.screen t));
-  print_fact "nested directory appeared" (Screen.has "lib/sub/" (Term.screen t));
-  print_fact "list still open" (Screen.has "+ lib/" (Term.screen t));
-  [%expect
-    {|
-    child file appeared: true
-    nested directory appeared: true
-    list still open: true|}]
+let%expect_test "tab descends into a directory, children appear" =
+  Tui.run ~name:"mention-descend" ~provider:script ~seed @@ fun t ->
+  reach_transcript t;
+  Tui.keys t "@";
+  Tui.settle t;
+  Tui.keys t Keys.tab;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 | ❯ + lib/
+17 |   + lib/sub/
+18 |   + lib/foo.ml
+19 |   + dune-project
+20 |   + readme.md
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ @
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗   ? for shortcuts|}]
 
-(* ↵ on a selected file inserts it as an atomic reference and closes the list.
-   The "+" glyph belongs to the list row alone, so its absence proves the list
-   closed. The atom keeps its "@" trigger — [@readme.md], quoted [@"a b.md"]
-   for whitespace (03-composer.md §File completion). *)
+(* ↵ on a selected file inserts it as an atomic [@]-prefixed reference and
+   closes the list. *)
 let%expect_test "enter on a file inserts the ref and closes the list" =
-  Project.with_temp "next-mention-insert" @@ fun project ->
-  seed project;
-  run project ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
-  Term.wait t (Screen.has "dune:");
-  Term.send t "@";
-  Term.wait t (Screen.has "+ lib/");
-  Term.send t "readme";
-  Term.wait t (fun s -> Screen.has "+ readme.md" s && Screen.lacks "+ lib/" s);
-  Term.send t Keys.enter;
-  Term.wait t (Screen.lacks "+ readme.md");
-  print_fact "list closed" (Screen.lacks "+ readme.md" (Term.screen t));
-  print_fact "ref label in the draft" (Screen.has "readme.md" (Term.screen t));
-  print_fact "atom keeps the @ trigger (spec)"
-    (Screen.has "@readme.md" (Term.screen t));
-  [%expect
-    {|
-    list closed: true
-    ref label in the draft: true
-    atom keeps the @ trigger (spec): true|}]
+  Tui.run ~name:"mention-insert" ~provider:script ~seed @@ fun t ->
+  reach_transcript t;
+  Tui.keys t "@readme";
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 | ❯ + readme.md
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ @readme
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗    ? for shortcuts|}];
+  Tui.keys t Keys.enter;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ @readme.md
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗    ? for shortcuts|}]
 
-(* Esc while the list is open closes it and LEAVES the literal [@]-token in the
-   draft (03-composer.md §File completion) — unlike the palette's esc, which
-   clears its slash input. *)
-let%expect_test "esc closes the list and leaves the @-token" =
-  Project.with_temp "next-mention-esc" @@ fun project ->
-  seed project;
-  run project ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
-  Term.wait t (Screen.has "dune:");
-  Term.send t "@lib";
-  Term.wait t (Screen.has "+ lib/");
-  Term.send t Keys.escape;
-  Term.wait t (fun s -> Screen.lacks "+ lib/" s && Screen.has "@lib" s);
-  print_fact "list closed" (Screen.lacks "+ lib/" (Term.screen t));
-  print_fact "@-token left in the draft" (Screen.has "@lib" (Term.screen t));
-  [%expect {|
-    list closed: true
-    @-token left in the draft: true|}]
-
-(* Backspacing the token away (deleting the "@") closes the list, the draft
-   empty again — this matches the spec's "backspacing past the trigger closes". *)
-let%expect_test "backspacing the token away closes the list" =
-  Project.with_temp "next-mention-backspace" @@ fun project ->
-  seed project;
-  run project ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
-  Term.wait t (Screen.has "dune:");
-  Term.send t "@";
-  Term.wait t (Screen.has "+ lib/");
-  Term.send t Keys.backspace;
-  Term.wait t (fun s -> Screen.lacks "+ lib/" s && Screen.has "message spice" s);
-  print_fact "list closed" (Screen.lacks "+ lib/" (Term.screen t));
-  print_fact "draft empty" (Screen.has "message spice" (Term.screen t));
-  [%expect {|
-    list closed: true
-    draft empty: true|}]
+(* Esc closes the list and LEAVES the literal [@]-token in the draft — unlike
+   the palette's esc, which clears its slash input. Backspacing the "@" away
+   also closes the list, the draft empty again. *)
+let%expect_test "esc leaves the @-token; backspace past @ closes and clears" =
+  Tui.run ~name:"mention-esc" ~provider:script ~seed @@ fun t ->
+  reach_transcript t;
+  Tui.keys t "@lib";
+  Tui.settle t;
+  Tui.keys t Keys.escape;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ @lib
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗       ? for shortcuts|}];
+  Tui.keys t Keys.backspace;
+  Tui.keys t Keys.backspace;
+  Tui.keys t Keys.backspace;
+  Tui.keys t Keys.backspace;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ message spice
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗       ? for shortcuts|}]

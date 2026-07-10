@@ -3,9 +3,11 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-(* Golden-frame normalization. Time never needs scrubbing here — the clock is
-   virtual — so only machine-dependent content is rewritten: session ids and
-   the temp project root. *)
+let contains = Util.contains
+
+(* Predicates for {!Term.wait}: applied to the raw (un-normalized) screen. *)
+let has needle screen = contains screen needle
+let lacks needle screen = not (contains screen needle)
 
 let normalize_session_ids text =
   let len = String.length text in
@@ -33,9 +35,9 @@ let normalize_session_ids text =
 let ellipsis = "…"
 
 (* The footer squeezes the cwd until it renders truncated: a prefix of the
-   project root followed by an ellipsis. The exact-root replacement misses
-   those, so replace any root prefix followed by the ellipsis too, keeping
-   goldens machine-independent. *)
+   project root followed by an ellipsis (e.g. "/private/tmp/spice-tui-dra…").
+   The exact-root replacement misses those, so replace any root prefix followed
+   by the ellipsis too, keeping goldens machine-independent. *)
 let normalize_truncated_root root text =
   let min_len = 12 in
   let rec loop len text =

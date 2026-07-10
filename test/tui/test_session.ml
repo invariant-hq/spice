@@ -3,7 +3,7 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-open Tui_next_harness
+open Tui_harness
 
 (* Session lifecycle, re-expressed as full-frame goldens: resume at launch onto a
    seeded document's replayed transcript, resume-then-submit landing a reply in
@@ -52,6 +52,17 @@ let seed_prompt project id ~title ~prompt =
        {|{"version":1,"id":"%s","metadata":{"title":"%s","status":"active","cwd":"%s","created_at":1,"updated_at":%d},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"%s"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}},{"type":"turn_finished","turn":"turn-1","outcome":{"type":"completed"}}]}|}
        id title (Project.root project) now_ms prompt)
 
+let open_panel t =
+  Tui.keys t "/sessions";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t
+
+let open_screen t =
+  open_panel t;
+  Tui.keys t Keys.tab;
+  Tui.settle t
+
 (* {2 Resume at launch} *)
 
 (* Resume opens on the replayed transcript, not the home prelude: the seeded
@@ -89,7 +100,7 @@ let%expect_test "resume opens on the replayed transcript" =
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ message spice
 23 | ────────────────────────────────────────────────────────────────────────────────
-24 |   …/spice-tui-next-session-resume · gpt-5.5 medium · dune: ✗   ? for shortcuts|}]
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗    ? for shortcuts|}]
 
 (* Resume then submit a turn: the reply lands in the SAME transcript, below the
    replayed prompt — the resumed document is attached and continued, not a fresh
@@ -142,7 +153,7 @@ let%expect_test "resume then submit lands the reply in the resumed transcript" =
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ where is the off-by-one
 23 | ────────────────────────────────────────────────────────────────────────────────
-24 |   …-tui-next-session-resume-submit · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
 
 (* {2 Quick-switch panel} *)
 
@@ -292,7 +303,7 @@ let%expect_test "enter resumes the selected session into chat" =
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ message spice
 23 | ────────────────────────────────────────────────────────────────────────────────
-24 |   …e-tui-next-session-panel-resume · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
 
 (* tab promotes the quick-switch panel to the browse screen: its keymap hint
    ([f fork], [r rename]) — which the panel never shows — confirms the screen. *)
@@ -371,7 +382,7 @@ let%expect_test "fork continues in a child with the lineage record" =
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ /fork
 23 | ────────────────────────────────────────────────────────────────────────────────
-24 |   …/spice-tui-next-session-fork · gpt-5.5 medium · dune: ✗     ? for shortcuts|}]
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗      ? for shortcuts|}]
 
 (* /fork on the home stage flashes the no-session guard. *)
 let%expect_test "fork on the home stage flashes the no-session guard" =
@@ -453,7 +464,7 @@ let%expect_test "rename seeds bare, renames with a title, and echoes the result"
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ message spice
 23 | ────────────────────────────────────────────────────────────────────────────────
-24 |   …/spice-tui-next-session-rename · gpt-5.5 medium · dune: ✗   ? for shortcuts|}];
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗    ? for shortcuts|}];
   (* The new title persisted to the store, not just the transcript. *)
   print_string
     (if Seed.session_file_contains (Tui.project t) "ses_rename"
@@ -494,7 +505,7 @@ let%expect_test "draft seeds the composer on the home stage" =
 21 |
 22 |
 23 |
-24 |   …/spice-tui-next-session-draft · gpt-5.5 medium · dune: ✗    ? for shortcuts|}]
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗     ? for shortcuts|}]
 
 (* [-p]/[--prompt] submits the text as the first turn: the TUI opens on the chat
    layout with the prompt echoed and the reply settled — the home stage never
@@ -536,6 +547,422 @@ let%expect_test "prompt submits the first turn at launch" =
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ message spice
 23 | ────────────────────────────────────────────────────────────────────────────────
-24 |   …/spice-tui-next-session-prompt · gpt-5.5 medium · dune: ✗   ? for shortcuts|}]
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗    ? for shortcuts|}]
 
-[%%run_tests "spice.tui-next.session"]
+(* Resuming through the quick switcher replaces the attached replay rather than
+   merging it with the previous session. *)
+let%expect_test "resuming a second session replaces the first replay" =
+  Tui.run ~name:"session-resume-replace" ~session:"ses_a"
+    ~seed:(fun project ->
+      seed_prompt project "ses_a" ~title:"streaming parser fix"
+        ~prompt:"trace the streaming parser bug";
+      seed_prompt project "ses_b" ~title:"config gadt rework"
+        ~prompt:"rework the config gadt layer")
+  @@ fun t ->
+  Tui.settle t;
+  open_panel t;
+  Tui.keys t "gadt";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ rework the config gadt layer
+07 |
+08 |
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ message spice
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
+
+(* The browse screen owns selection expansion, filtering, inline rename, and
+   the two-press delete confirmation. Drive the lifecycle in one seeded store so
+   every mutation is visible in the next full frame. *)
+let%expect_test "browse navigation, filtering, rename, and delete round trip" =
+  Tui.run ~name:"session-screen-lifecycle" ~seed:seed_four @@ fun t ->
+  Tui.settle t;
+  open_screen t;
+  Tui.keys t Keys.down;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 | ──  sessions ──────────────────────────────────────────────────────4 sessions ──
+02 |
+03 |   today
+04 |     parser streaming fix                                   just now · 0 turns
+05 |   ❯ config gadt rework                                     just now · 0 turns
+06 |     $PROJECT
+07 |     review layer wiring                                    just now · 0 turns
+08 |     auth flow polish                                       just now · 0 turns
+09 |
+10 |   ↵ resume · f fork · r rename · d delete · / filter · esc back
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 |
+22 |
+23 |
+24 ||}];
+  Tui.keys t "/gadt";
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 | ──  sessions ──────────────────────────────────────────────────────4 sessions ──
+02 |   /gadt  1 match
+03 |
+04 |   today
+05 |   ❯ config gadt rework                                     just now · 0 turns
+06 |     $PROJECT
+07 |
+08 |   ↵ resume · ↑↓ select · esc clear filter
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 |
+22 |
+23 |
+24 ||}];
+  Tui.keys t Keys.escape;
+  Tui.settle t;
+  Tui.keys t "r";
+  Tui.settle t;
+  Tui.keys t " renamed";
+  Tui.enter t;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 | ──  sessions ──────────────────────────────────────────────────────4 sessions ──
+02 |
+03 |   today
+04 |   ❯ parser streaming fix renamed                           just now · 0 turns
+05 |     $PROJECT
+06 |     config gadt rework                                     just now · 0 turns
+07 |     review layer wiring                                    just now · 0 turns
+08 |     auth flow polish                                       just now · 0 turns
+09 |
+10 |   ↵ resume · f fork · r rename · d delete · / filter · esc back
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 |
+22 |
+23 |
+24 ||}];
+  Tui.keys t "d";
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 | ──  sessions ──────────────────────────────────────────────────────4 sessions ──
+02 |
+03 |   today
+04 |   delete "parser streaming fix renamed"? press d again · esc cancel
+05 |     config gadt rework                                     just now · 0 turns
+06 |     review layer wiring                                    just now · 0 turns
+07 |     auth flow polish                                       just now · 0 turns
+08 |
+09 |   d delete · esc cancel
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 |
+22 |
+23 |
+24 ||}];
+  Tui.keys t Keys.escape;
+  Tui.settle t;
+  Tui.keys t "d";
+  Tui.settle t;
+  Tui.keys t "d";
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 | ──  sessions ──────────────────────────────────────────────────────3 sessions ──
+02 |
+03 |   today
+04 |   ❯ config gadt rework                                     just now · 0 turns
+05 |     $PROJECT
+06 |     review layer wiring                                    just now · 0 turns
+07 |     auth flow polish                                       just now · 0 turns
+08 |
+09 |   ↵ resume · f fork · r rename · d delete · / filter · esc back
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 |
+22 |
+23 |
+24 ||}]
+
+(* Tab promotes an empty panel to the screen's own empty state. A panel filter
+   is otherwise carried into the screen and remains open for editing. *)
+let%expect_test "browse empty state and panel filter carry-over" =
+  (Tui.run ~name:"session-screen-empty" @@ fun t ->
+   Tui.settle t;
+   open_screen t;
+   Tui.print t;
+   [%expect {|01 | ──  sessions ──────────────────────────────────────────────────────0 sessions ──
+02 |
+03 |   No sessions in this workspace.
+04 |
+05 |   ↵ resume · f fork · r rename · d delete · / filter · esc back
+06 |
+07 |
+08 |
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 |
+22 |
+23 |
+24 ||}]);
+  Tui.run ~name:"session-screen-carry" ~seed:seed_four @@ fun t ->
+  Tui.settle t;
+  open_panel t;
+  Tui.keys t "gadt";
+  Tui.settle t;
+  Tui.keys t Keys.tab;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 | ──  sessions ──────────────────────────────────────────────────────4 sessions ──
+02 |   /gadt  1 match
+03 |
+04 |   today
+05 |   ❯ config gadt rework                                     just now · 0 turns
+06 |     $PROJECT
+07 |
+08 |   ↵ resume · ↑↓ select · esc clear filter
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 |
+22 |
+23 |
+24 ||}]
+
+(* /clear detaches the old transcript but preserves its document; the next
+   prompt attaches a fresh session and runs normally. *)
+let%expect_test "clear preserves the old session and attaches a fresh turn" =
+  let script =
+    [
+      Provider.message ~expect:[ "off-by-one" ] ~gate:"fin" ~id:"resp-clear"
+        "The tokenizer drops the final chunk.";
+    ]
+  in
+  Tui.run ~name:"session-clear" ~session:"ses_clear" ~provider:script
+    ~seed:(fun project ->
+      seed_prompt project "ses_clear" ~title:"streaming parser fix"
+        ~prompt:"trace the streaming parser bug")
+  @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "/clear";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.keys t "where is the off-by-one";
+  Tui.enter t;
+  ignore (Tui.await_request t 1 : string);
+  Tui.release t "fin";
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ /clear
+07 |
+08 |   cleared the conversation · previous saved, /sessions to resume
+09 |
+10 | ❯ where is the off-by-one
+11 |
+12 | ⏺ The tokenizer drops the final chunk.
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ where is the off-by-one
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗     ? for shortcuts|}];
+  print_string
+    (if Seed.session_file_contains (Tui.project t) "ses_clear"
+          "trace the streaming parser bug"
+     then "previous session preserved\n"
+     else "previous session missing\n");
+  [%expect {| previous session preserved |}]
+
+(* /compact records the host refusal without removing visible history. The
+   home-stage /compact and /rename commands surface their no-session guards. *)
+let%expect_test "compact result and no-session command guards render" =
+  (Tui.run ~name:"session-compact" ~session:"ses_compact" ~provider:[]
+     ~seed:(fun project ->
+       seed_prompt project "ses_compact" ~title:"streaming parser fix"
+         ~prompt:"trace the streaming parser bug")
+   @@ fun t ->
+   Tui.settle t;
+   Tui.keys t "/compact";
+   Tui.settle t;
+   Tui.enter t;
+   Tui.settle t;
+   Tui.print t;
+   [%expect {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ trace the streaming parser bug
+07 |
+08 | ❯ /compact
+09 |
+10 |   compaction failed: conversation already fits within the retained tail;
+11 | nothing to compact
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ message spice
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗   ? for shortcuts|}]);
+  Tui.run ~name:"session-command-guards" @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "/compact";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |
+03 |
+04 |
+05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+07 |
+08 |                            dev · openai/gpt-5.5 medium
+09 |
+10 |      ▎ welcome — and thanks for trying spice this early.
+11 |      ▎ it's experimental: sessions and config may change without migration.
+12 |
+13 |           ────────────────────────────────────────────────────────────
+14 |           ❯ message spice
+15 |           ────────────────────────────────────────────────────────────
+16 |
+17 |                      dune       ✗ · diagnostics unavailable
+18 |
+19 |                       sandbox: danger-full-access (config)
+20 |
+21 |
+22 |
+23 |
+24 |   no session to compact|}];
+  Tui.keys t "/rename";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.keys t "nope";
+  Tui.enter t;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |
+03 |
+04 |
+05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+07 |
+08 |                            dev · openai/gpt-5.5 medium
+09 |
+10 |      ▎ welcome — and thanks for trying spice this early.
+11 |      ▎ it's experimental: sessions and config may change without migration.
+12 |
+13 |           ────────────────────────────────────────────────────────────
+14 |           ❯ message spice
+15 |           ────────────────────────────────────────────────────────────
+16 |
+17 |                      dune       ✗ · diagnostics unavailable
+18 |
+19 |                       sandbox: danger-full-access (config)
+20 |
+21 |
+22 |
+23 |
+24 |   no session to rename|}]
+
+[%%run_tests "spice.tui.session"]

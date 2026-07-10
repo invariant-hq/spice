@@ -3,7 +3,7 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-open Tui_next_harness
+open Tui_harness
 
 (* Ambient state variants the happy-path tests never render: the exit chord's
    in-process armed state, and a connected account (vs the default logged-out
@@ -81,7 +81,7 @@ let%expect_test "a connected account changes the account line and footer" =
 21 |
 22 |
 23 |
-24 |   …spice-tui-next-states-connected · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
 
 (* The quit chord exits the app cleanly, in-process. A second ctrl+c on the armed
    empty draft quits; [await_exit] returns (proving the app terminated rather than

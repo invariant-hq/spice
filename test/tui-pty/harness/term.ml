@@ -153,6 +153,10 @@ let send t text =
   in
   loop 0
 
+let resize t ~rows ~cols =
+  Pty.resize t.pty ~rows ~cols;
+  Vte.resize t.vte ~rows ~cols
+
 (* Graceful shutdown through the double-ctrl-c affordance. Use before reading
    files spice writes on the way down; plain teardown (closing the PTY) is
    otherwise enough. *)
@@ -168,19 +172,15 @@ let spice_bin () = Util.resolve_env_path "SPICE_BIN"
    its presence is the boot marker. *)
 let booted = Screen.has "dune:"
 
-let run ?provider ?(command = []) ?(args = []) ?unset ?(env = [])
-    ?(rows = default_rows) ?(cols = default_cols) ?(ready = booted) project f =
+let run_pty ?provider ?unset ?(env = []) ?(rows = default_rows)
+    ?(cols = default_cols) ?(ready = booted) ~prog ~argv project f =
   let root = Project.root project in
   let openai_base_url = Option.map Provider.base_url provider in
   let winsize = Pty.{ rows; cols; xpixel = 0; ypixel = 0 } in
-  (* cmdliner resolves subcommands from the first positional argument, so a
-     subcommand under test must precede the [--cwd] option. *)
   let pty =
     Pty.spawn ~cwd:root
       ~env:(Project.env ?openai_base_url ?unset ~extra:env project)
-      ~winsize ~prog:(spice_bin ())
-      ~args:(command @ ("--cwd" :: root :: args))
-      ()
+      ~winsize ~prog ~args:argv ()
   in
   Pty.set_nonblock pty;
   let t =
@@ -200,3 +200,15 @@ let run ?provider ?(command = []) ?(args = []) ?unset ?(env = [])
     (fun () ->
       wait t ready;
       f t)
+
+let run ?provider ?(command = []) ?(args = []) ?unset ?env ?rows ?cols ?ready
+    project f =
+  let root = Project.root project in
+  (* Cmdliner resolves subcommands from the first positional argument, so a
+     subcommand under test must precede the [--cwd] option. *)
+  run_pty ?provider ?unset ?env ?rows ?cols ?ready ~prog:(spice_bin ())
+    ~argv:(command @ ("--cwd" :: root :: args)) project f
+
+let run_shell ?provider ?unset ?env ?rows ?cols ?ready project ~script f =
+  run_pty ?provider ?unset ?env ?rows ?cols ?ready ~prog:"/bin/sh"
+    ~argv:[ "-c"; script; "spice-terminal-wrapper" ] project f

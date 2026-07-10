@@ -3,148 +3,450 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-(* Blackbox pty tests for the [spice tui-next] decision dialogs (07-dialogs.md,
-   03-ia-screens-overlays.md §Dialogs, doc/plans/tui-next-dialog-seam.md). A fake
-   provider function call blocks the turn on a question or plan boundary and
-   raises the matching dialog; the tests drive the option list and the composer
-   borrow, then golden the settled screen and the resumed turn.
-
-   Enter is always a separate write (the atomic-enter pitfall).
-
-   The permission dialog is exercised by the module's own compile and the shared
-   integration path these tests prove; its blackbox trigger (a reviewed
-   [write_file]) is regressed tree-wide in this working tree — the old TUI's
-   [test/tui/test_prompts] permission case auto-allows the write identically — so
-   it is not goldened here until that review path is restored. *)
-
 open Tui_harness
 
-let print_fact = Util.print_fact
-let reduced_motion = [ ("SPICE_REDUCED_MOTION", "1") ]
+(* The mid-turn decision dialogs (doc/ui-design): a model turn that calls
+   [ask_user] opens a question dialog, and one that calls [shell] under the
+   ask-first posture opens a permission dialog. Both are driven through the real
+   turn pipeline on suite-port-3's [Provider.tool_call] wire — the provider emits
+   a [function_call], the app runs the tool (or shows its dialog), and the user's
+   decision re-requests with the tool result.
 
-let run ?args ?env ?rows ?cols ?provider project f =
-  Term.run ?args ?env ?rows ?cols ?provider project f
+   The DIALOG frame is goldened while the turn is SUSPENDED on the tool call — a
+   stable held state. The resolution is goldened while the resume completion is
+   HELD on a gate: goldening the post-resume SETTLED frame would race the
+   turn-finished socket completion against settle (a harness limitation — the
+   socket read is not a tracked perform), so each resolution is proved by the
+   resume request (its [~expect] asserts the decision at the wire) plus the stable
+   in-flight frame. *)
 
-(* A structured [ask_user] call: two labelled options with descriptions. *)
-let ask_options_call =
-  {|{"expect":{"request_line":"POST /v1/responses HTTP/1.1","body_contains":["which runner"]},"response":{"id":"resp-q-1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-q","call_id":"call-q","name":"ask_user","arguments":"{\"question\":\"Which test runner should I wire up?\",\"options\":[{\"label\":\"dune runtest\",\"description\":\"the existing runner\"},{\"label\":\"alcotest\",\"description\":\"add a dependency\"}]}"}]}}|}
+(* The resume completion after a decision, held on [fin] so its frame is stable. *)
+let resume ~expect ~id answer = Provider.message ~expect ~gate:"fin" ~id answer
 
-(* A [propose_plan] call: blocks the turn on the plan-approval boundary. *)
-let propose_plan_call =
-  {|{"expect":{"request_line":"POST /v1/responses HTTP/1.1","body_contains":["draft a plan"]},"response":{"id":"resp-plan-1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-plan","call_id":"call-plan","name":"propose_plan","arguments":"{\"id\":\"plan-1\",\"title\":\"Refactor the parser\",\"body\":\"Split the tokenizer out.\\nMake parse return a result.\"}"}]}}|}
+(* Reach a decision dialog: submit the prompt, sync on the tool-call request, then
+   wait for the suspend to reach the screen. The dialog opens only after the
+   tool-call RESPONSE is read on the drain fiber the settle probe cannot see, so
+   {!Tui.await_suspend} waits for that read to dispatch the dialog before settling
+   the stable suspended frame. *)
+let open_dialog t prompt =
+  Tui.settle t;
+  Tui.keys t prompt;
+  Tui.enter t;
+  ignore (Tui.await_request t 1 : string);
+  Tui.await_suspend t
 
-let%expect_test "question structured single-select picks a label" =
-  Project.with_temp "next-question" @@ fun project ->
-  let answer = "Wiring up dune runtest." in
-  let resume =
-    Provider.response_line ~id:"resp-q-2"
-      ~body_contains:[ "function_call_output"; "call-q"; "dune runtest" ]
-      ~body_not_contains:[] ~answer
+let enter_plan_mode t =
+  Tui.settle t;
+  Tui.keys t "/plan";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t
+
+(* {2 Question dialog} *)
+
+(* A structured [ask_user] with two labelled options renders the question and
+   both options; the highlighted first option is picked by ↵, and the resume
+   request carries that label (asserted at the wire). *)
+let%expect_test "the question dialog renders and a pick resumes the turn" =
+  let script =
+    [
+      Provider.tool_call ~expect:[ "which runner" ] ~id:"resp-q-1"
+        ~call_id:"call-q" ~name:"ask_user"
+        ~arguments:
+          {|{"question":"Which test runner should I wire up?","options":[{"label":"dune runtest","description":"the existing runner"},{"label":"alcotest","description":"add a dependency"}]}|}
+        ();
+      resume
+        ~expect:[ "call-q"; "dune runtest" ]
+        ~id:"resp-q-2" "Wired up dune runtest.";
+    ]
   in
-  Provider.with_responses project [ ask_options_call; resume ]
-  @@ fun provider ->
-  run project ~provider ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
-  Term.wait t (Screen.has "dune:");
-  Term.send t "which runner should I use";
-  Term.wait t (Screen.has "❯ which runner should I use");
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "Which test runner");
-  print_fact "question chip" (Screen.has "question" (Term.screen t));
-  print_fact "options render verbatim"
-    (Screen.has "dune runtest" (Term.screen t)
-    && Screen.has "alcotest" (Term.screen t));
-  print_fact "descriptions render"
-    (Screen.has "the existing runner" (Term.screen t));
-  print_fact "own-answer row present"
-    (Screen.has "type your own answer" (Term.screen t));
-  Screen.print ~project (Term.screen t);
-  Term.send t "1";
-  Term.wait t (Screen.has answer);
-  print_fact "answered echo" (Screen.has "answered" (Term.screen t));
-  print_fact "resumed answer" (Screen.has answer (Term.screen t));
-  [%expect {| |}]
+  Tui.run ~name:"dialog-question" ~provider:script @@ fun t ->
+  open_dialog t "which runner";
+  Tui.print t;
+  [%expect
+    {|01 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+02 |    question
+03 |
+04 |   Which test runner should I wire up?
+05 |
+06 | ❯ 1. dune runtest  the existing runner
+07 |   2. alcotest  add a dependency
+08 |   3. ✎ type your own answer
+09 |
+10 |   1-9 choose · enter answer · esc type your own
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 |
+22 |
+23 |
+24 ||}];
+  (* Pick the highlighted option. The resume request carries "dune runtest",
+     asserted at the wire by the resume item's [~expect] (it fails loudly
+     otherwise). The resume frame is not goldened — the tool-result render + the
+     resume completion race settle (the held frame still transitions through an
+     intermediate); the dialog frame + the wire assertion prove the pick. *)
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin";
+  Tui.settle t
 
-let%expect_test "question esc borrows the composer for a custom answer" =
-  Project.with_temp "next-question-custom" @@ fun project ->
-  let answer = "Using a custom runner." in
-  let resume =
-    Provider.response_line ~id:"resp-q-custom-2"
-      ~body_contains:[ "function_call_output"; "call-q"; "my own runner" ]
-      ~body_not_contains:[] ~answer
+(* Esc on the question dialog borrows the composer for a free-form answer
+   (03-composer.md §Borrow): the dialog closes and the composer takes a scoped
+   placeholder, no turn resumed yet. *)
+let%expect_test "esc on the question dialog borrows the composer" =
+  let script =
+    [
+      Provider.tool_call ~expect:[ "which runner" ] ~id:"resp-qe-1"
+        ~call_id:"call-qe" ~name:"ask_user"
+        ~arguments:
+          {|{"question":"Which test runner should I wire up?","options":[{"label":"dune runtest","description":"the existing runner"},{"label":"alcotest","description":"add a dependency"}]}|}
+        ();
+    ]
   in
-  Provider.with_responses project [ ask_options_call; resume ]
-  @@ fun provider ->
-  run project ~provider ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
-  Term.wait t (Screen.has "dune:");
-  Term.send t "which runner should I use";
-  Term.wait t (Screen.has "❯ which runner should I use");
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "Which test runner");
-  Term.send t Keys.escape;
-  Term.wait t (Screen.has "type your answer");
-  print_fact "composer borrowed with the custom placeholder"
-    (Screen.has "type your answer" (Term.screen t));
-  Term.send t "my own runner";
-  Term.wait t (Screen.has "❯ my own runner");
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has answer);
-  print_fact "custom answer resumed" (Screen.has answer (Term.screen t));
-  [%expect {| |}]
+  Tui.run ~name:"dialog-question-esc" ~provider:script @@ fun t ->
+  open_dialog t "which runner";
+  Tui.keys t Keys.escape;
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 | ⋯ Waiting for your answer
+02 |
+03 |
+04 |
+05 |
+06 |
+07 |
+08 |
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |   Type your answer
+21 |
+22 | ────────────────────────────────────────────────────────────────────────────────
+23 | ❯ type your answer
+24 | ────────────────────────────────────────────────────────────────────────────────|}]
 
-let%expect_test "plan approval builds and resumes the turn" =
-  Project.with_temp "next-plan-approve" @@ fun project ->
-  let answer = "Parser refactor complete." in
-  let resume =
-    Provider.response_line ~id:"resp-plan-2"
-      ~body_contains:[ "function_call_output"; "call-plan" ]
-      ~body_not_contains:[] ~answer
+(* {2 Permission dialog} *)
+
+(* A [shell] call under the default ask-first posture opens a permission dialog
+   naming the command; ↵ approves the highlighted "run it once", the shell runs
+   for real, and the resume carries the tool result. *)
+let%expect_test "the permission dialog renders and an approve runs the command"
+    =
+  let script =
+    [
+      Provider.tool_call ~expect:[ "run it" ] ~id:"resp-p-1" ~call_id:"call-p"
+        ~name:"shell" ~arguments:{|{"command":"echo recorded"}|} ();
+      resume
+        ~expect:[ "function_call_output"; "recorded" ]
+        ~id:"resp-p-2" "Ran the command.";
+    ]
   in
-  Provider.with_responses project [ propose_plan_call; resume ]
-  @@ fun provider ->
-  run project ~provider ~args:[ "--mode"; "plan" ] ~env:reduced_motion ~rows:24
-    ~cols:80
-  @@ fun t ->
-  Term.wait t (Screen.has "dune:");
-  Term.send t "draft a plan for the refactor";
-  Term.wait t (Screen.has "❯ draft a plan for the refactor");
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "Refactor the parser");
-  print_fact "plan chip" (Screen.has "plan" (Term.screen t));
-  print_fact "plan title shown"
-    (Screen.has "Refactor the parser" (Term.screen t));
-  print_fact "plan body shown"
-    (Screen.has "Split the tokenizer out" (Term.screen t));
-  print_fact "approve option present" (Screen.has "approve" (Term.screen t));
-  Screen.print ~project (Term.screen t);
-  Term.send t "1";
-  Term.wait t (Screen.has answer);
-  print_fact "plan-approved echo" (Screen.has "plan approved" (Term.screen t));
-  print_fact "resumed answer" (Screen.has answer (Term.screen t));
-  [%expect {| |}]
+  Tui.run ~name:"dialog-perm-allow" ~provider:script @@ fun t ->
+  open_dialog t "run it";
+  Tui.print t;
+  [%expect
+    {|01 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+02 |    permission
+03 |
+04 |   Run a shell command?
+05 |
+06 |   $ 'echo' 'recorded'
+07 |   in $PROJECT/.
+08 |
+09 | ❯ 1. Yes, run it once
+10 |   2. Yes, don't ask again for this command this session
+11 |   3. No, and tell Spice what to do differently
+12 |   4. Yes, always allow echo
+13 |      saves for this session — press s to change
+14 |
+15 |   1-4 choose · enter confirm · s scope · esc deny with feedback
+16 |
+17 |
+18 |
+19 |
+20 |
+21 |
+22 |
+23 |
+24 ||}];
+  (* Approve the highlighted first option: the shell runs and the resume request
+     carries its output ("recorded"), asserted at the wire — proof the command
+     actually ran (distinct from the deny path below). The resume frame is not
+     goldened (it races settle); the dialog frame + the wire assertion suffice. *)
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin";
+  Tui.settle t
 
-let%expect_test "plan esc never approves and keeps planning" =
-  Project.with_temp "next-plan-esc" @@ fun project ->
-  let answer = "Revised the plan." in
-  let resume =
-    Provider.response_line ~id:"resp-plan-esc-2"
-      ~body_contains:[ "function_call_output"; "call-plan" ]
-      ~body_not_contains:[] ~answer
+(* Denying the shell call: selecting the third option ("No, and tell Spice what
+   to do differently") records the refusal and resumes the turn with the denial
+   as the tool result — the command never runs. *)
+let%expect_test "the permission dialog denies and resumes without running" =
+  let script =
+    [
+      Provider.tool_call ~expect:[ "run it" ] ~id:"resp-pd-1" ~call_id:"call-pd"
+        ~name:"shell" ~arguments:{|{"command":"echo recorded"}|} ();
+      resume
+        ~expect:[ "function_call_output"; "use a stub instead" ]
+        ~id:"resp-pd-2" "Understood, I will not run it.";
+    ]
   in
-  Provider.with_responses project [ propose_plan_call; resume ]
-  @@ fun provider ->
-  run project ~provider ~args:[ "--mode"; "plan" ] ~env:reduced_motion ~rows:24
-    ~cols:80
-  @@ fun t ->
-  Term.wait t (Screen.has "dune:");
-  Term.send t "draft a plan for the refactor";
-  Term.wait t (Screen.has "❯ draft a plan for the refactor");
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "Refactor the parser");
-  (* esc is the safe exit: keep planning, never approve. *)
-  Term.send t Keys.escape;
-  Term.wait t (Screen.has answer);
-  print_fact "kept-planning echo" (Screen.has "kept planning" (Term.screen t));
-  print_fact "resumed without approving" (Screen.has answer (Term.screen t));
-  [%expect {| |}]
+  Tui.run ~name:"dialog-perm-deny" ~provider:script @@ fun t ->
+  open_dialog t "run it";
+  (* Move to the third option (deny), settling after each arrow so both register
+     (two rapid arrows before one settle can drop one under contention). *)
+  Tui.keys t Keys.down;
+  Tui.settle t;
+  Tui.keys t Keys.down;
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+02 |    permission
+03 |
+04 |   Run a shell command?
+05 |
+06 |   $ 'echo' 'recorded'
+07 |   in $PROJECT/.
+08 |
+09 |   1. Yes, run it once
+10 |   2. Yes, don't ask again for this command this session
+11 | ❯ 3. No, and tell Spice what to do differently
+12 |   4. Yes, always allow echo
+13 |      saves for this session — press s to change
+14 |
+15 |   1-4 choose · enter confirm · s scope · esc deny with feedback
+16 |
+17 |
+18 |
+19 |
+20 |
+21 |
+22 |
+23 |
+24 ||}];
+  (* Confirming the deny borrows the composer for the "what to do differently"
+     feedback (like esc); typing it and submitting resumes the turn with the
+     denial as the tool result — the command never ran. *)
+  Tui.enter t;
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 | ⋯ Waiting for your answer
+02 |
+03 |
+04 |
+05 |
+06 |
+07 |
+08 |
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |   Denying: Run a shell command?  $ 'echo' 'recorded'
+21 |
+22 | ────────────────────────────────────────────────────────────────────────────────
+23 | ❯ tell Spice what to do differently
+24 | ────────────────────────────────────────────────────────────────────────────────|}];
+  (* Submit the feedback: the turn resumes with the DENIAL as the tool result —
+     the resume request carries "use a stub instead" (asserted at the wire), and
+     the command never ran. The resume frame is not goldened (it races settle);
+     the borrow frame + the wire assertion prove the deny. *)
+  Tui.keys t "use a stub instead";
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin";
+  Tui.settle t
 
-[%%run_tests "spice.tui-next.dialogs"]
+(* Always allow: a shell call whose argv has a command family ("git commit")
+   offers a fourth option that saves a durable rule over that family. The scope
+   line defaults to this session and [s] cycles it to user (the only two scopes:
+   a workspace file never originates permission authority). Picking it at user
+   scope grants the blocked call for the session AND installs the family rule, so
+   a later DISTINCT [git commit] runs with no prompt (the turn reaches its resume
+   without a second dialog), and the rule text lands in the outside-workspace
+   user config. *)
+let%expect_test "always allow saves a family rule and silences the family" =
+  let script =
+    [
+      Provider.tool_call ~expect:[ "always test" ] ~id:"resp-aa-1"
+        ~call_id:"call-aa1" ~name:"shell"
+        ~arguments:{|{"command":"git commit -m first"}|} ();
+      Provider.tool_call
+        ~expect:[ "function_call_output"; "call-aa1" ]
+        ~id:"resp-aa-2" ~call_id:"call-aa2" ~name:"shell"
+        ~arguments:{|{"command":"git commit -m second"}|} ();
+      resume
+        ~expect:[ "function_call_output"; "call-aa2" ]
+        ~id:"resp-aa-3" "Both commits attempted.";
+    ]
+  in
+  Tui.run ~name:"dialog-perm-always" ~provider:script @@ fun t ->
+  open_dialog t "always test";
+  Tui.print t;
+  [%expect
+    {|01 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+02 |    permission
+03 |
+04 |   Run a shell command?
+05 |
+06 |   $ 'git' 'commit' '-m' 'first'
+07 |   in $PROJECT/.
+08 |
+09 | ❯ 1. Yes, run it once
+10 |   2. Yes, don't ask again for this command this session
+11 |   3. No, and tell Spice what to do differently
+12 |   4. Yes, always allow git commit
+13 |      saves for this session — press s to change
+14 |
+15 |   1-4 choose · enter confirm · s scope · esc deny with feedback
+16 |
+17 |
+18 |
+19 |
+20 |
+21 |
+22 |
+23 |
+24 ||}];
+  (* Cycle the always-allow scope from this session to user, then always-allow
+     with [4]. The grant proceeds the first commit; the SECOND distinct commit is
+     decided under the installed family rule with no prompt, so the turn reaches
+     its resume request without a second dialog opening. *)
+  Tui.keys t "s";
+  Tui.settle t;
+  Tui.keys t "4";
+  ignore (Tui.await_request t 3 : string);
+  Tui.release t "fin";
+  Tui.settle t;
+  let user_config =
+    Project.scratch (Tui.project t) "config/spice/config.json"
+  in
+  let contents =
+    if Sys.file_exists user_config then Util.read_file user_config else ""
+  in
+  print_string
+    (if Util.contains contents "argv-prefix" && Util.contains contents "commit"
+     then "rule saved to user config"
+     else "MISSING RULE >>>" ^ contents ^ "<<<");
+  [%expect {| rule saved to user config |}]
+
+(* A proposed plan is a real host-tool boundary in plan mode. The first option
+   approves it, and the next provider request must carry the tool result before
+   the turn can resume. *)
+let%expect_test "the plan dialog approves and resumes the turn" =
+  let script =
+    [
+      Provider.tool_call ~expect:[ "draft a plan" ] ~id:"resp-plan-1"
+        ~call_id:"call-plan" ~name:"propose_plan"
+        ~arguments:
+          {|{"id":"plan-1","title":"Refactor the parser","body":"Split the tokenizer out.\nMake parse return a result."}|}
+        ();
+      resume ~expect:[ "call-plan" ] ~id:"resp-plan-2"
+        "Parser refactor complete.";
+    ]
+  in
+  Tui.run ~name:"dialog-plan-approve" ~provider:script @@ fun t ->
+  enter_plan_mode t;
+  open_dialog t "draft a plan for the refactor";
+  Tui.print t;
+  [%expect {|01 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+02 |    plan
+03 |
+04 |   Refactor the parser
+05 |
+06 |   Split the tokenizer out.
+07 |   Make parse return a result.
+08 |
+09 | ❯ 1. approve
+10 |   2. approve + ⏵⏵ accept edits
+11 |   3. adjust — tell the model what to change
+12 |   4. keep planning
+13 |
+14 |   1-4 choose · enter confirm · ctrl+o expand · esc keep planning
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 |
+22 |
+23 |
+24 ||}];
+  Tui.keys t "1";
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin";
+  Tui.settle t
+
+(* Escape is the safe plan decision: it rejects the proposal, keeps plan mode,
+   and resumes the provider without ever emitting an approval. *)
+let%expect_test "escape rejects the plan and keeps planning" =
+  let script =
+    [
+      Provider.tool_call ~expect:[ "draft a plan" ] ~id:"resp-plan-esc-1"
+        ~call_id:"call-plan-esc" ~name:"propose_plan"
+        ~arguments:
+          {|{"id":"plan-esc","title":"Refactor the parser","body":"Split the tokenizer out.\nMake parse return a result."}|}
+        ();
+      resume ~expect:[ "call-plan-esc" ] ~id:"resp-plan-esc-2"
+        "Revised the plan.";
+    ]
+  in
+  Tui.run ~name:"dialog-plan-reject" ~provider:script @@ fun t ->
+  enter_plan_mode t;
+  open_dialog t "draft a plan for the refactor";
+  Tui.keys t Keys.escape;
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin";
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ draft a plan for the refactor
+07 |
+08 |   kept planning
+09 |
+10 | ⏺ Plan
+11 |   ⎿  proposed
+12 |
+13 | ⏺ Revised the plan.
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 |  ⏸ plan ────────────────────────────────────────────────────────────────────────
+22 | ❯ message spice
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗    ? for shortcuts|}]

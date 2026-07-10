@@ -3,7 +3,7 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-open Tui_next_harness
+open Tui_harness
 
 (* One scripted turn against the in-process provider. The reply is held on a
    named gate, so the mid-flight state is observed for exactly as long as the
@@ -49,7 +49,7 @@ let%expect_test "a held turn shows working state, ticks, then settles" =
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ queue a message — sends after this turn
 23 | ────────────────────────────────────────────────────────────────────────────────
-24 |   …/tmp/spice-tui-next-turn-hold · gpt-5.5 medium · dune: ✗    ? for shortcuts|}];
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}];
   (* The working line's elapsed clock ticks exactly five virtual seconds. *)
   Tui.advance t 5.0;
   Tui.print t;
@@ -77,7 +77,7 @@ let%expect_test "a held turn shows working state, ticks, then settles" =
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ queue a message — sends after this turn
 23 | ────────────────────────────────────────────────────────────────────────────────
-24 |   …/tmp/spice-tui-next-turn-hold · gpt-5.5 medium · dune: ✗    ? for shortcuts|}];
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}];
   Tui.release t "turn-1";
   Tui.settle t;
   Tui.print t;
@@ -105,4 +105,4 @@ let%expect_test "a held turn shows working state, ticks, then settles" =
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ message spice
 23 | ────────────────────────────────────────────────────────────────────────────────
-24 |   …/tmp/spice-tui-next-turn-hold · gpt-5.5 medium · dune: ✗    ? for shortcuts|}]
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]

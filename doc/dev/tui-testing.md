@@ -1,6 +1,6 @@
 # Deterministic TUI tests
 
-Developer reference for the in-process TUI test suite at `test/tui-next`. It
+Developer reference for the in-process TUI test suite at `test/tui`. It
 drives the real application — `App.init/update/view/subscriptions`, the real
 runtime command interpreter, the real host and session store, the real provider
 wire protocol — through the same event vocabulary a terminal produces, and
@@ -11,14 +11,14 @@ complete. Application-visible time remains virtual and test-controlled.
 
 This is the operational contract: how the harness stays deterministic, which
 boundary belongs in which suite, and what breaks determinism. The harness itself
-is `test/tui-next/harness/`.
+is `test/tui/harness/`.
 
 ## Choose the test boundary
 
 | Boundary under test | Home |
 | --- | --- |
-| Application state, rendering, input decoding, provider turns, dialogs, session persistence, tool execution, resize/reflow | `test/tui-next/` |
-| Raw-mode and alternate-screen setup/restore, primary-screen goodbye output, isatty gating, real `SIGWINCH`, OSC title emission, and terminal process wiring | A small pty/process-level test |
+| Application state, rendering, input decoding, provider turns, dialogs, session persistence, tool execution, resize/reflow | `test/tui/` |
+| Raw-mode and alternate-screen setup/restore, primary-screen goodbye output, real `SIGWINCH`, OSC title emission, CLI launch wiring, and a real Dune-watch handshake | `test/tui-pty/` |
 | CLI argument resolution, exit codes, and real OS-sandbox enforcement | Cram/black-box tests |
 
 `Tui.await_exit` and `Tui.outcome` verify that the in-process application exits
@@ -48,9 +48,12 @@ script runs in another. A test:
   is a named `Eio.Promise`, so a mid-flight state is observable for exactly as
   long as the test needs); uses `Tui.await_suspend` when a tool-call response
   opens a dialog, and `Tui.settle_turn` when a keystroke ends an in-flight turn;
+- **waits at special boundaries** with `Tui.settle_pending_perform` for an auth
+  challenge whose perform intentionally stays open, and
+  `Tui.await_review_refresh` for the real watcher wake plus virtual debounce;
 - **asserts** a full 24-row frame via `Tui.print` at a pinned size (default
   80×24). Substring facts are forbidden; a frame is a `[%expect]` golden,
-  promoted with scoped `dune promote test/tui-next/<file>`.
+  promoted with scoped `dune promote test/tui/<file>`.
 
 Time only moves when the test moves it. Ages, elapsed counters, spinner phase,
 and session-id stamps are deterministic functions of test-controlled time, so
@@ -163,7 +166,7 @@ flight; park-waiting is condition-based, not polled.
   `test_turn` prints three frames (working, ticked, settled) from one boot.
   Don't contort unrelated scenarios together.
 - **Give every `Tui.run ~name` a globally unique value across the suite.** The
-  temporary project is `/tmp/spice-tui-next-<name>` and is cleared at startup;
+  temporary project is `/tmp/spice-tui-<name>` and is cleared at startup;
   duplicate names in concurrently running executables can delete each other's
   workspace and session store.
 - **Send Enter as its own write** (`Tui.enter`), never `"/cmd\r"` in one chunk.
@@ -195,12 +198,12 @@ state.
   varies run to run, find what advanced the clock outside `advance`: trace every
   `set_time` (its magnitude tells you which timer fired) and check it against
   the four invariants above before touching the harness.
-- Never run `--auto-promote` on the shared `test/tui-next` runtest alias. It can
+- Never run `--auto-promote` on the shared `test/tui` runtest alias. It can
   promote unrelated failing executables and enshrine a transient frame. Run one
   executable in isolation, inspect its output, then promote only its source
-  path with `dune promote test/tui-next/<file>.ml`.
+  path with `dune promote test/tui/<file>.ml`.
 - Run the one exe directly (not `dune runtest`) for a fast tight loop, and force
-  a sweep — `for i in $(seq 1 30); do ./_build/default/test/tui-next/<exe>; done`
+  a sweep — `for i in $(seq 1 30); do ./_build/default/test/tui/<exe>; done`
   — before trusting a determinism fix. A harness change re-runs `test_home` and
   `test_turn` plus 30× sweeps of both. A change to release, suspension, or
   unordered serving also sweeps the representative dialog, tool, and thread

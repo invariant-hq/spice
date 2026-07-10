@@ -65,6 +65,20 @@ let subagent_run project ~parent ~child ~role ~task ~status_json =
        {|{"child":"%s","parent":"%s","parent_turn":"turn-1","parent_call_id":"call-1","spawn":{"role":"%s","task":"%s"},"depth":1,"status":%s,"created_at":2000}|}
        child parent role task status_json)
 
+(* The global prompt history the runtime loads at boot, written to the isolated
+   state home ([XDG_STATE_HOME]/spice/history.jsonl) before launch. One line
+   per entry in the shared [composer.history_entry] schema, oldest first (the
+   file is appended). *)
+let history_entry ~ts text =
+  Printf.sprintf
+    {|{"schema_version":1,"type":"composer.history_entry","session_id":"ses_test","ts":%d,"draft":{"text":%S}}|}
+    ts text
+
+let history project lines =
+  Util.write_file
+    (Project.state project "history.jsonl")
+    (String.concat "\n" lines ^ "\n")
+
 let session_file_contains project id needle =
   let text =
     Util.read_file

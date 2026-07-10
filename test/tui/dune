@@ -1,432 +1,196 @@
-; Each feature is its own executable and runtest rule so dune runs the suite
-; in parallel. The home screen runs no turns, so the fake provider is not a
-; dependency; the tests drive the real spice binary on a pty.
+; The deterministic in-process TUI suite: the real application runs under a
+; headless matrix.test backend with a virtual clock — no pty or terminal
+; subprocess. Tools may still spawn real subprocesses, and the harness uses
+; short scheduler breaths for real IO. Each feature is its own executable and
+; runtest rule so dune runs the suite in parallel.
 
 (executables
- (names
-  test_home
-  test_home_live
-  test_transcript
-  test_tools
-  test_strip
-  test_sessions_panel
-  test_sessions_screen
-  test_resume
-  test_settings
-  test_model_panel
-  test_commands
-  test_composer
-  test_mention
-  test_history
-  test_notices
-  test_exit
-  test_dialogs
-  test_todo_board
-  test_threads
-  test_auth
-  test_review
-  test_side_pane)
- (modules
-  test_home
-  test_home_live
-  test_transcript
-  test_tools
-  test_strip
-  test_sessions_panel
-  test_sessions_screen
-  test_resume
-  test_settings
-  test_model_panel
-  test_commands
-  test_composer
-  test_mention
-  test_history
-  test_notices
-  test_exit
-  test_dialogs
-  test_todo_board
-  test_threads
-  test_auth
-  test_review
-  test_side_pane)
+ (names test_home test_turn test_composer test_history test_mention test_auth
+   test_geometry test_dialogs test_tools test_turn_errors test_input
+   test_session test_states test_commands test_model_panel test_settings
+   test_transcript test_threads test_todo_board test_strip test_side_pane
+   test_review)
+ (modules test_home test_turn test_composer test_history test_mention test_auth
+   test_geometry test_dialogs test_tools test_turn_errors test_input
+   test_session test_states test_commands test_model_panel test_settings
+   test_transcript test_threads test_todo_board test_strip test_side_pane
+   test_review)
  (libraries unix windtrap tui_harness)
  (preprocess
   (pps ppx_windtrap)))
 
 (rule
  (alias runtest)
- (deps %{bin:spice} test_home.exe)
+ (deps test_home.exe)
  (action
   (progn
-   (setenv
-    SPICE_BIN
-    %{bin:spice}
-    (run ./test_home.exe))
+   (run ./test_home.exe)
    (diff? test_home.ml test_home.ml.corrected))))
 
 (rule
  (alias runtest)
- (deps %{bin:spice} test_home_live.exe)
+ (deps test_turn.exe)
  (action
   (progn
-   (setenv
-    SPICE_BIN
-    %{bin:spice}
-    (run ./test_home_live.exe))
-   (diff? test_home_live.ml test_home_live.ml.corrected))))
-
-; The session quick-switch panel runs no turns, so like the home tests it needs
-; only the real spice binary — no fake provider.
+   (run ./test_turn.exe)
+   (diff? test_turn.ml test_turn.ml.corrected))))
 
 (rule
  (alias runtest)
- (deps %{bin:spice} test_sessions_panel.exe)
+ (deps test_composer.exe)
  (action
   (progn
-   (setenv
-    SPICE_BIN
-    %{bin:spice}
-    (run ./test_sessions_panel.exe))
-   (diff? test_sessions_panel.ml test_sessions_panel.ml.corrected))))
-
-; The sessions browse screen runs no turns (resume replay is pure; rename and
-; delete are host store writes) — no fake provider, just the real binary.
-
-(rule
- (alias runtest)
- (deps %{bin:spice} test_sessions_screen.exe)
- (action
-  (progn
-   (setenv
-    SPICE_BIN
-    %{bin:spice}
-    (run ./test_sessions_screen.exe))
-   (diff? test_sessions_screen.ml test_sessions_screen.ml.corrected))))
-
-; Launch resume ([spice resume <id>]) seeds session documents and replays them
-; without a turn, but the resume-then-submit test drives a real turn, so the
-; suite needs the fake provider server alongside the real binary.
-
-(rule
- (alias runtest)
- (deps
-  %{bin:spice}
-  ../blackbox/bin/spice_fake_provider_server.exe
-  test_resume.exe)
- (action
-  (progn
-   (setenv
-    SPICE_BIN
-    %{bin:spice}
-    (setenv
-     SPICE_FAKE_PROVIDER_BIN
-     %{dep:../blackbox/bin/spice_fake_provider_server.exe}
-     (run ./test_resume.exe)))
-   (diff? test_resume.ml test_resume.ml.corrected))))
-
-; The settings screen runs no turns: the config/status/skills tabs read host
-; views and write config files, none of which needs the provider.
-
-(rule
- (alias runtest)
- (deps %{bin:spice} test_settings.exe)
- (action
-  (progn
-   (setenv
-    SPICE_BIN
-    %{bin:spice}
-    (run ./test_settings.exe))
-   (diff? test_settings.ml test_settings.ml.corrected))))
-
-; The transcript tests run a real turn, so they add the fake provider server as
-; a dependency and pass its path through SPICE_FAKE_PROVIDER_BIN.
-
-(rule
- (alias runtest)
- (deps
-  %{bin:spice}
-  ../blackbox/bin/spice_fake_provider_server.exe
-  test_transcript.exe)
- (action
-  (progn
-   (setenv
-    SPICE_BIN
-    %{bin:spice}
-    (setenv
-     SPICE_FAKE_PROVIDER_BIN
-     %{dep:../blackbox/bin/spice_fake_provider_server.exe}
-     (run ./test_transcript.exe)))
-   (diff? test_transcript.ml test_transcript.ml.corrected))))
-
-; The per-tool grammar tests run a real tool inside a real turn, so they need
-; the fake provider server like the transcript tests.
-
-(rule
- (alias runtest)
- (deps
-  %{bin:spice}
-  ../blackbox/bin/spice_fake_provider_server.exe
-  test_tools.exe)
- (action
-  (progn
-   (setenv
-    SPICE_BIN
-    %{bin:spice}
-    (setenv
-     SPICE_FAKE_PROVIDER_BIN
-     %{dep:../blackbox/bin/spice_fake_provider_server.exe}
-     (run ./test_tools.exe)))
-   (diff? test_tools.ml test_tools.ml.corrected))))
-
-; The status-strip tests queue a prompt across a held turn, so like the
-; transcript tests they run a real turn against the fake provider server.
-
-(rule
- (alias runtest)
- (deps
-  %{bin:spice}
-  ../blackbox/bin/spice_fake_provider_server.exe
-  test_strip.exe)
- (action
-  (progn
-   (setenv
-    SPICE_BIN
-    %{bin:spice}
-    (setenv
-     SPICE_FAKE_PROVIDER_BIN
-     %{dep:../blackbox/bin/spice_fake_provider_server.exe}
-     (run ./test_strip.exe)))
-   (diff? test_strip.ml test_strip.ml.corrected))))
-
-; The model + effort panel runs no turns: it reads the pure catalog and writes
-; the user config, neither of which needs the provider — just the real binary.
-
-(rule
- (alias runtest)
- (deps %{bin:spice} test_model_panel.exe)
- (action
-  (progn
-   (setenv
-    SPICE_BIN
-    %{bin:spice}
-    (run ./test_model_panel.exe))
-   (diff? test_model_panel.ml test_model_panel.ml.corrected))))
-
-; The login / logout pickers, masked api-key entry, esc ladder, and browser
-; panel are deterministic with an env credential and no network (09-auth cases
-; 1-3, 6, 7). The device-code case (5) drives the fake provider server as a
-; local auth issuer (SPICE_OPENAI_AUTH_BASE_URL), so the exe depends on it.
-
-(rule
- (alias runtest)
- (deps
-  %{bin:spice}
-  test_auth.exe
-  ../blackbox/bin/spice_fake_provider_server.exe)
- (action
-  (progn
-   (setenv
-    SPICE_BIN
-    %{bin:spice}
-    (setenv
-     SPICE_FAKE_PROVIDER_BIN
-     %{dep:../blackbox/bin/spice_fake_provider_server.exe}
-     (run ./test_auth.exe)))
-   (diff? test_auth.ml test_auth.ml.corrected))))
-
-; The palette and command-dispatch tests run no turns, so they need only the
-; real spice binary.
-
-(rule
- (alias runtest)
- (deps %{bin:spice} test_commands.exe)
- (action
-  (progn
-   (setenv
-    SPICE_BIN
-    %{bin:spice}
-    (run ./test_commands.exe))
-   (diff? test_commands.ml test_commands.ml.corrected))))
-
-; The composer surface tests run no turns; they drive the draft, paste, and
-; esc-ladder behavior on the real binary alone.
-
-(rule
- (alias runtest)
- (deps %{bin:spice} test_composer.exe)
- (action
-  (progn
-   (setenv
-    SPICE_BIN
-    %{bin:spice}
-    (run ./test_composer.exe))
+   (run ./test_composer.exe)
    (diff? test_composer.ml test_composer.ml.corrected))))
 
-; The @-mention completion tests run no turns; they drive the lazy directory
-; tree on the real binary alone.
-
 (rule
  (alias runtest)
- (deps %{bin:spice} test_mention.exe)
+ (deps test_history.exe)
  (action
   (progn
-   (setenv
-    SPICE_BIN
-    %{bin:spice}
-    (run ./test_mention.exe))
-   (diff? test_mention.ml test_mention.ml.corrected))))
-
-; The prompt-history tests exercise the JSONL persistence and ctrl+r search;
-; discard-to-history needs no turn, so no fake provider.
-
-(rule
- (alias runtest)
- (deps %{bin:spice} test_history.exe)
- (action
-  (progn
-   (setenv
-    SPICE_BIN
-    %{bin:spice}
-    (run ./test_history.exe))
+   (run ./test_history.exe)
    (diff? test_history.ml test_history.ml.corrected))))
 
-; The live dune data-notice tests drive a real turn (to reach chat) and then an
-; external dune watch, so they depend on the fake provider server like the
-; transcript tests.
+(rule
+ (alias runtest)
+ (deps test_mention.exe)
+ (action
+  (progn
+   (run ./test_mention.exe)
+   (diff? test_mention.ml test_mention.ml.corrected))))
 
 (rule
  (alias runtest)
- (deps
-  %{bin:spice}
-  ../blackbox/bin/spice_fake_provider_server.exe
-  test_notices.exe)
+ (deps test_auth.exe)
  (action
   (progn
-   (setenv
-    SPICE_BIN
-    %{bin:spice}
-    (setenv
-     SPICE_FAKE_PROVIDER_BIN
-     %{dep:../blackbox/bin/spice_fake_provider_server.exe}
-     (run ./test_notices.exe)))
-   (diff? test_notices.ml test_notices.ml.corrected))))
-
-; The exit-goodbye tests drive a real turn (to create a session) then quit, so
-; they depend on the fake provider server like the transcript tests.
+   (run ./test_auth.exe)
+   (diff? test_auth.ml test_auth.ml.corrected))))
 
 (rule
  (alias runtest)
- (deps
-  %{bin:spice}
-  ../blackbox/bin/spice_fake_provider_server.exe
-  test_exit.exe)
+ (deps test_geometry.exe)
  (action
   (progn
-   (setenv
-    SPICE_BIN
-    %{bin:spice}
-    (setenv
-     SPICE_FAKE_PROVIDER_BIN
-     %{dep:../blackbox/bin/spice_fake_provider_server.exe}
-     (run ./test_exit.exe)))
-   (diff? test_exit.ml test_exit.ml.corrected))))
-
-; The decision-dialog tests block a real turn on a permission, question, or plan
-; boundary via the fake provider, then drive the dialog and the composer borrow.
+   (run ./test_geometry.exe)
+   (diff? test_geometry.ml test_geometry.ml.corrected))))
 
 (rule
  (alias runtest)
- (deps
-  %{bin:spice}
-  ../blackbox/bin/spice_fake_provider_server.exe
-  test_dialogs.exe)
+ (deps test_dialogs.exe)
  (action
   (progn
-   (setenv
-    SPICE_BIN
-    %{bin:spice}
-    (setenv
-     SPICE_FAKE_PROVIDER_BIN
-     %{dep:../blackbox/bin/spice_fake_provider_server.exe}
-     (run ./test_dialogs.exe)))
+   (run ./test_dialogs.exe)
    (diff? test_dialogs.ml test_dialogs.ml.corrected))))
 
-; The live todo-board tests run a real turn whose held follow-up step keeps the
-; mirror on screen, so they need the fake provider server like the transcript
-; tests.
+(rule
+ (alias runtest)
+ (deps test_tools.exe)
+ (action
+  (progn
+   (run ./test_tools.exe)
+   (diff? test_tools.ml test_tools.ml.corrected))))
 
 (rule
  (alias runtest)
- (deps
-  %{bin:spice}
-  ../blackbox/bin/spice_fake_provider_server.exe
-  test_todo_board.exe)
+ (deps test_turn_errors.exe)
  (action
   (progn
-   (setenv
-    SPICE_BIN
-    %{bin:spice}
-    (setenv
-     SPICE_FAKE_PROVIDER_BIN
-     %{dep:../blackbox/bin/spice_fake_provider_server.exe}
-     (run ./test_todo_board.exe)))
-   (diff? test_todo_board.ml test_todo_board.ml.corrected))))
-
-; The subagent-threads tests spawn a real detached child through the fake
-; provider, so they depend on the fake provider server like the transcript
-; tests.
+   (run ./test_turn_errors.exe)
+   (diff? test_turn_errors.ml test_turn_errors.ml.corrected))))
 
 (rule
  (alias runtest)
- (deps
-  %{bin:spice}
-  ../blackbox/bin/spice_fake_provider_server.exe
-  test_threads.exe)
+ (deps test_input.exe)
  (action
   (progn
-   (setenv
-    SPICE_BIN
-    %{bin:spice}
-    (setenv
-     SPICE_FAKE_PROVIDER_BIN
-     %{dep:../blackbox/bin/spice_fake_provider_server.exe}
-     (run ./test_threads.exe)))
+   (run ./test_input.exe)
+   (diff? test_input.ml test_input.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_states.exe)
+ (action
+  (progn
+   (run ./test_states.exe)
+   (diff? test_states.ml test_states.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_session.exe)
+ (action
+  (progn
+   (run ./test_session.exe)
+   (diff? test_session.ml test_session.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_commands.exe)
+ (action
+  (progn
+   (run ./test_commands.exe)
+   (diff? test_commands.ml test_commands.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_model_panel.exe)
+ (action
+  (progn
+   (run ./test_model_panel.exe)
+   (diff? test_model_panel.ml test_model_panel.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_settings.exe)
+ (action
+  (progn
+   (run ./test_settings.exe)
+   (diff? test_settings.ml test_settings.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_transcript.exe)
+ (action
+  (progn
+   (run ./test_transcript.exe)
+   (diff? test_transcript.ml test_transcript.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_threads.exe)
+ (action
+  (progn
+   (run ./test_threads.exe)
    (diff? test_threads.ml test_threads.ml.corrected))))
 
-; The review screen opens over a real git worktree diff; marks, verdict, and CR
-; edits round-trip global workspace review state. The "task spice" case submits a real turn, so
-; the exe depends on the fake provider server like the transcript tests.
+(rule
+ (alias runtest)
+ (deps test_todo_board.exe)
+ (action
+  (progn
+   (run ./test_todo_board.exe)
+   (diff? test_todo_board.ml test_todo_board.ml.corrected))))
 
 (rule
  (alias runtest)
- (deps
-  %{bin:spice}
-  ../blackbox/bin/spice_fake_provider_server.exe
-  test_review.exe)
+ (deps test_strip.exe)
  (action
   (progn
-   (setenv
-    SPICE_BIN
-    %{bin:spice}
-    (setenv
-     SPICE_FAKE_PROVIDER_BIN
-     %{dep:../blackbox/bin/spice_fake_provider_server.exe}
-     (run ./test_review.exe)))
-   (diff? test_review.ml test_review.ml.corrected))))
+   (run ./test_strip.exe)
+   (diff? test_strip.ml test_strip.ml.corrected))))
 
 (rule
  (alias runtest)
- (deps
-  %{bin:spice}
-  ../blackbox/bin/spice_fake_provider_server.exe
-  test_side_pane.exe)
+ (deps test_side_pane.exe)
  (action
   (progn
-   (setenv
-    SPICE_BIN
-    %{bin:spice}
-    (setenv
-     SPICE_FAKE_PROVIDER_BIN
-     %{dep:../blackbox/bin/spice_fake_provider_server.exe}
-     (run ./test_side_pane.exe)))
+   (run ./test_side_pane.exe)
    (diff? test_side_pane.ml test_side_pane.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps test_review.exe)
+ (action
+  (progn
+   (run ./test_review.exe)
+   (diff? test_review.ml test_review.ml.corrected))))

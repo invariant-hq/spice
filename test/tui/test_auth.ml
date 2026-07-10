@@ -3,318 +3,797 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-(* Blackbox pty tests for the [spice tui-next] provider login / logout panel
-   (doc/ui-design/09-auth.md in the 03-ia panel shell; doc/plans/tui-next-auth.md).
-
-   FAKING: the pickers, the masked api-key entry, and the esc ladder are
-   deterministic with an env credential and NO network. [OPENAI_API_KEY]
-   authenticates OpenAI (its row reads connected in the provider picker; it is
-   the removable-vs-env case for /logout), while Anthropic/Google stay [not
-   connected] and DeepSeek is [no login needed]. The masked-input test asserts
-   the typed key NEVER appears on screen (security rule 1). The save-check
-   (case 4), device-code (case 5), and browser (case 6) paths land in phases 2-4
-   against the fake provider server / fake auth issuer; the browser
-   SUCCESS/timeout paths are honestly cram-only.
-
-   These assert FACTS, not full-screen goldens: the home stage's dune line is
-   non-deterministic (✓/✗ by the workspace's build state). SPICE_REDUCED_MOTION=1
-   pins a static lockup. Enter is ALWAYS a SEPARATE write from the command text
-   (the atomic-enter artifact). *)
-
 open Tui_harness
 
-(* OpenAI authenticated via env (connected in the picker, removable-vs-env in
-   logout); the other providers stay unconnected for the not-connected rows. *)
-let env = [ ("SPICE_REDUCED_MOTION", "1"); ("OPENAI_API_KEY", "test-key-abcd") ]
-let print_fact = Util.print_fact
-let run ?rows ?cols project f = Term.run ~env ?rows ?cols project f
+(* The login panel's abort and repair seams under the deterministic harness.
 
-(* Open the login flow via [/login] from the home stage: the palette filters to
-   the command, Enter runs it (separate write), and we wait for the provider
-   picker's subtitle — proof the entries loaded. *)
-(* [/login] with no argument goes through the palette: the row is offered (its
-   description shows), the first Enter INSERTS "/login " and closes the list
-   (/login is arg-taking — 03-composer.md §Slash palette), and a second Enter
-   submits the inserted command, opening the provider picker. (The argument
-   forms — [/login openai] — keep the palette open but with a query that matches
-   no command, so a single Enter falls through to submit.) *)
+   Slash-command driving: the [/login openai] argument form cannot be submitted
+   here — the palette's no-match state swallows every Enter (app.ml
+   [activate_completion]) — so journeys route through the bare command (which
+   matches, inserts, and submits on the second Enter) and the provider
+   picker. *)
+
+(* [/login] through the palette: the first Enter inserts the arg-taking
+   command and closes the list, the second submits it. *)
 let open_login t =
-  Term.send t "/login";
-  Term.wait t (Screen.has "Log in to a provider");
-  Term.send t Keys.enter;
-  Term.wait t (Screen.lacks "Log in to a provider");
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "Choose a provider to authenticate.")
+  Tui.keys t "/login";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t
 
-(* 0. Discovery: [/login] and [/logout] must appear in the slash palette — the
-   command catalog's [implemented] set gates palette visibility, so a command
-   wired only in dispatch but missing from that set ships hidden (the regression
-   this asserts). Typing [/log] filters the palette to both. *)
-let%expect_test "login and logout are discoverable in the palette" =
-  Project.with_temp "auth-palette" @@ fun project ->
-  run project ~rows:24 ~cols:80 @@ fun t ->
-  Term.send t "/log";
-  Term.wait t (fun s -> Screen.has "/login" s && Screen.has "/logout" s);
-  let s = Term.screen t in
-  print_fact "/login offered in palette" (Screen.has "/login" s);
-  print_fact "/logout offered in palette" (Screen.has "/logout" s);
-  [%expect
-    {|
-    /login offered in palette: true
-    /logout offered in palette: true |}]
-
-(* 1. The provider picker: OpenAI connected (env credential), Anthropic not
-   connected, DeepSeek non-selectable [no login needed]; the [log in] chip. *)
-let%expect_test "login provider picker renders account state" =
-  Project.with_temp "auth-providers" @@ fun project ->
-  run project ~rows:24 ~cols:80 @@ fun t ->
+let select_openai_methods t =
   open_login t;
-  let s = Term.screen t in
-  print_fact "log in chip" (Screen.has "log in" s);
-  print_fact "OpenAI row" (Screen.has "OpenAI" s);
-  print_fact "OpenAI connected (env source)" (Screen.has "env OPENAI_API_KEY" s);
-  print_fact "Anthropic not connected" (Screen.has "not connected" s);
-  print_fact "DeepSeek no login needed" (Screen.has "no login needed" s);
+  Tui.keys t "openai";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t
+
+(* Ctrl+C while a browser login waits must cancel the FLOW — resolve its cancel
+   promise and step back to the method picker, exactly as esc — not arm quit;
+   the chord regains its quit meaning once no flow is live. The ctrl+c lands
+   without an intermediate settle: a settle cannot converge while the flow's
+   perform is pending, and the panel stamps the request id synchronously when
+   the flow starts, so the abort routes correctly straight away. *)
+let%expect_test "ctrl+c cancels a waiting browser login, then regains quit" =
+  Tui.run ~name:"auth-ctrl-c-cancel" @@ fun t ->
+  Tui.settle t;
+  open_login t;
+  (* Filter the provider picker to OpenAI and confirm into its methods. *)
+  Tui.keys t "openai";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  (* Browser is the first declared method; the flow starts and waits. *)
+  Tui.enter t;
+  Tui.keys t Keys.ctrl_c;
+  Tui.settle t;
+  Tui.print t;
   [%expect
-    {|
-    log in chip: true
-    OpenAI row: true
-    OpenAI connected (env source): true
-    Anthropic not connected: true
-    DeepSeek no login needed: true |}]
-
-(* 2. [/login openai] skips the provider picker (argument fast-path) and opens
-   the method picker; OpenAI declares three methods. *)
-let%expect_test "login openai opens the method picker" =
-  Project.with_temp "auth-methods" @@ fun project ->
-  run project ~rows:24 ~cols:80 @@ fun t ->
-  Term.send t "/login openai";
-  Term.wait t (Screen.has "/login openai");
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "Choose how to sign in.");
-  let s = Term.screen t in
-  print_fact "Browser method" (Screen.has "Browser" s);
-  print_fact "device method" (Screen.has "device code" s);
-  print_fact "API key method" (Screen.has "API key" s);
+    {|01 |
+02 |
+03 |
+04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+06 |
+07 |                            dev · openai/gpt-5.5 medium
+08 |
+09 |      ▎ welcome — and thanks for trying spice this early.
+10 |      ▎ it's experimental: sessions and config may change without migration.
+11 |
+12 |
+13 |
+14 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+15 |    log in
+16 |
+17 |   Log in to OpenAI
+18 |   Choose how to sign in.
+19 |
+20 |   ❯ Browser                                     open your browser to authorize
+21 |     OpenAI ChatGPT device code                  enter a code on another device
+22 |     API key                                      paste a key from the provider
+23 |
+24 |   ↵ choose · esc back · type to filter · ↑↓ select|}];
+  (* No flow is waiting now: the chord arms the exit notice as everywhere
+     else. *)
+  Tui.keys t Keys.ctrl_c;
+  Tui.settle t;
+  Tui.print t;
   [%expect
-    {|
-    Browser method: true
-    device method: true
-    API key method: true |}]
+    {|01 |
+02 |
+03 |
+04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+06 |
+07 |                            dev · openai/gpt-5.5 medium
+08 |
+09 |      ▎ welcome — and thanks for trying spice this early.
+10 |      ▎ it's experimental: sessions and config may change without migration.
+11 |
+12 |
+13 |
+14 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+15 |    log in
+16 |
+17 |   Log in to OpenAI
+18 |   Choose how to sign in.
+19 |
+20 |   ❯ Browser                                     open your browser to authorize
+21 |     OpenAI ChatGPT device code                  enter a code on another device
+22 |     API key                                      paste a key from the provider
+23 |
+24 |   ↵ choose · esc back · type to filter · ↑↓ select|}]
 
-(* 3. The masked api-key entry (Anthropic is single-method -> straight to the
-   borrow): typed chars render as bullets and NEVER as the key; an empty submit
-   flashes; and the esc ladder steps back one rung (to the provider picker), then
-   out to the composer with the draft restored. *)
-let%expect_test "api-key input masks the buffer; esc walks the ladder" =
-  Project.with_temp "auth-apikey" @@ fun project ->
-  run project ~rows:24 ~cols:80 @@ fun t ->
-  Term.send t "/login anthropic";
-  Term.wait t (Screen.has "/login anthropic");
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "Paste your Anthropic API key");
-  (* Empty submit flashes, saves nothing. *)
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "enter a key");
-  print_fact "empty-key flash" (Screen.has "enter a key" (Term.screen t));
-  (* Type a secret; it renders as bullets, never as text. *)
-  Term.send t "sk-secret-value-123";
-  Term.wait t (Screen.has "\xe2\x80\xa2" (* • *));
-  let s = Term.screen t in
-  print_fact "bullets shown" (Screen.has "\xe2\x80\xa2" s);
-  print_fact "secret NOT on screen" (Screen.lacks "sk-secret-value-123" s);
-  (* Esc steps back one rung to the provider picker (the attempt is dropped, no
-     secret written), then out to the composer. *)
-  Term.send t Keys.escape;
-  Term.wait t (Screen.has "Choose a provider to authenticate.");
-  print_fact "esc -> provider picker"
-    (Screen.has "Choose a provider to authenticate." (Term.screen t));
-  Term.send t Keys.escape;
-  Term.wait t (Screen.has "message spice");
-  print_fact "esc -> composer restored"
-    (Screen.has "message spice" (Term.screen t));
+(* A provider-load failure is repairable in place: [↵] on the error line
+   reloads the entries. The store starts corrupt (load error), is repaired
+   behind the panel, and the retry lands in the provider picker. *)
+let%expect_test "a provider load error retries in place" =
+  let store project = Project.scratch project "config/spice/auth.json" in
+  Tui.run ~name:"auth-load-retry" ~seed:(fun project ->
+      Util.write_file (store project) "{\"version\":")
+  @@ fun t ->
+  Tui.settle t;
+  open_login t;
+  Tui.print t;
   [%expect
-    {|
-    empty-key flash: true
-    bullets shown: true
-    secret NOT on screen: true
-    esc -> provider picker: true
-    esc -> composer restored: true |}]
-
-(* 7. [/logout openai] on the home stage: OpenAI is the only connected provider,
-   so logout runs directly (no picker) and — its credential being env-sourced,
-   which logout cannot remove — settles. On the home stage the settled record is
-   silent (no transcript to echo into, 09-auth Q3), so the observable effect is
-   the panel closing back to the composer once the flow completes. *)
-let%expect_test "logout runs and returns to the composer" =
-  Project.with_temp "auth-logout-env" @@ fun project ->
-  run project ~rows:24 ~cols:80 @@ fun t ->
-  Term.send t "/logout openai";
-  Term.wait t (Screen.has "/logout openai");
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "message spice");
-  print_fact "logout completed, composer restored"
-    (Screen.has "message spice" (Term.screen t));
-  [%expect {| logout completed, composer restored: true |}]
-
-(* 6. The browser flow panel (OpenAI's first method): the authorization URL is
-   built locally (PKCE), so the panel renders with no network round-trip — the
-   URL row, the spinner, and the headless device-code steer. [c] copies the
-   display-safe URL; esc cancels the attempt (no secret written) and steps back
-   to the method picker. The successful callback exchange and the 300 s timeout
-   are cram-only (they need a real localhost redirect). *)
-let%expect_test "browser flow renders, copies the url, and cancels" =
-  Project.with_temp "auth-browser" @@ fun project ->
-  run project ~rows:24 ~cols:80 @@ fun t ->
-  Term.send t "/login openai";
-  Term.wait t (Screen.has "/login openai");
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "Choose how to sign in.");
-  (* Browser is the first declared method — Enter selects it. *)
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "Waiting for authorization");
-  let s = Term.screen t in
-  print_fact "browser title" (Screen.has "browser" s);
-  print_fact "authorization url shown" (Screen.has "https://" s);
-  print_fact "headless device-code steer" (Screen.has "device code" s);
-  print_fact "spinner waiting" (Screen.has "Waiting for authorization" s);
-  (* c copies the display-safe URL. *)
-  Term.send t "c";
-  Term.wait t (Screen.has "copied");
-  print_fact "copied flash" (Screen.has "copied" (Term.screen t));
-  (* Esc cancels the attempt and steps back to the method picker (esc ladder). *)
-  Term.send t Keys.escape;
-  Term.wait t (Screen.has "Choose how to sign in.");
-  print_fact "esc -> method picker"
-    (Screen.has "Choose how to sign in." (Term.screen t));
+    {|01 |
+02 |
+03 |
+04 |
+05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+07 |
+08 |                            dev · openai/gpt-5.5 medium
+09 |
+10 |      ▎ welcome — and thanks for trying spice this early.
+11 |      ▎ it's experimental: sessions and config may change without migration.
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+20 |    log in
+21 |
+22 |   ! $PROJECT.xdg/config/spice/auth.json: Expected
+23 |
+24 |   ↵ retry · esc close|}];
+  (* Repair the store behind the panel; [↵] retries the load. *)
+  Util.write_file (store (Tui.project t)) "{\"version\":1,\"credentials\":{}}\n";
+  Tui.enter t;
+  Tui.settle t;
+  Tui.print t;
   [%expect
-    {|
-    browser title: true
-    authorization url shown: true
-    headless device-code steer: true
-    spinner waiting: true
-    copied flash: true
-    esc -> method picker: true |}]
+    {|01 |
+02 |
+03 |
+04 |
+05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+07 |
+08 |                            dev · openai/gpt-5.5 medium
+09 |
+10 |      ▎ welcome — and thanks for trying spice this early.
+11 |      ▎ it's experimental: sessions and config may change without migration.
+12 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+13 |    log in
+14 |
+15 |   Choose a provider to authenticate.
+16 |
+17 |   ❯ OpenAI                                                       not connected
+18 |     Anthropic                                                    not connected
+19 |     Google                                                       not connected
+20 |     Ollama                                                       not connected
+21 |     DeepSeek                                                   no login needed
+22 |     Local                                                      no login needed
+23 |
+24 |   ↵ choose · esc cancel · type to filter · ↑↓ select|}]
 
-(* 5. The device-code flow (OpenAI's ChatGPT device method) against a fake auth
-   issuer. The usercode response scripts a long poll [interval], and the engine
-   sleeps [interval]s before its first poll (login.ml), so the challenge stays up
-   for assertions — no token/settle scripting needed. The panel renders the
-   verification URL, the user code, the phishing warning, and the expiry; [c]
-   copies the raw user code; esc cancels the attempt (no secret) back to the
-   method picker. The poll/exchange/settle is cram-covered (auth/oauth.t). *)
-let%expect_test "device-code renders the challenge, copies the code, cancels" =
-  Project.with_temp "auth-device" @@ fun project ->
-  let usercode =
-    {|{"expect":{"request_line":"POST /api/accounts/deviceauth/usercode HTTP/1.1"},"http":{"status":200,"json":{"device_auth_id":"dev-1","user_code":"CODE-1234","expires_in":900,"interval":300}}}|}
+(* A submit with nothing connected fails the turn AND opens the login flow:
+   the failure notice is the transcript record, the panel is the repair
+   (09-auth §9). The harness default env carries no credential. *)
+let%expect_test "a logged-out submit opens the login flow" =
+  Tui.run ~name:"auth-logged-out-submit" @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "hello";
+  Tui.enter t;
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 |   Tell spice how to proceed.
+02 |
+03 |
+04 |
+05 |
+06 |
+07 |
+08 |
+09 |
+10 |
+11 |
+12 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+13 |    log in
+14 |
+15 |   Choose a provider to authenticate.
+16 |
+17 |   ❯ OpenAI                                                       not connected
+18 |     Anthropic                                                    not connected
+19 |     Google                                                       not connected
+20 |     Ollama                                                       not connected
+21 |     DeepSeek                                                   no login needed
+22 |     Local                                                      no login needed
+23 |
+24 |   ↵ choose · esc cancel · type to filter · ↑↓ select|}]
+
+(* A home-stage settle is confirmed, not silent: the settled record takes over
+   the standing notice slot. Logging out an env-sourced credential is the
+   deterministic no-network variant — the env var survives the removal, and
+   the record says so. *)
+let%expect_test "a home logout settle takes over the notice slot" =
+  Tui.run ~name:"auth-home-logout-notice"
+    ~env:[ ("OPENAI_API_KEY", "test-key-abcd") ]
+  @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "/logout";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 |
+02 |
+03 |
+04 |
+05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+07 |
+08 |                            dev · openai/gpt-5.5 medium
+09 |
+10 |              ▎ Log out of OpenAI · ! env OPENAI_API_KEY still active
+11 |
+12 |           ────────────────────────────────────────────────────────────
+13 |           ❯ message spice
+14 |           ────────────────────────────────────────────────────────────
+15 |
+16 |                      dune       ✗ · diagnostics unavailable
+17 |
+18 |                       sandbox: danger-full-access (config)
+19 |
+20 |
+21 |
+22 |
+23 |
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
+
+(* A stored credential logs out through the same direct path (one connected
+   provider, no picker) and records the removal. The store is seeded before
+   boot; no env var shadows it. *)
+let%expect_test "logging out a stored credential records the removal" =
+  Tui.run ~name:"auth-logout-removed" ~seed:(fun project ->
+      Util.write_file
+        (Project.scratch project "config/spice/auth.json")
+        {|{"version":1,"credentials":{"openai":{"default":{"kind":"api_key","api_key":"sk-test-abcd-9999"}}}}|})
+  @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "/logout";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 |
+02 |
+03 |
+04 |
+05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+07 |
+08 |                            dev · openai/gpt-5.5 medium
+09 |
+10 |              ▎ Log out of OpenAI · ! env OPENAI_API_KEY still active
+11 |
+12 |           ────────────────────────────────────────────────────────────
+13 |           ❯ message spice
+14 |           ────────────────────────────────────────────────────────────
+15 |
+16 |                      dune       ✗ · diagnostics unavailable
+17 |
+18 |                       sandbox: danger-full-access (config)
+19 |
+20 |
+21 |
+22 |
+23 |
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗   ? for shortcuts|}]
+
+(* In chat, a settled login lands as a transcript event notice. One scripted
+   turn enters chat; the anthropic api-key login then saves and checks against
+   a closed port — the network problem is non-fatal, so the record reads
+   signed-in with the stored fingerprint. *)
+let%expect_test "a chat-phase login settles as a transcript record" =
+  let script =
+    [ Provider.message ~expect:[ "say hello" ] ~id:"resp-1" "Hello!" ]
   in
-  Provider.with_script project ~script_lines:[ usercode ] @@ fun srv ->
-  (* The auth issuer is the fake server's root (Provider appends [/v1] for the
-     model API, which the auth reroot does not want). *)
-  let auth_base =
-    let b = Provider.base_url srv in
-    String.sub b 0 (String.length b - String.length "/v1")
-  in
-  let env = env @ [ ("SPICE_OPENAI_AUTH_BASE_URL", auth_base) ] in
-  (* The device panel is the tallest flow surface; give it room above the home
-     stage so the phishing warning and the waiting line are not clipped. *)
-  Term.run ~env ~rows:32 ~cols:80 project @@ fun t ->
-  Term.send t "/login openai";
-  Term.wait t (Screen.has "/login openai");
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "Choose how to sign in.");
-  (* Filter to the device-code method, then select it. *)
-  Term.send t "device";
-  Term.wait t (Screen.has "enter a code on another device");
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "CODE-1234");
-  let s = Term.screen t in
-  print_fact "device title" (Screen.has "device code" s);
-  print_fact "user code shown" (Screen.has "CODE-1234" s);
-  print_fact "phishing warning" (Screen.has "Never share this code" s);
-  print_fact "expiry countdown" (Screen.has "expires in" s);
-  print_fact "waiting" (Screen.has "Waiting for authorization" s);
-  (* c copies the raw user code. *)
-  Term.send t "c";
-  Term.wait t (Screen.has "copied");
-  print_fact "copied flash" (Screen.has "copied" (Term.screen t));
-  (* Esc cancels and steps back to the method picker. *)
-  Term.send t Keys.escape;
-  Term.wait t (Screen.has "Choose how to sign in.");
-  print_fact "esc -> method picker"
-    (Screen.has "Choose how to sign in." (Term.screen t));
+  Tui.run ~name:"auth-chat-record" ~provider:script
+    ~env:[ ("SPICE_ANTHROPIC_BASE_URL", "http://127.0.0.1:9/v1") ]
+  @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "say hello";
+  Tui.enter t;
+  Tui.settle t;
+  open_login t;
+  Tui.keys t "anthropic";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.keys t "sk-ant-test-key-1234";
+  Tui.enter t;
+  Tui.settle t;
+  Tui.print t;
   [%expect
-    {|
-    device title: true
-    user code shown: true
-    phishing warning: true
-    expiry countdown: true
-    waiting: true
-    copied flash: true
-    esc -> method picker: true |}]
+    {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello!
+09 |
+10 |   Log in to Anthropic · ✓ signed in · …1234 (store)
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ message spice
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
 
-(* 8. Locked-model → login reroute (09-auth §9, B.4): open /model, filter to
-   Anthropic's (locked, under the OpenAI-only env) Claude models, [↵] the
-   highlighted locked row, and land in the login flow pre-selected on that
-   provider — for single-method Anthropic that is straight to the api-key entry.
-   Proves the model-panel `Login_required` arm reroutes rather than flashing. *)
-let%expect_test "a locked model row reroutes to login pre-selected" =
-  Project.with_temp "auth-model-reroute" @@ fun project ->
-  run project ~rows:24 ~cols:80 @@ fun t ->
-  Term.send t "/model";
-  Term.wait t (Screen.has "/model");
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "Default (recommended)");
-  (* Filter to Anthropic's Claude models — locked under this env. *)
-  Term.send t "claude";
-  Term.wait t (Screen.has "log in to use");
-  (* Enter on the highlighted locked row reroutes to the login flow. *)
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "Paste your Anthropic API key");
-  print_fact "locked row -> anthropic login pre-selected"
-    (Screen.has "Paste your Anthropic API key" (Term.screen t));
-  [%expect {| locked row -> anthropic login pre-selected: true |}]
+(* A saved key the provider rejects reads saved-but-blocked: the provider fake
+   answers the post-save model-list check with 401. *)
+let%expect_test "a rejected key records saved-but-blocked" =
+  let script =
+    [ Provider.http ~line:"GET /v1/models HTTP/1.1" ~status:401 "{}" ]
+  in
+  Tui.run ~name:"auth-blocked-key" ~provider:script @@ fun t ->
+  Tui.settle t;
+  open_login t;
+  Tui.keys t "openai";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.keys t "api";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.keys t "sk-rejected-key-9999";
+  Tui.enter t;
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 |
+02 |
+03 |
+04 |
+05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+07 |
+08 |                            dev · openai/gpt-5.5 medium
+09 |
+10 |      ▎ Log in to OpenAI · ✓ saved · ! blocked — key rejected by the provider
+11 |
+12 |           ────────────────────────────────────────────────────────────
+13 |           ❯ message spice
+14 |           ────────────────────────────────────────────────────────────
+15 |
+16 |                      dune       ✗ · diagnostics unavailable
+17 |
+18 |                       sandbox: danger-full-access (config)
+19 |
+20 |
+21 |
+22 |
+23 |
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
 
-(* 9. With NO provider connected the model line shows the registry-order
-   default (openai/gpt-5.5). An api-key login makes Anthropic the only
-   connected provider, so the derived default — and the rendered model line —
-   flip to its default model without a restart: the login is the next
-   binding's input, and the settle pushes the rebuilt snapshot. The provider
-   base URL points at a closed port so the persist-then-check settles
-   Unchecked immediately (saved, unvalidated) instead of reaching the real
-   API; a saved-but-unchecked credential still counts as connected. *)
-let%expect_test "api-key login flips the derived default model line" =
-  Project.with_temp "auth-default-flip" @@ fun project ->
-  (* SPICE_MODEL is unset — the harness default would CONFIGURE the model, and
-     a configured selection never flips on login (that is the design); the
-     derived default is what connectivity moves. *)
-  let env =
+(* A locked model row reroutes into the login flow pre-selected on its
+   provider: single-method Anthropic lands straight in the api-key entry. *)
+let%expect_test "a locked model row reroutes into login" =
+  Tui.run ~name:"auth-locked-reroute"
+    ~env:[ ("OPENAI_API_KEY", "test-key-abcd") ]
+  @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "/model";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.keys t "claude";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 |
+02 |
+03 |
+04 |
+05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+07 |
+08 |                            dev · openai/gpt-5.5 medium
+09 |
+10 |      ▎ welcome — and thanks for trying spice this early.
+11 |      ▎ it's experimental: sessions and config may change without migration.
+12 |
+13 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+14 |    log in
+15 |
+16 |   Paste your Anthropic API key
+17 |   Stored locally in the auth store; never displayed again.
+18 |
+19 |   ────────────────────────────────────────────────────────────────────────────
+20 |   ❯ ▌
+21 |   ────────────────────────────────────────────────────────────────────────────
+22 |   enter save · esc back · paste works · your key is not shown
+23 |
+24 |   ↵ save · esc back|}]
+
+(* A home-stage login that saves a credential hands off to the model picker,
+   seeded on the just-connected provider's group with the catalog whole (D1);
+   esc lands back on the composer with the settled record standing in the
+   notice slot. *)
+let%expect_test "a home login settle hands off to the model picker" =
+  Tui.run ~name:"auth-model-handoff"
+    ~env:[ ("SPICE_ANTHROPIC_BASE_URL", "http://127.0.0.1:9/v1") ]
+  @@ fun t ->
+  Tui.settle t;
+  open_login t;
+  Tui.keys t "anthropic";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.keys t "sk-ant-test-key-1234";
+  Tui.enter t;
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 |
+02 |
+03 |
+04 |
+05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+07 |
+08 |                            dev · openai/gpt-5.5 medium
+09 |
+10 |                ▎ Log in to Anthropic · ✓ signed in · …1234 (store)
+11 |
+12 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+13 |    model
+14 |
+15 |   ↑ 10 more
+16 |
+17 |     Anthropic
+18 |   ❯ Claude Sonnet 5         Default · 1M context · Efficient for routine tasks
+19 |     Claude Fable 5               1M context · Best for everyday, complex tasks
+20 |   ↓ 26 more
+21 |
+22 |   ○ No effort  ← → to adjust
+23 |
+24 |   ↵ set default · ←→ effort · type to filter · ↑↓ select · esc close|}];
+  Tui.keys t Keys.escape;
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 |
+02 |
+03 |
+04 |
+05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+07 |
+08 |                            dev · openai/gpt-5.5 medium
+09 |
+10 |                ▎ Log in to Anthropic · ✓ signed in · …1234 (store)
+11 |
+12 |           ────────────────────────────────────────────────────────────
+13 |           ❯ message spice
+14 |           ────────────────────────────────────────────────────────────
+15 |
+16 |                      dune       ✗ · diagnostics unavailable
+17 |
+18 |                       sandbox: danger-full-access (config)
+19 |
+20 |
+21 |
+22 |
+23 |
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗    ? for shortcuts|}]
+
+(* The provider and method pickers are application state, not terminal wiring.
+   A connected OpenAI env account and disconnected alternatives render in the
+   provider list; selecting OpenAI exposes all three declared login methods. *)
+let%expect_test "provider and login-method pickers render account state" =
+  Tui.run ~name:"auth-pickers" ~env:[ ("OPENAI_API_KEY", "test-key-abcd") ]
+  @@ fun t ->
+  Tui.settle t;
+  open_login t;
+  Tui.print t;
+  [%expect {|01 |
+02 |
+03 |
+04 |
+05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+07 |
+08 |                            dev · openai/gpt-5.5 medium
+09 |
+10 |      ▎ welcome — and thanks for trying spice this early.
+11 |      ▎ it's experimental: sessions and config may change without migration.
+12 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+13 |    log in
+14 |
+15 |   Choose a provider to authenticate.
+16 |
+17 |   ❯ OpenAI                                                  env OPENAI_API_KEY
+18 |     Anthropic                                                    not connected
+19 |     Google                                                       not connected
+20 |     Ollama                                                       not connected
+21 |     DeepSeek                                                   no login needed
+22 |     Local                                                      no login needed
+23 |
+24 |   ↵ choose · esc cancel · type to filter · ↑↓ select|}];
+  Tui.keys t "openai";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |
+03 |
+04 |
+05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+07 |
+08 |                            dev · openai/gpt-5.5 medium
+09 |
+10 |      ▎ welcome — and thanks for trying spice this early.
+11 |      ▎ it's experimental: sessions and config may change without migration.
+12 |
+13 |
+14 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+15 |    log in
+16 |
+17 |   Log in to OpenAI
+18 |   Choose how to sign in.
+19 |
+20 |   ❯ Browser                                     open your browser to authorize
+21 |     OpenAI ChatGPT device code                  enter a code on another device
+22 |     API key                                      paste a key from the provider
+23 |
+24 |   ↵ choose · esc back · type to filter · ↑↓ select|}]
+
+(* API-key entry owns a masked buffer. Empty submit flashes, typed bytes appear
+   only as bullets, and escape returns through the provider picker. *)
+let%expect_test "api-key entry masks the secret and escape walks back" =
+  Tui.run ~name:"auth-api-key-mask" @@ fun t ->
+  Tui.settle t;
+  open_login t;
+  Tui.keys t "anthropic";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.keys t "sk-secret-value-123";
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |
+03 |
+04 |
+05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+07 |
+08 |                            dev · openai/gpt-5.5 medium
+09 |
+10 |      ▎ welcome — and thanks for trying spice this early.
+11 |      ▎ it's experimental: sessions and config may change without migration.
+12 |
+13 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+14 |    log in
+15 |
+16 |   Paste your Anthropic API key
+17 |   Stored locally in the auth store; never displayed again.
+18 |
+19 |   ────────────────────────────────────────────────────────────────────────────
+20 |   ❯ •••••••••••••••••••▌
+21 |   ────────────────────────────────────────────────────────────────────────────
+22 |   enter save · esc back · paste works · your key is not shown
+23 |
+24 |   ↵ save · esc back|}];
+  Tui.keys t Keys.escape;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |
+03 |
+04 |
+05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+07 |
+08 |                            dev · openai/gpt-5.5 medium
+09 |
+10 |      ▎ welcome — and thanks for trying spice this early.
+11 |      ▎ it's experimental: sessions and config may change without migration.
+12 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+13 |    log in
+14 |
+15 |   Choose a provider to authenticate.
+16 |
+17 |   ❯ OpenAI                                                  env OPENAI_API_KEY
+18 |     Anthropic                                                    not connected
+19 |     Google                                                       not connected
+20 |     Ollama                                                       not connected
+21 |     DeepSeek                                                   no login needed
+22 |     Local                                                      no login needed
+23 |
+24 |   ↵ choose · esc cancel · type to filter · ↑↓ select|}]
+
+(* Browser authorization publishes its URL before the flow waits for the
+   callback. The pending-perform settle holds that exact challenge frame; copy
+   flashes in place and escape cancels back to the method picker. *)
+let%expect_test "browser authorization renders, copies, and cancels" =
+  Tui.run ~name:"auth-browser-challenge" @@ fun t ->
+  Tui.settle t;
+  select_openai_methods t;
+  Tui.enter t;
+  Tui.settle_pending_perform t;
+  Tui.print t;
+  [%expect {|01 |
+02 |
+03 |
+04 |
+05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+07 |
+08 |                            dev · openai/gpt-5.5 medium
+09 |
+10 |      ▎ welcome — and thanks for trying spice this early.
+11 |      ▎ it's experimental: sessions and config may change without migration.
+12 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+13 |    log in
+14 |
+15 |   Log in to OpenAI · browser
+16 |
+17 |   Press enter to open your browser and authorize Spice.
+18 |   Or open this link yourself:
+19 |
+20 |      https://auth.openai.com/oauth/authorize?response_type=code&cl…  c  copy
+21 |
+22 |   ⠋ Waiting for authorization… (0s · esc to cancel)
+23 |
+24 |   On a remote or headless machine? Press esc and choose device code.|}];
+  Tui.keys t "c";
+  Tui.settle_pending_perform t;
+  Tui.print t;
+  [%expect {|01 |
+02 |
+03 |
+04 |
+05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+07 |
+08 |                            dev · openai/gpt-5.5 medium
+09 |
+10 |      ▎ welcome — and thanks for trying spice this early.
+11 |      ▎ it's experimental: sessions and config may change without migration.
+12 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+13 |    log in
+14 |
+15 |   Log in to OpenAI · browser
+16 |
+17 |   Press enter to open your browser and authorize Spice.
+18 |   Or open this link yourself:
+19 |
+20 |      https://auth.openai.com/oauth/authorize?response_type=code&cli…  copied
+21 |
+22 |   ⠋ Waiting for authorization… (0s · esc to cancel)
+23 |
+24 |   On a remote or headless machine? Press esc and choose device code.|}];
+  Tui.keys t Keys.escape;
+  Tui.settle t
+
+(* The fake local auth issuer serves a long-polling device challenge. Virtual
+   time stays before the first poll, keeping the code, warning, expiry, and copy
+   affordance stable until escape cancels. *)
+let%expect_test "device-code authorization renders, copies, and cancels" =
+  let script =
     [
-      ("SPICE_REDUCED_MOTION", "1");
-      ("SPICE_ANTHROPIC_BASE_URL", "http://127.0.0.1:9/v1");
+      Provider.http
+        ~line:"POST /api/accounts/deviceauth/usercode HTTP/1.1" ~status:200
+        {|{"device_auth_id":"dev-1","user_code":"CODE-1234","expires_in":900,"interval":300}|};
     ]
   in
-  Term.run ~unset:[ "SPICE_MODEL" ] ~env ~rows:24 ~cols:80 project @@ fun t ->
-  Term.wait t (Screen.has "dev \xc2\xb7 openai/gpt-5.5");
-  print_fact "registry default before login"
-    (Screen.has "dev \xc2\xb7 openai/gpt-5.5" (Term.screen t));
-  (* Reach the api-key entry through the model panel's locked-row reroute (the
-     [/login PROVIDER] arg-command path is exercised by test 2). *)
-  Term.send t "/model";
-  Term.wait t (Screen.has "/model");
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "Default (recommended)");
-  Term.send t "claude";
-  Term.wait t (Screen.has "log in to use");
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "Paste your Anthropic API key");
-  Term.send t "sk-ant-test-key-1234";
-  Term.wait t (Screen.has "\xe2\x80\xa2");
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "dev \xc2\xb7 anthropic/claude-sonnet-4-6");
-  print_fact "model line flips to the connected default"
-    (Screen.has "dev \xc2\xb7 anthropic/claude-sonnet-4-6" (Term.screen t));
-  [%expect
-    {|
-    registry default before login: true
-    model line flips to the connected default: true |}]
+  Tui.run ~name:"auth-device-challenge" ~size:(80, 32) ~provider:script
+    ~openai_auth:true
+  @@ fun t ->
+  Tui.settle t;
+  select_openai_methods t;
+  Tui.keys t "device";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle_pending_perform t;
+  Tui.print t;
+  [%expect {|01 |
+02 |
+03 |
+04 |
+05 |
+06 |
+07 |
+08 |
+09 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+10 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+11 |
+12 |                            dev · openai/gpt-5.5 medium
+13 |
+14 |      ▎ welcome — and thanks for trying spice this early.
+15 |      ▎ it's experimental: sessions and config may change without migration.
+16 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+17 |    log in
+18 |
+19 |   Log in to OpenAI · device code
+20 |
+21 |   1. Open this link and sign in:
+22 |
+23 |      http://127.0.0.1:$PORT/codex/device                             c  copy
+24 |
+25 |   2. Enter this code (expires in 15m 00s):
+26 |
+27 |      CODE-1234                                                       c  copy
+28 |
+29 |   Device codes are a common phishing target. Never share this code.
+30 |
+31 |   ⠋ Waiting for authorization… (0s · esc to cancel)
+32 ||}];
+  Tui.keys t "c";
+  Tui.settle_pending_perform t;
+  Tui.keys t Keys.escape;
+  Tui.settle t
+
+(* With no configured model, a successful saved API key changes the connected
+   provider set and therefore the derived default rendered by the home stage. *)
+let%expect_test "api-key login updates the derived model facts" =
+  Tui.run ~name:"auth-derived-model" ~unset:[ "SPICE_MODEL" ]
+    ~env:[ ("SPICE_ANTHROPIC_BASE_URL", "http://127.0.0.1:9/v1") ]
+  @@ fun t ->
+  Tui.settle t;
+  open_login t;
+  Tui.keys t "anthropic";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.keys t "sk-ant-test-key-1234";
+  Tui.enter t;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |
+03 |
+04 |
+05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+07 |
+08 |                            dev · openai/gpt-5.5 medium
+09 |
+10 |                ▎ Log in to Anthropic · ✓ signed in · …1234 (store)
+11 |
+12 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+13 |    model
+14 |
+15 |   ↑ 10 more
+16 |
+17 |     Anthropic
+18 |   ❯ Claude Sonnet 5         Default · 1M context · Efficient for routine tasks
+19 |     Claude Fable 5               1M context · Best for everyday, complex tasks
+20 |   ↓ 26 more
+21 |
+22 |   ○ No effort  ← → to adjust
+23 |
+24 |   ↵ set default · ←→ effort · type to filter · ↑↓ select · esc close|}]

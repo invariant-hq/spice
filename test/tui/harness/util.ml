@@ -5,17 +5,6 @@
 
 let failf fmt = Printf.ksprintf failwith fmt
 
-let resolve_env_path name =
-  match Sys.getenv_opt name with
-  | Some path ->
-      let path =
-        if Filename.is_relative path then Filename.concat (Sys.getcwd ()) path
-        else path
-      in
-      if Sys.file_exists path then path
-      else failf "%s does not exist: %s" name path
-  | None -> failf "%s is not set" name
-
 let rec mkdir_p path =
   if Sys.file_exists path then ()
   else (
@@ -45,21 +34,6 @@ let rec rm_rf path =
         (Sys.readdir path);
       Unix.rmdir path)
     else Unix.unlink path
-
-let wait_for_file path =
-  let rec loop remaining =
-    if remaining <= 0 then failf "timed out waiting for %s" path
-    else if
-      Sys.file_exists path
-      &&
-      let stat = Unix.stat path in
-      stat.Unix.st_size > 0
-    then ()
-    else (
-      Unix.sleepf 0.05;
-      loop (remaining - 1))
-  in
-  loop 200
 
 let contains haystack needle =
   let haystack_len = String.length haystack in
@@ -98,5 +72,3 @@ let replace_all ~pattern ~with_ text =
     in
     loop 0;
     Buffer.contents out
-
-let print_fact label value = Printf.printf "%s: %b\n" label value

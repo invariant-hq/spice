@@ -3,143 +3,282 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-(* Blackbox pty tests for prompt history (lib/tui-next/history.ml, wired through
-   the runtime): the global JSONL loads at boot, arrow-walk recalls it, and
-   ctrl+r reverse search fuzzy-matches and inserts (never submits). No turns
-   run, so like the composer tests these need only the real spice binary.
-
-   Isolation (verified before writing): the harness (Project.env) overrides HOME
-   and XDG_STATE_HOME outside the project root, and with_temp deletes them on
-   exit. The history lands at <root>.xdg/state/spice/history.jsonl. No test can
-   touch a real user path.
-
-   History is seeded by writing that JSONL directly {e before} launch rather than
-   by discarding drafts in-session: a ctrl+c/esc discard does NOT currently reach
-   the disk append (app.ml drops the composer's Draft_saved event on those
-   paths), so the write path is untestable end-to-end here — see the report. The
-   load path this exercises is fully wired, and a hand-written line proves the
-   loader accepts the shared byte-compatible shape. *)
-
 open Tui_harness
 
-let reduced_motion = [ ("SPICE_REDUCED_MOTION", "1") ]
-let print_fact = Util.print_fact
-let run ?env ?rows ?cols project f = Term.run ?env ?rows ?cols project f
+(* Prompt history (lib/tui/history.ml, wired through the runtime), exercised on
+   the transcript where recall and search actually happen. The global JSONL is
+   seeded on disk before launch; a settled turn then runs, so the submitted
+   prompt joins the seeded entries in history exactly as a real session's would.
+   Arrow-walk recalls, and ctrl+r reverse search fuzzy-matches and inserts the
+   pick into the draft (never submits). *)
 
-(* The deterministic history path under the harness's isolated state home. *)
-let history_path project =
-  Project.state project "history.jsonl"
+let script =
+  [
+    Provider.message ~expect:[ "say hello" ] ~gate:"history" ~id:"resp-1"
+      "Hello from the fake provider.";
+  ]
 
-(* One [composer.history_entry] line in the shared schema the runtime loads. The
-   session id is any non-empty string; the loader ranks it as an earlier session
-   (the boot session is a fresh id), which does not affect visibility. *)
-let entry_line ~ts text =
-  Printf.sprintf
-    {|{"schema_version":1,"type":"composer.history_entry","session_id":"ses_test","ts":%d,"draft":{"text":%S}}|}
-    ts text
+let reach_transcript t =
+  Tui.settle t;
+  Tui.keys t "say hello";
+  Tui.enter t;
+  ignore (Tui.await_request t 1 : string);
+  Tui.release t "history";
+  Tui.settle t
 
-(* Seed history on disk before launch (oldest first, as the file is appended);
-   the runtime loads it at boot and feeds both the arrow-walk and ctrl+r. *)
-let seed_history project lines =
-  Util.write_file (history_path project) (String.concat "\n" lines ^ "\n")
+(* The recall walks newest-first: the turn's own prompt comes back on the first
+   [up], the disk-loaded prompt on the second — proving the boot load and the
+   in-session submission share one history. *)
+let%expect_test "up walks recall from the turn prompt into the loaded history" =
+  Tui.run ~name:"history-load" ~provider:script ~seed:(fun p ->
+      Seed.history p [ Seed.history_entry ~ts:1000 "alpha prompt" ])
+  @@ fun t ->
+  reach_transcript t;
+  Tui.keys t Keys.up;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ say hello
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗      ? for shortcuts|}];
+  Tui.keys t Keys.up;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ alpha prompt
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗      ? for shortcuts|}]
 
-(* A prompt on disk is loaded at boot and recalled by Up on the empty draft — the
-   load path history.ml owns, end to end through the runtime. *)
-let%expect_test "loaded history is recalled with Up" =
-  Project.with_temp "next-history-load" @@ fun project ->
-  seed_history project [ entry_line ~ts:1000 "alpha prompt" ];
-  run project ~env:reduced_motion ~rows:24 ~cols:80 (fun t ->
-      Term.wait t (Screen.has "dune:");
-      Term.send t Keys.up;
-      Term.wait t (Screen.has "alpha prompt");
-      print_fact "up recalls the prompt loaded from disk"
-        (Screen.has "alpha prompt" (Term.screen t)));
-  [%expect {| up recalls the prompt loaded from disk: true |}]
-
-(* ctrl+r opens reverse search (⌕ marker, "reverse-i-search:" header) over the
-   loaded prompts; a fuzzy subsequence query narrows the list; ↵ inserts the pick
-   into the draft and never submits (the draft keeps the text, no turn starts). *)
+(* ctrl+r opens reverse search over the loaded prompts; a fuzzy subsequence
+   query narrows the list; ↵ inserts the pick into the draft and never submits
+   (the draft keeps the text, no turn starts). *)
 let%expect_test "ctrl+r fuzzy-searches history and inserts the pick" =
-  Project.with_temp "next-history-search" @@ fun project ->
-  seed_history project
-    [ entry_line ~ts:1000 "alpha one"; entry_line ~ts:2000 "beta two" ];
-  run project ~env:reduced_motion ~rows:24 ~cols:80 (fun t ->
-      Term.wait t (Screen.has "dune:");
-      Term.send t Keys.ctrl_r;
-      Term.wait t (Screen.has "reverse-i-search:");
-      print_fact "reverse-i-search header shown"
-        (Screen.has "reverse-i-search:" (Term.screen t));
-      print_fact "history marker shown" (Screen.has "⌕" (Term.screen t));
-      print_fact "both prompts listed"
-        (Screen.has "alpha one" (Term.screen t)
-        && Screen.has "beta two" (Term.screen t));
-      Term.send t "bt";
-      Term.wait t (fun s ->
-          Screen.has "beta two" s && Screen.lacks "alpha one" s);
-      print_fact "fuzzy bt narrows to beta two"
-        (Screen.has "beta two" (Term.screen t));
-      print_fact "alpha one filtered out"
-        (Screen.lacks "alpha one" (Term.screen t));
-      Term.send t Keys.enter;
-      Term.wait t (fun s ->
-          Screen.lacks "reverse-i-search:" s && Screen.has "beta two" s);
-      print_fact "enter closed the search"
-        (Screen.lacks "reverse-i-search:" (Term.screen t));
-      print_fact "pick inserted into the draft, not submitted"
-        (Screen.has "beta two" (Term.screen t)
-        && Screen.lacks "message spice" (Term.screen t)));
-  [%expect
-    {|
-    reverse-i-search header shown: true
-    history marker shown: true
-    both prompts listed: true
-    fuzzy bt narrows to beta two: true
-    alpha one filtered out: true
-    enter closed the search: true
-    pick inserted into the draft, not submitted: true|}]
+  Tui.run ~name:"history-search" ~provider:script ~seed:(fun p ->
+      Seed.history p
+        [
+          Seed.history_entry ~ts:1000 "alpha one";
+          Seed.history_entry ~ts:2000 "beta two";
+        ])
+  @@ fun t ->
+  reach_transcript t;
+  Tui.keys t Keys.ctrl_r;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 | reverse-i-search:
+18 | ❯ say hello
+19 |   beta two
+20 |   alpha one
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ⌕ search history
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   ↵ insert · esc cancel · type to search                             ⌕ history|}];
+  Tui.keys t "bt";
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 | reverse-i-search: bt
+20 | ❯ beta two
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ⌕ bt
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   ↵ insert · esc cancel · type to search                             ⌕ history|}];
+  Tui.keys t Keys.enter;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ beta two
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗    ? for shortcuts|}]
 
-(* ctrl+r borrows the current draft as an empty query; esc closes the search and
-   restores the exact draft that was displaced. Works even with no stored
-   history — the surface is the composer's, not the list's. *)
-let%expect_test "esc restores the draft borrowed by ctrl+r" =
-  Project.with_temp "next-history-esc" @@ fun project ->
-  run project ~env:reduced_motion ~rows:24 ~cols:80 (fun t ->
-      Term.wait t (Screen.has "dune:");
-      Term.send t "keep me";
-      Term.wait t (Screen.has "keep me");
-      Term.send t Keys.ctrl_r;
-      Term.wait t (fun s ->
-          Screen.has "reverse-i-search:" s && Screen.lacks "keep me" s);
-      print_fact "ctrl+r opened search and borrowed the draft"
-        (Screen.has "reverse-i-search:" (Term.screen t)
-        && Screen.lacks "keep me" (Term.screen t));
-      print_fact "empty history notes"
-        (Screen.has "no prompt history" (Term.screen t));
-      Term.send t Keys.escape;
-      Term.wait t (fun s ->
-          Screen.has "keep me" s && Screen.lacks "reverse-i-search:" s);
-      print_fact "esc restored the borrowed draft"
-        (Screen.has "keep me" (Term.screen t));
-      print_fact "esc closed the search"
-        (Screen.lacks "reverse-i-search:" (Term.screen t)));
-  [%expect
-    {|
-    ctrl+r opened search and borrowed the draft: true
-    empty history notes: true
-    esc restored the borrowed draft: true
-    esc closed the search: true|}]
+(* ctrl+r borrows the current draft as an empty query; esc closes the search
+   and restores the exact draft that was displaced — the surface is the
+   composer's, not the list's. *)
+let%expect_test "ctrl+r borrows the draft and esc restores it" =
+  Tui.run ~name:"history-esc" ~provider:script @@ fun t ->
+  reach_transcript t;
+  Tui.keys t "keep me";
+  Tui.settle t;
+  Tui.keys t Keys.ctrl_r;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 | reverse-i-search:
+20 | ❯ say hello
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ⌕ search history
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   ↵ insert · esc cancel · type to search                             ⌕ history|}];
+  Tui.keys t Keys.escape;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ keep me
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗       ? for shortcuts|}]
 
-(* A query matching no stored prompt shows the muted "no matching prompts" note
-   (distinct from the empty "no prompt history"). *)
+(* A query matching no stored prompt shows the muted "no matching prompts"
+   note. *)
 let%expect_test "ctrl+r shows the no-match note" =
-  Project.with_temp "next-history-nomatch" @@ fun project ->
-  seed_history project [ entry_line ~ts:1000 "alpha one" ];
-  run project ~env:reduced_motion ~rows:24 ~cols:80 (fun t ->
-      Term.wait t (Screen.has "dune:");
-      Term.send t Keys.ctrl_r;
-      Term.wait t (Screen.has "reverse-i-search:");
-      Term.send t "zzz";
-      Term.wait t (Screen.has "no matching prompts");
-      print_fact "no-match note shown"
-        (Screen.has "no matching prompts" (Term.screen t)));
-  [%expect {| no-match note shown: true |}]
+  Tui.run ~name:"history-nomatch" ~provider:script ~seed:(fun p ->
+      Seed.history p [ Seed.history_entry ~ts:1000 "alpha one" ])
+  @@ fun t ->
+  reach_transcript t;
+  Tui.keys t Keys.ctrl_r;
+  Tui.settle t;
+  Tui.keys t "zzq";
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 | reverse-i-search: zzq
+20 |   no matching prompts
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ⌕ zzq
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   ↵ insert · esc cancel · type to search                             ⌕ history|}]

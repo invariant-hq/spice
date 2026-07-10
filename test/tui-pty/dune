@@ -1,0 +1,70 @@
+; Process-boundary coverage only. Application behavior belongs in test/tui.
+
+(executables
+ (names test_goodbye test_cli_launch test_terminal test_dune_live)
+ (modules test_goodbye test_cli_launch test_terminal test_dune_live)
+ (libraries unix windtrap tui_pty_harness)
+ (preprocess
+  (pps ppx_windtrap)))
+
+(rule
+ (alias runtest)
+ (deps
+  %{bin:spice}
+  ../blackbox/bin/spice_fake_provider_server.exe
+  test_goodbye.exe)
+ (action
+  (progn
+   (setenv
+    SPICE_BIN
+    %{bin:spice}
+    (setenv
+     SPICE_FAKE_PROVIDER_BIN
+     %{dep:../blackbox/bin/spice_fake_provider_server.exe}
+     (run ./test_goodbye.exe)))
+   (diff? test_goodbye.ml test_goodbye.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps %{bin:spice} test_cli_launch.exe)
+ (action
+  (progn
+   (setenv
+    SPICE_BIN
+    %{bin:spice}
+    (run ./test_cli_launch.exe))
+   (diff? test_cli_launch.ml test_cli_launch.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps
+  %{bin:spice}
+  ../blackbox/bin/spice_fake_provider_server.exe
+  test_terminal.exe)
+ (action
+  (progn
+   (setenv
+    SPICE_BIN
+    %{bin:spice}
+    (setenv
+     SPICE_FAKE_PROVIDER_BIN
+     %{dep:../blackbox/bin/spice_fake_provider_server.exe}
+     (run ./test_terminal.exe)))
+   (diff? test_terminal.ml test_terminal.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps
+  %{bin:spice}
+  ../blackbox/bin/spice_fake_provider_server.exe
+  test_dune_live.exe)
+ (action
+  (progn
+   (setenv
+    SPICE_BIN
+    %{bin:spice}
+    (setenv
+     SPICE_FAKE_PROVIDER_BIN
+     %{dep:../blackbox/bin/spice_fake_provider_server.exe}
+     (run ./test_dune_live.exe)))
+   (diff? test_dune_live.ml test_dune_live.ml.corrected))))

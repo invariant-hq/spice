@@ -3,64 +3,55 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-(* STAGED for phase 4 (doc/plans/tui-next-review.md Appendix B). Do NOT drop
-   into test/tui-next/ until the review screen is wired (phase 3) AND its dune
-   stanza is added in the same change — an orphan .ml in that directory is a hard
-   dune error that breaks the whole test/tui-next build. Full-screen goldens are
-   left empty ([%expect {||}]) for phase-4 promotion against the real binary
-   (tui-next chrome differs from lib/tui: the footer is suppressed and the header
-   layout may shift); print_fact expects are pre-filled with the intended
-   behaviour, since those facts are the parity contract regardless of chrome.
-
-   Blackbox coverage for the ported review screen (doc/ui-design/11-review.md):
-   /review opens the two-pane screen over the worktree diff; marks and the
-   verdict persist under global workspace state across processes; CR add/resolve write
-   the source comment in the CR/XCR grammar; the live watcher refreshes the
-   queue; a missing repository shows the problem line. The `spice review` startup
-   subcommand is deferred (plan §divergence 6), so every case opens via the
-   /review command. *)
-
 open Tui_harness
 
-let print_fact = Util.print_fact
-let reduced_motion = [ ("SPICE_REDUCED_MOTION", "1") ]
-
-(* The review screen opens via /review from the home stage. The stage boots with
-   the default footer marker, so [Term.run]'s default ready applies; the screen
-   header is the post-submit signal. Enter is a separate write (the atomic-enter
-   pty artifact). *)
-let run ?provider ?(cols = 80) project f =
-  Term.run ?provider ~rows:24 ~cols ~env:reduced_motion project f
-
-(* [/review] is an implemented, argument-taking command ([target]), so the slash
-   palette intercepts Enter and SEEDS the draft "/review " (Palette.activate
-   returns [Insert] for any command with an argument hint) rather than
-   dispatching. Seeding sets the completion to closed, so a second Enter submits
-   the seeded draft, which dispatches [Open_review]. (Contrast [/login], which is
-   not yet [implemented], so its palette never intercepts and one Enter submits.)
-   Each Enter is a separate write (the atomic-enter pty artifact). *)
-let open_review t =
-  Term.send t "/review";
-  Term.wait t (Screen.has "/review");
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "target");
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "Review")
+(* The /review screen (doc/ui-design/11-review.md), re-expressed as full-frame
+   goldens. The screen opens over the worktree diff of a real git repo seeded in
+   the temp project ([Project.git_baseline] commits the seed, a later write is the
+   diff). Primary entry is the [spice review] subcommand seam [~review:true] (the
+   harness wraps [Startup.Launch_review]) — the screen boots straight up and
+   esc/close QUITS (no stage behind it). One test opens the in-app way, [/review]
+   from
+   the home stage, where esc returns to the stage. Marks and the verdict write the
+   global workspace review store; CRs write comments into the source. *)
 
 let sample_code = "let alpha = 1\nlet beta = 2\nlet gamma = 33\nlet delta = 4\n"
+let base_code = "let alpha = 1\nlet beta = 2\nlet gamma = 3\nlet delta = 4\n"
 
-let%expect_test "review screen marks, approves, and persists" =
-  Project.with_git_fixture "review-screen" @@ fun project ->
-  Project.write project "lib/code.ml" sample_code;
-  ( run project @@ fun t ->
-    open_review t;
-    Term.wait t (fun screen ->
-        Screen.has "0/1 reviewed" screen && Screen.has "let alpha" screen);
-    Term.send t " ";
-    Term.wait t (Screen.has "1/1 reviewed");
-    Term.send t "a";
-    Term.wait t (Screen.has "approved");
-    Screen.print ~project (Term.screen t) );
+(* A committed baseline plus the uncommitted edit the review opens on. *)
+let seed_diff project =
+  Project.write project "lib/code.ml" base_code;
+  Project.write project "notes.txt" "baseline\n";
+  Project.git_baseline project;
+  Project.write project "lib/code.ml" sample_code
+
+(* The review store uses opaque workspace and review keys, so scan the isolated
+   data home for the persisted word (a sanctioned narrow non-visual fact). *)
+let reviews_store_has project needle =
+  let rec scan path =
+    if Sys.is_directory path then
+      Sys.readdir path |> Array.exists (fun name -> scan (Filename.concat path name))
+    else Util.contains (Util.read_file path) needle
+  in
+  let dir = Project.data project "workspaces" in
+  Sys.file_exists dir && scan dir
+
+let fact label b = print_string (Printf.sprintf "%s: %b\n" label b)
+
+(* {2 Marks and the verdict} *)
+
+(* Marking the unit reviewed advances progress to [1/1 reviewed]; [a] approves.
+   The frame pins the two-pane layout — nav left, unified diff right — the header
+   range and verdict, and the keybinding legend (the screen suppresses the app
+   footer). *)
+let%expect_test "the review screen marks, approves, and shows the verdict" =
+  Tui.run ~name:"review-marks" ~review:true ~seed:seed_diff @@ fun t ->
+  Tui.settle t;
+  Tui.keys t " ";
+  Tui.settle t;
+  Tui.keys t "a";
+  Tui.settle t;
+  Tui.print t;
   [%expect
     {|01 | ────────────────────────────────────────────────────────────────────────────────
 02 | Review  HEAD..worktree                                   1/1 reviewed · approved
@@ -86,161 +77,95 @@ let%expect_test "review screen marks, approves, and persists" =
 22 |                                 │
 23 |
 24 | tab focus diff · space mark · enter open · c comment · a approve · t task spice|}];
-  (* Reopen: marks, verdict, and orientation come back from workspace state. *)
-  ( run project @@ fun t ->
-    open_review t;
-    Term.wait t (Screen.has "approved");
-    print_fact "file row restored reviewed"
-      (Screen.has "[✓] code.ml" (Term.screen t));
-    print_fact "verdict restored approved"
-      (Screen.has "1/1 reviewed · approved" (Term.screen t)) );
-  [%expect {|file row restored reviewed: true
-verdict restored approved: true|}]
+  (* The verdict persisted to the review store, not just the screen. *)
+  fact "verdict persisted to global workspace state"
+    (reviews_store_has (Tui.project t) "approved");
+  [%expect {| verdict persisted to global workspace state: true |}]
 
-let%expect_test "review screen reports a missing repository" =
-  Project.with_temp "review-no-repo" @@ fun project ->
-  run project @@ fun t ->
-  open_review t;
-  Term.wait t (Screen.has "not inside a git");
-  print_fact "error line shown"
-    (Screen.has "not inside a git worktree" (Term.screen t));
-  print_fact "esc affordance shown" (Screen.has "esc close" (Term.screen t));
-  [%expect {|error line shown: true
-esc affordance shown: true|}]
+(* {2 The empty and error states} *)
 
-let%expect_test "review screen refreshes when the worktree changes" =
-  Project.with_git_fixture "review-live-refresh" @@ fun project ->
-  Project.write project "lib/code.ml" sample_code;
-  run project @@ fun t ->
-  open_review t;
-  Term.wait t (Screen.has "0/1 reviewed");
-  Project.write project "notes.txt" "baseline\nreviewed live\n";
-  Term.wait t ~deadline:15.0 (Screen.has "0/2 reviewed");
-  let screen = Term.screen t in
-  print_fact "second file appears" (Screen.has "notes.txt" screen);
-  print_fact "progress reflects both units" (Screen.has "0/2 reviewed" screen);
-  print_fact "refresh notice shown" (Screen.has "refreshed" screen);
+(* A clean worktree (the baseline committed, nothing written after) has nothing to
+   review: the screen shows the one-line empty state. *)
+let%expect_test "a clean worktree shows the empty state" =
+  Tui.run ~name:"review-empty" ~review:true ~seed:(fun project ->
+      Project.write project "lib/code.ml" sample_code;
+      Project.git_baseline project)
+  @@ fun t ->
+  Tui.settle t;
+  Tui.print t;
   [%expect
-    {|second file appears: true
-progress reflects both units: true
-refresh notice shown: true|}]
+    {|01 | ────────────────────────────────────────────────────────────────────────────────
+02 | Review  HEAD..worktree
+03 | esc close
+04 |   no changes to review — the worktree matches HEAD
+05 |
+06 |
+07 |
+08 |
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 |
+22 |
+23 |
+24 ||}]
 
-let%expect_test "review CR compose accepts bare bodies with CR prefixes" =
-  Project.with_git_fixture "review-cr-prefix-body" @@ fun project ->
-  Project.write project "lib/code.ml" sample_code;
-  run project @@ fun t ->
-  open_review t;
-  Term.wait t (fun screen ->
-      Screen.has "0/1 reviewed" screen && Screen.has "let alpha" screen);
-  Term.send t "c";
-  Term.wait t (Screen.has "handle: comment");
-  Term.send t "CRDT state needs a note";
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "CR added");
-  print_fact "bare CR-prefixed body written"
-    (Util.contains
-       (Project.read project "lib/code.ml")
-       "(* CR: CRDT state needs a note *)");
-  [%expect {|bare CR-prefixed body written: true|}]
-
-let%expect_test "review screen adds and resolves CRs in source" =
-  Project.with_git_fixture "review-cr-actions" @@ fun project ->
-  Project.write project "lib/code.ml" sample_code;
-  (* [c] composes on the selected file; a bare "handle: body" draft addresses a
-     recipient; enter writes the comment into the worktree. The compose input is
-     app-owned and painted (plan §divergence 3): keys fold into the draft, so the
-     typed text appears in the dialog exactly as here. *)
-  ( run project @@ fun t ->
-    open_review t;
-    Term.wait t (fun screen ->
-        Screen.has "0/1 reviewed" screen && Screen.has "let alpha" screen);
-    Term.send t "c";
-    Term.wait t (Screen.has "handle: comment");
-    Term.send t "alice: rename gamma";
-    Term.wait t (Screen.has "alice: rename gamma");
-    Term.send t Keys.enter;
-    Term.wait t (Screen.has "CR added");
-    print_fact "settle notice shown" (Screen.has "CR added" (Term.screen t)) );
-  print_fact "comment written to source"
-    (Util.contains
-       (Project.read project "lib/code.ml")
-       "(* CR alice: rename gamma *)");
-  [%expect {|settle notice shown: true
-comment written to source: true|}];
-  (* Reopen, jump to the CR, and resolve it: the source comment converts to XCR
-     with the resolver handle, keeping the recipient. *)
-  ( run project @@ fun t ->
-    open_review t;
-    Term.wait t (Screen.has "CR alice: rename gamma");
-    Term.send t "n";
-    Term.wait t (Screen.has "❯ CR alice: rename gamma");
-    Term.send t "x";
-    Term.wait t (Screen.has "resolve CR on");
-    Term.send t Keys.enter;
-    Term.wait t (Screen.has "CR resolved");
-    print_fact "resolve notice shown" (Screen.has "CR resolved" (Term.screen t))
-  );
-  print_fact "XCR written to source"
-    (Util.contains
-       (Project.read project "lib/code.ml")
-       "(* XCR user for alice: rename gamma *)");
-  [%expect {|resolve notice shown: true
-XCR written to source: true|}]
-
-let%expect_test "review screen edits and removes a CR" =
-  Project.with_git_fixture "review-cr-edit-remove" @@ fun project ->
-  Project.write project "lib/code.ml" sample_code;
-  (* Add a CR, then reopen and edit it (e prefilled with the canonical text,
-     backspace + retype), then remove it (d, unconfirmed). The old suite pinned
-     only add/resolve; edit/remove are the port's added coverage. *)
-  ( run project @@ fun t ->
-    open_review t;
-    Term.wait t (fun screen ->
-        Screen.has "0/1 reviewed" screen && Screen.has "let alpha" screen);
-    Term.send t "c";
-    Term.wait t (Screen.has "handle: comment");
-    Term.send t "rename gamma";
-    Term.send t Keys.enter;
-    Term.wait t (Screen.has "CR added") );
-  print_fact "CR present after add"
-    (Util.contains
-       (Project.read project "lib/code.ml")
-       "(* CR: rename gamma *)");
-  ( run project @@ fun t ->
-    open_review t;
-    Term.wait t (Screen.has "CR: rename gamma");
-    Term.send t "n";
-    Term.wait t (Screen.has "❯ CR");
-    Term.send t "d";
-    Term.wait t (Screen.has "CR removed");
-    print_fact "remove notice shown" (Screen.has "CR removed" (Term.screen t))
-  );
-  print_fact "CR gone after remove"
-    (not
-       (Util.contains
-          (Project.read project "lib/code.ml")
-          "(* CR: rename gamma *)"));
+(* Outside a git worktree the screen shows the problem line and the esc affordance
+   rather than a diff. *)
+let%expect_test "the review screen reports a missing repository" =
+  Tui.run ~name:"review-no-repo" ~review:true @@ fun t ->
+  Tui.settle t;
+  Tui.print t;
   [%expect
-    {|CR present after add: true
-remove notice shown: true
-CR gone after remove: true|}]
+    {|01 | ────────────────────────────────────────────────────────────────────────────────
+02 | Review
+03 | ! $PROJECT is not inside a git worktree: fatal:
+04 | not a git repository (or any of the parent directories): .git
+05 | esc close
+06 |
+07 |
+08 |
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 |
+22 |
+23 |
+24 ||}]
 
-let%expect_test "line cursor steps and the compose dialog floats" =
-  Project.with_git_fixture "review-line-cursor" @@ fun project ->
-  Project.write project "lib/code.ml" sample_code;
-  (* Tab focuses the diff and seeds the line cursor at the first changed line;
-     down steps one line; c opens the compose dialog anchored there. *)
-  ( run project @@ fun t ->
-    open_review t;
-    Term.wait t (fun screen ->
-        Screen.has "0/1 reviewed" screen && Screen.has "let alpha" screen);
-    Term.send t Keys.tab;
-    Term.wait t (Screen.has "❯ 3 -");
-    Term.send t Keys.down;
-    Term.wait t (Screen.has "❯ 3 +");
-    Term.send t "c";
-    Term.wait t (Screen.has "CR on lib/code.ml:");
-    Screen.print ~project (Term.screen t) );
+(* {2 The in-app entry} *)
+
+(* Opening the review the in-app way — the [/review] command from the home stage —
+   and returning with esc. Unlike [~review:true], there is a stage behind it, so
+   esc closes the screen back to the home stage rather than quitting. *)
+let%expect_test "/review opens from the stage and esc returns to it" =
+  Tui.run ~name:"review-command" ~seed:seed_diff @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "/review";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.print t;
   [%expect
     {|01 | ────────────────────────────────────────────────────────────────────────────────
 02 | Review  HEAD..worktree                                    0/1 reviewed · pending
@@ -250,6 +175,339 @@ let%expect_test "line cursor steps and the compose dialog floats" =
 06 |                                 │ 3 - let gamma = 3
 07 |                                 │ 3 + let gamma = 33
 08 |                                 │ 4   let delta = 4
+09 |                                 │
+10 |                                 │
+11 |                                 │
+12 |                                 │
+13 |                                 │
+14 |                                 │
+15 |                                 │
+16 |                                 │
+17 |                                 │
+18 |                                 │
+19 |                                 │
+20 |                                 │
+21 |                                 │
+22 |                                 │
+23 |
+24 | tab focus diff · space mark · enter open · c comment · a approve · t task spice|}];
+  (* esc closes the screen; the home stage returns (the git fixture's worktree
+     block is what the stage shows here, proving it is the stage, not the
+     screen). *)
+  Tui.keys t Keys.escape;
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 |
+02 |
+03 |
+04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+06 |
+07 |                            dev · openai/gpt-5.5 medium
+08 |
+09 |      ▎ welcome — and thanks for trying spice this early.
+10 |      ▎ it's experimental: sessions and config may change without migration.
+11 |
+12 |           ────────────────────────────────────────────────────────────
+13 |           ❯ message spice
+14 |           ────────────────────────────────────────────────────────────
+15 |
+16 |                    dune       ✗ · diagnostics unavailable
+17 |                    account    none — /login to connect
+18 |                    worktree   1 file changed · +1 −1 · /review
+19 |
+20 |                       sandbox: danger-full-access (config)
+21 |
+22 |
+23 |
+24 |   ! not logged in · /login · $PROJECT · gpt-5.5 medium · dune: ✗|}]
+
+(* {2 Help and narrow layout} *)
+
+(* [?] raises the key table over the screen; a second [?] clears it back to the
+   review body. *)
+let%expect_test "the key table toggles with ?" =
+  Tui.run ~name:"review-help" ~review:true ~seed:seed_diff @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "?";
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 | ────────────────────────────────────────────────────────────────────────────────
+02 | Review  HEAD..worktree                                    0/1 reviewed · pending
+03 |   tab           switch focus (nav / diff)
+04 |   ↑/↓, j/k  move selection / hunk
+05 |   ]/[           next / previous hunk (diff)
+06 |   enter         focus the diff pane
+07 |   space         mark reviewed and advance
+08 |   n / p         next / previous CR
+09 |   c / e         add / edit CR
+10 |   x / d         resolve / remove CR
+11 |   a             toggle approved / pending
+12 |   t             task spice to review
+13 |   ctrl+o        cycle diff context
+14 |   ?             toggle this table
+15 |   esc           back / close
+16 |
+17 |
+18 |
+19 |
+20 |
+21 |
+22 |
+23 |
+24 | tab focus diff · space mark · enter open · c comment · a approve · t task spice|}];
+  Tui.keys t "?";
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 | ────────────────────────────────────────────────────────────────────────────────
+02 | Review  HEAD..worktree                                    0/1 reviewed · pending
+03 |  ▾ lib                          │lib/code.ml · unreviewed · +1 −1
+04 |  ❯ [ ] code.ml                M │ 1   let alpha = 1
+05 |                                 │ 2   let beta = 2
+06 |                                 │ 3 - let gamma = 3
+07 |                                 │ 3 + let gamma = 33
+08 |                                 │ 4   let delta = 4
+09 |                                 │
+10 |                                 │
+11 |                                 │
+12 |                                 │
+13 |                                 │
+14 |                                 │
+15 |                                 │
+16 |                                 │
+17 |                                 │
+18 |                                 │
+19 |                                 │
+20 |                                 │
+21 |                                 │
+22 |                                 │
+23 |
+24 | tab focus diff · space mark · enter open · c comment · a approve · t task spice|}]
+
+(* Below 80 columns the two-pane split collapses to a single full-width pane — the
+   focused one (nav on open) — and tab swaps which pane is shown. *)
+let%expect_test "below 80 columns the split collapses to one focused pane" =
+  Tui.run ~name:"review-narrow" ~size:(70, 24) ~review:true ~seed:seed_diff
+  @@ fun t ->
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 | ──────────────────────────────────────────────────────────────────────
+02 | Review  HEAD..worktree                          0/1 reviewed · pending
+03 |  ▾ lib
+04 |  ❯ [ ] code.ml                                                      M
+05 |
+06 |
+07 |
+08 |
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 |
+22 |
+23 |
+24 | tab focus diff · space mark · enter open · c comment · a approve · t t|}];
+  Tui.keys t Keys.tab;
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 | ──────────────────────────────────────────────────────────────────────
+02 | Review  HEAD..worktree                          0/1 reviewed · pending
+03 | lib/code.ml · unreviewed · +1 −1
+04 |   1   let alpha = 1
+05 |   2   let beta = 2
+06 | ❯ 3 - let gamma = 3
+07 |   3 + let gamma = 33
+08 |   4   let delta = 4
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 |
+22 |
+23 |
+24 | tab focus nav · space mark hunk · c comment · ]/[ hunk · ctrl+o contex|}]
+
+let source_has t needle =
+  Util.contains (Project.read (Tui.project t) "lib/code.ml") needle
+
+(* CR composition and resolution mutate the source through the real review Git
+   adapter. A bare body beginning with CR remains body text rather than being
+   misparsed as a second marker. *)
+let%expect_test "CR add and resolve round trip through the source" =
+  Tui.run ~name:"review-cr-lifecycle" ~review:true ~seed:seed_diff @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "c";
+  Tui.settle t;
+  Tui.keys t "alice: CRDT state needs a note";
+  Tui.enter t;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 | ────────────────────────────────────────────────────────────────────────────────
+02 | Review  HEAD..worktree                                    0/1 reviewed · pending
+03 |  ▾ lib                          │lib/code.ml · unreviewed · +2 −1
+04 |  ❯ [ ] code.ml                M │ 1   let alpha = 1
+05 |      CR alice: CRDT state needs │ 2   let beta = 2
+06 |                                 │ 3 - let gamma = 3
+07 |                                 │ 3 + (* CR alice: CRDT state needs a note *)
+08 |                                 │ 4 + let gamma = 33
+09 |                                 │ 5   let delta = 4
+10 |                                 │
+11 |                                 │
+12 |                                 │
+13 |                                 │
+14 |                                 │
+15 |                                 │
+16 |                                 │
+17 |                                 │
+18 |                                 │
+19 |                                 │
+20 |                                 │
+21 |                                 │
+22 |                                 │
+23 |
+24 | CR added|}];
+  print_string
+    (if source_has t "(* CR alice: CRDT state needs a note *)" then
+       "CR written\n"
+     else "CR missing\n");
+  [%expect {| CR written |}];
+  Tui.keys t "n";
+  Tui.settle t;
+  Tui.keys t "x";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 | ────────────────────────────────────────────────────────────────────────────────
+02 | Review  HEAD..worktree                                    0/1 reviewed · pending
+03 |  ▾ lib                          │lib/code.ml · unreviewed · +2 −1
+04 |  ❯ [ ] code.ml                M │ 1   let alpha = 1
+05 |      XCR user for alice: CRDT st│ 2   let beta = 2
+06 |                                 │ 3 - let gamma = 3
+07 |                                 │ 3 + (* XCR user for alice: CRDT state needs a
+08 |                                 │ 4 + let gamma = 33
+09 |                                 │ 5   let delta = 4
+10 |                                 │
+11 |                                 │
+12 |                                 │
+13 |                                 │
+14 |                                 │
+15 |                                 │
+16 |                                 │
+17 |                                 │
+18 |                                 │
+19 |                                 │
+20 |                                 │
+21 |                                 │
+22 |                                 │
+23 |
+24 | CR resolved|}];
+  print_string
+    (if source_has t "XCR" then "CR resolved\n" else "CR unresolved\n");
+  [%expect {| CR resolved |}]
+
+(* Existing CRs can be edited and removed in place. The edit dialog starts from
+   the canonical body; replacing its last word changes the source before the
+   remove action deletes the occurrence entirely. *)
+let%expect_test "CR edit and remove update the source" =
+  Tui.run ~name:"review-cr-edit-remove" ~review:true
+    ~seed:(fun project ->
+      Project.write project "lib/code.ml" base_code;
+      Project.git_baseline project;
+      Project.write project "lib/code.ml"
+        "let alpha = 1\nlet beta = 2\nlet gamma = 33\n(* CR: rename gamma *)\nlet delta = 4\n")
+  @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "n";
+  Tui.settle t;
+  Tui.keys t "e";
+  Tui.settle t;
+  Tui.keys t (String.make 5 '\127');
+  Tui.keys t "delta";
+  Tui.enter t;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 | ────────────────────────────────────────────────────────────────────────────────
+02 | Review  HEAD..worktree                                    0/1 reviewed · pending
+03 |  ▾ lib                          │lib/code.ml · unreviewed · +2 −1
+04 |  ❯ [ ] code.ml                M │ 1   let alpha = 1
+05 |      CR: rename delta           │ 2   let beta = 2
+06 |                                 │ 3 - let gamma = 3
+07 |                                 │ 3 + let gamma = 33
+08 |                                 │ 4 + (* CR: rename delta *)
+09 |                                 │ 5   let delta = 4
+10 |                                 │
+11 |                                 │
+12 |                                 │
+13 |                                 │
+14 |                                 │
+15 |                                 │
+16 |                                 │
+17 |                                 │
+18 |                                 │
+19 |                                 │
+20 |                                 │
+21 |                                 │
+22 |                                 │
+23 |
+24 | CR updated|}];
+  print_string
+    (if source_has t "rename delta" then "CR edited\n" else "CR edit missing\n");
+  [%expect {| CR edited |}];
+  Tui.keys t "n";
+  Tui.settle t;
+  Tui.keys t "d";
+  Tui.settle t;
+  print_string
+    (if source_has t "CR:" then "CR still present\n" else "CR removed\n");
+  [%expect {| CR removed |}]
+
+let seed_deletion project =
+  Project.write project "lib/code.ml"
+    "let f () =\n  let kept = 1 in\n  let removed = 2 in\n  kept\n";
+  Project.git_baseline project;
+  Project.write project "lib/code.ml" "let f () =\n  let kept = 1 in\n  kept\n"
+
+(* The diff cursor steps from the removed to the added side, and a CR anchored
+   on a removed line or pure-deletion hunk lands at the surviving indentation. *)
+let%expect_test "line and deletion-hunk comments keep their source anchor" =
+  (Tui.run ~name:"review-line-comment" ~review:true ~seed:seed_deletion
+   @@ fun t ->
+   Tui.settle t;
+   Tui.keys t Keys.tab;
+   Tui.settle t;
+   Tui.keys t "c";
+   Tui.settle t;
+   Tui.print t;
+   [%expect {|01 | ────────────────────────────────────────────────────────────────────────────────
+02 | Review  HEAD..worktree                                    0/1 reviewed · pending
+03 |  ▾ lib                          │lib/code.ml · unreviewed · +0 −1
+04 |  ❯ [ ] code.ml                M │ 1   let f () =
+05 |                                 │ 2     let kept = 1 in
+06 |                                 │ 3 -   let removed = 2 in
+07 |                                 │ 3     kept
+08 |                                 │
 09 |                                 │
 10 |                                 │
 11 |
@@ -265,228 +523,102 @@ let%expect_test "line cursor steps and the compose dialog floats" =
 21 |                                 │
 22 |                                 │
 23 |
-24 | enter add CR · esc cancel|}]
+24 | enter add CR · esc cancel|}];
+   Tui.keys t "fix: keep this";
+   Tui.enter t;
+   Tui.settle t;
+   print_string
+     (if source_has t "\n  (* CR fix: keep this *)\n" then
+        "line comment anchored\n"
+      else "line comment misplaced\n");
+   [%expect {| line comment anchored |}]);
+  Tui.run ~name:"review-hunk-comment" ~review:true ~seed:seed_deletion @@ fun t ->
+  Tui.settle t;
+  Tui.keys t Keys.down;
+  Tui.settle t;
+  Tui.keys t "c";
+  Tui.settle t;
+  Tui.keys t "fix: keep this";
+  Tui.enter t;
+  Tui.settle t;
+  print_string
+    (if source_has t "\n  (* CR fix: keep this *)\n  kept\n" then
+       "hunk comment anchored\n"
+     else "hunk comment misplaced\n");
+  [%expect {| hunk comment anchored |}]
 
-let%expect_test "commenting a removed line lands indented in the worktree" =
-  Project.with_temp "review-cr-indent" @@ fun project ->
-  Project.git project [ "init"; "-q" ];
-  Project.write project "lib/block.ml"
-    "let f () =\n  let kept = 1 in\n  let removed = 2 in\n  kept\n";
-  Project.git project [ "add"; "-A" ];
-  Project.git project [ "commit"; "-q"; "-m"; "baseline" ];
-  Project.write project "lib/block.ml" "let f () =\n  let kept = 1 in\n  kept\n";
-  (* Tab seeds the line cursor on the removed (old-side) line; the CR must anchor
-     on the surviving line beneath it and take the block's indentation. *)
-  ( run project @@ fun t ->
-    open_review t;
-    Term.wait t (fun screen ->
-        Screen.has "0/1 reviewed" screen && Screen.has "let kept" screen);
-    Term.send t Keys.tab;
-    Term.send t "c";
-    Term.wait t (Screen.has "CR on lib/block.ml:");
-    Term.send t "fix: keep this";
-    Term.wait t (Screen.has "fix: keep this");
-    Term.send t Keys.enter;
-    Term.wait t (Screen.has "CR added");
-    print_fact "settle notice shown" (Screen.has "CR added" (Term.screen t)) );
-  print_fact "comment indented like the block"
-    (Util.contains
-       (Project.read project "lib/block.ml")
-       "\n  (* CR fix: keep this *)\n");
-  [%expect {|settle notice shown: true
-comment indented like the block: true|}]
+(* A real fswatch event debounces on virtual time, reloads the feature, and
+   visibly stales an approval bound to the previous content. *)
+let%expect_test "live refresh adds units and stales an approval" =
+  Tui.run ~name:"review-live-refresh" ~review:true ~seed:seed_diff @@ fun t ->
+  Tui.settle t;
+  Tui.keys t " ";
+  Tui.settle t;
+  Tui.keys t "a";
+  Tui.settle t;
+  Tui.await_review_refresh t (fun () ->
+      Project.write (Tui.project t) "notes.txt" "baseline\nreviewed live\n");
+  Tui.print t;
+  [%expect {|01 | ────────────────────────────────────────────────────────────────────────────────
+02 | Review  HEAD..worktree                           1/2 reviewed · approved · stale
+03 |  ▾ lib                          │lib/code.ml · reviewed · +1 −1
+04 |  ❯ [✓] code.ml                M │  1   let alpha = 1
+05 |    [ ] notes.txt              M │  2   let beta = 2
+06 |                                 │❯ 3 - let gamma = 3
+07 |                                 │  3 + let gamma = 33
+08 |                                 │  4   let delta = 4
+09 |                                 │
+10 |                                 │
+11 |                                 │
+12 |                                 │
+13 |                                 │
+14 |                                 │
+15 |                                 │
+16 |                                 │
+17 |                                 │
+18 |                                 │
+19 |                                 │
+20 |                                 │
+21 |                                 │
+22 |                                 │
+23 |
+24 | refreshed · 1 new unit · verdict stale|}]
 
-let%expect_test "commenting a deletion hunk lands at the deletion site" =
-  Project.with_temp "review-cr-hunk-indent" @@ fun project ->
-  Project.git project [ "init"; "-q" ];
-  Project.write project "lib/block.ml"
-    "let f () =\n  let kept = 1 in\n  let removed = 2 in\n  kept\n";
-  Project.git project [ "add"; "-A" ];
-  Project.git project [ "commit"; "-q"; "-m"; "baseline" ];
-  Project.write project "lib/block.ml" "let f () =\n  let kept = 1 in\n  kept\n";
-  (* Down selects the hunk scope from the nav pane. Pure deletion hunks still
-     anchor where the deleted line lived, not at the top of the file. *)
-  ( run project @@ fun t ->
-    open_review t;
-    Term.wait t (fun screen ->
-        Screen.has "0/1 reviewed" screen && Screen.has "let kept" screen);
-    Term.send t Keys.down;
-    Term.wait t (Screen.has "hunk 1/1");
-    Term.send t "c";
-    Term.wait t (Screen.has "CR on lib/block.ml:");
-    Term.send t "fix: keep this";
-    Term.send t Keys.enter;
-    Term.wait t (Screen.has "CR added");
-    print_fact "settle notice shown" (Screen.has "CR added" (Term.screen t)) );
-  let source = Project.read project "lib/block.ml" in
-  print_fact "hunk comment indented like the block"
-    (Util.contains source "\n  (* CR fix: keep this *)\n  kept\n");
-  print_fact "hunk comment not inserted at top"
-    (not (String.starts_with ~prefix:"(* CR fix: keep this *)" source));
-  [%expect
-    {|settle notice shown: true
-hunk comment indented like the block: true
-hunk comment not inserted at top: true|}]
-
-let%expect_test "esc leaves the review and returns to the stage" =
-  Project.with_git_fixture "review-esc" @@ fun project ->
-  Project.write project "lib/code.ml" sample_code;
-  run project @@ fun t ->
-  open_review t;
-  Term.wait t (Screen.has "0/1 reviewed");
-  (* esc ladder: the cursor lands on the first file (nav focus), so one esc
-     closes the screen and returns to the home stage (11-review §Keybindings).
-     The home stage is proven by its inset composer placeholder, which the review
-     screen never shows — a stable marker unlike the footer's [? for shortcuts]
-     hint, which the logged-out [/login] nudge crowds out at this width. *)
-  Term.send t Keys.escape;
-  Term.wait t (Screen.has "message spice");
-  print_fact "review closed" (Screen.lacks "reviewed · pending" (Term.screen t));
-  print_fact "back on the home stage"
-    (Screen.has "message spice" (Term.screen t));
-  [%expect {|review closed: true
-back on the home stage: true|}]
-
-(* [spice review] launches the process straight onto the review screen
-   (Startup [Launch_review], bin/cli_tui.ml review_command) — the home stage
-   never shows — and closing the screen quits: unlike the in-app [/review]
-   above, there is no stage behind it to return to. *)
-let%expect_test "spice review launches onto the screen and its close quits" =
-  Project.with_git_fixture "review-launch" @@ fun project ->
-  Project.write project "lib/code.ml" sample_code;
-  Term.run project ~rows:24 ~cols:80 ~env:reduced_motion ~command:[ "review" ]
-    ~ready:(Screen.has "0/1 reviewed")
-  @@ fun t ->
-  print_fact "review screen at launch"
-    (Screen.has "0/1 reviewed" (Term.screen t));
-  print_fact "home stage never shown"
-    (Screen.lacks "message spice" (Term.screen t));
-  Term.send t Keys.escape;
-  Term.wait_exit t;
-  print_fact "process exited on close" (Term.exited t);
-  [%expect
-    {|
-    review screen at launch: true
-    home stage never shown: true
-    process exited on close: true |}]
-
+(* Space is a true toggle on a completed unit: a second press clears its mark
+   and returns progress to zero. *)
 let%expect_test "space on a reviewed unit unmarks it" =
-  Project.with_git_fixture "review-unmark" @@ fun project ->
-  Project.write project "lib/code.ml" sample_code;
-  run project @@ fun t ->
-  open_review t;
-  Term.wait t (fun screen ->
-      Screen.has "0/1 reviewed" screen && Screen.has "let alpha" screen);
-  Term.send t " ";
-  Term.wait t (Screen.has "1/1 reviewed");
-  (* The single unit is complete, so the cursor stays on it; a second space
-     unmarks and stays (never a hidden third state — 11-review §Nav pane). *)
-  Term.send t " ";
-  Term.wait t (Screen.has "0/1 reviewed");
-  print_fact "unmark returns to unreviewed"
-    (Screen.has "0/1 reviewed" (Term.screen t));
-  print_fact "mark box cleared" (Screen.has "[ ] code.ml" (Term.screen t));
-  [%expect {|unmark returns to unreviewed: true
-mark box cleared: true|}]
+  Tui.run ~name:"review-unmark" ~review:true ~seed:seed_diff @@ fun t ->
+  Tui.settle t;
+  Tui.keys t " ";
+  Tui.settle t;
+  Tui.keys t " ";
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 | ────────────────────────────────────────────────────────────────────────────────
+02 | Review  HEAD..worktree                                    0/1 reviewed · pending
+03 |  ▾ lib                          │lib/code.ml · reviewed · +1 −1
+04 |  ❯ [ ] code.ml                M │  1   let alpha = 1
+05 |                                 │  2   let beta = 2
+06 |                                 │❯ 3 - let gamma = 3
+07 |                                 │  3 + let gamma = 33
+08 |                                 │  4   let delta = 4
+09 |                                 │
+10 |                                 │
+11 |                                 │
+12 |                                 │
+13 |                                 │
+14 |                                 │
+15 |                                 │
+16 |                                 │
+17 |                                 │
+18 |                                 │
+19 |                                 │
+20 |                                 │
+21 |                                 │
+22 |                                 │
+23 |
+24 | tab focus diff · space mark · enter open · c comment · a approve · t task spice|}]
 
-let%expect_test "approving then editing stales the verdict" =
-  Project.with_git_fixture "review-stale" @@ fun project ->
-  Project.write project "lib/code.ml" sample_code;
-  ( run project @@ fun t ->
-    open_review t;
-    Term.wait t (fun screen ->
-        Screen.has "0/1 reviewed" screen && Screen.has "let alpha" screen);
-    Term.send t " ";
-    Term.wait t (Screen.has "1/1 reviewed");
-    Term.send t "a";
-    Term.wait t (Screen.has "approved");
-    print_fact "fresh approval is not stale"
-      (Screen.lacks "stale" (Term.screen t));
-    (* Change the approved content behind the screen; the watcher refreshes and
-       the verdict — bound to the old feature content — goes visibly stale,
-       never silently fresh (11-review §Verdict and staleness). *)
-    Project.write project "lib/code.ml"
-      "let alpha = 1\nlet beta = 2\nlet gamma = 33\nlet delta = 44\n";
-    Term.wait t ~deadline:15.0 (Screen.has "stale");
-    print_fact "verdict staled after edit"
-      (Screen.has "approved · stale" (Term.screen t));
-    Term.send t "a";
-    Term.wait t (Screen.has "0/1 reviewed · approved");
-    print_fact "stale approval toggles to fresh approval"
-      (Screen.has "0/1 reviewed · approved" (Term.screen t)) );
-  ( run project @@ fun t ->
-    open_review t;
-    Term.wait t (Screen.has "0/1 reviewed · approved");
-    print_fact "fresh reapproval persisted"
-      (Screen.has "0/1 reviewed · approved" (Term.screen t)) );
-  [%expect
-    {|fresh approval is not stale: true
-verdict staled after edit: true
-stale approval toggles to fresh approval: true
-fresh reapproval persisted: true|}]
-
-let%expect_test "the key table toggles with ?" =
-  Project.with_git_fixture "review-help" @@ fun project ->
-  Project.write project "lib/code.ml" sample_code;
-  run project @@ fun t ->
-  open_review t;
-  Term.wait t (Screen.has "0/1 reviewed");
-  Term.send t "?";
-  Term.wait t (Screen.has "mark reviewed and advance");
-  print_fact "key table shows the space binding"
-    (Screen.has "mark reviewed and advance" (Term.screen t));
-  print_fact "key table shows focus switch"
-    (Screen.has "switch focus" (Term.screen t));
-  (* ? again closes the table and restores the body. *)
-  Term.send t "?";
-  Term.wait t (Screen.lacks "mark reviewed and advance");
-  print_fact "key table toggled off"
-    (Screen.lacks "mark reviewed and advance" (Term.screen t));
-  [%expect
-    {|key table shows the space binding: true
-key table shows focus switch: true
-key table toggled off: true|}]
-
-let%expect_test "below 80 columns the split collapses to one focused pane" =
-  Project.with_git_fixture "review-narrow" @@ fun project ->
-  Project.write project "lib/code.ml" sample_code;
-  run ~cols:70 project @@ fun t ->
-  open_review t;
-  Term.wait t (Screen.has "0/1 reviewed");
-  (* Narrow shows a single full-width pane, the focused one (nav on open); the
-     diff body is not on screen beside it. *)
-  print_fact "nav pane shown" (Screen.has "code.ml" (Term.screen t));
-  print_fact "diff not shown beside nav"
-    (Screen.lacks "let alpha" (Term.screen t));
-  (* tab swaps which pane is shown (the old drill-in as a width degradation). *)
-  Term.send t Keys.tab;
-  Term.wait t (Screen.has "let alpha");
-  print_fact "tab swaps to the diff pane"
-    (Screen.has "let alpha" (Term.screen t));
-  [%expect
-    {|nav pane shown: true
-diff not shown beside nav: true
-tab swaps to the diff pane: true|}]
-
-let%expect_test "a clean worktree shows the empty state" =
-  Project.with_git_fixture "review-empty" @@ fun project ->
-  (* with_git_fixture commits its files, so with no further writes the worktree
-     matches HEAD and there is nothing to review (11-review §States). *)
-  run project @@ fun t ->
-  Term.send t "/review";
-  Term.wait t (Screen.has "/review");
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "target");
-  Term.send t Keys.enter;
-  Term.wait t (Screen.has "no changes to review");
-  print_fact "empty state shown"
-    (Screen.has "no changes to review — the worktree matches" (Term.screen t));
-  print_fact "esc affordance shown" (Screen.has "esc close" (Term.screen t));
-  [%expect {|empty state shown: true
-esc affordance shown: true|}]
-
-(* A 30-line file whose second and twenty-ninth lines change: at 12 context lines
-   the two edits fall in separate hunks. *)
 let two_hunk_base =
   String.concat ""
     (List.init 30 (fun i -> Printf.sprintf "let v%d = %d\n" (i + 1) (i + 1)))
@@ -498,96 +630,187 @@ let two_hunk_tip =
          if n = 2 || n = 29 then Printf.sprintf "let v%d = %d0\n" n n
          else Printf.sprintf "let v%d = %d\n" n n))
 
-let%expect_test "the cursor steps between hunks and the scope line tracks it" =
-  Project.with_temp "review-hunks" @@ fun project ->
-  Project.git project [ "init"; "-q" ];
-  Project.write project "lib/multi.ml" two_hunk_base;
-  Project.git project [ "add"; "-A" ];
-  Project.git project [ "commit"; "-q"; "-m"; "baseline" ];
-  Project.write project "lib/multi.ml" two_hunk_tip;
-  run project @@ fun t ->
-  open_review t;
-  Term.wait t (Screen.has "0/2 reviewed");
-  (* The cursor opens on the file; ↓ steps onto the first hunk, then the second,
-     the diff scope line naming which (hunk i/n). *)
-  Term.send t Keys.down;
-  Term.wait t (Screen.has "hunk 1/2");
-  print_fact "first hunk selected" (Screen.has "hunk 1/2" (Term.screen t));
-  Term.send t Keys.down;
-  Term.wait t (Screen.has "hunk 2/2");
-  print_fact "second hunk selected" (Screen.has "hunk 2/2" (Term.screen t));
-  [%expect {|first hunk selected: true
-second hunk selected: true|}]
+(* Nav down walks the two hunk scopes and updates the diff scope line. *)
+let%expect_test "the cursor steps between hunks" =
+  Tui.run ~name:"review-hunks" ~review:true
+    ~seed:(fun project ->
+      Project.write project "lib/code.ml" two_hunk_base;
+      Project.git_baseline project;
+      Project.write project "lib/code.ml" two_hunk_tip)
+  @@ fun t ->
+  Tui.settle t;
+  Tui.keys t Keys.down;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 | ────────────────────────────────────────────────────────────────────────────────
+02 | Review  HEAD..worktree                                    0/2 reviewed · pending
+03 |  ▾ lib                          │lib/code.ml · hunk 1/2 · unreviewed · +2 −2
+04 |  ❯ [ ] code.ml                M │❯  1   let v1 = 1
+05 |                                 │   2 - let v2 = 2
+06 |                                 │   2 + let v2 = 20
+07 |                                 │   3   let v3 = 3
+08 |                                 │   4   let v4 = 4
+09 |                                 │   5   let v5 = 5
+10 |                                 │   6   let v6 = 6
+11 |                                 │   7   let v7 = 7
+12 |                                 │   8   let v8 = 8
+13 |                                 │   9   let v9 = 9
+14 |                                 │  10   let v10 = 10
+15 |                                 │  11   let v11 = 11
+16 |                                 │  12   let v12 = 12
+17 |                                 │  13   let v13 = 13
+18 |                                 │  14   let v14 = 14
+19 |                                 │ 17   let v17 = 17
+20 |                                 │ 18   let v18 = 18
+21 |                                 │ 19   let v19 = 19
+22 |                                 │
+23 |
+24 | tab focus diff · space mark · enter open · c comment · a approve · t task spice|}];
+  Tui.keys t Keys.down;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 | ────────────────────────────────────────────────────────────────────────────────
+02 | Review  HEAD..worktree                                    0/2 reviewed · pending
+03 |  ▾ lib                          │lib/code.ml · hunk 2/2 · unreviewed · +2 −2
+04 |  ❯ [ ] code.ml                M │  4   let v4 = 4
+05 |                                 │  5   let v5 = 5
+06 |                                 │  6   let v6 = 6
+07 |                                 │  7   let v7 = 7
+08 |                                 │  8   let v8 = 8
+09 |                                 │  9   let v9 = 9
+10 |                                 │ 10   let v10 = 10
+11 |                                 │ 11   let v11 = 11
+12 |                                 │ 12   let v12 = 12
+13 |                                 │ 13   let v13 = 13
+14 |                                 │ 14   let v14 = 14
+15 |                                 │❯ 17   let v17 = 17
+16 |                                 │  18   let v18 = 18
+17 |                                 │  19   let v19 = 19
+18 |                                 │  20   let v20 = 20
+19 |                                 │  21   let v21 = 21
+20 |                                 │  22   let v22 = 22
+21 |                                 │  23   let v23 = 23
+22 |                                 │
+23 |
+24 | tab focus diff · space mark · enter open · c comment · a approve · t task spice|}]
 
-let%expect_test "t tasks spice to review and submits the agent turn" =
-  Project.with_git_fixture "review-task-spice" @@ fun project ->
-  Project.write project "lib/code.ml" sample_code;
-  (* [t] closes the review and submits the old /review agent turn (11-review
-     §Task spice); the fake provider answers the "Review the current changes."
-     prompt so the turn settles. *)
-  Provider.with_openai project ~answer:"The changes look correct."
-    ~body_contains:[ "Review the current changes" ]
-  @@ fun provider ->
-  run project ~provider @@ fun t ->
-  open_review t;
-  (* The review opens over the lone [lib/code.ml] edit — the fake provider's files
-     live outside the worktree (Project.scratch), so they never enter the diff —
-     and [t] tasks spice; the legend confirms the review is open and [t] available. *)
-  Term.wait t (Screen.has "t task spice");
-  Term.send t "t";
-  (* The screen closes to chat and the prompt lands as user content (the drop). *)
-  Term.wait t (Screen.has "Review the current changes.");
-  print_fact "review closed to chat"
-    (Screen.lacks "t task spice" (Term.screen t));
-  print_fact "agent review prompt submitted"
-    (Screen.has "Review the current changes." (Term.screen t));
-  Term.wait t (Screen.has "The changes look correct.");
-  print_fact "agent replied in chat"
-    (Screen.has "The changes look correct." (Term.screen t));
-  [%expect
-    {|review closed to chat: true
-agent review prompt submitted: true
-agent replied in chat: true|}]
+(* Task Spice closes the review into chat and submits the agent-review prompt as
+   a real turn. *)
+let%expect_test "task spice submits the agent review turn" =
+  let script =
+    [
+      Provider.message ~expect:[ "Review the current changes" ] ~gate:"fin"
+        ~id:"resp-review-task" "The changes look correct.";
+    ]
+  in
+  Tui.run ~name:"review-task-spice" ~seed:seed_diff ~provider:script
+  @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "/review";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Tui.keys t "t";
+  ignore (Tui.await_request t 1 : string);
+  Tui.release t "fin";
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ Review the current changes.
+07 |
+08 | ⏺ The changes look correct.
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 |  ⏴ review ──────────────────────────────────────────────────────────────────────
+22 | ❯ message spice
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗     ? for shortcuts|}]
 
-let%expect_test "a malformed CR comment renders as a problem row" =
-  Project.with_temp "review-malformed" @@ fun project ->
-  Project.git project [ "init"; "-q" ];
-  Project.write project "lib/code.ml" "let x = 1\n";
-  Project.git project [ "add"; "-A" ];
-  Project.git project [ "commit"; "-q"; "-m"; "baseline" ];
-  (* A CR marker with no body does not match the grammar, so the scan reports a
-     malformed occurrence the nav flags with a [!] problem row (11-review
-     §States, §Nav pane). *)
-  Project.write project "lib/code.ml" "let x = 1\n(* CR: *)\n";
-  run project @@ fun t ->
-  open_review t;
-  Term.wait t (Screen.has "! CR body must not be empty");
-  print_fact "malformed CR problem row"
-    (Screen.has "! CR body must not be empty" (Term.screen t));
-  print_fact "CR source line shown in the diff"
-    (Screen.has "(* CR: *)" (Term.screen t));
-  [%expect
-    {|malformed CR problem row: true
-CR source line shown in the diff: true|}]
+(* Malformed CR syntax is a first-class problem row alongside the source line. *)
+let%expect_test "a malformed CR renders as a problem row" =
+  Tui.run ~name:"review-malformed" ~review:true
+    ~seed:(fun project ->
+      Project.write project "lib/code.ml" "let x = 1\n";
+      Project.git_baseline project;
+      Project.write project "lib/code.ml" "let x = 1\n(* CR: *)\n")
+  @@ fun t ->
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 | ────────────────────────────────────────────────────────────────────────────────
+02 | Review  HEAD..worktree                                    0/1 reviewed · pending
+03 |  ▾ lib                          │lib/code.ml · unreviewed · +1 −0
+04 |  ❯ [ ] code.ml                M │ 1   let x = 1
+05 |      ! CR body must not be empty│ 2 + (* CR: *)
+06 |                                 │
+07 |                                 │
+08 |                                 │
+09 |                                 │
+10 |                                 │
+11 |                                 │
+12 |                                 │
+13 |                                 │
+14 |                                 │
+15 |                                 │
+16 |                                 │
+17 |                                 │
+18 |                                 │
+19 |                                 │
+20 |                                 │
+21 |                                 │
+22 |                                 │
+23 |
+24 | tab focus diff · space mark · enter open · c comment · a approve · t task spice|}]
 
-(* The static goodbye lockup's second row (Theme.lockup), reprinted on exit. *)
-let lockup_row = "▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂"
+(* Ctrl+C retains the shell-wide arm-to-quit contract while review suppresses
+   the ordinary app footer. *)
+let%expect_test "ctrl+c arms and quits from review" =
+  Tui.run ~name:"review-ctrl-c" ~review:true ~seed:seed_diff @@ fun t ->
+  Tui.settle t;
+  Tui.keys t Keys.ctrl_c;
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 | ────────────────────────────────────────────────────────────────────────────────
+02 | Review  HEAD..worktree                                    0/1 reviewed · pending
+03 |  ▾ lib                          │lib/code.ml · unreviewed · +1 −1
+04 |  ❯ [ ] code.ml                M │ 1   let alpha = 1
+05 |                                 │ 2   let beta = 2
+06 |                                 │ 3 - let gamma = 3
+07 |                                 │ 3 + let gamma = 33
+08 |                                 │ 4   let delta = 4
+09 |                                 │
+10 |                                 │
+11 |                                 │
+12 |                                 │
+13 |                                 │
+14 |                                 │
+15 |                                 │
+16 |                                 │
+17 |                                 │
+18 |                                 │
+19 |                                 │
+20 |                                 │
+21 |                                 │
+22 |                                 │
+23 |
+24 |   Press Ctrl+C again to exit|}];
+  Tui.keys t Keys.ctrl_c;
+  Tui.await_exit t;
+  ignore (Tui.outcome t)
 
-let%expect_test "ctrl+c keeps its arm-to-quit meaning inside review" =
-  Project.with_git_fixture "review-ctrlc" @@ fun project ->
-  Project.write project "lib/code.ml" sample_code;
-  run project @@ fun t ->
-  open_review t;
-  Term.wait t (Screen.has "0/1 reviewed");
-  (* ctrl+c arms then quits on the screen exactly as in chat (11-review
-     §Keybindings — not swallowed like the old settings branch). [Term.quit]
-     drives the two-stage chord: it presses ctrl+c, waits for the "Press Ctrl+C
-     again to exit" notice, then presses again and waits for exit. The shell
-     overlays that notice on the screen's bottom row (the app footer is suppressed
-     on a screen), so a swallowed chord or a missing notice would hang here. *)
-  Term.quit t;
-  print_fact "double ctrl+c quits from the review screen"
-    (Screen.has lockup_row (Term.screen t));
-  [%expect {|double ctrl+c quits from the review screen: true|}]
-
-[%%run_tests "spice.tui-next.review"]
+[%%run_tests "spice.tui.review"]

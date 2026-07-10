@@ -3,7 +3,7 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-open Tui_next_harness
+open Tui_harness
 
 (* Turn lifecycle beyond the happy path. The old suite pinned a single provider
    failure (an HTTP 400); production needs the status variety (an auth-shaped
@@ -59,7 +59,7 @@ let%expect_test "a 401 from the provider settles a failure notice" =
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ message spice
 23 | ────────────────────────────────────────────────────────────────────────────────
-24 |   …/tmp/spice-tui-next-errors-401 · gpt-5.5 medium · dune: ✗   ? for shortcuts|}]
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗        ? for shortcuts|}]
 
 (* A 5xx is not fatal: unlike the 401, the client retries a server error rather
    than failing the turn. The script serves the 500 first, then a held
@@ -113,7 +113,7 @@ let%expect_test "a 5xx is retried rather than failing the turn" =
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ queue a message — sends after this turn
 23 | ────────────────────────────────────────────────────────────────────────────────
-24 |   …/spice-tui-next-errors-retry · gpt-5.5 medium · dune: ✗     ? for shortcuts|}];
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗      ? for shortcuts|}];
   Tui.release t "fin";
   Tui.settle t
 
@@ -164,7 +164,7 @@ let%expect_test "an empty or whitespace-only submit is a no-op" =
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ message spice
 23 | ────────────────────────────────────────────────────────────────────────────────
-24 |   …/spice-tui-next-errors-empty · gpt-5.5 medium · dune: ✗     ? for shortcuts|}];
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗      ? for shortcuts|}];
   (* Whitespace-only draft: enter is still a no-op — no turn starts — but the
      typed spaces remain the draft, so the placeholder is suppressed and the
      composer shows a bare marker (row 22). *)
@@ -196,7 +196,7 @@ let%expect_test "an empty or whitespace-only submit is a no-op" =
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯
 23 | ────────────────────────────────────────────────────────────────────────────────
-24 |   …/spice-tui-next-errors-empty · gpt-5.5 medium · dune: ✗     ? for shortcuts|}]
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗      ? for shortcuts|}]
 
 (* A multi-turn conversation carries context: the SECOND request body must
    contain the first exchange. The [~expect] on the second item asserts that at
@@ -262,6 +262,6 @@ let%expect_test "a second turn carries the first exchange as context" =
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ second question
 23 | ────────────────────────────────────────────────────────────────────────────────
-24 |   …spice-tui-next-errors-multiturn · gpt-5.5 medium · dune: ✗  ? for shortcuts|}];
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}];
   Tui.release t "t2";
   Tui.settle t

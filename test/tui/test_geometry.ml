@@ -3,7 +3,7 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-open Tui_next_harness
+open Tui_harness
 
 (* Geometry sweeps. One boot, many injected resizes: the deterministic harness
    makes a resize an [Input.Resize] event, so a single run can walk the whole
@@ -43,7 +43,7 @@ let%expect_test "the idle home stage across the size ladder" =
 21 |
 22 |
 23 |
-24 |   ! not logged in · /login · …i-next-geometry-idle · gpt-5.5 medium · dune: ✗|}];
+24 |   ! not logged in · /login · $PROJECT · gpt-5.5 medium · dune: ✗|}];
   (* Narrow: the footer keeps its dune verdict but drops the shortcuts hint
      rather than colliding it onto the verdict. *)
   Tui.resize t ~width:72 ~height:24;
@@ -73,7 +73,7 @@ let%expect_test "the idle home stage across the size ladder" =
 21 |
 22 |
 23 |
-24 |   ! not logged in · /login · …eometry-idle · gpt-5.5 medium · dune: ✗|}];
+24 |   ! not logged in · /login · $PROJECT · gpt-5.5 medium · dune: ✗|}];
   (* Short: workspace facts shed, footer and composer stand. *)
   Tui.resize t ~width:80 ~height:14;
   Tui.settle t;
@@ -92,7 +92,7 @@ let%expect_test "the idle home stage across the size ladder" =
 11 |                       sandbox: danger-full-access (config)
 12 |
 13 |
-14 |   ! not logged in · /login · …i-next-geometry-idle · gpt-5.5 medium · dune: ✗|}];
+14 |   ! not logged in · /login · $PROJECT · gpt-5.5 medium · dune: ✗|}];
   (* Very short: the floor — footer always renders. *)
   Tui.resize t ~width:80 ~height:10;
   Tui.settle t;
@@ -107,7 +107,7 @@ let%expect_test "the idle home stage across the size ladder" =
 07 |           ❯ message spice
 08 |           ────────────────────────────────────────────────────────────
 09 |
-10 |   ! not logged in · /login · …i-next-geometry-idle · gpt-5.5 medium · dune: ✗|}]
+10 |   ! not logged in · /login · $PROJECT · gpt-5.5 medium · dune: ✗|}]
 
 (* The side pane is a pure function of width, not turn state: it opens at the
    documented wide threshold and is absent below it. Observed here with the turn
@@ -134,7 +134,7 @@ let%expect_test "the side pane presence tracks the width threshold in chat" =
   [%expect
     {|01 |                                                                                 │ workspace
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium                           │   dune disconnected
-03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT             │
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT                  │
 04 |        sandbox: danger-full-access (config)                                     │
 05 |                                                                                 │
 06 | ❯ say hello                                                                     │
@@ -155,7 +155,7 @@ let%expect_test "the side pane presence tracks the width threshold in chat" =
 21 | ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 22 | ❯ queue a message — sends after this turn
 23 | ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-24 |   $PROJECT · gpt-5.5 medium · dune: ✗                                 ? for shortcuts|}];
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗                                      ? for shortcuts|}];
   Tui.resize t ~width:100 ~height:24;
   Tui.settle t;
   Tui.print t;
@@ -183,7 +183,7 @@ let%expect_test "the side pane presence tracks the width threshold in chat" =
 21 | ────────────────────────────────────────────────────────────────────────────────────────────────────
 22 | ❯ queue a message — sends after this turn
 23 | ────────────────────────────────────────────────────────────────────────────────────────────────────
-24 |   $PROJECT · gpt-5.5 medium · dune: ✗             ? for shortcuts|}];
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗                  ? for shortcuts|}];
   (* Release for a clean teardown; the settled frame is not goldened (it would
      race the turn-finished update against settle — see the mid-turn test). *)
   Tui.release t "fin";
@@ -232,7 +232,7 @@ let%expect_test "a resize mid-turn reflows the in-flight frame" =
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ queue a message — sends after this turn
 23 | ────────────────────────────────────────────────────────────────────────────────
-24 |   …spice-tui-next-geometry-midturn · gpt-5.5 medium · dune: ✗  ? for shortcuts|}];
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}];
   Tui.resize t ~width:72 ~height:16;
   Tui.settle t;
   Tui.print t;
@@ -252,7 +252,7 @@ let%expect_test "a resize mid-turn reflows the in-flight frame" =
 13 | ────────────────────────────────────────────────────────────────────────
 14 | ❯ queue a message — sends after this turn
 15 | ────────────────────────────────────────────────────────────────────────
-16 |   …i-next-geometry-midturn · gpt-5.5 medium · dune: ✗  ? for shortcuts|}];
+16 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}];
   (* Release for a clean teardown; the settled frame is deliberately not
      goldened. The reflow is proved by the two HELD frames above (stable while the
      gate holds the completion); a golden of the post-release settled frame would

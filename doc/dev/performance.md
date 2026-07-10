@@ -4,7 +4,7 @@ Developer reference covering the three performance regimes: the launch (to
 the first frame), the render loop (steady state and streaming), and the
 test suite's cost model. User-facing behavior lives in the manual
 (`doc/manual/configuration.md`, "Workspace tooling"); the deterministic TUI
-harness these notes lean on lives in `test/tui-next/harness/`. Numbers are
+harness these notes lean on lives in `test/tui/harness/`. Numbers are
 from 2026-07-09 on an M-class laptop (render-loop figures: 40×120 terminal,
 ~500 KB transcript) — treat them as budgets, not gospel.
 
@@ -45,7 +45,7 @@ everything else is lazy or delivered asynchronously after the frame renders.
 The deterministic TUI harness doubles as the launch profiler:
 
 ```
-TUI_HARNESS_TIMINGS=1 ./_build/default/test/tui-next/test_home.exe -f "boots" 2>&1 | grep 't+'
+TUI_HARNESS_TIMINGS=1 ./_build/default/test/tui/test_home.exe -f "boots" 2>&1 | grep 't+'
 ```
 
 - `run: launching` → `loop: probe received` — the host boot span.
@@ -162,7 +162,7 @@ The determinism contract behind this harness — how virtual time stays under th
 test's control, and the invariants that keep the suite from hanging or flaking —
 is `tui-testing.md`. This section is only its cost model.
 
-A `Tui.run` boot in `test/tui-next` costs ~60 ms wall: ~2 ms host boot,
+A `Tui.run` boot in `test/tui` costs ~60 ms wall: ~2 ms host boot,
 ~10 ms to the first frame, the rest launch-background settle and teardown. A
 full turn against the in-process provider is ~215 ms with workspace tooling
 off (the harness default; with tooling engaged the real `dune` spawns add
