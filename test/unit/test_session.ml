@@ -66,6 +66,29 @@ let assistant_tool_call call =
 let tool_result call text =
   Llm.Message.tool_result (Llm.Tool.Result.text call text)
 
+let event_equality_ignores_retained_output () =
+  let call = tool_call ~id:"equal-call" ~name:"equal_tool" () in
+  let value_id : (int -> int) Type.Id.t = Type.Id.make () in
+  let output =
+    Spice_tool.Output.make ~text:"done"
+      ~value:(Spice_tool.Output.pack value_id (fun value -> value + 1))
+      ()
+  in
+  let finished =
+    Session.Tool_claim.Finished.make
+      ~id:(Session.Tool_claim.Id.of_string "equal-claim")
+      ~output:(Some output) (Llm.Tool.Result.text call "done")
+  in
+  let event = Session.Event.tool_claim_finished finished in
+  (match Session.Event.equal event event with
+  | true -> ()
+  | false -> failf "event equality is not reflexive"
+  | exception Invalid_argument message ->
+      failf "event equality raised on retained evidence: %s" message);
+  let decoded = decode Session.Event.jsont (encode Session.Event.jsont event) in
+  is_true ~msg:"event equality follows its durable JSON projection"
+    (Session.Event.equal event decoded)
+
 let transcript messages =
   match Llm.Transcript.of_list messages with
   | Ok transcript -> transcript
@@ -1367,6 +1390,8 @@ let () =
   run "spice.session"
     [
       test "turn starts and finishes" turn_starts_and_finishes;
+      test "event equality ignores retained output"
+        event_equality_ignores_retained_output;
       test "compaction replaces transcript" compaction_replaces_transcript;
       test "compaction reason to_string is the stable tag"
         reason_to_string_is_the_stable_tag;

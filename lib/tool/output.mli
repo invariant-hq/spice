@@ -69,6 +69,10 @@ val json : t -> Jsont.json option
 val truncated : t -> bool
 (** [truncated t] is [true] iff [text t] was truncated. *)
 
+val equal : t -> t -> bool
+(** [equal a b] is [true] iff [a] and [b] have the same durable text, JSON,
+    and truncation projections. Retained typed values do not participate. *)
+
 val jsont : t Jsont.t
 (** [jsont] maps erased outputs to durable JSON.
 

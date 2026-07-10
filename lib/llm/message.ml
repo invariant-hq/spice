@@ -175,6 +175,7 @@ let user_text value = user [ Content.text value ]
 let assistant value = Assistant value
 let assistant_text value = assistant (Assistant.text value)
 let tool_result value = Tool_result value
+let equal a b = a = b
 
 let jsont =
   let system =

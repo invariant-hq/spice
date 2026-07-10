@@ -158,6 +158,10 @@ val reasoning_summary : t -> string list
 (** [reasoning_summary t] is provider-approved reasoning summary text in order.
 *)
 
+val equal : t -> t -> bool
+(** [equal a b] is [true] iff [a] and [b] contain the same durable response
+    data. *)
+
 val jsont : t Jsont.t
 (** [jsont] maps responses to JSON objects.
 

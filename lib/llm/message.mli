@@ -174,6 +174,10 @@ val assistant_text : string -> t
 val tool_result : Tool.Result.t -> t
 (** [tool_result r] is a tool-result message. *)
 
+val equal : t -> t -> bool
+(** [equal a b] is [true] iff [a] and [b] contain the same durable message
+    data. *)
+
 val jsont : t Jsont.t
 (** [jsont] maps messages to JSON objects.
 

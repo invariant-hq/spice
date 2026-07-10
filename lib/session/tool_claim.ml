@@ -53,15 +53,7 @@ module Finished = struct
   let equal a b =
     Id.equal a.id b.id
     && Spice_llm.Tool.Result.equal a.result b.result
-    && Option.equal
-         (fun left right ->
-           match
-             ( Jsont.Json.encode Spice_tool.Output.jsont left,
-               Jsont.Json.encode Spice_tool.Output.jsont right )
-           with
-           | Ok left, Ok right -> Jsont.Json.equal left right
-           | _ -> false)
-         a.output b.output
+    && Option.equal Spice_tool.Output.equal a.output b.output
 
   let pp ppf t =
     Format.fprintf ppf "@[<hov>{ id = %a; result = %s }@]" Id.pp t.id

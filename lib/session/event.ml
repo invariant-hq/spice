@@ -39,7 +39,32 @@ let permission_resolved reply = Permission_resolved reply
 let tool_claim_started execution = Tool_claim_started execution
 let tool_claim_finished execution = Tool_claim_finished execution
 let turn_finished ~turn outcome = Turn_finished { turn; outcome }
-let equal a b = a = b
+
+let equal a b =
+  match (a, b) with
+  | Turn_started a, Turn_started b -> Turn.equal a b
+  | Message_appended a, Message_appended b -> Spice_llm.Message.equal a b
+  | Response_appended a, Response_appended b -> Spice_llm.Response.equal a b
+  | Compaction_installed a, Compaction_installed b -> Compaction.equal a b
+  | Permission_requested a, Permission_requested b ->
+      Permission.Requested.equal a b
+  | Permission_resolved a, Permission_resolved b ->
+      Permission.Resolved.equal a b
+  | Tool_claim_started a, Tool_claim_started b -> Tool_claim.Started.equal a b
+  | Tool_claim_finished a, Tool_claim_finished b ->
+      Tool_claim.Finished.equal a b
+  | Turn_finished a, Turn_finished b ->
+      Turn.Id.equal a.turn b.turn && Turn.Outcome.equal a.outcome b.outcome
+  | Turn_started _, _
+  | Message_appended _, _
+  | Response_appended _, _
+  | Compaction_installed _, _
+  | Permission_requested _, _
+  | Permission_resolved _, _
+  | Tool_claim_started _, _
+  | Tool_claim_finished _, _
+  | Turn_finished _, _ ->
+      false
 
 let pp_message_kind ppf = function
   | Spice_llm.Message.System _ -> Format.pp_print_string ppf "system"

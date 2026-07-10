@@ -178,6 +178,7 @@
   jsont
   spice_session
   spice_llm
+  spice_tool
   spice_path
   spice_permission))
 

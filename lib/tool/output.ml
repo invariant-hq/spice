@@ -35,6 +35,11 @@ let text t = t.text
 let json t = t.json
 let truncated t = t.truncated
 
+let equal a b =
+  String.equal a.text b.text
+  && Option.equal Jsont.Json.equal a.json b.json
+  && Bool.equal a.truncated b.truncated
+
 let jsont =
   let make text json truncated =
     decode_invalid_arg (fun () -> make ~text ?json ~truncated ())

@@ -133,6 +133,7 @@ let provider_stop t = t.provider_stop
 let stop t = t.stop
 let usage t = t.usage
 let reasoning_summary t = t.reasoning_summary
+let equal a b = a = b
 
 let jsont =
   let make model response_model response_id provider_stop stop usage

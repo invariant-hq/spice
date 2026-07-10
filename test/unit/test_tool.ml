@@ -138,6 +138,8 @@ let output_json_projection () =
           ])
        projected);
   let decoded = decode Tool.Output.jsont projected in
+  is_true ~msg:"durable equality ignores retained values"
+    (Tool.Output.equal output decoded);
   equal string ~msg:"decoded text" "done" (Tool.Output.text decoded);
   equal (option bool) ~msg:"decoded json" (Some true)
     (Option.map (Json.equal structured_json) (Tool.Output.json decoded));
