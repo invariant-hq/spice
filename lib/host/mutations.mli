@@ -101,9 +101,10 @@ module Backend : sig
       object database through alternates and respects the workspace ignore
       files. [capture] stages everything into the persistent shadow index and
       writes a tree object; the tree hash is the reference. No commits are
-      created. [run argv] executes [argv] and returns raw stdout (snapshot file
-      contents flow through it); it is a function so this module owns no process
-      machinery. *)
+      created. Changed paths are read from Git's NUL-delimited protocol, so
+      their bytes are independent of Git's display quoting. [run argv] executes
+      [argv] and returns raw stdout (snapshot file contents flow through it); it
+      is a function so this module owns no process machinery. *)
 end
 
 (** {1:runtime Recorder} *)

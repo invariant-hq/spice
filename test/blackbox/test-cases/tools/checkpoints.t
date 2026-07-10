@@ -19,7 +19,7 @@ checkpoint when the turn finishes because shell ran.
 
   $ cat > mixed.jsonl <<'JSONL'
   > {"expect":{"body_contains":["\"name\":\"edit_file\""]},"response":{"id":"resp-mixed-1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-mixed-1","call_id":"call-mixed-1","name":"edit_file","arguments":"{\"path\":\"note.txt\",\"old_string\":\"hello\",\"new_string\":\"goodbye\"}"}]}}
-  > {"expect":{"body_contains":["function_call_output","call-mixed-1"]},"response":{"id":"resp-mixed-2","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-mixed-2","call_id":"call-mixed-2","name":"shell","arguments":"{\"command\":\"echo drift > unattributed.txt\"}"}]}}
+  > {"expect":{"body_contains":["function_call_output","call-mixed-1"]},"response":{"id":"resp-mixed-2","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-mixed-2","call_id":"call-mixed-2","name":"shell","arguments":"{\"command\":\"echo drift > unattributed.txt && echo accented > 'café.txt'\"}"}]}}
   > {"expect":{"body_contains":["function_call_output","call-mixed-2"]},"response":{"id":"resp-mixed-3","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"mixed done"}]}]}}
   > JSONL
 
@@ -28,7 +28,7 @@ checkpoint when the turn finishes because shell ran.
   • tool edit_file running
   ✓ tool edit_file note.txt completed: M note.txt
   • tool shell running
-  ✓ tool shell "echo drift > unattributed.txt" exited 0 in $TIME
+  ✓ tool shell "echo drift > unattributed.txt && echo accented > 'café.txt'" exited 0 in $TIME
   changed 1 file (+1 -1)
   diff: spice session diff --latest 'mixed-run'
   revert: spice session revert --latest 'mixed-run'
@@ -40,6 +40,8 @@ checkpoint when the turn finishes because shell ran.
   goodbye world
   $ cat repo/unattributed.txt
   drift
+  $ cat repo/café.txt
+  accented
   $ find "$SPICE_TEST_DATA_HOME/workspaces" -name workspace.json | wc -l | tr -d ' '
   1
   $ find "$SPICE_TEST_DATA_HOME/workspaces" -type d -name checkpoints.git | wc -l | tr -d ' '
@@ -58,6 +60,7 @@ the bounded checkpoint pair, marked as not revertable.
   @@ -1,1 +1,1 @@
   -hello world
   +goodbye world
+  changed during run (unattributed; not revertable): café.txt
   changed during run (unattributed; not revertable): unattributed.txt
 
 The typed revert previews against the live workspace and ignores the

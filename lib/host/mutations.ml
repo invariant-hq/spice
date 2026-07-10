@@ -302,17 +302,25 @@ module Backend = struct
         let* tree = git [ "write-tree" ] in
         Ok { reference = String.trim tree; excluded = 0 }
       in
-      let parse_status line =
-        match String.split_first ~sep:"\t" line with
-        | None -> None
-        | Some (status, path) -> (
-            match Spice_path.Rel.of_string path with
-            | Error _ -> None
-            | Ok rel -> (
-                match status with
-                | "A" -> Some (rel, `Added)
-                | "D" -> Some (rel, `Deleted)
-                | _ -> Some (rel, `Modified)))
+      let parse_status status path =
+        match Spice_path.Rel.of_string path with
+        | Error _ -> None
+        | Ok rel -> (
+            match status with
+            | "A" -> Some (rel, `Added)
+            | "D" -> Some (rel, `Deleted)
+            | _ -> Some (rel, `Modified))
+      in
+      let rec parse_statuses acc = function
+        | [] | [ "" ] -> Ok (List.rev acc)
+        | status :: path :: fields ->
+            let acc =
+              match parse_status status path with
+              | None -> acc
+              | Some change -> change :: acc
+            in
+            parse_statuses acc fields
+        | _ -> Error "malformed git diff --name-status -z output"
       in
       let paths ~from_ ~to_ =
         let* output =
@@ -320,16 +328,18 @@ module Backend = struct
             [
               "diff";
               "--name-status";
+              "-z";
               "--no-renames";
               "--no-ext-diff";
               from_;
               to_;
             ]
         in
-        String.split_on_char '\n' output
-        |> List.filter_map parse_status
-        |> List.filter (fun (path, _) -> not (ignored_checkpoint_path path))
-        |> Result.ok
+        let* paths = parse_statuses [] (String.split_on_char '\000' output) in
+        Ok
+          (List.filter
+             (fun (path, _) -> not (ignored_checkpoint_path path))
+             paths)
       in
       let read ~reference path =
         let spec = reference ^ ":" ^ Spice_path.Rel.to_string path in
