@@ -717,6 +717,80 @@ let mixed_call_interrupt_preserves_boundaries () =
             (Llm.Tool.Result.call_id host_result)
       | _ -> failf "unexpected mixed-call interrupt events")
 
+let mixed_call_drains_to_host_boundary () =
+  let host_tool =
+    Llm.Tool.make ~name:"ask_user" ~input_schema:(Json.object' []) ()
+  in
+  let policy =
+    Permission.Policy.make [ Permission.Policy.Rule.allow_all_dangerously ]
+  in
+  let config =
+    config ~policy ~host_tools:[ host_tool ] [ executable_tool () ]
+  in
+  let started =
+    match
+      Run.start config ~id:(Session.Turn.Id.of_string "turn-mixed-drain")
+        ~input:(Session.Turn.Input.user_text "Handle both calls.") ~model
+        (empty_session ())
+    with
+    | Ok step -> step
+    | Error error -> failf "start failed: %a" Run.Error.pp error
+  in
+  let executable = call ~id:"call-executable" () in
+  let host = call ~id:"call-host" ~name:"ask_user" () in
+  let response =
+    Llm.Response.make ~model
+      (Llm.Message.Assistant.make
+         (List.map Llm.Message.Assistant.tool_call [ executable; host ]))
+  in
+  let claimed =
+    match Run.accept_response config response (Run.Step.session started) with
+    | Ok step -> step
+    | Error error -> failf "response failed: %a" Run.Error.pp error
+  in
+  let claim = tool_claim_from_step claimed in
+  let host_waiting, after_tool =
+    match
+      Run.finish_tool config (Session.Tool_claim.Started.id claim)
+        (Tool.Result.completed ~output:(output ()) ())
+        (Run.Step.session claimed)
+    with
+    | Error error -> failf "finish failed: %a" Run.Error.pp error
+    | Ok step -> (
+        (match
+           Session.State.tool_claims (Session.state (Run.Step.session step))
+         with
+        | [ (started, Some _) ] ->
+            is_true ~msg:"first claim is durably finished"
+              (Session.Tool_claim.Started.equal claim started)
+        | _ -> failf "expected one finished claim");
+        match Run.Step.next step with
+        | Run.Step.Waiting (Session.Waiting.Host_tool waiting) -> (waiting, step)
+        | next ->
+            failf "expected second host boundary, got %a" Run.Step.pp_next next)
+  in
+  match
+    Run.answer_host_tool config host_waiting ~text:"staging"
+      (Run.Step.session after_tool)
+  with
+  | Error error -> failf "host answer failed: %a" Run.Error.pp error
+  | Ok step ->
+      (match Run.Step.next step with
+      | Run.Step.Request_model _ -> ()
+      | next -> failf "expected model request, got %a" Run.Step.pp_next next);
+      let result_ids =
+        Llm.Transcript.messages
+          (Session.State.transcript (Session.state (Run.Step.session step)))
+        |> List.filter_map (function
+             | Llm.Message.Tool_result result ->
+                 Some (Llm.Tool.Result.call_id result)
+             | Llm.Message.System _ | Llm.Message.Developer _
+             | Llm.Message.User _ | Llm.Message.Assistant _ ->
+                 None)
+      in
+      equal (list string) ~msg:"tool results preserve provider order"
+        [ "call-executable"; "call-host" ] result_ids
+
 let accepted_host_tool_keeps_routing () =
   let declaration =
     Llm.Tool.make ~name:"review_tool" ~input_schema:(Json.object' []) ()
@@ -1252,6 +1326,8 @@ let () =
         automatic_rejections_preserve_order;
       test "mixed call interrupt preserves boundaries"
         mixed_call_interrupt_preserves_boundaries;
+      test "mixed call drains to host boundary"
+        mixed_call_drains_to_host_boundary;
       test "accepted host tool keeps routing" accepted_host_tool_keeps_routing;
       test "turn tool contract is checked" turn_tool_contract_is_checked;
       test "resume requires active lifecycle" resume_requires_active_lifecycle;
