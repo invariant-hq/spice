@@ -1,7 +1,8 @@
 # Sessions
 
-Every Spice run happens in a session: a persistent record of the
-conversation, the tool calls, and the workspace changes the agent made.
+Every Spice run happens in a session, which associates the conversation and
+tool calls with related workspace changes and workflow artifacts. The saved
+session document itself contains session metadata and the semantic event log.
 
 ## Storage
 
@@ -9,10 +10,17 @@ Sessions are global durable data, not project files. On Unix they default to
 `$XDG_DATA_HOME/spice` (or `~/.local/share/spice`); `SPICE_DATA_HOME` overrides
 the complete root. Session documents live at
 `sessions/<percent-escaped-session-id>/session.json`, while plans remain
-standalone at `plans/<session-id>/<plan-id>.json`. Todos, goals, subagent
-records, blobs, and workspace checkpoint/review state are sibling stores.
-Directories use `0700` and files use `0600`; use `spice session export` for the
-supported session JSON form.
+standalone at
+`plans/<percent-escaped-session-id>/<percent-escaped-plan-id>.json`. Todos,
+goals, subagent records, blobs, and workspace mutation, checkpoint, and review
+facts are sibling stores correlated by session and turn ids; they are not
+session events.
+
+Directories use `0700` and files use `0600`. `spice session export` serializes
+only the session document (or a text/Markdown projection of it). It does not
+include any sibling-store artifacts, so an export is not a backup of the
+mutation evidence required by `session diff`, `session revert`, or
+`rewind --revert-fs`.
 
 The project `.spice/` directory is reserved for inputs that may be shared with
 the repository: `config.json`, the gitignored `config.local.json`, and project
