@@ -113,6 +113,19 @@ type request_preparation = {
   rollback : unit -> unit;
 }
 
+let rollback_if_raises prepared f =
+  match f () with
+  | result -> result
+  | exception exn ->
+      let backtrace = Printexc.get_raw_backtrace () in
+      (match prepared.rollback () with
+      | () -> ()
+      | exception rollback ->
+          Log.err (fun m ->
+              m "prepared request rollback failed: %s"
+                (Printexc.to_string rollback)));
+      Printexc.raise_with_backtrace exn backtrace
+
 type hooks = {
   prepare_request :
     Spice_llm.Request.t -> (request_preparation, Spice_protocol.Error.t) result;
@@ -464,27 +477,31 @@ let rec handle_step ~store ~projector ~pressure_compacted ~overflow_compacted
       let pressure_compacted = pressure_compacted && unsafe in
       let call_model () =
         let* prepared = hooks.prepare_request request in
-        projector.steps <- projector.steps + 1;
-        Log.debug (fun m -> m "model step=%d" projector.steps);
-        hooks.observe (Spice_protocol.Event.Model_started prepared.request);
-        (* Stream the model step's deltas to the observer in stream order,
-           before the durable [Assistant] this step saves. Visible text,
-           reasoning, and the provider's usage snapshot for this response are
-           surfaced live; the usage is reconciled durably from the response, so
-           this is a progress signal only. Tool-input and complete-call deltas
-           are reconciled from the durable response. *)
-        let on_event = function
-          | Spice_llm.Stream.Event.Text_delta text ->
-              hooks.observe (Spice_protocol.Event.Assistant_delta { text })
-          | Spice_llm.Stream.Event.Reasoning_summary_delta text ->
-              hooks.observe (Spice_protocol.Event.Reasoning_delta { text })
-          | Spice_llm.Stream.Event.Usage usage ->
-              hooks.observe (Spice_protocol.Event.Usage_updated usage)
-          | Spice_llm.Stream.Event.Tool_input_delta _
-          | Spice_llm.Stream.Event.Tool_call _ ->
-              ()
+        let model_result =
+          rollback_if_raises prepared (fun () ->
+            projector.steps <- projector.steps + 1;
+            Log.debug (fun m -> m "model step=%d" projector.steps);
+            hooks.observe (Spice_protocol.Event.Model_started prepared.request);
+            (* Stream the model step's deltas to the observer in stream order,
+               before the durable [Assistant] this step saves. Visible text,
+               reasoning, and the provider's usage snapshot for this response
+               are surfaced live; the usage is reconciled durably from the
+               response, so this is a progress signal only. Tool-input and
+               complete-call deltas are reconciled from the durable response. *)
+            let on_event = function
+              | Spice_llm.Stream.Event.Text_delta text ->
+                  hooks.observe (Spice_protocol.Event.Assistant_delta { text })
+              | Spice_llm.Stream.Event.Reasoning_summary_delta text ->
+                  hooks.observe (Spice_protocol.Event.Reasoning_delta { text })
+              | Spice_llm.Stream.Event.Usage usage ->
+                  hooks.observe (Spice_protocol.Event.Usage_updated usage)
+              | Spice_llm.Stream.Event.Tool_input_delta _
+              | Spice_llm.Stream.Event.Tool_call _ ->
+                  ()
+            in
+            model ~on_event ~cancelled:hooks.cancelled prepared.request)
         in
-        match model ~on_event ~cancelled:hooks.cancelled prepared.request with
+        match model_result with
         | Error error
           when Option.is_some compaction && (not overflow_compacted)
                && Compaction_run.is_context_overflow error ->

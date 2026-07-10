@@ -6,6 +6,18 @@
 open Windtrap
 module Notice_queue = Spice_host.Notice_queue
 module Notice = Spice_protocol.Notice
+module Runner = Spice_host.Runner
+module Host_session = Spice_host.Session
+module Session = Spice_session
+module Store = Spice_session_store
+module Llm = Spice_llm
+
+let provider = Llm.Provider.make "openai"
+
+let model =
+  Llm.Model.make ~provider ~api:(Llm.Model.Api.make "responses") ~id:"gpt-test"
+
+let cwd = Spice_path.Abs.of_string_exn "/workspace"
 
 let notice id key =
   Notice.make ~source:"test" ~severity:Notice.Severity.Info ~title:id
@@ -75,6 +87,52 @@ let title_only_notice_has_no_blank_body () =
         text
   | _ -> failf "notice should render as a developer message"
 
+exception Model_failure
+
+let raised_model_call_rolls_notices_back () =
+  Eio_main.run @@ fun env ->
+  let fs = Eio.Stdenv.fs env in
+  let root = Filename.temp_dir "spice_notice_rollback" "" in
+  let store =
+    Store.make ~fs ~clock:(Eio.Stdenv.clock env)
+      ~root:(Spice_path.Abs.of_string_exn root)
+  in
+  let session =
+    Session.create ~id:(Session.Id.of_string "session-1") ~cwd
+      ~created_at:(Session.Time.of_unix_ms 1L) ()
+  in
+  let document =
+    match Store.create store session with
+    | Ok document -> document
+    | Error error -> failf "session create failed: %a" Store.Error.pp error
+  in
+  let queue = Notice_queue.create () in
+  Notice_queue.publish queue (notice "durable" "durable");
+  let client =
+    Llm.Client.make ~provider
+      ~run:(fun ~cancelled:_ _request -> raise Model_failure)
+      ()
+  in
+  let run =
+    Session.Run.Config.make ~tools:[]
+      ~policy:Spice_permission.Policy.default ()
+  in
+  let hooks =
+    Host_session.with_notices queue Host_session.no_hooks
+  in
+  let runner = Runner.make ~store ~client ~model ~mode:None ~run ~hooks () in
+  let start =
+    Spice_protocol.Command.Start.make
+      ~id:(Session.Turn.Id.of_string "turn-1")
+      ~input:(Session.Turn.Input.user_text "Continue.") ()
+  in
+  (match Runner.execute runner document (Spice_protocol.Command.Start start) with
+  | _ -> failf "model failure must escape the interpreter"
+  | exception Model_failure -> ());
+  equal (list string) ~msg:"raised model call restores the prepared batch"
+    [ "durable" ]
+    (drain queue |> titles)
+
 let () =
   run "spice.host.notice"
     [
@@ -87,4 +145,6 @@ let () =
       test "capacity drops oldest notices" capacity_drops_oldest_notices;
       test "title-only notice has no blank body"
         title_only_notice_has_no_blank_body;
+      test "raised model call rolls notices back"
+        raised_model_call_rolls_notices_back;
     ]
