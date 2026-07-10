@@ -13,6 +13,7 @@ type status =
   | Cancelled
   | Output_exceeded of string
   | Failed of string
+  | Refused of Spice_sandbox.Error.t
 
 type result = { status : status; stdout : string; stderr : string }
 
@@ -26,6 +27,7 @@ type shell_status =
   | Shell_timed_out of { timeout_ms : int }
   | Shell_cancelled
   | Shell_failed_to_start of string
+  | Shell_refused of Spice_sandbox.Error.t
 
 type shell_result = {
   shell_status : shell_status;
@@ -33,6 +35,29 @@ type shell_result = {
   shell_stderr : captured;
   shell_duration_ms : int;
 }
+
+let split_env binding =
+  match String.index_opt binding '=' with
+  | None -> (binding, "")
+  | Some index ->
+      ( String.sub binding 0 index,
+        String.sub binding (index + 1) (String.length binding - index - 1) )
+
+let environment_array bindings =
+  bindings
+  |> List.map (fun (name, value) -> name ^ "=" ^ value)
+  |> Array.of_list
+
+let prepare ~sandbox ~env = function
+  | [] -> Error (Spice_sandbox.Error.invalid_request "process argv is empty")
+  | program :: args ->
+      let argv = Spice_sandbox.Argv.make ~program args in
+      let env = Array.to_list env |> List.map split_env in
+      Result.map
+        (fun spawn ->
+          ( Spice_sandbox.Spawn.argv spawn |> Spice_sandbox.Argv.to_list,
+            Spice_sandbox.Spawn.env spawn |> environment_array ))
+        (Spice_sandbox.spawn sandbox ~argv ~env)
 
 let default_stdout_limit = 1024 * 1024
 let default_stderr_limit = 64 * 1024
@@ -235,7 +260,8 @@ let run_shell_blocking ~cwd ~env ~timeout_ms ~max_output_bytes ?stdin ~cancelled
           | Shell_timed_out { timeout_ms } ->
               Printf.sprintf "timed_out(%d)" timeout_ms
           | Shell_cancelled -> "cancelled"
-          | Shell_failed_to_start _ -> "failed_to_start")
+          | Shell_failed_to_start _ -> "failed_to_start"
+          | Shell_refused _ -> "refused")
           result.shell_duration_ms);
     result
   in
@@ -446,7 +472,7 @@ let run_shell_blocking ~cwd ~env ~timeout_ms ~max_output_bytes ?stdin ~cancelled
           | Some message -> finish (Shell_failed_to_start message)))
 
 let run_blocking ?(stdout_limit = default_stdout_limit)
-    ?(stderr_limit = default_stderr_limit) ~cancelled argv =
+    ?(stderr_limit = default_stderr_limit) ~env ~cancelled argv =
   validate_limit "stdout_limit" stdout_limit;
   validate_limit "stderr_limit" stderr_limit;
   match argv with
@@ -495,7 +521,6 @@ let run_blocking ?(stdout_limit = default_stdout_limit)
           let child =
             try
               let argv = Array.of_list argv in
-              let env = Unix.environment () in
               Ok (Unix.create_process_env prog argv env stdin stdout_w stderr_w)
             with
             | Unix.Unix_error (error, fn, arg) ->
@@ -608,6 +633,27 @@ let run_shell ~cwd ~env ~timeout_ms ~max_output_bytes ?stdin ~cancelled argv =
       run_shell_blocking ~cwd ~env ~timeout_ms ~max_output_bytes ?stdin
         ~cancelled argv)
 
+let run_sandboxed_shell ~sandbox ~cwd ~env ~timeout_ms ~max_output_bytes ?stdin
+    ~cancelled argv =
+  match prepare ~sandbox ~env argv with
+  | Error error ->
+      {
+        shell_status = Shell_refused error;
+        shell_stdout = Complete "";
+        shell_stderr = Complete "";
+        shell_duration_ms = 0;
+      }
+  | Ok (argv, env) ->
+      run_shell ~cwd ~env ~timeout_ms ~max_output_bytes ?stdin ~cancelled argv
+
 let run ?stdout_limit ?stderr_limit ~cancelled argv =
   Eio_unix.run_in_systhread ~label:"spice-process" (fun () ->
-      run_blocking ?stdout_limit ?stderr_limit ~cancelled argv)
+      run_blocking ?stdout_limit ?stderr_limit ~env:(Unix.environment ())
+        ~cancelled argv)
+
+let run_sandboxed ?stdout_limit ?stderr_limit ~sandbox ~cancelled argv =
+  match prepare ~sandbox ~env:(Unix.environment ()) argv with
+  | Error error -> { status = Refused error; stdout = ""; stderr = "" }
+  | Ok (argv, env) ->
+      Eio_unix.run_in_systhread ~label:"spice-process" (fun () ->
+          run_blocking ?stdout_limit ?stderr_limit ~env ~cancelled argv)

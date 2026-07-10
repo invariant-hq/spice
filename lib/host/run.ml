@@ -119,18 +119,43 @@ let workspace_root_string workspace =
 
 (* The ledger lives beside the session documents; the checkpoint backend is
    present only for git workspaces. *)
-let mutations_recorder ~stdenv ~store ~workspace_root =
+let mutations_recorder ~stdenv ~store ~sandbox ~workspace_root =
   let fs = Eio.Stdenv.fs stdenv in
   let store_root = Spice_session_store.root store |> Spice_path.Abs.to_string in
   let run_git argv =
-    match
-      Eio.Process.parse_out
-        ~stderr:(Eio.Flow.buffer_sink (Buffer.create 256))
-        (Eio.Stdenv.process_mgr stdenv)
-        Eio.Buf_read.take_all argv
-    with
-    | output -> Ok output
-    | exception exn -> Error (Printexc.to_string exn)
+    match argv with
+    | [] -> Error "git process argv is empty"
+    | program :: args -> (
+        let argv = Spice_sandbox.Argv.make ~program args in
+        let env =
+          Unix.environment () |> Array.to_list
+          |> List.map (fun binding ->
+              match String.index_opt binding '=' with
+              | None -> (binding, "")
+              | Some index ->
+                  ( String.sub binding 0 index,
+                    String.sub binding (index + 1)
+                      (String.length binding - index - 1) ))
+        in
+        match Spice_sandbox.spawn sandbox ~argv ~env with
+        | Error error -> Error (Spice_sandbox.Error.message error)
+        | Ok spawn -> (
+            let argv =
+              Spice_sandbox.Spawn.argv spawn |> Spice_sandbox.Argv.to_list
+            in
+            let env =
+              Spice_sandbox.Spawn.env spawn
+              |> List.map (fun (name, value) -> name ^ "=" ^ value)
+              |> Array.of_list
+            in
+            match
+              Eio.Process.parse_out ~env
+                ~stderr:(Eio.Flow.buffer_sink (Buffer.create 256))
+                (Eio.Stdenv.process_mgr stdenv)
+                Eio.Buf_read.take_all argv
+            with
+            | output -> Ok output
+            | exception exn -> Error (Printexc.to_string exn)))
   in
   let workspace_root =
     match
@@ -166,10 +191,9 @@ let plan ~workspace ~sandbox ~permission () =
   match Sandbox.gate sandbox with
   | Error _ as error -> error
   | Ok () ->
-      (* An enforcing workspace-write sandbox bounds a command's and a
-         workspace edit's blast radius, so the posture credits it here — where
-         both facts meet — rather than prompting for operations the sandbox
-         already contains. *)
+      (* An enforcing workspace-write sandbox backs the native workspace edit
+         boundary, so the posture credits those path mutations here. Command
+         accesses remain reviewable independently. *)
       let permission =
         Permission.Run.with_sandbox_backing
           ~sandbox_backed:(Sandbox.enforces_workspace_write sandbox)
@@ -222,7 +246,7 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
   let workspace_root = workspace_root_string workspace in
   let producers =
     Producers.start ~sw ~stdenv host ~inbox:notices ~workspace ~cwd:cwd_eio
-      ~root:workspace_root ()
+      ~sandbox:(Sandbox.Effective.sandbox sandbox) ~root:workspace_root ()
   in
   let denial_message =
     Permission.Run.denial_message ~source:Config.Source.kind_string permission
@@ -242,7 +266,10 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
   in
   let fs = Eio.Stdenv.fs stdenv in
   let root = Spice_session_store.root store |> Spice_path.Abs.to_string in
-  let mutations = mutations_recorder ~stdenv ~store ~workspace_root in
+  let mutations =
+    mutations_recorder ~stdenv ~store
+      ~sandbox:(Sandbox.Effective.sandbox sandbox) ~workspace_root
+  in
   let jobs =
     Jobs.create ~sw ~stdenv ~store ~parent:session
       ~max_concurrent:

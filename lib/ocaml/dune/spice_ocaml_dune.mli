@@ -65,6 +65,13 @@ module Describe : sig
       decodes their current output format, and normalizes the result into
       {!Spice_ocaml.Project.t}. *)
 
+  type prepare =
+    argv:string list ->
+    env:string array ->
+    (string list * string array, string) result
+  (** A host-supplied process preparation boundary. [Ok (argv, env)] is the
+      exact invocation to execute; [Error message] refuses the spawn. *)
+
   val workspace_args : ?with_deps:bool -> ?recursive:bool -> unit -> string list
   (** [workspace_args ()] is the [dune describe workspace] argv used by the
       adapter. [with_deps] defaults to [true]. [recursive] defaults to [true].
@@ -111,6 +118,7 @@ module Describe : sig
   (** [of_outputs] decodes and merges workspace and test describe outputs. *)
 
   val describe_project :
+    prepare:prepare ->
     process_mgr:_ Eio.Process.mgr ->
     clock:_ Eio.Time.clock ->
     cwd:_ Eio.Path.t ->
@@ -120,11 +128,12 @@ module Describe : sig
     ?timeout_s:float ->
     unit ->
     (Spice_ocaml.Project.t, Error.t) result
-  (** [describe_project ~process_mgr ~clock ~cwd ~workspace ()] runs
+  (** [describe_project ~prepare ~process_mgr ~clock ~cwd ~workspace ()] runs
       [dune describe workspace] and [dune describe tests] in the Eio directory
       [cwd], then returns the normalized project description.
 
-      [env] defaults to the process manager's inherited environment. [cancelled]
+      [prepare] confines or refuses each command before execution. [env]
+      defaults to the process manager's inherited environment. [cancelled]
       defaults to a function that returns [false] and is checked before the
       first command starts. [timeout_s] defaults to a conservative wall-clock
       limit applied independently to each describe command. *)
@@ -373,11 +382,12 @@ module Rpc : sig
 
       val dune_build_watch :
         sw:Eio.Switch.t ->
+        prepare:Describe.prepare ->
         process_mgr:_ Eio.Process.mgr ->
         cwd:Eio.Fs.dir_ty Eio.Path.t ->
         unit ->
         t
-      (** [dune_build_watch ~sw ~process_mgr ~cwd ()] starts
+      (** [dune_build_watch ~sw ~prepare ~process_mgr ~cwd ()] starts
           [dune build --root <cwd> --watch @all] in [cwd] as a switch-scoped
           background process.
 

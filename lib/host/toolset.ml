@@ -97,7 +97,8 @@ let make ~sw ~stdenv host ?model ~workspace ~sandbox ~skills ~cwd ~http
   let editor, _reason = editor_decision host model in
   Spice_tools.default
     ~mutating:(Sandbox.mutating_tools sandbox)
-    ~editor ?project_source ?merlin_program ~watch ?anchors
+    ~editor ~sandbox:(Sandbox.Effective.sandbox sandbox) ?project_source
+    ?merlin_program ~watch ?anchors
     ~fs:(Eio.Stdenv.fs stdenv)
     ~process_mgr:(Eio.Stdenv.process_mgr stdenv)
     ~clock:(Eio.Stdenv.clock stdenv) ~cwd ~dune ~workspace ~shell ()

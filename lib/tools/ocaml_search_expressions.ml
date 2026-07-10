@@ -455,8 +455,8 @@ let resolve_roots ~fs ~workspace input =
 
 (* Candidate .ml files come from the Glob tool so ignore-file and VCS
    metadata semantics stay identical to the other search tools. *)
-let glob_page ~fs ~workspace ~cancelled input =
-  let result = Glob.run ~fs ~workspace ~cancelled input in
+let glob_page ~sandbox ~fs ~workspace ~cancelled input =
+  let result = Glob.run ~sandbox ~fs ~workspace ~cancelled input in
   match Tool.Result.status result with
   | Tool.Result.Completed -> (
       match Tool.Result.output result with
@@ -465,12 +465,12 @@ let glob_page ~fs ~workspace ~cancelled input =
   | Tool.Result.Failed { message; _ } -> Error (Enumerate message)
   | Tool.Result.Interrupted _ -> Error Cancelled
 
-let enumerate_root ~fs ~workspace ~cancelled (path, kind) =
+let enumerate_root ~sandbox ~fs ~workspace ~cancelled (path, kind) =
   match kind with
   | `Regular_file -> Ok [ path ]
   | `Directory ->
       let rec loop acc input =
-        match glob_page ~fs ~workspace ~cancelled input with
+        match glob_page ~sandbox ~fs ~workspace ~cancelled input with
         | Error _ as error -> error
         | Ok (files, next) -> (
             let acc = List.rev_append files acc in
@@ -483,11 +483,11 @@ let enumerate_root ~fs ~workspace ~cancelled (path, kind) =
            ~path:(Workspace.Path.display path)
            ~limit:Glob.max_limit "**/*.ml")
 
-let enumerate_candidates ~fs ~workspace ~cancelled roots =
+let enumerate_candidates ~sandbox ~fs ~workspace ~cancelled roots =
   let rec loop seen acc = function
     | [] -> Ok (List.rev acc)
     | root :: roots -> (
-        match enumerate_root ~fs ~workspace ~cancelled root with
+        match enumerate_root ~sandbox ~fs ~workspace ~cancelled root with
         | Error _ as error -> error
         | Ok files ->
             let seen, acc =
@@ -631,7 +631,7 @@ let assemble input roots ~findings ~skipped ~searched_files =
     ~returned_results:returned ~total_results:total ~findings:page ~status ~next
     ~skipped ~searched_files
 
-let run ~fs ~workspace ?(anchors = Anchor.Source.deterministic)
+let run ~sandbox ~fs ~workspace ?(anchors = Anchor.Source.deterministic)
     ?(cancelled = default_cancelled) input =
   if cancelled () then
     Tool.Result.interrupted ~reason:"tool call cancelled" ~cancelled:true ()
@@ -644,7 +644,9 @@ let run ~fs ~workspace ?(anchors = Anchor.Source.deterministic)
         | Error error -> failed error
         | Ok roots -> (
             let root_paths = List.map fst roots in
-            match enumerate_candidates ~fs ~workspace ~cancelled roots with
+            match
+              enumerate_candidates ~sandbox ~fs ~workspace ~cancelled roots
+            with
             | Error Cancelled ->
                 Tool.Result.interrupted ~reason:"tool call cancelled"
                   ~cancelled:true ()
@@ -675,13 +677,13 @@ let run ~fs ~workspace ?(anchors = Anchor.Source.deterministic)
                 in
                 loop [] [] 0 candidates))
 
-let tool ~fs ~workspace ?(render = Output.plain) () =
+let tool ~sandbox ~fs ~workspace ?(render = Output.plain) () =
   let anchors = Output.anchor_source render in
   Tool.make ~name ~description ~input:Input.contract
     ~output:(Output.encode ~render)
     ~permissions:(fun input -> permissions ~workspace input)
     ~run:(fun ctx input ->
-      run ~fs ~workspace ~anchors
+      run ~sandbox ~fs ~workspace ~anchors
         ~cancelled:(fun () -> Tool.Context.cancelled ctx)
         input)
     ()

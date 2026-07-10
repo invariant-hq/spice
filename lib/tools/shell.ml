@@ -686,6 +686,8 @@ let status_of_process : Process.shell_status -> Output.status = function
   | Process.Shell_signaled signal -> Output.Signaled signal
   | Process.Shell_timed_out { timeout_ms } -> Output.Timed_out { timeout_ms }
   | Process.Shell_cancelled -> Output.Cancelled
+  | Process.Shell_refused error ->
+      Output.Failed_to_start (Spice_sandbox.Error.message error)
   | Process.Shell_failed_to_start message -> Output.Failed_to_start message
 
 let stream_of_process : Process.captured -> Output.stream = function

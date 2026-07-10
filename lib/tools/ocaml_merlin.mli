@@ -42,13 +42,14 @@ val resolution_error_message : resolution_error -> string
     [e], suitable to cache and surface as a tool's [Unavailable] reason. *)
 
 val resolve_program :
+  sandbox:Spice_sandbox.t ->
   cwd:string ->
   ?env:string array ->
   ?timeout_ms:int ->
   configured:string list ->
   unit ->
   (string list, resolution_error) result
-(** [resolve_program ~cwd ~configured ()] materialises a configured Merlin
+(** [resolve_program ~sandbox ~cwd ~configured ()] materialises a configured Merlin
     invocation {e prefix} into a lock-free argv, to be called {e once} at
     session boot in the lock-free window; the caller caches the result for the
     session.
@@ -123,6 +124,7 @@ val error_message : error -> string
 (** [error_message e] is a human-readable one-line diagnostic for [e]. *)
 
 val run :
+  sandbox:Spice_sandbox.t ->
   program:string list ->
   cwd:string ->
   ?env:string array ->
@@ -134,7 +136,7 @@ val run :
   cancelled:(unit -> bool) ->
   unit ->
   (Jsont.json, error) result
-(** [run ~program ~cwd ~command ~args ~source ~cancelled ()] invokes
+(** [run ~sandbox ~program ~cwd ~command ~args ~source ~cancelled ()] invokes
     [ocamlmerlin single command args] from [cwd] with [source] on standard
     input, and returns the [value] payload of Merlin's [return] envelope on
     success. Interpreting that payload is the caller's responsibility.

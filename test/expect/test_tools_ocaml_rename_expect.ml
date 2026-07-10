@@ -10,6 +10,8 @@ module Tool = Spice_tool
 module Workspace = Spice_workspace
 module Receipt = Spice_tools.Receipt
 
+let sandbox = Spice_sandbox.seal Spice_sandbox.Spec.Unconfined
+
 let json_obj fields =
   Json.object'
     (List.map (fun (name, value) -> Json.mem (Json.name name) value) fields)
@@ -230,7 +232,7 @@ let%expect_test "multi-file rename dry run then apply" =
       ]
   in
   let merlin = write_fake_merlin root ~value in
-  let tool = Rename.tool ~program:[ merlin ] ~fs ~workspace () in
+  let tool = Rename.tool ~sandbox ~program:[ merlin ] ~fs ~workspace () in
   let base =
     [
       ("path", Json.string "lib/a.ml");
@@ -287,7 +289,7 @@ let%expect_test "ml and mli pair" =
       ]
   in
   let merlin = write_fake_merlin root ~value in
-  let tool = Rename.tool ~program:[ merlin ] ~fs ~workspace () in
+  let tool = Rename.tool ~sandbox ~program:[ merlin ] ~fs ~workspace () in
   let input =
     json_obj
       [
@@ -323,7 +325,7 @@ let%expect_test "record-field pun is refused" =
       ]
   in
   let merlin = write_fake_merlin root ~value in
-  let tool = Rename.tool ~program:[ merlin ] ~fs ~workspace () in
+  let tool = Rename.tool ~sandbox ~program:[ merlin ] ~fs ~workspace () in
   let input =
     json_obj
       [
@@ -355,7 +357,7 @@ let%expect_test "labelled argument is refused" =
       ]
   in
   let merlin = write_fake_merlin root ~value in
-  let tool = Rename.tool ~program:[ merlin ] ~fs ~workspace () in
+  let tool = Rename.tool ~sandbox ~program:[ merlin ] ~fs ~workspace () in
   let input =
     json_obj
       [
@@ -384,7 +386,7 @@ let%expect_test "stale occurrence is refused" =
       [ occ ~file:(path root "lib/a.ml") ~sl:1 ~sc:4 ~el:1 ~ec:10 ~stale:true ]
   in
   let merlin = write_fake_merlin root ~value in
-  let tool = Rename.tool ~program:[ merlin ] ~fs ~workspace () in
+  let tool = Rename.tool ~sandbox ~program:[ merlin ] ~fs ~workspace () in
   let input =
     json_obj
       [
@@ -416,7 +418,7 @@ let%expect_test "range text mismatch is refused as stale" =
       ]
   in
   let merlin = write_fake_merlin root ~value in
-  let tool = Rename.tool ~program:[ merlin ] ~fs ~workspace () in
+  let tool = Rename.tool ~sandbox ~program:[ merlin ] ~fs ~workspace () in
   let input =
     json_obj
       [
@@ -441,7 +443,7 @@ let%expect_test "invalid new name" =
   with_workspace @@ fun ~root ~fs ~workspace ->
   write_disk (path root "lib/a.ml") "let target = 1\n";
   let never = write_never_merlin root in
-  let tool = Rename.tool ~program:[ never ] ~fs ~workspace () in
+  let tool = Rename.tool ~sandbox ~program:[ never ] ~fs ~workspace () in
   let call new_name =
     let input =
       json_obj
@@ -475,7 +477,7 @@ let%expect_test "occurrence count over cap is failed" =
       ]
   in
   let merlin = write_fake_merlin root ~value in
-  let tool = Rename.tool ~program:[ merlin ] ~fs ~workspace () in
+  let tool = Rename.tool ~sandbox ~program:[ merlin ] ~fs ~workspace () in
   let input =
     json_obj
       [
@@ -501,7 +503,7 @@ let%expect_test "zero occurrences is invalid_input" =
   with_workspace @@ fun ~root ~fs ~workspace ->
   write_disk (path root "lib/a.ml") "let target = 1\n";
   let merlin = write_fake_merlin root ~value:(occ_array []) in
-  let tool = Rename.tool ~program:[ merlin ] ~fs ~workspace () in
+  let tool = Rename.tool ~sandbox ~program:[ merlin ] ~fs ~workspace () in
   let input =
     json_obj
       [
@@ -529,7 +531,7 @@ let%expect_test "not a standalone identifier is refused" =
       ]
   in
   let merlin = write_fake_merlin root ~value in
-  let tool = Rename.tool ~program:[ merlin ] ~fs ~workspace () in
+  let tool = Rename.tool ~sandbox ~program:[ merlin ] ~fs ~workspace () in
   let input =
     json_obj
       [
@@ -554,7 +556,7 @@ let%expect_test "permissions dry versus apply" =
   with_workspace @@ fun ~root ~fs ~workspace ->
   write_disk (path root "lib/a.ml") "let target = 1\n";
   let merlin = write_fake_merlin root ~value:(occ_array []) in
-  let tool = Rename.tool ~program:[ merlin ] ~fs ~workspace () in
+  let tool = Rename.tool ~sandbox ~program:[ merlin ] ~fs ~workspace () in
   let base =
     [
       ("path", Json.string "lib/a.ml");

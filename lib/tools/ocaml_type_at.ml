@@ -522,10 +522,10 @@ type type_enclosing =
   | Te_error of Tool.Result.failure * string
   | Te_frames of raw_frame list
 
-let run_type_enclosing ~program ~cwd ~abs_path ~position ~verbosity ~source
+let run_type_enclosing ~sandbox ~program ~cwd ~abs_path ~position ~verbosity ~source
     ~cancelled ~index =
   match
-    Merlin.run ~program ~cwd ~command:"type-enclosing"
+    Merlin.run ~sandbox ~program ~cwd ~command:"type-enclosing"
       ~args:(type_enclosing_args ~abs_path ~position ~index ~verbosity)
       ~source ~cancelled ()
   with
@@ -554,9 +554,9 @@ let build_frame ~path ~range ~type_string =
 
 (* Documentation: one extra [document] subprocess. A failure never fails the
    call — it becomes a {!Documentation.Not_available} slot. *)
-let fetch_documentation ~program ~cwd ~abs_path ~position ~source ~cancelled =
+let fetch_documentation ~sandbox ~program ~cwd ~abs_path ~position ~source ~cancelled =
   match
-    Merlin.run ~program ~cwd ~command:"document"
+    Merlin.run ~sandbox ~program ~cwd ~command:"document"
       ~args:(document_args ~abs_path ~position)
       ~source ~cancelled ()
   with
@@ -569,7 +569,7 @@ let fetch_documentation ~program ~cwd ~abs_path ~position ~source ~cancelled =
         `Slot (Documentation.Available { text; truncated })
   | Ok _ -> `Slot (Documentation.Not_available "documentation lookup failed")
 
-let run ?(program = default_program) ~fs ~workspace ctx input =
+let run ~sandbox ?(program = default_program) ~fs ~workspace ctx input =
   let cancelled () = Tool.Context.cancelled ctx in
   if cancelled () then
     Tool.Result.interrupted ~reason:"tool call cancelled" ~cancelled:true ()
@@ -590,7 +590,7 @@ let run ?(program = default_program) ~fs ~workspace ctx input =
            every frame's range, so one process already yields the whole stack
            shape (§2). *)
         match
-          run_type_enclosing ~program ~cwd ~abs_path ~position ~verbosity
+          run_type_enclosing ~sandbox ~program ~cwd ~abs_path ~position ~verbosity
             ~source ~cancelled ~index:0
         with
         | Te_cancelled -> interrupted ()
@@ -622,7 +622,7 @@ let run ?(program = default_program) ~fs ~workspace ctx input =
                         else if cancelled () then `Interrupt
                         else
                           match
-                            run_type_enclosing ~program ~cwd ~abs_path ~position
+                            run_type_enclosing ~sandbox ~program ~cwd ~abs_path ~position
                               ~verbosity ~source ~cancelled ~index:orig_index
                           with
                           | Te_cancelled -> `Interrupt
@@ -658,7 +658,7 @@ let run ?(program = default_program) ~fs ~workspace ctx input =
                         `Slot Documentation.Not_requested
                       else if cancelled () then `Interrupt
                       else
-                        fetch_documentation ~program ~cwd ~abs_path ~position
+                        fetch_documentation ~sandbox ~program ~cwd ~abs_path ~position
                           ~source ~cancelled
                     in
                     match documentation_slot with
@@ -670,8 +670,8 @@ let run ?(program = default_program) ~fs ~workspace ctx input =
                                ~documentation ~verbosity ~backend:"ocamlmerlin")
                           ()))))
 
-let tool ?program ~fs ~workspace () =
+let tool ~sandbox ?program ~fs ~workspace () =
   Tool.make ~name ~description ~input:Input.contract ~output:Output.encode
     ~permissions:(permissions ?program ~workspace)
-    ~run:(run ?program ~fs ~workspace)
+    ~run:(run ~sandbox ?program ~fs ~workspace)
     ()

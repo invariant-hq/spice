@@ -905,9 +905,9 @@ let commit ~fs ~workspace ~input ~old_name ~new_name ~file_plans =
             finish_output ~input ~old_name ~new_name ~file_plans ~applied:true
               ~receipt:(Receipt.make result))
 
-let run_resolved ~program ~fs ~workspace ctx input old_name =
+let run_resolved ~sandbox ~program ~fs ~workspace ctx input old_name =
   let new_name = Input.new_name input in
-  let sub = Find.run ~program ~fs ~workspace ctx (find_input input) in
+  let sub = Find.run ~sandbox ~program ~fs ~workspace ctx (find_input input) in
   match Tool.Result.status sub with
   | Tool.Result.Interrupted { reason; cancelled } ->
       Tool.Result.interrupted ~reason ~cancelled ()
@@ -952,7 +952,7 @@ let run_resolved ~program ~fs ~workspace ctx input old_name =
                       commit ~fs ~workspace ~input ~old_name ~new_name
                         ~file_plans)))
 
-let run ?(program = default_program) ~fs ~workspace ctx input =
+let run ~sandbox ?(program = default_program) ~fs ~workspace ctx input =
   if Tool.Context.cancelled ctx then interrupted ()
   else
     match Workspace.resolve_string workspace (Input.path input) with
@@ -981,10 +981,10 @@ let run ?(program = default_program) ~fs ~workspace ctx input =
                 with
                 | Error refusal -> refusal_result refusal
                 | Ok () ->
-                    run_resolved ~program ~fs ~workspace ctx input old_name)))
+                    run_resolved ~sandbox ~program ~fs ~workspace ctx input old_name)))
 
-let tool ?program ~fs ~workspace () =
+let tool ~sandbox ?program ~fs ~workspace () =
   Tool.make ~name ~description ~input:Input.contract ~output:Output.encode
     ~permissions:(fun input -> permissions ?program ~workspace input)
-    ~run:(run ?program ~fs ~workspace)
+    ~run:(run ~sandbox ?program ~fs ~workspace)
     ()

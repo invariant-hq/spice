@@ -10,9 +10,9 @@
     independent byte limits for each stream, and terminates the child when the
     call is cancelled or a stream exceeds its bound.
 
-    {!run} preserves the older direct-child semantics used by recursive
-    discovery tools. {!run_shell} adds cwd/env/timeout support and best-effort
-    process-group termination for shell-style tools. *)
+    Sandboxed callers use {!run_sandboxed} or {!run_sandboxed_shell}.
+    {!run_shell} accepts an already prepared invocation for the shell tool's
+    explicit escalation path. *)
 
 type status =
   | Exited of int
@@ -20,6 +20,7 @@ type status =
   | Cancelled
   | Output_exceeded of string
   | Failed of string
+  | Refused of Spice_sandbox.Error.t
       (** Process outcome.
 
           [Output_exceeded stream] names the stream that exceeded its configured
@@ -48,6 +49,7 @@ type shell_status =
   | Shell_timed_out of { timeout_ms : int }
   | Shell_cancelled
   | Shell_failed_to_start of string
+  | Shell_refused of Spice_sandbox.Error.t
       (** Shell process status.
 
           [`Timed_out _] and [`Cancelled] are reported after the runner has
@@ -102,3 +104,37 @@ val run_shell :
 
     Raises [Invalid_argument] if [cwd] is empty, [timeout_ms <= 0], or
     [max_output_bytes < 0]. *)
+
+val prepare :
+  sandbox:Spice_sandbox.t ->
+  env:string array ->
+  string list ->
+  (string list * string array, Spice_sandbox.Error.t) Stdlib.result
+(** [prepare ~sandbox ~env argv] is the exact argv and environment selected by
+    [sandbox] for [argv]. An empty argv and a sandbox refusal are errors. *)
+
+val run_sandboxed :
+  ?stdout_limit:int ->
+  ?stderr_limit:int ->
+  sandbox:Spice_sandbox.t ->
+  cancelled:(unit -> bool) ->
+  string list ->
+  result
+(** [run_sandboxed ~sandbox argv] prepares [argv] through [sandbox] before
+    executing it with {!run}'s bounded direct-process semantics. A refusal is
+    returned as [Refused] and starts no process. *)
+
+val run_sandboxed_shell :
+  sandbox:Spice_sandbox.t ->
+  cwd:string ->
+  env:string array ->
+  timeout_ms:int ->
+  max_output_bytes:int ->
+  ?stdin:string ->
+  cancelled:(unit -> bool) ->
+  string list ->
+  shell_result
+(** [run_sandboxed_shell ~sandbox ~cwd ~env argv] prepares [argv] and the exact
+    [env] through [sandbox] before executing it with {!run_shell}'s timeout,
+    cancellation, process-group, and bounded-output semantics. A refusal is
+    returned as [Shell_refused] and starts no process. *)

@@ -210,11 +210,12 @@ val files :
 
 val search :
   ?anchors:Anchor.Resolver.t ->
+  sandbox:Spice_sandbox.t ->
   fs:_ Eio.Path.t ->
   workspace:Spice_workspace.t ->
   unit ->
   Spice_tool.t list
-(** [search ~fs ~workspace ()] is the workspace search catalog: {!Search_text}
+(** [search ~sandbox ~fs ~workspace ()] is the workspace search catalog: {!Search_text}
     and {!Glob}, in that order.
 
     When [anchors] is supplied, {!Search_text} renders anchors from the
@@ -247,6 +248,7 @@ val ocaml :
   ?project_source:Spice_ocaml_dune.Project_source.t ->
   ?merlin_program:string list ->
   ?watch:(unit -> string option) ->
+  sandbox:Spice_sandbox.t ->
   fs:_ Eio.Path.t ->
   process_mgr:_ Eio.Process.mgr ->
   clock:_ Eio.Time.clock ->
@@ -255,7 +257,7 @@ val ocaml :
   workspace:Spice_workspace.t ->
   unit ->
   Spice_tool.t list
-(** [ocaml ~fs ~process_mgr ~clock ~cwd ~dune ~workspace ()] is the OCaml
+(** [ocaml ~sandbox ~fs ~process_mgr ~clock ~cwd ~dune ~workspace ()] is the OCaml
     support catalog: optional {!Ocaml_eval}, optional {!Ocaml_rename} and
     {!Ocaml_replace_expressions}, {!Ocaml_dune_describe},
     {!Ocaml_dune_diagnostics}, {!Ocaml_docs}, {!Ocaml_find_definitions},
@@ -293,6 +295,7 @@ val default :
   ?watch:(unit -> string option) ->
   ?anchors:Anchor.Resolver.t ->
   editor:Editor.t ->
+  sandbox:Spice_sandbox.t ->
   fs:_ Eio.Path.t ->
   process_mgr:_ Eio.Process.mgr ->
   clock:_ Eio.Time.clock ->
@@ -302,7 +305,7 @@ val default :
   shell:Shell.Config.t ->
   unit ->
   Spice_tool.t list
-(** [default ~fs ~process_mgr ~clock ~cwd ~dune ~workspace ~shell ()] is the
+(** [default ~sandbox ~fs ~process_mgr ~clock ~cwd ~dune ~workspace ~shell ()] is the
     standard coding-session tool catalog.
 
     The catalog contains file reads (including directory listings), writes, text

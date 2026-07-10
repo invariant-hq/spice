@@ -25,18 +25,20 @@ val start :
   Host.t ->
   inbox:Notice_queue.t ->
   workspace:Spice_workspace.t ->
+  sandbox:Spice_sandbox.t ->
   cwd:Eio.Fs.dir_ty Eio.Path.t ->
   root:string ->
   unit ->
   t
-(** [start ~sw ~stdenv host ~inbox ~workspace ~cwd ~root ()] starts the enabled
+(** [start ~sw ~stdenv host ~inbox ~workspace ~sandbox ~cwd ~root ()] starts the enabled
     notice producers for [host] over [inbox].
 
     Each producer is gated on its [Config.Notices] flag. The filesystem watcher
     and CR-comment observer watch [root] (the workspace root path); the Dune
     watchers share the created Dune RPC instance, whose optional build-watch
     starter runs in [cwd] (the run directory Eio path, see {!Context.eio_cwd}).
-    [workspace] backs Dune RPC endpoint discovery. All producers run until [sw]
+    [workspace] backs Dune RPC endpoint discovery. [sandbox] confines every
+    automatic Dune or Merlin process. All producers run until [sw]
     is released or {!stop} is called; startup failures degrade to warning
     notices rather than failing the run. *)
 

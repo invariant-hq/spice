@@ -9,6 +9,8 @@ module Search_text = Spice_tools.Search_text
 module Tool = Spice_tool
 module Workspace = Spice_workspace
 
+let sandbox = Spice_sandbox.seal Spice_sandbox.Spec.Unconfined
+
 let json_obj fields =
   Json.object'
     (List.map (fun (name, value) -> Json.mem (Json.name name) value) fields)
@@ -220,7 +222,7 @@ let print_result ?outside result =
       Printf.printf "interrupted cancelled=%b: %s\n" cancelled reason
 
 let run ~fs ~workspace ?outside input =
-  Search_text.run ~fs ~workspace input |> print_result ?outside
+  Search_text.run ~sandbox ~fs ~workspace input |> print_result ?outside
 
 let print_decode label json =
   let result =
@@ -388,7 +390,8 @@ let%expect_test "pagination and structured continuation" =
   with_fixture @@ fun ~outside:_ ~fs ~workspace ->
   print_case "first page";
   let result =
-    Search_text.run ~fs ~workspace (Search_text.Input.make ~limit:2 "alpha")
+    Search_text.run ~sandbox ~fs ~workspace
+      (Search_text.Input.make ~limit:2 "alpha")
   in
   print_result result;
   let output =
@@ -429,7 +432,7 @@ let%expect_test "pagination and structured continuation" =
 let%expect_test "continuation text escapes special input characters" =
   with_fixture @@ fun ~outside:_ ~fs ~workspace ->
   let result =
-    Search_text.run ~fs ~workspace
+    Search_text.run ~sandbox ~fs ~workspace
       (Search_text.Input.make ~paths:[ "odd\n\".txt" ]
          ~mode:Search_text.Input.Matches ~limit:1 "needle|\"")
   in
@@ -549,7 +552,8 @@ let%expect_test "erased tool adapter permissions rendering and cancellation" =
   with_fixture @@ fun ~outside:_ ~fs ~workspace ->
   print_case "adapter";
   let tool =
-    Search_text.tool ~fs ~workspace ~render:(Search_text.Output.anchored ()) ()
+    Search_text.tool ~sandbox ~fs ~workspace
+      ~render:(Search_text.Output.anchored ()) ()
   in
   let call =
     match
@@ -584,7 +588,7 @@ let%expect_test "erased tool adapter permissions rendering and cancellation" =
     incr calls;
     !calls > 1
   in
-  Search_text.run ~fs ~workspace ~cancelled
+  Search_text.run ~sandbox ~fs ~workspace ~cancelled
     (Search_text.Input.make ~paths:[ "src/app.ml" ] "alpha")
   |> print_result;
   [%expect
@@ -593,7 +597,7 @@ let%expect_test "erased tool adapter permissions rendering and cancellation" =
     permissions: 1
     pattern="alpha" mode=matches results=1/2 offset=1 limit=1 status=partial
     src/app.ml
-      1 #f4ad3a1807cd: let alpha = 1
+      1 #43a8220f0727: let alpha = 1
     next: search_text {"pattern":"alpha","paths":["src/app.ml"],"mode":"matches","case_insensitive":false,"context_lines":0,"offset":2,"limit":1}
     truncated=false
     -- cancelled --

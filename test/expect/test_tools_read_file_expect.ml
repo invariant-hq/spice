@@ -540,8 +540,8 @@ let%expect_test "anchored adapter" =
   [%expect
     {|
     note.txt lines=2-3 returned=2/>=3 status=partial reason=ranged anchors=enabled
-    2 72fa760ebcdb	bravo
-    3 0d47a26163be	charlie
+    2 f6cf1351dde5	bravo
+    3 6488e054ed98	charlie
     next: read_file {"path":"note.txt","offset":4,"limit":2} |}]
 
 let%expect_test "display rendering" =
@@ -596,7 +596,7 @@ let%expect_test "long-line anchors use raw line text" =
   [%expect
     {|
     matches displayed-text anchor: false
-    read anchor: 90d1218c442b |}]
+    read anchor: e92b9ab6ee23 |}]
 
 let%expect_test "failures" =
   with_fixture @@ fun ~fs ~workspace ->

@@ -11,6 +11,10 @@ module Json = Jsont.Json
 module Tool = Spice_tool
 module Workspace = Spice_workspace
 
+let sandbox = Spice_sandbox.seal Spice_sandbox.Spec.Unconfined
+
+let prepare ~argv ~env = Ok (argv, env)
+
 let json_obj fields =
   Json.object'
     (List.map (fun (name, value) -> Json.mem (Json.name name) value) fields)
@@ -165,7 +169,7 @@ let print_describe_result result =
 let%expect_test "ocaml_dune_describe runs dune describe for a tiny project" =
   with_project_clock @@ fun ~root ~process_mgr ~clock ~cwd ~workspace ->
   ignore root;
-  let tool = Describe.tool ~process_mgr ~clock ~cwd ~workspace () in
+  let tool = Describe.tool ~sandbox ~process_mgr ~clock ~cwd ~workspace () in
   let call = decode_call tool ~name:Describe.name in
   Printf.printf "tool: %s\n" (Tool.Call.tool call);
   Printf.printf "permissions: %d\n" (List.length (Tool.Call.permissions call));
@@ -187,7 +191,7 @@ let%expect_test
   with_nested_project_clock
   @@ fun ~parent ~child ~process_mgr ~clock ~cwd ~workspace ->
   ignore (parent, child);
-  let tool = Describe.tool ~process_mgr ~clock ~cwd ~workspace () in
+  let tool = Describe.tool ~sandbox ~process_mgr ~clock ~cwd ~workspace () in
   let call = decode_call tool ~name:Describe.name in
   Tool.Call.run call () |> print_describe_result;
   [%expect
@@ -214,7 +218,8 @@ let%expect_test "ocaml_dune_describe captures dune stderr" =
       ~finally:(fun () -> Unix.putenv "PATH" old_path)
       (fun () ->
         match
-          Dune.Describe.describe_project ~process_mgr ~clock ~cwd ~workspace ()
+          Dune.Describe.describe_project ~prepare ~process_mgr ~clock ~cwd
+            ~workspace ()
         with
         | Ok project ->
             ignore project;
@@ -478,7 +483,8 @@ let%expect_test "project_source capture failure leaves no snapshot" =
 
 let run_describe_source ~process_mgr ~clock ~cwd ~workspace source =
   let tool =
-    Describe.tool ~process_mgr ~clock ~cwd ~workspace ~project_source:source ()
+    Describe.tool ~sandbox ~process_mgr ~clock ~cwd ~workspace
+      ~project_source:source ()
   in
   let call = decode_call tool ~name:Describe.name in
   let result = Tool.Call.run call () in
@@ -532,7 +538,8 @@ let%expect_test
       ()
   in
   let tool =
-    Describe.tool ~process_mgr ~clock ~cwd ~workspace ~project_source:source ()
+    Describe.tool ~sandbox ~process_mgr ~clock ~cwd ~workspace
+      ~project_source:source ()
   in
   Tool.Call.run (decode_call tool ~name:Describe.name) () |> print_status_kind;
   [%expect {| status: failed unavailable |}]

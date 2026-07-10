@@ -31,7 +31,28 @@ let is_shape_drift (event : Spice_fswatch.Event.t) =
       | _ -> false)
   | None -> false
 
-let start ~sw ~stdenv host ~inbox ~workspace ~cwd ~root () =
+let split_env binding =
+  match String.index_opt binding '=' with
+  | None -> (binding, "")
+  | Some index ->
+      ( String.sub binding 0 index,
+        String.sub binding (index + 1) (String.length binding - index - 1) )
+
+let prepare sandbox ~argv ~env =
+  match argv with
+  | [] -> Error "process argv is empty"
+  | program :: args ->
+      let argv = Spice_sandbox.Argv.make ~program args in
+      let env = Array.to_list env |> List.map split_env in
+      Spice_sandbox.spawn sandbox ~argv ~env
+      |> Result.map (fun spawn ->
+          ( Spice_sandbox.Spawn.argv spawn |> Spice_sandbox.Argv.to_list,
+            Spice_sandbox.Spawn.env spawn
+            |> List.map (fun (name, value) -> name ^ "=" ^ value)
+            |> Array.of_list ))
+      |> Result.map_error Spice_sandbox.Error.message
+
+let start ~sw ~stdenv host ~inbox ~workspace ~sandbox ~cwd ~root () =
   let config = Host.config host in
   let notices = Config.notices config in
   (* [workspace.tooling] gates the OCaml/Dune integration: when it does not
@@ -49,6 +70,7 @@ let start ~sw ~stdenv host ~inbox ~workspace ~cwd ~root () =
       if dune_diagnostics || dune_build then
         Some
           (Spice_ocaml_dune.Rpc.Instance.Start.dune_build_watch ~sw
+             ~prepare:(prepare sandbox)
              ~process_mgr:(Eio.Stdenv.process_mgr stdenv)
              ~cwd ())
       else None
@@ -77,6 +99,7 @@ let start ~sw ~stdenv host ~inbox ~workspace ~cwd ~root () =
             Spice_ocaml_dune.Project_source.No_watch)
       ~describe:(fun ~cancelled ->
         Spice_ocaml_dune.Describe.describe_project
+          ~prepare:(prepare sandbox)
           ~process_mgr:(Eio.Stdenv.process_mgr stdenv)
           ~clock:(Eio.Stdenv.clock stdenv) ~cwd ~workspace ~cancelled ())
       ()
@@ -97,8 +120,8 @@ let start ~sw ~stdenv host ~inbox ~workspace ~cwd ~root () =
     else
       let configured = Config.Ocaml.merlin_program (Config.ocaml config) in
       match
-        Spice_tools.Ocaml_merlin.resolve_program ~cwd:(Eio.Path.native_exn cwd)
-          ~configured ()
+        Spice_tools.Ocaml_merlin.resolve_program ~sandbox
+          ~cwd:(Eio.Path.native_exn cwd) ~configured ()
       with
       | Ok argv -> argv
       | Error error ->

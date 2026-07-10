@@ -487,7 +487,7 @@ let output_of_response ~workspace ~cwd ~source_path input = function
       Tool.Result.failed `Not_found message
   | Malformed message -> Tool.Result.failed `Failed message
 
-let run ?(program = default_program) ~fs ~workspace ctx input =
+let run ~sandbox ?(program = default_program) ~fs ~workspace ctx input =
   if Tool.Context.cancelled ctx then
     Tool.Result.interrupted ~reason:"tool call cancelled" ~cancelled:true ()
   else
@@ -499,7 +499,7 @@ let run ?(program = default_program) ~fs ~workspace ctx input =
         let source_abs = Workspace.Path.to_string source_path in
         let command, args = merlin_command_args ~path:source_abs input in
         match
-          Ocaml_merlin.run ~program ~cwd ~command ~args ~source
+          Ocaml_merlin.run ~sandbox ~program ~cwd ~command ~args ~source
             ~cancelled:(fun () -> Tool.Context.cancelled ctx)
             ()
         with
@@ -516,8 +516,8 @@ let run ?(program = default_program) ~fs ~workspace ctx input =
             output_of_response ~workspace ~cwd ~source_path:source_abs input
               (merlin_response_of_value value))
 
-let tool ?program ~fs ~workspace () =
+let tool ~sandbox ?program ~fs ~workspace () =
   Tool.make ~name ~description ~input:Input.contract ~output:Output.encode
     ~permissions:(permissions ?program ~workspace)
-    ~run:(run ?program ~fs ~workspace)
+    ~run:(run ~sandbox ?program ~fs ~workspace)
     ()

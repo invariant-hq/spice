@@ -558,6 +558,7 @@ end
 type search_error =
   | Fs of Fs.Error.t
   | Rg_failed of { invalid_input : bool; message : string }
+  | Sandbox_refused of Spice_sandbox.Error.t
   | Cancelled
 
 let default_cancelled () = false
@@ -918,13 +919,14 @@ let is_missing_executable message =
   String.includes ~affix:"No such file or directory" message
   || String.includes ~affix:"ENOENT" message
 
-let run_rg ~workspace ~cancelled input roots =
+let run_rg ~sandbox ~workspace ~cancelled input roots =
   let result =
-    Process.run ~stdout_limit:max_rg_stdout_bytes
+    Process.run_sandboxed ~sandbox ~stdout_limit:max_rg_stdout_bytes
       ~stderr_limit:max_rg_stderr_bytes ~cancelled (rg_args input roots)
   in
   match result.Process.status with
   | Process.Cancelled -> Error Cancelled
+  | Process.Refused error -> Error (Sandbox_refused error)
   | Process.Failed message ->
       let message =
         if is_missing_executable message then
@@ -1139,6 +1141,7 @@ let error_kind = function
   | Fs error -> Fs_error.failure error
   | Rg_failed { invalid_input; _ } ->
       if invalid_input then `Invalid_input else `Failed
+  | Sandbox_refused _ -> `Unavailable
   | Cancelled -> `Failed
 
 let error_message = function
@@ -1155,6 +1158,7 @@ let error_message = function
   | Fs (Fs.Error.Io (Some path, _)) ->
       Workspace.Path.display path ^ ": filesystem I/O error"
   | Rg_failed { message; _ } -> message
+  | Sandbox_refused error -> Spice_sandbox.Error.message error
   | Cancelled -> "tool call cancelled"
 
 let failed error = Tool.Result.failed (error_kind error) (error_message error)
@@ -1174,7 +1178,7 @@ let permissions ~workspace input =
   in
   loop [] (effective_paths input)
 
-let run ~fs ~workspace ?(anchors = Anchor.Source.deterministic)
+let run ~sandbox ~fs ~workspace ?(anchors = Anchor.Source.deterministic)
     ?(cancelled = default_cancelled) input =
   if cancelled () then
     Tool.Result.interrupted ~reason:"tool call cancelled" ~cancelled:true ()
@@ -1182,14 +1186,15 @@ let run ~fs ~workspace ?(anchors = Anchor.Source.deterministic)
     match resolve_roots ~fs ~workspace input with
     | Error Cancelled ->
         Tool.Result.interrupted ~reason:"tool call cancelled" ~cancelled:true ()
-    | Error ((Fs _ | Rg_failed _) as error) -> failed error
+    | Error ((Fs _ | Rg_failed _ | Sandbox_refused _) as error) -> failed error
     | Ok roots -> (
         let root_paths = List.map fst roots in
-        match run_rg ~workspace ~cancelled input root_paths with
+        match run_rg ~sandbox ~workspace ~cancelled input root_paths with
         | Error Cancelled ->
             Tool.Result.interrupted ~reason:"tool call cancelled"
               ~cancelled:true ()
-        | Error ((Fs _ | Rg_failed _) as error) -> failed error
+        | Error ((Fs _ | Rg_failed _ | Sandbox_refused _) as error) ->
+            failed error
         | Ok (skipped, events) -> (
             match Input.mode input with
             | Input.Files ->
@@ -1223,13 +1228,13 @@ let run ~fs ~workspace ?(anchors = Anchor.Source.deterministic)
                        returned)
                   ()))
 
-let tool ~fs ~workspace ?(render = Output.plain) () =
+let tool ~sandbox ~fs ~workspace ?(render = Output.plain) () =
   let anchors = Output.anchor_source render in
   Tool.make ~name ~description ~input:Input.contract
     ~output:(Output.encode ~render)
     ~permissions:(fun input -> permissions ~workspace input)
     ~run:(fun ctx input ->
-      run ~fs ~workspace ~anchors
+      run ~sandbox ~fs ~workspace ~anchors
         ~cancelled:(fun () -> Tool.Context.cancelled ctx)
         input)
     ()

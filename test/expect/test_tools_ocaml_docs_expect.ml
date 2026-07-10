@@ -11,6 +11,8 @@ module Ocaml = Spice_ocaml
 module Tool = Spice_tool
 module Workspace = Spice_workspace
 
+let sandbox = Spice_sandbox.seal Spice_sandbox.Spec.Unconfined
+
 let json_obj fields =
   Json.object'
     (List.map (fun (name, value) -> Json.mem (Json.name name) value) fields)
@@ -190,7 +192,7 @@ let print_result result =
 let no_merlin = [ "spice-no-such-merlin" ]
 
 let run ?(program = no_merlin) ~process_mgr ~clock ~fs ~cwd ~workspace input =
-  Docs.run ~program ~process_mgr ~clock ~fs ~cwd ~workspace input
+  Docs.run ~sandbox ~program ~process_mgr ~clock ~fs ~cwd ~workspace input
   |> print_result
 
 (* Failure wording comes from the shared FS/edit error mappers; assert only the
@@ -199,7 +201,7 @@ let run_kind ?(program = no_merlin) ~process_mgr ~clock ~fs ~cwd ~workspace
     input =
   match
     Tool.Result.status
-      (Docs.run ~program ~process_mgr ~clock ~fs ~cwd ~workspace input)
+      (Docs.run ~sandbox ~program ~process_mgr ~clock ~fs ~cwd ~workspace input)
   with
   | Tool.Result.Completed -> print_endline "completed"
   | Tool.Result.Failed { kind; _ } ->
@@ -349,7 +351,8 @@ let%expect_test "permissions surface" =
 let%expect_test "erased tool adapter" =
   with_fixture @@ fun ~process_mgr ~clock ~fs ~cwd ~workspace ->
   let tool =
-    Docs.tool ~program:no_merlin ~process_mgr ~clock ~fs ~cwd ~workspace ()
+    Docs.tool ~sandbox ~program:no_merlin ~process_mgr ~clock ~fs ~cwd
+      ~workspace ()
   in
   let call =
     match
@@ -431,7 +434,8 @@ let%expect_test "name form carries fresh describe_freshness via project_source"
       ~now:(fun () -> 1000.0)
       ()
   in
-  Docs.run ~project_source:source ~process_mgr ~clock ~fs ~cwd ~workspace
+  Docs.run ~sandbox ~project_source:source ~process_mgr ~clock ~fs ~cwd
+    ~workspace
     (Docs.Input.make "demo")
   |> print_freshness_field;
   [%expect {| level=library_overview describe_freshness=fresh |}]
@@ -447,7 +451,8 @@ let%expect_test "name form snapshot describe_freshness under a watch" =
       ()
   in
   (match Dune.Project_source.capture source with Ok () -> () | Error _ -> ());
-  Docs.run ~project_source:source ~process_mgr ~clock ~fs ~cwd ~workspace
+  Docs.run ~sandbox ~project_source:source ~process_mgr ~clock ~fs ~cwd
+    ~workspace
     (Docs.Input.make "demo")
   |> print_freshness_field;
   [%expect
@@ -455,7 +460,7 @@ let%expect_test "name form snapshot describe_freshness under a watch" =
 
 let%expect_test "path form has no describe_freshness" =
   with_fixture @@ fun ~process_mgr ~clock ~fs ~cwd ~workspace ->
-  Docs.run ~process_mgr ~clock ~fs ~cwd ~workspace
+  Docs.run ~sandbox ~process_mgr ~clock ~fs ~cwd ~workspace
     (Docs.Input.make "lib/demo/demo.mli")
   |> print_freshness_field;
   [%expect {| level=file_outline describe_freshness=none |}]

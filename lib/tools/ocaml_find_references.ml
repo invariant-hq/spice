@@ -537,7 +537,7 @@ let reference_page input ~offset ~limit ~returned ~total =
       ~next:(Some next)
   else Pagination.Page.complete ~returned ~total:count ~offset ~limit
 
-let run ?(program = default_program) ~fs ~workspace ctx input =
+let run ~sandbox ?(program = default_program) ~fs ~workspace ctx input =
   if Tool.Context.cancelled ctx then
     Tool.Result.interrupted ~reason:"tool call cancelled" ~cancelled:true ()
   else
@@ -557,7 +557,7 @@ let run ?(program = default_program) ~fs ~workspace ctx input =
                 ~scope:(Input.scope input)
             in
             match
-              Ocaml_merlin.run ~program ~cwd ~command:"occurrences" ~args
+              Ocaml_merlin.run ~sandbox ~program ~cwd ~command:"occurrences" ~args
                 ~source
                 ~cancelled:(fun () -> Tool.Context.cancelled ctx)
                 ()
@@ -611,8 +611,8 @@ let run ?(program = default_program) ~fs ~workspace ctx input =
                            ~backend:"ocamlmerlin")
                       ())))
 
-let tool ?program ~fs ~workspace () =
+let tool ~sandbox ?program ~fs ~workspace () =
   Tool.make ~name ~description ~input:Input.contract ~output:Output.encode
     ~permissions:(fun input -> permissions ?program ~workspace input)
-    ~run:(run ?program ~fs ~workspace)
+    ~run:(run ~sandbox ?program ~fs ~workspace)
     ()

@@ -9,6 +9,8 @@ module Replace = Spice_tools.Ocaml_replace_expressions
 module Ocaml = Spice_ocaml
 module Tool = Spice_tool
 module Workspace = Spice_workspace
+
+let sandbox = Spice_sandbox.seal Spice_sandbox.Spec.Unconfined
 module Receipt = Spice_tools.Receipt
 
 let json_obj fields =
@@ -165,7 +167,7 @@ let print_result ?show_diff result =
       Printf.printf "interrupted cancelled=%b: %s\n" cancelled reason
 
 let run ?show_diff ~fs ~workspace input =
-  Replace.run ~fs ~workspace input |> print_result ?show_diff
+  Replace.run ~sandbox ~fs ~workspace input |> print_result ?show_diff
 
 let%expect_test "multi-file sweep applies and returns a receipt" =
   with_files
@@ -403,7 +405,7 @@ let%expect_test "input decode" =
 
 let%expect_test "adapter permissions differ for apply and preview" =
   with_files [ ("z.ml", "let a = f x\n") ] @@ fun ~dir:_ ~fs ~workspace ->
-  let tool = Replace.tool ~fs ~workspace () in
+  let tool = Replace.tool ~sandbox ~fs ~workspace () in
   let call ~dry_run =
     match
       Tool.Call.decode [ tool ] ~name:Replace.name

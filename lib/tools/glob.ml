@@ -295,6 +295,7 @@ type discovered = { path : Workspace.Path.t; mtime : float }
 type glob_error =
   | Fs of Fs.Error.t
   | Rg_failed of { invalid_input : bool; message : string }
+  | Sandbox_refused of Spice_sandbox.Error.t
   | Cancelled
 
 let default_cancelled () = false
@@ -446,18 +447,19 @@ let captured_text_lossy = function
   | Process.Truncated { head; tail; omitted_bytes } ->
       head ^ Printf.sprintf "\n... %d bytes omitted ...\n" omitted_bytes ^ tail
 
-let run_rg_command ~cancelled root args =
+let run_rg_command ~sandbox ~cancelled root args =
   let cwd =
     Spice_path.Abs.to_string (Workspace.Root.dir (Workspace.Path.root root))
   in
   let result =
-    Process.run_shell ~cwd ~env:(Unix.environment ())
+    Process.run_sandboxed_shell ~sandbox ~cwd ~env:(Unix.environment ())
       ~timeout_ms:max_rg_timeout_ms ~max_output_bytes:max_rg_stdout_bytes
       ~cancelled args
   in
   let stderr = captured_text_lossy result.Process.shell_stderr in
   match result.Process.shell_status with
   | Process.Shell_cancelled -> Error Cancelled
+  | Process.Shell_refused error -> Error (Sandbox_refused error)
   | Process.Shell_failed_to_start message ->
       let message =
         if is_missing_executable message then
@@ -499,9 +501,10 @@ let run_rg_command ~cancelled root args =
                ^ String.trim stderr;
            })
 
-let run_rg ~fs ~workspace ~cancelled input root =
+let run_rg ~sandbox ~fs ~workspace ~cancelled input root =
   match
-    run_rg_command ~cancelled root (rg_args ~pattern:(Input.pattern input) root)
+    run_rg_command ~sandbox ~cancelled root
+      (rg_args ~pattern:(Input.pattern input) root)
   with
   | Error _ as error -> error
   | Ok matching_stdout -> (
@@ -510,7 +513,7 @@ let run_rg ~fs ~workspace ~cancelled input root =
       | Ok matching_paths -> (
           if Workspace.Path.Set.is_empty matching_paths then Ok []
           else
-            match run_rg_command ~cancelled root (rg_args root) with
+            match run_rg_command ~sandbox ~cancelled root (rg_args root) with
             | Error _ as error -> error
             | Ok stdout ->
                 collect_files ~fs ~workspace ~cancelled ~root ~matching_paths
@@ -559,6 +562,7 @@ let error_kind = function
   | Fs error -> Fs_error.failure error
   | Rg_failed { invalid_input; _ } ->
       if invalid_input then `Invalid_input else `Failed
+  | Sandbox_refused _ -> `Unavailable
   | Cancelled -> `Failed
 
 let error_message = function
@@ -575,6 +579,7 @@ let error_message = function
   | Fs (Fs.Error.Io (Some path, _)) ->
       Workspace.Path.display path ^ ": filesystem I/O error"
   | Rg_failed { message; _ } -> message
+  | Sandbox_refused error -> Spice_sandbox.Error.message error
   | Cancelled -> "tool call cancelled"
 
 let failed error = Tool.Result.failed (error_kind error) (error_message error)
@@ -588,7 +593,7 @@ let permissions ~workspace input =
           [ Permission.Access.path ~op:`Read path ];
       ]
 
-let run ~fs ~workspace ?(cancelled = default_cancelled) input =
+let run ~sandbox ~fs ~workspace ?(cancelled = default_cancelled) input =
   if cancelled () then
     Tool.Result.interrupted ~reason:"tool call cancelled" ~cancelled:true ()
   else
@@ -598,7 +603,7 @@ let run ~fs ~workspace ?(cancelled = default_cancelled) input =
         match Fs.directory ~fs ~workspace ~follow_symlink:false root with
         | Error error -> failed (Fs error)
         | Ok _ -> (
-            match run_rg ~fs ~workspace ~cancelled input root with
+            match run_rg ~sandbox ~fs ~workspace ~cancelled input root with
             | Error Cancelled ->
                 Tool.Result.interrupted ~reason:"tool call cancelled"
                   ~cancelled:true ()
@@ -606,9 +611,11 @@ let run ~fs ~workspace ?(cancelled = default_cancelled) input =
             | Ok files ->
                 Tool.Result.completed ~output:(output input root files) ()))
 
-let tool ~fs ~workspace () =
+let tool ~sandbox ~fs ~workspace () =
   Tool.make ~name ~description ~input:Input.contract ~output:Output.encode
     ~permissions:(fun input -> permissions ~workspace input)
     ~run:(fun ctx input ->
-      run ~fs ~workspace ~cancelled:(fun () -> Tool.Context.cancelled ctx) input)
+      run ~sandbox ~fs ~workspace
+        ~cancelled:(fun () -> Tool.Context.cancelled ctx)
+        input)
     ()

@@ -9,6 +9,8 @@ module Json = Jsont.Json
 module Tool = Spice_tool
 module Workspace = Spice_workspace
 
+let sandbox = Spice_sandbox.seal Spice_sandbox.Spec.Unconfined
+
 let json_obj fields =
   Json.object'
     (List.map (fun (name, value) -> Json.mem (Json.name name) value) fields)
@@ -165,7 +167,7 @@ let print_result ?outside result =
       Printf.printf "interrupted cancelled=%b: %s\n" cancelled reason
 
 let run ~fs ~workspace ?outside input =
-  Glob.run ~fs ~workspace input |> print_result ?outside
+  Glob.run ~sandbox ~fs ~workspace input |> print_result ?outside
 
 let print_decode label json =
   let result =
@@ -289,7 +291,8 @@ let%expect_test "pagination and structured continuation" =
   with_fixture @@ fun ~outside:_ ~fs ~workspace ->
   print_case "first page";
   let result =
-    Glob.run ~fs ~workspace (Glob.Input.make ~path:"lib" ~limit:2 "**/*.ml")
+    Glob.run ~sandbox ~fs ~workspace
+      (Glob.Input.make ~path:"lib" ~limit:2 "**/*.ml")
   in
   print_result result;
   let output =
@@ -365,7 +368,7 @@ let%expect_test "unsafe roots and invalid glob fail" =
 let%expect_test "erased adapter permissions output and cancellation" =
   with_fixture @@ fun ~outside:_ ~fs ~workspace ->
   print_case "adapter";
-  let tool = Glob.tool ~fs ~workspace () in
+  let tool = Glob.tool ~sandbox ~fs ~workspace () in
   let call =
     match
       Tool.Call.decode [ tool ] ~name:Glob.name
@@ -404,7 +407,7 @@ let%expect_test "erased adapter permissions output and cancellation" =
   | _ -> failf "adapter call did not complete"
   end;
   print_case "cancelled";
-  Glob.run ~fs ~workspace
+  Glob.run ~sandbox ~fs ~workspace
     ~cancelled:(fun () -> true)
     (Glob.Input.make "**/*.ml")
   |> print_result;
@@ -420,5 +423,15 @@ let%expect_test "erased adapter permissions output and cancellation" =
     truncated=false
     -- cancelled --
     interrupted cancelled=true: tool call cancelled |}]
+
+let%expect_test "sandbox refusal prevents ripgrep spawn" =
+  with_fixture @@ fun ~outside:_ ~fs ~workspace ->
+  let refusing =
+    Spice_sandbox.seal
+      (Spice_sandbox.Spec.Confined Spice_sandbox.Confinement.read_only)
+  in
+  Glob.run ~sandbox:refusing ~fs ~workspace (Glob.Input.make "**/*.ml")
+  |> print_result;
+  [%expect {| failed unavailable: no sandbox backend configured |}]
 
 [%%run_tests "spice.tools.glob.expect"]

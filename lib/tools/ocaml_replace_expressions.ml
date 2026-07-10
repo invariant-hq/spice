@@ -913,8 +913,8 @@ let resolve_roots ~fs ~workspace input =
   in
   loop Workspace.Path.Set.empty [] (effective_paths input)
 
-let glob_page ~fs ~workspace ~cancelled input =
-  let result = Glob.run ~fs ~workspace ~cancelled input in
+let glob_page ~sandbox ~fs ~workspace ~cancelled input =
+  let result = Glob.run ~sandbox ~fs ~workspace ~cancelled input in
   match Tool.Result.status result with
   | Tool.Result.Completed -> (
       match Tool.Result.output result with
@@ -923,12 +923,12 @@ let glob_page ~fs ~workspace ~cancelled input =
   | Tool.Result.Failed { message; _ } -> Error (Enumerate message)
   | Tool.Result.Interrupted _ -> Error Cancelled
 
-let enumerate_root ~fs ~workspace ~cancelled (path, kind) =
+let enumerate_root ~sandbox ~fs ~workspace ~cancelled (path, kind) =
   match kind with
   | `Regular_file -> Ok [ path ]
   | `Directory ->
       let rec loop acc input =
-        match glob_page ~fs ~workspace ~cancelled input with
+        match glob_page ~sandbox ~fs ~workspace ~cancelled input with
         | Error _ as error -> error
         | Ok (files, next) -> (
             let acc = List.rev_append files acc in
@@ -941,11 +941,11 @@ let enumerate_root ~fs ~workspace ~cancelled (path, kind) =
            ~path:(Workspace.Path.display path)
            ~limit:Glob.max_limit "**/*.ml")
 
-let enumerate_candidates ~fs ~workspace ~cancelled roots =
+let enumerate_candidates ~sandbox ~fs ~workspace ~cancelled roots =
   let rec loop seen acc = function
     | [] -> Ok (List.rev acc)
     | root :: roots -> (
-        match enumerate_root ~fs ~workspace ~cancelled root with
+        match enumerate_root ~sandbox ~fs ~workspace ~cancelled root with
         | Error _ as error -> error
         | Ok files ->
             let seen, acc =
@@ -1126,7 +1126,7 @@ let apply_files ~fs ~workspace ~max_bytes plans files afters =
 
 let default_max_bytes = 1024 * 1024
 
-let run ~fs ~workspace ?(max_bytes = default_max_bytes)
+let run ~sandbox ~fs ~workspace ?(max_bytes = default_max_bytes)
     ?(cancelled = default_cancelled) input =
   if cancelled () then interrupted ()
   else
@@ -1142,7 +1142,9 @@ let run ~fs ~workspace ?(max_bytes = default_max_bytes)
             | Error error -> failed error
             | Ok roots -> (
                 let root_paths = List.map fst roots in
-                match enumerate_candidates ~fs ~workspace ~cancelled roots with
+                match
+                  enumerate_candidates ~sandbox ~fs ~workspace ~cancelled roots
+                with
                 | Error Cancelled -> interrupted ()
                 | Error ((Fs _ | Enumerate _) as error) -> failed error
                 | Ok candidates ->
@@ -1258,9 +1260,11 @@ let run ~fs ~workspace ?(max_bytes = default_max_bytes)
                                       ~final_identities))
                     end)))
 
-let tool ~fs ~workspace () =
+let tool ~sandbox ~fs ~workspace () =
   Tool.make ~name ~description ~input:Input.contract ~output:Output.encode
     ~permissions:(fun input -> permissions ~workspace input)
     ~run:(fun ctx input ->
-      run ~fs ~workspace ~cancelled:(fun () -> Tool.Context.cancelled ctx) input)
+      run ~sandbox ~fs ~workspace
+        ~cancelled:(fun () -> Tool.Context.cancelled ctx)
+        input)
     ()

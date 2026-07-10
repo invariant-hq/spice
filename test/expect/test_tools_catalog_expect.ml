@@ -10,6 +10,8 @@ module Shell = Spice_tools.Shell
 module Tool = Spice_tool
 module Workspace = Spice_workspace
 
+let sandbox = Spice_sandbox.seal Spice_sandbox.Spec.Unconfined
+
 let abs path =
   match Spice_path.Abs.of_string path with
   | Ok path -> path
@@ -42,8 +44,8 @@ let%expect_test "default catalog selects editor tools by family" =
   let dune = Dune.Rpc.Instance.create ~fs ~net ~workspace () in
   let shell = Shell.Config.make () in
   let default ~editor () =
-    Spice_tools.default ~editor ~fs ~process_mgr ~clock ~cwd ~dune ~workspace
-      ~shell ()
+    Spice_tools.default ~editor ~sandbox ~fs ~process_mgr ~clock ~cwd ~dune
+      ~workspace ~shell ()
   in
   (* The editor family owns the whole general mutation surface: exactly one
      family ships, and write_file rides with edit_file. *)
@@ -96,8 +98,8 @@ let%expect_test "tool names satisfy the strictest provider name dialect" =
   let dune = Dune.Rpc.Instance.create ~fs ~net ~workspace () in
   let shell = Shell.Config.make () in
   let tools =
-    Spice_tools.default ~editor:Editor.String_replace ~fs ~process_mgr ~clock
-      ~cwd ~dune ~workspace ~shell ()
+    Spice_tools.default ~editor:Editor.String_replace ~sandbox ~fs ~process_mgr
+      ~clock ~cwd ~dune ~workspace ~shell ()
   in
   let valid_char = function
     | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '.' | '-' -> true

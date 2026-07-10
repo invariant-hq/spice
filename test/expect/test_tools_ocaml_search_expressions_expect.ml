@@ -10,6 +10,8 @@ module Ocaml = Spice_ocaml
 module Tool = Spice_tool
 module Workspace = Spice_workspace
 
+let sandbox = Spice_sandbox.seal Spice_sandbox.Spec.Unconfined
+
 let json_obj fields =
   Json.object'
     (List.map (fun (name, value) -> Json.mem (Json.name name) value) fields)
@@ -164,7 +166,8 @@ let print_result result =
   | Tool.Result.Interrupted { reason; cancelled } ->
       Printf.printf "interrupted cancelled=%b: %s\n" cancelled reason
 
-let run ~fs ~workspace input = Search.run ~fs ~workspace input |> print_result
+let run ~fs ~workspace input =
+  Search.run ~sandbox ~fs ~workspace input |> print_result
 
 let%expect_test "structural search, coverage evidence, and paging" =
   with_fixture @@ fun ~fs ~workspace ->
@@ -262,7 +265,7 @@ let%expect_test "erased tool adapter and cancellation" =
   with_fixture @@ fun ~fs ~workspace ->
   print_case "adapter";
   let tool =
-    Search.tool ~fs ~workspace ~render:(Search.Output.anchored ()) ()
+    Search.tool ~sandbox ~fs ~workspace ~render:(Search.Output.anchored ()) ()
   in
   let call =
     match
@@ -291,7 +294,8 @@ let%expect_test "erased tool adapter and cancellation" =
     incr calls;
     !calls > 1
   in
-  Search.run ~fs ~workspace ~cancelled (Search.Input.make "List.filter")
+  Search.run ~sandbox ~fs ~workspace ~cancelled
+    (Search.Input.make "List.filter")
   |> print_result;
   [%expect
     {|
@@ -299,9 +303,9 @@ let%expect_test "erased tool adapter and cancellation" =
     permissions: 1
     ocaml_search_expressions pattern="List.filter __ __" results=1/1 offset=1 limit=100 status=complete searched_files=1
     src/app.ml:2:2-4:9
-      2 #4587a344772c:   List.filter
-      3 #c5c7e770fd8d:     is_ready
-      4 #cf158a5eb2fc:     items
+      2 #0afc1af67d7a:   List.filter
+      3 #3d2cc62820cb:     is_ready
+      4 #8d2d5bb8b56a:     items
     -- cancelled --
     interrupted cancelled=true: tool call cancelled |}]
 

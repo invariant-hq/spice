@@ -343,13 +343,14 @@ end
 (** {1 Execution} *)
 
 val run :
+  sandbox:Spice_sandbox.t ->
   fs:_ Eio.Path.t ->
   workspace:Spice_workspace.t ->
   ?anchors:Anchor.Source.t ->
   ?cancelled:(unit -> bool) ->
   Input.t ->
   Output.t Spice_tool.Result.t
-(** [run ~fs ~workspace input] executes a typed text-search call and returns
+(** [run ~sandbox ~fs ~workspace input] executes a typed text-search call and returns
     typed output.
 
     Paths are resolved through [workspace] and observed through [fs]. Requested
@@ -373,11 +374,12 @@ val run :
 (** {1 Adapter} *)
 
 val tool :
+  sandbox:Spice_sandbox.t ->
   fs:_ Eio.Path.t ->
   workspace:Spice_workspace.t ->
   ?render:Output.render ->
   unit ->
   Spice_tool.t
-(** [tool ~fs ~workspace ()] is the erased {!Spice_tool.t} adapter.
+(** [tool ~sandbox ~fs ~workspace ()] is the erased {!Spice_tool.t} adapter.
 
     [render] defaults to {!Output.plain}. *)

@@ -388,6 +388,8 @@ let status_of_process : Process.shell_status -> Output.status = function
   | Process.Shell_signaled signal -> Output.Signaled signal
   | Process.Shell_timed_out { timeout_ms } -> Output.Timed_out { timeout_ms }
   | Process.Shell_cancelled -> Output.Cancelled
+  | Process.Shell_refused error ->
+      Output.Failed_to_start (Spice_sandbox.Error.message error)
   | Process.Shell_failed_to_start message -> Output.Failed_to_start message
 
 let stream_of_process : Process.captured -> Output.stream = function
@@ -458,7 +460,8 @@ let watch_incompatible_message endpoint =
      Stop the watch, or run the evaluation outside this session, and retry."
     endpoint
 
-let run ~fs ~workspace ~config ?watch ?(cancelled = default_cancelled) input =
+let run ~sandbox ~fs ~workspace ~config ?watch
+    ?(cancelled = default_cancelled) input =
   if cancelled () then
     Tool.Result.interrupted ~reason:"tool call cancelled" ~cancelled:true ()
   else
@@ -489,8 +492,8 @@ let run ~fs ~workspace ~config ?watch ?(cancelled = default_cancelled) input =
                     ~program:(Config.ocaml config)
                 in
                 let dune_result =
-                  Process.run_shell ~cwd ~env ~timeout_ms ~max_output_bytes
-                    ~cancelled
+                  Process.run_sandboxed_shell ~sandbox ~cwd ~env ~timeout_ms
+                    ~max_output_bytes ~cancelled
                     [
                       program_path toolchain (Config.dune config);
                       "ocaml";
@@ -528,7 +531,7 @@ let run ~fs ~workspace ~config ?watch ?(cancelled = default_cancelled) input =
                                  timeout_ms)
                         | Some eval_timeout_ms ->
                             let eval_result =
-                              Process.run_shell ~cwd ~env
+                              Process.run_sandboxed_shell ~sandbox ~cwd ~env
                                 ~timeout_ms:eval_timeout_ms ~max_output_bytes
                                 ~stdin:
                                   (init_text ~directives
@@ -545,14 +548,15 @@ let run ~fs ~workspace ~config ?watch ?(cancelled = default_cancelled) input =
                             |> result_of_output))
                 | Process.Shell_exited _ | Process.Shell_signaled _
                 | Process.Shell_timed_out _ | Process.Shell_cancelled
+                | Process.Shell_refused _
                 | Process.Shell_failed_to_start _ ->
                     result_of_output dune_output)))
 
-let tool ~fs ~workspace ~config ?watch () =
+let tool ~sandbox ~fs ~workspace ~config ?watch () =
   Tool.make ~name ~description ~input:Input.contract ~output:Output.encode
     ~permissions:(fun input -> permissions ~workspace ~config input)
     ~run:(fun ctx input ->
-      run ~fs ~workspace ~config ?watch
+      run ~sandbox ~fs ~workspace ~config ?watch
         ~cancelled:(fun () -> Tool.Context.cancelled ctx)
         input)
     ()

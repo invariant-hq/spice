@@ -188,13 +188,14 @@ val permissions :
     one per lexically resolvable requested root. *)
 
 val run :
+  sandbox:Spice_sandbox.t ->
   fs:_ Eio.Path.t ->
   workspace:Spice_workspace.t ->
   ?anchors:Anchor.Source.t ->
   ?cancelled:(unit -> bool) ->
   Input.t ->
   Output.t Spice_tool.Result.t
-(** [run ~fs ~workspace input] parses the pattern, enumerates [.ml] files under
+(** [run ~sandbox ~fs ~workspace input] parses the pattern, enumerates [.ml] files under
     the requested roots (recursively for directories, honoring standard ignore
     files and excluding VCS metadata), parses each source, and collects
     structural matches.
@@ -209,10 +210,11 @@ val run :
 (** {1 Adapter} *)
 
 val tool :
+  sandbox:Spice_sandbox.t ->
   fs:_ Eio.Path.t ->
   workspace:Spice_workspace.t ->
   ?render:Output.render ->
   unit ->
   Spice_tool.t
-(** [tool ~fs ~workspace ()] is the erased {!Spice_tool.t} adapter. [render]
+(** [tool ~sandbox ~fs ~workspace ()] is the erased {!Spice_tool.t} adapter. [render]
     defaults to {!Output.plain}. *)

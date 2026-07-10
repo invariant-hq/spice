@@ -297,7 +297,11 @@ let blocked_message endpoint =
        and no boot snapshot is available; run `dune describe` yourself or stop \
        the build"
 
-let run ~process_mgr ~clock ~cwd ~workspace ?project_source ctx () =
+let prepare sandbox ~argv ~env =
+  Process.prepare ~sandbox ~env argv
+  |> Result.map_error Spice_sandbox.Error.message
+
+let run ~sandbox ~process_mgr ~clock ~cwd ~workspace ?project_source ctx () =
   if Tool.Context.cancelled ctx then
     Tool.Result.interrupted ~reason:"tool call cancelled" ~cancelled:true ()
   else
@@ -305,8 +309,8 @@ let run ~process_mgr ~clock ~cwd ~workspace ?project_source ctx () =
     match project_source with
     | None -> (
         match
-          Dune.Describe.describe_project ~process_mgr ~clock ~cwd ~workspace
-            ~cancelled ()
+          Dune.Describe.describe_project ~prepare:(prepare sandbox) ~process_mgr
+            ~clock ~cwd ~workspace ~cancelled ()
         with
         | Ok project -> Tool.Result.completed ~output:(Output.make project) ()
         | Error error -> Tool.Result.failed `Failed (Dune.Error.message error))
@@ -319,8 +323,8 @@ let run ~process_mgr ~clock ~cwd ~workspace ?project_source ctx () =
         | Error (Dune.Project_source.Describe_error error) ->
             Tool.Result.failed `Failed (Dune.Error.message error))
 
-let tool ~process_mgr ~clock ~cwd ~workspace ?project_source () =
+let tool ~sandbox ~process_mgr ~clock ~cwd ~workspace ?project_source () =
   Tool.make ~name ~description ~input:Tool.Input.empty ~output:Output.encode
     ~permissions:(fun () -> permissions workspace)
-    ~run:(run ~process_mgr ~clock ~cwd ~workspace ?project_source)
+    ~run:(run ~sandbox ~process_mgr ~clock ~cwd ~workspace ?project_source)
     ()

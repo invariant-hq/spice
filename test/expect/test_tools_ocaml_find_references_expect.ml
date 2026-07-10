@@ -9,6 +9,8 @@ module Json = Jsont.Json
 module Tool = Spice_tool
 module Workspace = Spice_workspace
 
+let sandbox = Spice_sandbox.seal Spice_sandbox.Spec.Unconfined
+
 let json_obj fields =
   Json.object'
     (List.map (fun (name, value) -> Json.mem (Json.name name) value) fields)
@@ -190,7 +192,7 @@ let%expect_test "input contract is position based and bounded" =
 let%expect_test "tool adapter invokes backend and filters stale references" =
   with_project @@ fun ~root ~fs ~workspace ->
   let merlin, log = write_fake_merlin root in
-  let tool = Find.tool ~program:[ merlin ] ~fs ~workspace () in
+  let tool = Find.tool ~sandbox ~program:[ merlin ] ~fs ~workspace () in
   let input =
     json_obj
       [
@@ -242,7 +244,7 @@ let%expect_test "malformed merlin position surfaces a decode error" =
   with_project @@ fun ~root ~fs ~workspace ->
   let run_with start =
     let merlin = write_fake_merlin_start root ~start in
-    let tool = Find.tool ~program:[ merlin ] ~fs ~workspace () in
+    let tool = Find.tool ~sandbox ~program:[ merlin ] ~fs ~workspace () in
     let input =
       json_obj
         [
@@ -268,7 +270,7 @@ let%expect_test "malformed merlin position surfaces a decode error" =
 let%expect_test "include stale and limit are explicit" =
   with_project @@ fun ~root ~fs ~workspace ->
   let merlin, _log = write_fake_merlin root in
-  let tool = Find.tool ~program:[ merlin ] ~fs ~workspace () in
+  let tool = Find.tool ~sandbox ~program:[ merlin ] ~fs ~workspace () in
   let input =
     json_obj
       [

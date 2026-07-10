@@ -313,6 +313,7 @@ end
 (** {1 Execution} *)
 
 val run :
+  sandbox:Spice_sandbox.t ->
   ?program:string list ->
   ?ocamlfind_program:string ->
   ?opam_switch_prefix:string ->
@@ -325,7 +326,7 @@ val run :
   ?cancelled:(unit -> bool) ->
   Input.t ->
   Output.t Spice_tool.Result.t
-(** [run ~program ~process_mgr ~clock ~fs ~cwd ~workspace input] resolves
+(** [run ~sandbox ~program ~process_mgr ~clock ~fs ~cwd ~workspace input] resolves
     [input]'s query and returns a bounded, provenance-stamped outline.
 
     [program] is the Merlin invocation {e prefix} (default [["ocamlmerlin"]]); a
@@ -362,6 +363,7 @@ val run :
     [.mli]/[.ml] source is read; [.cmt]/[.cmti] are never opened. *)
 
 val tool :
+  sandbox:Spice_sandbox.t ->
   ?program:string list ->
   ?ocamlfind_program:string ->
   ?opam_switch_prefix:string ->

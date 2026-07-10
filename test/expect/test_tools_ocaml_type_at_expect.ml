@@ -9,6 +9,8 @@ module Json = Jsont.Json
 module Tool = Spice_tool
 module Workspace = Spice_workspace
 
+let sandbox = Spice_sandbox.seal Spice_sandbox.Spec.Unconfined
+
 let json_obj fields =
   Json.object'
     (List.map (fun (name, value) -> Json.mem (Json.name name) value) fields)
@@ -120,7 +122,7 @@ let decode_call tool input =
 
 let run_tool ?cancelled ~root ~fs ~workspace ~body input =
   let merlin = write_fake root body in
-  let tool = Type_at.tool ~program:[ merlin ] ~fs ~workspace () in
+  let tool = Type_at.tool ~sandbox ~program:[ merlin ] ~fs ~workspace () in
   let call = decode_call tool input in
   Tool.Call.run call ?cancelled ()
 
@@ -648,7 +650,8 @@ let%expect_test "every subprocess carries the single selector and -filename" =
 let%expect_test "a missing Merlin binary is Unavailable" =
   with_project @@ fun ~root:_ ~fs ~workspace ->
   let tool =
-    Type_at.tool ~program:[ "/nonexistent/ocamlmerlin" ] ~fs ~workspace ()
+    Type_at.tool ~sandbox ~program:[ "/nonexistent/ocamlmerlin" ] ~fs
+      ~workspace ()
   in
   let call = decode_call tool (position_input ~line:1 ~column:4 ()) in
   Tool.Call.run call () |> print_output;

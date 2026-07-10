@@ -224,13 +224,14 @@ val permissions :
     Returns [[]] if [input]'s path cannot be resolved. *)
 
 val run :
+  sandbox:Spice_sandbox.t ->
   ?program:string list ->
   fs:_ Eio.Path.t ->
   workspace:Spice_workspace.t ->
   Spice_tool.Context.t ->
   Input.t ->
   Output.t Spice_tool.Result.t
-(** [run ~fs ~workspace ctx input] reads [input]'s source file, runs
+(** [run ~sandbox ~fs ~workspace ctx input] reads [input]'s source file, runs
     [ocamlmerlin occurrences] from the workspace root with that source on
     standard input, and returns the matching references.
 
@@ -244,9 +245,10 @@ val run :
 *)
 
 val tool :
+  sandbox:Spice_sandbox.t ->
   ?program:string list ->
   fs:_ Eio.Path.t ->
   workspace:Spice_workspace.t ->
   unit ->
   Spice_tool.t
-(** [tool ~fs ~workspace ()] is the erased model-facing tool for {!run}. *)
+(** [tool ~sandbox ~fs ~workspace ()] is the erased model-facing tool for {!run}. *)

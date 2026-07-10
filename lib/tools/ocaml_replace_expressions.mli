@@ -182,13 +182,14 @@ val permissions :
     resolvable root otherwise. *)
 
 val run :
+  sandbox:Spice_sandbox.t ->
   fs:_ Eio.Path.t ->
   workspace:Spice_workspace.t ->
   ?max_bytes:int ->
   ?cancelled:(unit -> bool) ->
   Input.t ->
   Output.t Spice_tool.Result.t
-(** [run ~fs ~workspace input] parses and validates [pattern] and [template],
+(** [run ~sandbox ~fs ~workspace input] parses and validates [pattern] and [template],
     enumerates [.ml] files under the requested roots (as
     {!Ocaml_search_expressions.run} does), and for each file matches [pattern],
     renders [template] per site, splices bottom-up, reparses, and verifies each
@@ -211,5 +212,9 @@ val run :
 (** {1 Adapter} *)
 
 val tool :
-  fs:_ Eio.Path.t -> workspace:Spice_workspace.t -> unit -> Spice_tool.t
-(** [tool ~fs ~workspace ()] is the erased {!Spice_tool.t} adapter. *)
+  sandbox:Spice_sandbox.t ->
+  fs:_ Eio.Path.t ->
+  workspace:Spice_workspace.t ->
+  unit ->
+  Spice_tool.t
+(** [tool ~sandbox ~fs ~workspace ()] is the erased {!Spice_tool.t} adapter. *)

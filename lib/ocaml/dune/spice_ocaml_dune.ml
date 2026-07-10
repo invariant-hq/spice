@@ -171,6 +171,11 @@ end
 module Describe = struct
   module P = Ocaml.Project
 
+  type prepare =
+    argv:string list ->
+    env:string array ->
+    (string list * string array, string) result
+
   let log_src =
     Logs.Src.create "spice.ocaml.dune.describe" ~doc:"dune describe subprocess"
 
@@ -720,7 +725,7 @@ module Describe = struct
 
   let default_describe_timeout_s = 30.0
 
-  let run_describe ~process_mgr ~clock ?env cwd ~timeout_s argv =
+  let run_describe ~prepare ~process_mgr ~clock ?env cwd ~timeout_s argv =
     let stderr = Buffer.create 256 in
     (* Eio resolves a bare [dune] against the process [PATH], not [env], so pin
        the absolute executable the search space yields; [env] keeps the same
@@ -747,23 +752,41 @@ module Describe = struct
     | Some (executable, _) -> (
         try
           let env = Spice_ocaml_toolchain.env toolchain ~program:"dune" in
-          let run () =
-            Eio.Process.parse_out process_mgr Eio.Buf_read.take_all
-              ~stderr:(Eio.Flow.buffer_sink stderr)
-              ?cwd:(Some cwd) ~env ~executable argv
-          in
-          let output = Eio.Time.with_timeout_exn clock timeout_s run in
-          Log.debug (fun m ->
-              m "dune describe finished command=%s bytes=%d"
-                (Error.argv_text argv) (String.length output));
-          Ok output
+          let command = executable :: List.tl argv in
+          match prepare ~argv:command ~env with
+          | Error message ->
+              Error
+                (Error.Command_failed
+                   { argv; cwd = cwd_text cwd; status = None; stderr = message })
+          | Ok (prepared, env) -> (
+              match prepared with
+              | [] ->
+                  Error
+                    (Error.Command_failed
+                       {
+                         argv;
+                         cwd = cwd_text cwd;
+                         status = None;
+                         stderr = "process preparation returned an empty argv";
+                       })
+              | executable :: _ ->
+                  let run () =
+                    Eio.Process.parse_out process_mgr Eio.Buf_read.take_all
+                      ~stderr:(Eio.Flow.buffer_sink stderr)
+                      ?cwd:(Some cwd) ~env ~executable prepared
+                  in
+                  let output = Eio.Time.with_timeout_exn clock timeout_s run in
+                  Log.debug (fun m ->
+                      m "dune describe finished command=%s bytes=%d"
+                        (Error.argv_text argv) (String.length output));
+                  Ok output)
         with
         | Eio.Time.Timeout ->
             command_timed_out argv cwd ~stderr:(Buffer.contents stderr)
               timeout_s
         | exn -> command_failed argv cwd ~stderr:(Buffer.contents stderr) exn)
 
-  let describe_project ~process_mgr ~clock ~cwd ~workspace ?env
+  let describe_project ~prepare ~process_mgr ~clock ~cwd ~workspace ?env
       ?(cancelled = fun () -> false) ?(timeout_s = default_describe_timeout_s)
       () =
     if cancelled () then
@@ -779,10 +802,11 @@ module Describe = struct
       let workspace_argv = workspace_args () in
       let tests_argv = tests_args () in
       let* workspace_output =
-        run_describe ~process_mgr ~clock ?env cwd ~timeout_s workspace_argv
+        run_describe ~prepare ~process_mgr ~clock ?env cwd ~timeout_s
+          workspace_argv
       in
       let* tests_output =
-        run_describe ~process_mgr ~clock ?env cwd ~timeout_s tests_argv
+        run_describe ~prepare ~process_mgr ~clock ?env cwd ~timeout_s tests_argv
       in
       of_outputs ~workspace ~workspace_output ~tests_output
 end
@@ -1443,7 +1467,7 @@ module Rpc = struct
         Format.asprintf "dune build --root <cwd> --watch @all exited with %a"
           Eio.Process.pp_status status
 
-      let dune_build_watch ~sw ~process_mgr ~cwd () =
+      let dune_build_watch ~sw ~prepare ~process_mgr ~cwd () =
         let latest_status = ref None in
         let process_ref = ref None in
         let stop () =
@@ -1484,6 +1508,13 @@ module Rpc = struct
             ]
           in
           try
+            let command, env =
+              match prepare ~argv:command ~env with
+              | Ok prepared -> prepared
+              | Error message -> failwith message
+            in
+            if command = [] then
+              failwith "process preparation returned an empty argv";
             let process =
               Eio.Process.spawn ~sw process_mgr ~cwd
                 ~stdin:(Eio.Flow.string_source "")

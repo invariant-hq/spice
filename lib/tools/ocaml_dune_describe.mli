@@ -51,6 +51,7 @@ val permissions : Spice_workspace.t -> Spice_permission.Request.t list
     run the Dune describe commands for [workspace]. *)
 
 val run :
+  sandbox:Spice_sandbox.t ->
   process_mgr:_ Eio.Process.mgr ->
   clock:_ Eio.Time.clock ->
   cwd:_ Eio.Path.t ->
@@ -59,7 +60,7 @@ val run :
   Spice_tool.Context.t ->
   unit ->
   Output.t Spice_tool.Result.t
-(** [run ~process_mgr ~clock ~cwd ~workspace ctx ()] runs the describe commands
+(** [run ~sandbox ~process_mgr ~clock ~cwd ~workspace ctx ()] runs the describe commands
     in [cwd].
 
     With [project_source] the describe is resolved fresh-or-snapshot with
@@ -75,6 +76,7 @@ val run :
     decoded. *)
 
 val tool :
+  sandbox:Spice_sandbox.t ->
   process_mgr:_ Eio.Process.mgr ->
   clock:_ Eio.Time.clock ->
   cwd:_ Eio.Path.t ->
@@ -82,5 +84,5 @@ val tool :
   ?project_source:Spice_ocaml_dune.Project_source.t ->
   unit ->
   Spice_tool.t
-(** [tool ~process_mgr ~clock ~cwd ~workspace ()] is the erased model-facing
+(** [tool ~sandbox ~process_mgr ~clock ~cwd ~workspace ()] is the erased model-facing
     tool for {!run}. *)

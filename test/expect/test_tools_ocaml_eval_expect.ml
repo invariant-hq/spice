@@ -9,6 +9,8 @@ module Json = Jsont.Json
 module Tool = Spice_tool
 module Workspace = Spice_workspace
 
+let sandbox = Spice_sandbox.seal Spice_sandbox.Spec.Unconfined
+
 let json_obj fields =
   Json.object'
     (List.map (fun (name, value) -> Json.mem (Json.name name) value) fields)
@@ -121,7 +123,7 @@ let print_eval_result result =
 let%expect_test "ocaml_eval evaluates code in a Dune library context" =
   with_project @@ fun ~root:_ ~fs ~workspace ->
   let config = Eval.Config.make ~default_timeout_ms:30_000 () in
-  let tool = Eval.tool ~fs ~workspace ~config () in
+  let tool = Eval.tool ~sandbox ~fs ~workspace ~config () in
   let input =
     json_obj
       [
@@ -146,7 +148,7 @@ let%expect_test "ocaml_eval evaluates code in a Dune library context" =
 let%expect_test "ocaml_eval rejects unknown input fields" =
   with_project @@ fun ~root:_ ~fs ~workspace ->
   let config = Eval.Config.make () in
-  let tool = Eval.tool ~fs ~workspace ~config () in
+  let tool = Eval.tool ~sandbox ~fs ~workspace ~config () in
   let input =
     json_obj [ ("code", Json.string "1 + 1"); ("extra", Json.bool true) ]
   in
@@ -160,7 +162,7 @@ let%expect_test "ocaml_eval cancellation stops before spawning" =
   with_project @@ fun ~root:_ ~fs ~workspace ->
   let config = Eval.Config.make () in
   let input = Eval.Input.make "1 + 1" in
-  Eval.run ~fs ~workspace ~config ~cancelled:(fun () -> true) input
+  Eval.run ~sandbox ~fs ~workspace ~config ~cancelled:(fun () -> true) input
   |> print_status;
   [%expect {| status: interrupted cancelled=true: tool call cancelled |}]
 
@@ -174,14 +176,14 @@ let%expect_test "ocaml_eval timeout applies while writing large stdin" =
     Eval.Config.make ~dune ~ocaml ~default_timeout_ms:50 ~max_timeout_ms:50 ()
   in
   let input = Eval.Input.make (String.make (2 * 1024 * 1024) 'x') in
-  Eval.run ~fs ~workspace ~config input |> print_status;
+  Eval.run ~sandbox ~fs ~workspace ~config input |> print_status;
   [%expect {| status: failed timed_out: OCaml eval timed out after 50ms |}]
 
 let%expect_test "ocaml_eval refuses to run under a live dune watch" =
   with_project @@ fun ~root ~fs ~workspace ->
   print_endline "-- watch holds the lock --";
   let config = Eval.Config.make () in
-  Eval.run ~fs ~workspace ~config
+  Eval.run ~sandbox ~fs ~workspace ~config
     ~watch:(fun () -> Some "dune-rpc:socket")
     (Eval.Input.make "1 + 1")
   |> print_status;
@@ -191,7 +193,7 @@ let%expect_test "ocaml_eval refuses to run under a live dune watch" =
   write_executable dune "#!/bin/sh\nexit 0\n";
   write_executable ocaml "#!/bin/sh\ncat >/dev/null\n";
   let config = Eval.Config.make ~dune ~ocaml () in
-  Eval.run ~fs ~workspace ~config
+  Eval.run ~sandbox ~fs ~workspace ~config
     ~watch:(fun () -> None)
     (Eval.Input.make "1 + 1")
   |> print_status;

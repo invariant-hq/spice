@@ -13,9 +13,9 @@
     The tool is intentionally not a persistent REPL. Every call starts from a
     fresh process, so previous calls cannot affect later typing or values. The
     evaluated OCaml code is arbitrary process execution: callers must treat this
-    tool with the same care as a command runner. Timeout, bounded output, fresh
-    process state, and permission declarations are containment aids, not a
-    sandbox. *)
+    tool with the same care as a command runner. Every process is prepared by
+    the required host sandbox after permission review; timeout, bounded output,
+    and fresh process state remain independent resource controls. *)
 
 val name : string
 (** Stable tool name, ["ocaml_eval"]. *)
@@ -191,6 +191,7 @@ module Output : sig
 end
 
 val run :
+  sandbox:Spice_sandbox.t ->
   fs:_ Eio.Path.t ->
   workspace:Spice_workspace.t ->
   config:Config.t ->
@@ -198,7 +199,7 @@ val run :
   ?cancelled:(unit -> bool) ->
   Input.t ->
   Output.t Spice_tool.Result.t
-(** [run ~fs ~workspace ~config input] evaluates [input].
+(** [run ~sandbox ~fs ~workspace ~config input] evaluates [input].
 
     [dir] is resolved through [workspace] and checked as an existing directory
     through [fs]. The implementation executes [dune ocaml top .] in that
@@ -219,10 +220,11 @@ val run :
     ran. [cancelled] defaults to a function returning [false]. *)
 
 val tool :
+  sandbox:Spice_sandbox.t ->
   fs:_ Eio.Path.t ->
   workspace:Spice_workspace.t ->
   config:Config.t ->
   ?watch:(unit -> string option) ->
   unit ->
   Spice_tool.t
-(** [tool ~fs ~workspace ~config ()] is the erased {!Spice_tool.t} adapter. *)
+(** [tool ~sandbox ~fs ~workspace ~config ()] is the erased {!Spice_tool.t} adapter. *)

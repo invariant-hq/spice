@@ -1228,9 +1228,9 @@ let read_in_workspace_unit ~fs ~workspace ~max_bytes unit =
    covers overviews and nested-in-main modules; wrapped sublibrary submodules in
    a switch install are not resolved (their per-module source may not be
    installed) — such a query returns a not-found result. *)
-let ocamlfind_query ~process_mgr:_ ~ocamlfind_program library =
+let ocamlfind_query ~sandbox ~process_mgr:_ ~ocamlfind_program library =
   let result =
-    Process.run
+    Process.run_sandboxed ~sandbox
       ~cancelled:(fun () -> false)
       [ ocamlfind_program; "query"; "-format"; "%d\n%v"; library ]
   in
@@ -1242,9 +1242,9 @@ let ocamlfind_query ~process_mgr:_ ~ocamlfind_program library =
       | [] -> None)
   | _ -> None
 
-let read_switch_source ~process_mgr ~ocamlfind_program ~opam_switch_prefix
+let read_switch_source ~sandbox ~process_mgr ~ocamlfind_program ~opam_switch_prefix
     ~max_bytes ~library ~main rel =
-  match ocamlfind_query ~process_mgr ~ocamlfind_program library with
+  match ocamlfind_query ~sandbox ~process_mgr ~ocamlfind_program library with
   | None ->
       fail `Not_found
         (Printf.sprintf "could not locate library %S with ocamlfind" library)
@@ -1521,10 +1521,10 @@ let rec merlin_items ~max_depth ~scope jsons =
       | _ -> [])
     jsons
 
-let merlin_outline ~program ~workspace ~filename ~source ~cancelled =
+let merlin_outline ~sandbox ~program ~workspace ~filename ~source ~cancelled =
   let cwd = Workspace.Path.to_string (Workspace.root_path workspace) in
   match
-    Ocaml_merlin.run ~program ~cwd ~command:"outline"
+    Ocaml_merlin.run ~sandbox ~program ~cwd ~command:"outline"
       ~args:[ "-filename"; filename ] ~source ~cancelled ()
   with
   | Error error -> Error (Ocaml_merlin.error_message error)
@@ -1537,7 +1537,7 @@ let merlin_outline ~program ~workspace ~filename ~source ~cancelled =
 (* Path form                                                          *)
 (* ------------------------------------------------------------------ *)
 
-let run_path_form ~program ~fs ~workspace ~max_bytes ~cancelled input =
+let run_path_form ~sandbox ~program ~fs ~workspace ~max_bytes ~cancelled input =
   match Fs.resolve ~workspace (Input.query input) with
   | Error error -> Fs_error.failed ~message:(Fs.Error.message error) error
   | Ok path -> (
@@ -1560,7 +1560,7 @@ let run_path_form ~program ~fs ~workspace ~max_bytes ~cancelled input =
           in
           let merlin_fallback parser_message =
             match
-              merlin_outline ~program ~workspace
+              merlin_outline ~sandbox ~program ~workspace
                 ~filename:(Workspace.Path.to_string path)
                 ~source ~cancelled
             with
@@ -1655,7 +1655,7 @@ let dependency_origin ~library read =
         install = Output.Opam_switch { prefix = "unknown" };
       }
 
-let resolve_name_form ?describe_freshness ~fs ~workspace ~max_bytes
+let resolve_name_form ~sandbox ?describe_freshness ~fs ~workspace ~max_bytes
     ~ocamlfind_program ~opam_switch_prefix ~process_mgr ~project input form =
   let scope = Input.scope input in
   let package = Input.package input in
@@ -1763,7 +1763,7 @@ let resolve_name_form ?describe_freshness ~fs ~workspace ~max_bytes
                 (Printf.sprintf "could not locate the source of %S" library)
             else
               match
-                read_switch_source ~process_mgr ~ocamlfind_program
+                read_switch_source ~sandbox ~process_mgr ~ocamlfind_program
                   ~opam_switch_prefix ~max_bytes ~library ~main rel
               with
               | Error failure -> Error failure
@@ -1867,17 +1867,21 @@ let blocked_message endpoint =
        the build lock and no boot snapshot is available; run `dune describe` \
        yourself or stop the build"
 
+let prepare sandbox ~argv ~env =
+  Process.prepare ~sandbox ~env argv
+  |> Result.map_error Spice_sandbox.Error.message
+
 (* Resolve the describe-backed project universe, routing through the boot
    snapshot when a [project_source] is supplied and falling back to a direct
    one-shot describe otherwise. [`Freshness] evidence is attached to the output
    only on the [project_source] path. *)
-let resolve_universe ?project_source ~process_mgr ~clock ~cwd ~workspace
+let resolve_universe ~sandbox ?project_source ~process_mgr ~clock ~cwd ~workspace
     ~cancelled () =
   match project_source with
   | None -> (
       match
-        Dune.Describe.describe_project ~process_mgr ~clock ~cwd ~workspace
-          ~cancelled ()
+        Dune.Describe.describe_project ~prepare:(prepare sandbox) ~process_mgr
+          ~clock ~cwd ~workspace ~cancelled ()
       with
       | Ok project -> Ok (project, None)
       | Error error -> Error (`Describe error))
@@ -1889,7 +1893,7 @@ let resolve_universe ?project_source ~process_mgr ~clock ~cwd ~workspace
       | Error (Dune.Project_source.Describe_error error) ->
           Error (`Describe error))
 
-let run ?(program = default_program)
+let run ~sandbox ?(program = default_program)
     ?(ocamlfind_program = default_ocamlfind_program) ?opam_switch_prefix
     ?project_source ~process_mgr ~clock ~fs ~cwd ~workspace
     ?(cancelled = default_cancelled) input =
@@ -1902,11 +1906,13 @@ let run ?(program = default_program)
         ~default:default_max_source_bytes
     in
     match classify (Input.query input) with
-    | Path -> run_path_form ~program ~fs ~workspace ~max_bytes ~cancelled input
+    | Path ->
+        run_path_form ~sandbox ~program ~fs ~workspace ~max_bytes ~cancelled
+          input
     | (Library _ | Module_path _ | Focused _) as form -> (
         match
-          resolve_universe ?project_source ~process_mgr ~clock ~cwd ~workspace
-            ~cancelled ()
+          resolve_universe ~sandbox ?project_source ~process_mgr ~clock ~cwd
+            ~workspace ~cancelled ()
         with
         | Error (`Describe error) ->
             Tool.Result.failed `Failed
@@ -1916,21 +1922,21 @@ let run ?(program = default_program)
             Tool.Result.failed `Unavailable (blocked_message endpoint)
         | Ok (project, describe_freshness) -> (
             match
-              resolve_name_form ?describe_freshness ~fs ~workspace ~max_bytes
-                ~ocamlfind_program ~opam_switch_prefix ~process_mgr ~project
-                input form
+              resolve_name_form ~sandbox ?describe_freshness ~fs ~workspace
+                ~max_bytes ~ocamlfind_program ~opam_switch_prefix ~process_mgr
+                ~project input form
             with
             | Ok result -> result
             | Error { kind; message } -> Tool.Result.failed kind message))
 
-let tool ?program ?ocamlfind_program ?opam_switch_prefix ?project_source
+let tool ~sandbox ?program ?ocamlfind_program ?opam_switch_prefix ?project_source
     ~process_mgr ~clock ~fs ~cwd ~workspace () =
   Tool.make ~name ~description ~input:Input.contract ~output:Output.encode
     ~permissions:(fun input ->
       permissions ?program ?ocamlfind_program ?opam_switch_prefix ~workspace
         input)
     ~run:(fun ctx input ->
-      run ?program ?ocamlfind_program ?opam_switch_prefix ?project_source
+      run ~sandbox ?program ?ocamlfind_program ?opam_switch_prefix ?project_source
         ~process_mgr ~clock ~fs ~cwd ~workspace
         ~cancelled:(fun () -> Tool.Context.cancelled ctx)
         input)

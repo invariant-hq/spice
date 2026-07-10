@@ -9,6 +9,8 @@ module Json = Jsont.Json
 module Tool = Spice_tool
 module Workspace = Spice_workspace
 
+let sandbox = Spice_sandbox.seal Spice_sandbox.Spec.Unconfined
+
 let json_obj fields =
   Json.object'
     (List.map (fun (name, value) -> Json.mem (Json.name name) value) fields)
@@ -191,7 +193,7 @@ let%expect_test "input contract validates source coordinates and lookup kind" =
 
 let%expect_test "tool locates a workspace definition through Merlin output" =
   with_project @@ fun ~root:_ ~merlin ~fs ~cwd:_ ~workspace ->
-  let tool = Find.tool ~program:[ merlin ] ~fs ~workspace () in
+  let tool = Find.tool ~sandbox ~program:[ merlin ] ~fs ~workspace () in
   let input =
     json_obj
       [
@@ -217,7 +219,7 @@ let%expect_test "tool locates a workspace definition through Merlin output" =
 
 let%expect_test "tool preserves external definition targets" =
   with_project @@ fun ~root:_ ~merlin ~fs ~cwd:_ ~workspace ->
-  let tool = Find.tool ~program:[ merlin ] ~fs ~workspace () in
+  let tool = Find.tool ~sandbox ~program:[ merlin ] ~fs ~workspace () in
   let input =
     json_obj
       [
@@ -239,7 +241,7 @@ let%expect_test "tool preserves external definition targets" =
 
 let%expect_test "tool reports Merlin not-found as a typed tool failure" =
   with_project @@ fun ~root:_ ~merlin ~fs ~cwd:_ ~workspace ->
-  let tool = Find.tool ~program:[ merlin ] ~fs ~workspace () in
+  let tool = Find.tool ~sandbox ~program:[ merlin ] ~fs ~workspace () in
   let input =
     json_obj
       [
@@ -257,7 +259,7 @@ let%expect_test "tool reports Merlin not-found as a typed tool failure" =
 
 let%expect_test "already at definition point returns the cursor location" =
   with_project @@ fun ~root:_ ~merlin ~fs ~cwd:_ ~workspace ->
-  let tool = Find.tool ~program:[ merlin ] ~fs ~workspace () in
+  let tool = Find.tool ~sandbox ~program:[ merlin ] ~fs ~workspace () in
   let input =
     json_obj
       [

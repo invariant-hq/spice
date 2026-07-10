@@ -167,7 +167,7 @@ let find_dev_tool_binary ~cwd ~tool =
    from the tool means dune built its binary, which is all resolution needs.
    Warming engages the dune engine and so is the last resort, reached only when
    no already-built binary was found on disk. *)
-let warm_dev_tool ~cwd ~env ~timeout_ms ~tool ~configured =
+let warm_dev_tool ~sandbox ~cwd ~env ~timeout_ms ~tool ~configured =
   (* [run_shell]'s [execvp] resolves a bare [dune] against the process [PATH],
      not [env]; pin the absolute path the search space yields. *)
   let configured =
@@ -182,12 +182,14 @@ let warm_dev_tool ~cwd ~env ~timeout_ms ~tool ~configured =
     | [] -> configured
   in
   let warm =
-    Process.run_shell ~cwd ~env ~timeout_ms
+    Process.run_sandboxed_shell ~sandbox ~cwd ~env ~timeout_ms
       ~max_output_bytes:default_max_output_bytes
       ~cancelled:(fun () -> false)
       configured
   in
   match warm.Process.shell_status with
+  | Process.Shell_refused error ->
+      Error (Warm_failed (Spice_sandbox.Error.message error))
   | Process.Shell_failed_to_start message ->
       Error (Warm_failed ("could not start dune: " ^ message))
   | Process.Shell_exited _ | Process.Shell_signaled _
@@ -201,7 +203,7 @@ let warm_dev_tool ~cwd ~env ~timeout_ms ~tool ~configured =
           if String.equal stderr "" then Error (Binary_not_found tool)
           else Error (Warm_failed stderr))
 
-let resolve_program ~cwd ?(env = Unix.environment ())
+let resolve_program ~sandbox ~cwd ?(env = Unix.environment ())
     ?(timeout_ms = default_resolve_timeout_ms) ~configured () =
   match configured with
   | [] ->
@@ -223,7 +225,8 @@ let resolve_program ~cwd ?(env = Unix.environment ())
              binary is absent. *)
           match find_dev_tool_binary ~cwd ~tool with
           | Some bin -> Ok [ bin ]
-          | None -> warm_dev_tool ~cwd ~env ~timeout_ms ~tool ~configured)
+          | None ->
+              warm_dev_tool ~sandbox ~cwd ~env ~timeout_ms ~tool ~configured)
       | None -> (
           (* A [PATH]/absolute binary or non-dune wrapper is lock-free and used
              as given, with one exception: a bare program name that [PATH]
@@ -309,7 +312,7 @@ let parse_envelope stdout =
       | Some class_ -> Bad ("unexpected response class " ^ class_)
       | None -> Bad "response has no class")
 
-let run ~program ~cwd ?(env = Unix.environment ())
+let run ~sandbox ~program ~cwd ?(env = Unix.environment ())
     ?(timeout_ms = default_timeout_ms)
     ?(max_output_bytes = default_max_output_bytes) ~command ~args ~source
     ~cancelled () =
@@ -330,11 +333,13 @@ let run ~program ~cwd ?(env = Unix.environment ())
   let command_argv = argv ~program ~command ~args in
   let env = with_non_interactive_env env in
   let result =
-    Process.run_shell ~cwd ~env ~timeout_ms ~max_output_bytes ~stdin:source
-      ~cancelled command_argv
+    Process.run_sandboxed_shell ~sandbox ~cwd ~env ~timeout_ms ~max_output_bytes
+      ~stdin:source ~cancelled command_argv
   in
   match result.Process.shell_status with
   | Process.Shell_cancelled -> Error Cancelled
+  | Process.Shell_refused error ->
+      Error (Unavailable (Spice_sandbox.Error.message error))
   | Process.Shell_failed_to_start message -> Error (Unavailable message)
   | Process.Shell_timed_out { timeout_ms } -> Error (Timed_out { timeout_ms })
   | Process.Shell_signaled signal -> Error (Signaled signal)

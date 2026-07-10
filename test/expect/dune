@@ -52,6 +52,7 @@
   eio_main
   unix
   jsont
+  spice_sandbox
   spice_tools
   spice_path
   spice_tool
@@ -68,6 +69,7 @@
   eio_main
   unix
   jsont
+  spice_sandbox
   spice_tools
   spice_ocaml
   spice_path
@@ -86,6 +88,7 @@
   unix
   jsont
   spice_ocaml_dune
+  spice_sandbox
   spice_tools
   spice_ocaml
   spice_path
@@ -103,6 +106,7 @@
   eio_main
   unix
   jsont
+  spice_sandbox
   spice_tools
   spice_path
   spice_tool
@@ -122,6 +126,7 @@
   spice_digest
   spice_edit
   spice_mutation
+  spice_sandbox
   spice_tools
   spice_ocaml
   spice_path
@@ -158,6 +163,7 @@
   eio_main
   unix
   spice_ocaml_dune
+  spice_sandbox
   spice_tools
   spice_path
   spice_tool
@@ -195,6 +201,7 @@
   jsont
   spice_ocaml
   spice_ocaml_dune
+  spice_sandbox
   spice_tools
   spice_path
   spice_tool
@@ -229,6 +236,7 @@
   eio_main
   unix
   jsont
+  spice_sandbox
   spice_tools
   spice_path
   spice_tool
@@ -245,6 +253,7 @@
   eio_main
   unix
   jsont
+  spice_sandbox
   spice_tools
   spice_path
   spice_tool
@@ -262,6 +271,7 @@
   eio_main
   unix
   jsont
+  spice_sandbox
   spice_tools
   spice_path
   spice_tool
@@ -281,6 +291,7 @@
   jsont
   spice_digest
   spice_mutation
+  spice_sandbox
   spice_tools
   spice_path
   spice_tool
@@ -298,6 +309,7 @@
   eio_main
   unix
   jsont
+  spice_sandbox
   spice_tools
   spice_path
   spice_tool

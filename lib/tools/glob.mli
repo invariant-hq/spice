@@ -191,12 +191,13 @@ end
 (** {1 Execution} *)
 
 val run :
+  sandbox:Spice_sandbox.t ->
   fs:_ Eio.Path.t ->
   workspace:Spice_workspace.t ->
   ?cancelled:(unit -> bool) ->
   Input.t ->
   Output.t Spice_tool.Result.t
-(** [run ~fs ~workspace input] executes a typed glob call and returns typed
+(** [run ~sandbox ~fs ~workspace input] executes a typed glob call and returns typed
     output.
 
     Paths are resolved through [workspace] and observed through [fs]. The
@@ -218,5 +219,9 @@ val run :
 (** {1 Adapter} *)
 
 val tool :
-  fs:_ Eio.Path.t -> workspace:Spice_workspace.t -> unit -> Spice_tool.t
-(** [tool ~fs ~workspace ()] is the erased {!Spice_tool.t} adapter. *)
+  sandbox:Spice_sandbox.t ->
+  fs:_ Eio.Path.t ->
+  workspace:Spice_workspace.t ->
+  unit ->
+  Spice_tool.t
+(** [tool ~sandbox ~fs ~workspace ()] is the erased {!Spice_tool.t} adapter. *)
