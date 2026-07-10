@@ -6,18 +6,18 @@
 (** Derived session waiting boundaries.
 
     A waiting describes why turn execution cannot currently proceed. Durable
-    waiting are reconstructed from session state; host-tool waiting are
-    projected by the run planner from the active turn's model-visible host-tool
-    contract. Waiting values do not contain live waiters, callbacks, fibers, or
-    product UI state.
+    permission and claim boundaries and derived host-tool waiting are all
+    reconstructed by {!State.waiting} from the active turn and transcript.
+    Waiting values do not contain live waiters, callbacks, fibers, or product
+    UI state.
 
-    Use {!State.waiting} for durable waiting and {!Run.Step.Waiting} for the
-    next external boundary, including host-handled tool calls. *)
+    Use {!State.waiting} for the read-time boundary and {!Run.Step.Waiting} when
+    interpreting a planned transition. *)
 
 type host_tool = private { turn : Turn.Id.t; call : Spice_llm.Tool.Call.t }
 (** The type for host-handled tool waits.
 
-    Values are produced by the run planner. They are accepted by
+    Values are produced by state replay and the run planner. They are accepted by
     {!Run.answer_host_tool} to ensure host answers cannot bypass executable-tool
     dispatch and permission policy by supplying raw call ids. *)
 

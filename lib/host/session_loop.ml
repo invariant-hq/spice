@@ -91,7 +91,6 @@ let run_error session (error : Spice_session.Run.Error.t) :
       Spice_protocol.Error.Deleted (Spice_session.id session)
   | Spice_session.Run.Error.Request _ | Spice_session.Run.Error.Tool _
   | Spice_session.Run.Error.Tool_result_mismatch _
-  | Spice_session.Run.Error.Unknown_active_turn _
   | Spice_session.Run.Error.State _ ->
       Spice_protocol.Error.Internal (Spice_session.Run.Error.message error)
 
@@ -220,7 +219,7 @@ let check_active_document session : (unit, Spice_protocol.Error.t) result =
       Error (Spice_protocol.Error.Deleted (Spice_session.id session))
 
 let active_turn session =
-  Spice_session.State.active_turn (Spice_session.state session)
+  Spice_session.State.active_turn_id (Spice_session.state session)
 
 let require_no_active_turn session : (unit, Spice_protocol.Error.t) result =
   match active_turn session with
@@ -255,10 +254,7 @@ let active_host_tool_names session =
   let state = Spice_session.state session in
   match Spice_session.State.active_turn state with
   | None -> String_set.empty
-  | Some id -> (
-      match Spice_session.State.turn id state with
-      | None -> String_set.empty
-      | Some turn -> string_set (Spice_session.Turn.host_tools turn))
+  | Some turn -> string_set (Spice_session.Turn.host_tools turn)
 
 let new_projector session =
   {
@@ -568,42 +564,27 @@ and advance ~store ~projector ~pressure_compacted ~overflow_compacted ~model
    the {!Spice_session.Waiting.host_tool} token, so the engine projects the
    session's current boundary and matches: a projection that is not the named
    host-tool call is a mismatch, reported as
-   {!Spice_protocol.Error.Tool_call_not_pending}. Resuming here is a pure
-   projection — its planned step is not saved. *)
-let pending_host_tool run session ~turn ~call_id =
-  match active_turn session with
+   {!Spice_protocol.Error.Tool_call_not_pending}. *)
+let pending_host_tool session ~turn ~call_id =
+  match Spice_session.State.waiting (Spice_session.state session) with
+  | Some (Spice_session.Waiting.Host_tool waiting)
+    when Spice_session.Turn.Id.equal waiting.Spice_session.Waiting.turn turn
+         && String.equal
+              (Spice_llm.Tool.Call.id waiting.Spice_session.Waiting.call)
+              call_id ->
+      Ok waiting
+  | Some (Spice_session.Waiting.Host_tool waiting) ->
+      Error
+        (Spice_protocol.Error.Tool_call_not_pending
+           {
+             call_id;
+             name =
+               Spice_llm.Tool.Call.name waiting.Spice_session.Waiting.call;
+           })
+  | Some (Spice_session.Waiting.Permission _)
+  | Some (Spice_session.Waiting.Tool_claim _)
   | None ->
       Error (Spice_protocol.Error.Tool_call_not_pending { call_id; name = "" })
-  | Some _ -> (
-      match Spice_session.Run.resume run session with
-      | Error error -> Error (run_error session error)
-      | Ok step -> (
-          match Spice_session.Run.Step.next step with
-          | Spice_session.Run.Step.Waiting
-              (Spice_session.Waiting.Host_tool waiting)
-            when Spice_session.Turn.Id.equal waiting.Spice_session.Waiting.turn
-                   turn
-                 && String.equal
-                      (Spice_llm.Tool.Call.id waiting.Spice_session.Waiting.call)
-                      call_id ->
-              Ok waiting
-          | Spice_session.Run.Step.Waiting
-              (Spice_session.Waiting.Host_tool waiting) ->
-              Error
-                (Spice_protocol.Error.Tool_call_not_pending
-                   {
-                     call_id;
-                     name =
-                       Spice_llm.Tool.Call.name
-                         waiting.Spice_session.Waiting.call;
-                   })
-          | Spice_session.Run.Step.Waiting _
-          | Spice_session.Run.Step.Request_model _
-          | Spice_session.Run.Step.Run_tool _
-          | Spice_session.Run.Step.Finished _ ->
-              Error
-                (Spice_protocol.Error.Tool_call_not_pending
-                   { call_id; name = "" })))
 
 (* The interpreter loop, given its injected parts directly. {!Runner.execute} is
    the sole public entry; this stays private so there is no second ingress. The
@@ -676,7 +657,7 @@ let execute ~store ~client ~host_tool ~resolve_plan ~turn_model ~turn_mode ~run
         continue_step document step
     | Spice_protocol.Command.Answer { turn; call_id; answer } ->
         let* () = check_active_document session in
-        let* waiting = pending_host_tool run session ~turn ~call_id in
+        let* waiting = pending_host_tool session ~turn ~call_id in
         let* text =
           match
             Spice_protocol.Call.classify waiting.Spice_session.Waiting.call
@@ -698,7 +679,7 @@ let execute ~store ~client ~host_tool ~resolve_plan ~turn_model ~turn_mode ~run
         continue_step document step
     | Spice_protocol.Command.Resolve_plan { turn; call_id; decision } ->
         let* () = check_active_document session in
-        let* waiting = pending_host_tool run session ~turn ~call_id in
+        let* waiting = pending_host_tool session ~turn ~call_id in
         (* The parked call must decode to a plan proposal; [pending_host_tool]
            proved it is the named host-tool boundary, this proves it is a plan.
            A question or other host tool named here is a client mismatch. *)

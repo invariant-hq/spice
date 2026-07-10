@@ -231,7 +231,7 @@ let turn_starts_and_finishes () =
       ]
   in
   equal (option turn_id_value) ~msg:"no active turn" None
-    (State.active_turn state);
+    (State.active_turn_id state);
   equal int ~msg:"transcript has user and assistant messages" 2
     (Llm.Transcript.length (State.transcript state));
   equal (list turn_id_value) ~msg:"turn order"
@@ -240,6 +240,94 @@ let turn_starts_and_finishes () =
   equal (option outcome_value) ~msg:"turn outcome"
     (Some Session.Turn.Outcome.completed)
     (State.turn_outcome (Session.Turn.id turn) state)
+
+let state_projects_active_turn_and_phase () =
+  let turn = turn () in
+  let started = state [ Session.Event.turn_started turn ] in
+  equal
+    (option (testable ~pp:Session.Turn.pp ~equal:Session.Turn.equal ()))
+    ~msg:"active turn value" (Some turn) (State.active_turn started);
+  equal (option turn_id_value) ~msg:"active turn id"
+    (Some (Session.Turn.id turn))
+    (State.active_turn_id started);
+  (match State.phase started with
+  | State.Phase.Active -> ()
+  | phase -> failf "ready turn phase: %a" State.Phase.pp phase);
+  let host_declaration =
+    Llm.Tool.make ~name:"host_tool" ~input_schema:Llm.Tool.no_input_schema ()
+  in
+  let host_turn =
+    Session.Turn.make ~id:(turn_id "turn-host")
+      ~input:(Session.Turn.Input.user_text "Ask.") ~model
+      ~declarations:[ host_declaration ]
+      ~host_tools:[ "host_tool" ] ~max_steps:max_int ()
+  in
+  let host_call = tool_call ~id:"host-call" ~name:"host_tool" () in
+  let waiting =
+    state
+      [
+        Session.Event.turn_started host_turn;
+        Session.Event.response_appended
+          (response (assistant_tool_call host_call));
+      ]
+  in
+  let expected =
+    Session.Waiting.host_tool ~turn:(Session.Turn.id host_turn) host_call
+  in
+  equal
+    (option
+       (testable ~pp:Session.Waiting.pp ~equal:Session.Waiting.equal ()))
+    ~msg:"host waiting value" (Some expected) (State.waiting waiting);
+  (match State.phase waiting with
+  | State.Phase.Waiting actual when Session.Waiting.equal expected actual -> ()
+  | phase -> failf "host waiting phase: %a" State.Phase.pp phase);
+  (match State.phase State.empty with
+  | State.Phase.Idle -> ()
+  | phase -> failf "empty state phase: %a" State.Phase.pp phase)
+
+let host_wait_serializes_later_durable_work () =
+  let host_declaration =
+    Llm.Tool.make ~name:"host_tool" ~input_schema:Llm.Tool.no_input_schema ()
+  in
+  let turn =
+    Session.Turn.make ~id:(turn_id "turn-serial-host")
+      ~input:(Session.Turn.Input.user_text "Handle both.") ~model
+      ~declarations:[ host_declaration ] ~host_tools:[ "host_tool" ]
+      ~max_steps:max_int ()
+  in
+  let host_call = tool_call ~id:"host-first" ~name:"host_tool" () in
+  let executable = tool_call ~id:"exec-second" ~name:"read_file" () in
+  let assistant =
+    Llm.Message.Assistant.make
+      [
+        Llm.Message.Assistant.tool_call host_call;
+        Llm.Message.Assistant.tool_call executable;
+      ]
+  in
+  let blocked =
+    state
+      [
+        Session.Event.turn_started turn;
+        Session.Event.response_appended (response assistant);
+      ]
+  in
+  let expected =
+    State.Error.Turn
+      (State.Error.Turn.Unresolved_waiting (Session.Turn.id turn))
+  in
+  let claim =
+    Session.Tool_claim.Started.make
+      ~id:(Session.Tool_claim.Id.of_string "claim-second")
+      ~turn:(Session.Turn.id turn) ~call:executable
+  in
+  expect_error "claim cannot pass host waiting" expected
+    (State.apply (Session.Event.tool_claim_started claim) blocked);
+  let request =
+    permission_request ~id:"permission-second" ~turn:(Session.Turn.id turn)
+      ~tool_call:executable (extension_access "tool.second")
+  in
+  expect_error "permission cannot pass host waiting" expected
+    (State.apply (Session.Event.permission_requested request) blocked)
 
 let reducer_transition_errors_are_structured () =
   let turn = turn () in
@@ -592,7 +680,7 @@ let compaction_preserves_active_turn () =
   let after = apply (Session.Event.compaction_installed compaction) before in
   equal (option turn_id_value) ~msg:"active turn remains active"
     (Some (Session.Turn.id turn))
-    (State.active_turn after);
+    (State.active_turn_id after);
   equal message_list_value ~msg:"active compaction replaces transcript"
     (Llm.Transcript.messages replacement)
     (Llm.Transcript.messages (State.transcript after));
@@ -754,7 +842,7 @@ let permission_replies_update_grants () =
   in
   equal int ~msg:"one pending permission" 1
     (List.length (State.pending_permissions blocked));
-  equal int ~msg:"one waiting" 1 (List.length (State.waiting blocked));
+  equal bool ~msg:"one waiting" true (Option.is_some (State.waiting blocked));
   equal int ~msg:"one permission record" 1
     (List.length (State.permissions blocked));
   equal
@@ -1147,7 +1235,7 @@ let tool_claim_blocks_until_finished () =
   in
   equal int ~msg:"one pending execution" 1
     (List.length (State.pending_tool_claims started));
-  equal int ~msg:"one waiting" 1 (List.length (State.waiting started));
+  equal bool ~msg:"one waiting" true (Option.is_some (State.waiting started));
   expect_error "clean finish rejects unfinished tool claim"
     (State.Error.Turn
        (State.Error.Turn.Unresolved_waiting (Session.Turn.id turn)))
@@ -1588,7 +1676,7 @@ let rewind_records_prefix_lineage () =
   equal int ~msg:"child keeps exactly the resolved prefix" expected
     (List.length (Session.events child));
   equal (option turn_id_value) ~msg:"child replays to an idle state" None
-    (State.active_turn (Session.state child));
+    (State.active_turn_id (Session.state child));
   equal (option string) ~msg:"child title" (Some "Child")
     (Session.Metadata.title (Session.metadata child));
   match Session.Metadata.fork (Session.metadata child) with
@@ -1662,6 +1750,10 @@ let () =
   run "spice.session"
     [
       test "turn starts and finishes" turn_starts_and_finishes;
+      test "state projects active turn and phase"
+        state_projects_active_turn_and_phase;
+      test "host wait serializes later durable work"
+        host_wait_serializes_later_durable_work;
       test "reducer transition errors are structured"
         reducer_transition_errors_are_structured;
       test "event equality ignores retained output"

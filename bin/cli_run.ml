@@ -109,14 +109,7 @@ let active_turn_mode requested session =
   let state = Session.state session in
   match Session.State.active_turn state with
   | None -> Ok (mode_for_new_turn requested)
-  | Some turn_id -> (
-      match Session.State.turn turn_id state with
-      | None ->
-          Error
-            (`Runtime
-               ("active turn is not present in state: "
-               ^ Session.Turn.Id.to_string turn_id))
-      | Some turn -> mode_for_active_turn requested turn)
+  | Some turn -> mode_for_active_turn requested turn
 
 type reasoning_source = Flag | Config
 
@@ -513,12 +506,13 @@ let is_question_call call =
 (* The current host-tool boundary as an [Answer] token, derived from the saved
    waiting itself rather than a bare call id lookup. *)
 let pending_host_tool document ~call_id ~name =
-  match Session.Run.phase (Store.Document.session document) with
-  | Session.Run.Phase.Waiting (Session.Waiting.Host_tool waiting)
+  let state = Session.state (Store.Document.session document) in
+  match Session.State.phase state with
+  | Session.State.Phase.Waiting (Session.Waiting.Host_tool waiting)
     when String.equal (Tool_call.id waiting.Session.Waiting.call) call_id ->
       Ok waiting
-  | Session.Run.Phase.Waiting _ | Session.Run.Phase.Idle
-  | Session.Run.Phase.Active ->
+  | Session.State.Phase.Waiting _ | Session.State.Phase.Idle
+  | Session.State.Phase.Active ->
       Error (Spice_protocol.Error.Tool_call_not_pending { call_id; name })
 
 let pending_question_call document ~call_id =
@@ -535,8 +529,9 @@ let pending_question_call document ~call_id =
    from the saved waiting itself. A plan decision resolves this proposal and
    answers the same waiting. *)
 let pending_plan_call document =
-  match Session.Run.phase (Store.Document.session document) with
-  | Session.Run.Phase.Waiting (Session.Waiting.Host_tool waiting) -> (
+  let state = Session.state (Store.Document.session document) in
+  match Session.State.phase state with
+  | Session.State.Phase.Waiting (Session.Waiting.Host_tool waiting) -> (
       match
         Option.bind
           (Spice_protocol.Call.classify waiting.Session.Waiting.call)
@@ -550,8 +545,8 @@ let pending_plan_call document =
                  call_id = Tool_call.id waiting.Session.Waiting.call;
                  name = Spice_protocol.Plan.name;
                }))
-  | Session.Run.Phase.Waiting _ | Session.Run.Phase.Idle
-  | Session.Run.Phase.Active ->
+  | Session.State.Phase.Waiting _ | Session.State.Phase.Idle
+  | Session.State.Phase.Active ->
       Error
         (Spice_protocol.Error.Tool_call_not_pending
            { call_id = ""; name = Spice_protocol.Plan.name })
@@ -1623,8 +1618,8 @@ let goal_reply json model reasoning_effort workflow_mode permission_mode
                     ?token_budget:goal_budget ~now:verb_now ())
              in
              print_goal_event ~json ~type_:"goal.resumed" id goal;
-             match Session.Run.phase session with
-             | Session.Run.Phase.Active | Session.Run.Phase.Waiting _ ->
+             match Session.State.phase (Session.state session) with
+             | Session.State.Phase.Active | Session.State.Phase.Waiting _ ->
                  (* A blocked or active turn keeps the driver's seat; continuation
                 follows once that turn ends normally. *)
                  if not json then
@@ -1632,7 +1627,7 @@ let goal_reply json model reasoning_effort workflow_mode permission_mode
                      "spice: goal resumed; the session has an active or \
                       blocked turn, continuation follows once it ends\n";
                  Ok Success
-             | Session.Run.Phase.Idle ->
+             | Session.State.Phase.Idle ->
                  let max_steps = effective_max_steps host max_steps in
                  let reasoning_request =
                    effective_reasoning host reasoning_effort

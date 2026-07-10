@@ -79,7 +79,7 @@ let require_active_status t =
   | Metadata.Status.Deleted -> Error Error.Deleted
 
 let require_no_active_turn t =
-  match State.active_turn t.state with
+  match State.active_turn_id t.state with
   | None -> Ok ()
   | Some turn -> Error (Error.Active_turn turn)
 
@@ -276,7 +276,6 @@ module Run = struct
       | Request of Llm.Request.Error.t
       | Tool of Tool.Error.t
       | No_active_turn
-      | Unknown_active_turn of Turn.Id.t
       | Permission_not_pending of Permission.Id.t
       | Tool_claim_not_pending of Tool_claim.Id.t
       | Tool_call_not_pending of { call_id : string; name : string }
@@ -294,9 +293,6 @@ module Run = struct
       | Request error -> Llm.Request.Error.message error
       | Tool error -> Tool.Error.message error
       | No_active_turn -> "session has no active turn"
-      | Unknown_active_turn turn ->
-          Printf.sprintf "active turn %s is not present in state"
-            (Turn.Id.to_string turn)
       | Permission_not_pending id ->
           Format.asprintf "permission is not pending: %a" Permission.Id.pp id
       | Tool_claim_not_pending id ->
@@ -441,14 +437,11 @@ module Run = struct
     let state = state session in
     match State.active_turn state with
     | None -> Error Error.No_active_turn
-    | Some id -> (
-        match State.turn id state with
-        | None -> Error (Error.Unknown_active_turn id)
-        | Some turn -> Ok (id, turn))
+    | Some turn -> Ok turn
 
   let active_turn_id session =
-    let* id, _ = active_turn session in
-    Ok id
+    let* turn = active_turn session in
+    Ok (Turn.id turn)
 
   let request_for_turn config session turn =
     let state = state session in
@@ -553,9 +546,6 @@ module Run = struct
       ~input:(Llm.Tool.Call.input call) ()
     |> Result.map_error (fun error -> Error.Tool error)
 
-  let is_host_tool_name host_tools call =
-    List.exists (String.equal (Llm.Tool.Call.name call)) host_tools
-
   let is_declared declarations call =
     List.exists
       (fun declaration ->
@@ -633,46 +623,7 @@ module Run = struct
       ( [ Event.permission_requested requested ],
         Step.Waiting (Waiting.Permission requested) )
 
-  let first_waiting state =
-    match State.waiting state with waiting :: _ -> Some waiting | [] -> None
-
   let waiting_transition waiting = Boundary ([], Step.Waiting waiting)
-
-  module Phase = struct
-    type t = Idle | Waiting of Waiting.t | Active
-
-    let to_string = function
-      | Idle -> "idle"
-      | Waiting _ -> "waiting"
-      | Active -> "active"
-
-    let pp ppf t = Format.pp_print_string ppf (to_string t)
-  end
-
-  let waiting_of_active state turn =
-    match first_waiting state with
-    | Some (Waiting.Permission _ as waiting) -> Some waiting
-    | Some (Waiting.Tool_claim _ as waiting) -> Some waiting
-    | Some (Waiting.Host_tool _ as waiting) -> Some waiting
-    | None -> (
-        match Llm.Transcript.state (State.transcript state) with
-        | Llm.Transcript.Ready -> None
-        | Llm.Transcript.Awaiting_tool_results (call, _) ->
-            if is_host_tool_name (Turn.host_tools turn) call then
-              Some (Waiting.host_tool ~turn:(Turn.id turn) call)
-            else None)
-
-  let phase session =
-    let state = state session in
-    match State.active_turn state with
-    | None -> Phase.Idle
-    | Some turn_id -> (
-        match State.turn turn_id state with
-        | None -> Phase.Active
-        | Some turn -> (
-            match waiting_of_active state turn with
-            | Some waiting -> Phase.Waiting waiting
-            | None -> Phase.Active))
 
   let continue_tool_error call message =
     Continue
@@ -734,9 +685,7 @@ module Run = struct
         Step.Run_tool { claim = execution; call = tool_call } )
 
   let tool_action config session turn_id turn call =
-    if is_host_tool_name (Turn.host_tools turn) call then
-      Ok (Boundary ([], Step.Waiting (Waiting.host_tool ~turn:turn_id call)))
-    else if not (is_declared (Turn.declarations turn) call) then
+    if not (is_declared (Turn.declarations turn) call) then
       Ok
         (continue_tool_error call
            (Tool.Error.message
@@ -755,15 +704,11 @@ module Run = struct
           | `Allowed -> Ok (run_tool_action turn_id call tool_call))
 
   let plan config session =
-    let* turn_id, turn = active_turn session in
+    let* turn = active_turn session in
+    let turn_id = Turn.id turn in
     let state = state session in
-    match first_waiting state with
-    | Some (Waiting.Permission request) ->
-        Ok (waiting_transition (Waiting.Permission request))
-    | Some (Waiting.Tool_claim execution) ->
-        Ok (waiting_transition (Waiting.Tool_claim execution))
-    | Some (Waiting.Host_tool _ as waiting) ->
-        Ok (waiting_transition waiting)
+    match State.waiting state with
+    | Some waiting -> Ok (waiting_transition waiting)
     | None -> (
         match Llm.Transcript.state (State.transcript state) with
         | Llm.Transcript.Ready -> model_action config session turn_id turn
@@ -891,8 +836,8 @@ module Run = struct
     else
       let call_id = Llm.Tool.Result.call_id result in
       let name = Llm.Tool.Result.name result in
-      match phase session with
-      | Phase.Waiting (Waiting.Host_tool current)
+      match State.phase (state session) with
+      | State.Phase.Waiting (Waiting.Host_tool current)
         when Waiting.equal (Waiting.Host_tool waiting)
                (Waiting.Host_tool current) -> (
           match pending_tool_call ~call_id ~name session with
@@ -900,7 +845,7 @@ module Run = struct
           | Some _ ->
               normalize config session
                 [ Event.message_appended (Llm.Message.tool_result result) ])
-      | Phase.Idle | Phase.Active | Phase.Waiting _ ->
+      | State.Phase.Idle | State.Phase.Active | State.Phase.Waiting _ ->
           Error (Error.Tool_call_not_pending { call_id; name })
 
   let answer_host_tool config ?(error = false) waiting ~text session =

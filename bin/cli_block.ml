@@ -14,13 +14,13 @@ open Cli_common
 module Session = Spice_session
 module Tool_call = Spice_llm.Tool.Call
 
-type phase = Session.Run.Phase.t =
+type phase = Session.State.Phase.t =
   | Idle
   | Waiting of Session.Waiting.t
   | Active
 
-let phase = Session.Run.phase
-let phase_string = Session.Run.Phase.to_string
+let phase session = Session.State.phase (Session.state session)
+let phase_string = Session.State.Phase.to_string
 
 (* One classification path for question waits: a valid [ask_user] payload is
    the question text; an invalid one still surfaces as an answerable question

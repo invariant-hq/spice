@@ -493,16 +493,16 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
       let parent_session = Spice_session_store.Document.session parent in
       let role = Spice_protocol.Subagent.Spawn.role spawn in
       let parent_call_id =
-        match Spice_session.Run.phase parent_session with
-        | Spice_session.Run.Phase.Waiting
+        match Spice_session.State.phase (Spice_session.state parent_session) with
+        | Spice_session.State.Phase.Waiting
             (Spice_session.Waiting.Host_tool host_tool) ->
             Spice_llm.Tool.Call.id host_tool.Spice_session.Waiting.call
-        | Spice_session.Run.Phase.Waiting _ | Spice_session.Run.Phase.Idle
-        | Spice_session.Run.Phase.Active ->
+        | Spice_session.State.Phase.Waiting _ | Spice_session.State.Phase.Idle
+        | Spice_session.State.Phase.Active ->
             ""
       in
       match
-        Spice_session.State.active_turn (Spice_session.state parent_session)
+        Spice_session.State.active_turn_id (Spice_session.state parent_session)
       with
       | None -> Error "subagent spawn has no active parent turn"
       | Some parent_turn -> (

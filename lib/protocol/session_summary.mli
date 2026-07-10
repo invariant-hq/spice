@@ -20,7 +20,7 @@ type t = {
           if the session contains one. *)
   lifecycle : Spice_session.Metadata.Status.t;
       (** Persisted lifecycle status. *)
-  phase : Spice_session.Run.Phase.t;  (** Current run phase. *)
+  phase : Spice_session.State.Phase.t;  (** Current run phase. *)
   event_count : int;  (** Number of stored session events. *)
   turns : int;
       (** Number of accepted turns in the session, including an active

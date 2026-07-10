@@ -36,15 +36,15 @@ type t = private
       (** Model replay history was replaced by a compacted transcript. *)
   | Permission_requested of Permission.Requested.t
       (** A protected operation is waiting for reviewer input. Applying this
-          event requires no other unresolved durable waiting boundary. *)
+          event requires no other unresolved waiting boundary. *)
   | Permission_resolved of Permission.Resolved.t
       (** A reviewer reply was applied to a pending permission request. A deny
           reply also carries the model-visible tool result that consumes the
           blocked tool call. *)
   | Tool_claim_started of Tool_claim.Started.t
       (** The host durably claimed an executable model tool call before running
-          it. Applying this event requires no other unresolved durable waiting
-          boundary. *)
+          it. Applying this event requires no other unresolved waiting boundary.
+      *)
   | Tool_claim_finished of Tool_claim.Finished.t
       (** A claimed executable tool call finished. Applying this event appends
           its model-visible tool result to the transcript. *)
@@ -77,8 +77,7 @@ val permission_resolved : Permission.Resolved.t -> t
 
 val tool_claim_started : Tool_claim.Started.t -> t
 (** [tool_claim_started claim] records that [claim] was durably claimed before
-    the host ran it. Replay requires no other unresolved durable permission or
-    tool-claim boundary. *)
+    the host ran it. Replay requires no other unresolved waiting boundary. *)
 
 val tool_claim_finished : Tool_claim.Finished.t -> t
 (** [tool_claim_finished claim] records a completed claim and its model-visible

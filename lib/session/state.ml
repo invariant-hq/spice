@@ -246,7 +246,11 @@ let compactions t = List.rev t.compactions_rev
 let latest_compaction t =
   match t.compactions_rev with [] -> None | compaction :: _ -> Some compaction
 
-let active_turn t = t.active_turn
+let active_turn_id t = t.active_turn
+
+let active_turn t =
+  Option.map (fun id -> (Turn_map.find id t.turns).turn) t.active_turn
+
 let grants t = t.grants
 
 let turns t =
@@ -333,8 +337,43 @@ let tool_claims t =
     (List.rev t.tool_claim_order_rev)
 
 let waiting t =
-  List.map Waiting.permission (pending_permissions t)
-  @ List.map Waiting.tool_claim (pending_tool_claims t)
+  match pending_permissions t with
+  | request :: _ -> Some (Waiting.permission request)
+  | [] -> (
+      match pending_tool_claims t with
+      | claim :: _ -> Some (Waiting.tool_claim claim)
+      | [] -> (
+          match (active_turn t, Transcript.state t.transcript) with
+          | ( Some turn,
+              Transcript.Awaiting_tool_results (call, _) )
+            when List.exists
+                   (String.equal (Spice_llm.Tool.Call.name call))
+                   (Turn.host_tools turn) ->
+              Some (Waiting.host_tool ~turn:(Turn.id turn) call)
+          | Some _, Transcript.Ready
+          | Some _, Transcript.Awaiting_tool_results _
+          | None, Transcript.Ready
+          | None, Transcript.Awaiting_tool_results _ ->
+              None))
+
+module Phase = struct
+  type t = Idle | Waiting of Waiting.t | Active
+
+  let to_string = function
+    | Idle -> "idle"
+    | Waiting _ -> "waiting"
+    | Active -> "active"
+
+  let pp ppf t = Format.pp_print_string ppf (to_string t)
+end
+
+let phase t =
+  match active_turn t with
+  | None -> Phase.Idle
+  | Some _ -> (
+      match waiting t with
+      | Some waiting -> Phase.Waiting waiting
+      | None -> Phase.Active)
 
 let turn_error error = Error (Error.Turn error)
 let permission_error error = Error (Error.Permission error)
@@ -524,9 +563,9 @@ let apply_permission_requested request t =
     | Error _ as error -> error
     | Ok () -> (
         match waiting t with
-        | waiting :: _ ->
+        | Some waiting ->
             turn_error (Error.Turn.Unresolved_waiting (Waiting.turn waiting))
-        | [] ->
+        | None ->
             let tool_call = Permission.Requested.tool_call request in
             if
               List.exists
@@ -623,9 +662,9 @@ let apply_tool_claim_started execution t =
     | Error _ as error -> error
     | Ok () -> (
         match waiting t with
-        | waiting :: _ ->
+        | Some waiting ->
             turn_error (Error.Turn.Unresolved_waiting (Waiting.turn waiting))
-        | [] ->
+        | None ->
             let call = Tool_claim.Started.call execution in
             if
               List.exists
@@ -680,7 +719,8 @@ let apply_tool_claim_finished finished t =
                 })
 
 let require_finish turn t =
-  if waiting t <> [] then turn_error (Error.Turn.Unresolved_waiting turn)
+  if Option.is_some (waiting t) then
+    turn_error (Error.Turn.Unresolved_waiting turn)
   else
     match Transcript.require_ready t.transcript with
     | Ok () -> Ok ()

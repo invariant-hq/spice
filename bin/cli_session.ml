@@ -113,16 +113,13 @@ let active_turn_json = function
   | None -> json_null
   | Some turn -> Jsont.Json.string (Session.Turn.Id.to_string turn)
 
-let workflow_mode_field state active_turn =
+let workflow_mode_field active_turn =
   match active_turn with
   | None -> []
-  | Some turn_id -> (
-      match Session.State.turn turn_id state with
+  | Some turn -> (
+      match Session.Turn.mode turn with
       | None -> []
-      | Some turn -> (
-          match Session.Turn.mode turn with
-          | None -> []
-          | Some mode -> [ ("workflow_mode", Jsont.Json.string mode) ]))
+      | Some mode -> [ ("workflow_mode", Jsont.Json.string mode) ])
 
 let list_item_fields item =
   [
@@ -131,7 +128,7 @@ let list_item_fields item =
     ("preview", json_null_or_string (Summary.preview item));
     ("lifecycle", Jsont.Json.string (status_string (Summary.lifecycle item)));
     ( "phase",
-      Jsont.Json.string (Session.Run.Phase.to_string (Summary.phase item)) );
+      Jsont.Json.string (Session.State.Phase.to_string (Summary.phase item)) );
     ("forked_from", fork_json (Summary.forked_from item));
     ("event_count", Jsont.Json.int (Summary.event_count item));
     ("active_turn", active_turn_json (Summary.active_turn item));
@@ -317,7 +314,7 @@ let item_cells ~now ~show_lifecycle ~show_cwd item =
   in
   item_row ~show_lifecycle ~show_cwd
     ~id:(id_string (Summary.id item))
-    ~phase:(Session.Run.Phase.to_string (Summary.phase item))
+    ~phase:(Session.State.Phase.to_string (Summary.phase item))
     ~lifecycle:(status_string (Summary.lifecycle item))
     ~age:(age ~now (Summary.updated_at item))
     ~cwd:(Spice_path.Abs.to_string (Summary.cwd item))
@@ -406,12 +403,8 @@ let list json all include_archived include_deleted limit =
 let active_model_string state =
   match Session.State.active_turn state with
   | None -> None
-  | Some turn -> (
-      match Session.State.turn turn state with
-      | None -> None
-      | Some turn ->
-          Some
-            (Format.asprintf "%a" Spice_llm.Model.pp (Session.Turn.model turn)))
+  | Some turn ->
+      Some (Format.asprintf "%a" Spice_llm.Model.pp (Session.Turn.model turn))
 
 let last_outcome_string state =
   Session.State.turns state |> List.rev
@@ -427,10 +420,7 @@ let session_permission_context host session =
     let state = Session.state session in
     match Session.State.active_turn state with
     | None -> Spice_protocol.Mode.default
-    | Some turn_id -> (
-        match Session.State.turn turn_id state with
-        | None -> Spice_protocol.Mode.default
-        | Some turn -> Spice_protocol.Mode.of_turn turn)
+    | Some turn -> Spice_protocol.Mode.of_turn turn
   in
   Cli_block.permission_context (permission_args host None) ~workflow_mode
 
@@ -445,7 +435,7 @@ let execution_fields ~permission_of session phase =
           Cli_block.json ~permission:(permission_of state) block
       | Cli_block.Idle | Cli_block.Active -> json_null );
   ]
-  @ workflow_mode_field state (Session.State.active_turn state)
+  @ workflow_mode_field (Session.State.active_turn state)
 
 let show json last id =
   with_host @@ fun ~stdenv host ->
@@ -506,7 +496,7 @@ let show json last id =
          (Option.value (Summary.preview item) ~default:"-");
        stdout_printf "lifecycle: %s\n" (status_string (Summary.lifecycle item));
        stdout_printf "phase: %s\n"
-         (Session.Run.Phase.to_string (Summary.phase item));
+         (Session.State.Phase.to_string (Summary.phase item));
        stdout_printf "events: %d\n" (Summary.event_count item);
        (match Summary.forked_from item with
        | None -> stdout_printf "forked_from: -\n"
@@ -574,7 +564,7 @@ let show json last id =
            stdout_printf "%s\n" (Cli_block.human block)
        | Cli_block.Active, lifecycle -> (
            let turn =
-             Session.State.active_turn (Session.state session)
+             Session.State.active_turn_id (Session.state session)
              |> Option.map turn_id_string |> Option.value ~default:"-"
            in
            stdout_printf "active turn %s has no live owner\n" turn;

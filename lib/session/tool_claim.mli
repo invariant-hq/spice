@@ -56,7 +56,7 @@ module Started : sig
 
       State replay additionally requires [turn] to be the active unfinished turn
       and [call] to be pending in the transcript, with no other unresolved
-      durable permission or tool-claim boundary. *)
+      waiting boundary. *)
 
   val make : id:Id.t -> turn:Turn.Id.t -> call:Spice_llm.Tool.Call.t -> t
   (** [make ~id ~turn ~call] is a started claim of model tool call [call] during

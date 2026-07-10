@@ -15,7 +15,7 @@
     answers to stored asked accesses. A denied permission also stores the
     model-visible tool result that answers the blocked call; without that result
     replay could not make the transcript ready again. State replay permits only
-    one unresolved durable permission or tool-claim boundary at a time. *)
+    one unresolved waiting boundary at a time. *)
 
 (** {1:ids Identifiers} *)
 
@@ -62,7 +62,7 @@ module Requested : sig
       Invariant: [asked] is non-empty and every access in [asked] belongs to
       [request]. State replay additionally requires [turn] to be the active
       unfinished turn, [tool_call] to be pending in the transcript, and no
-      other durable waiting boundary to be unresolved. *)
+      other waiting boundary to be unresolved. *)
 
   val make :
     id:Id.t ->

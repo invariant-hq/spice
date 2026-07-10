@@ -515,7 +515,7 @@ let interrupt_finishes_turn_as_cancelled () =
   equal
     (option (testable ~pp:Session.Turn.Id.pp ~equal:Session.Turn.Id.equal ()))
     ~msg:"interrupted session has no active turn" None
-    (Session.State.active_turn (Session.state (Run.Step.session step)));
+    (Session.State.active_turn_id (Session.state (Run.Step.session step)));
   match Run.interrupt (empty_session ()) with
   | Ok _ -> failf "interrupt without active turn should fail"
   | Error Run.Error.No_active_turn -> ()

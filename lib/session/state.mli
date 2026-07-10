@@ -50,8 +50,8 @@ module Error : sig
           (** A completed response was recorded with a requested model different
               from the active turn's model. *)
       | Unresolved_waiting of Turn.Id.t
-          (** An event requiring no unresolved durable wait was applied while
-              the turn still had a waiting boundary. *)
+          (** An event requiring no unresolved wait was applied while the turn
+              still had a waiting boundary. *)
   end
 
   module Permission : sig
@@ -233,8 +233,11 @@ val turns : t -> Turn.t list
 val turn : Turn.Id.t -> t -> Turn.t option
 (** [turn id t] is the turn identified by [id], if any. *)
 
-val active_turn : t -> Turn.Id.t option
+val active_turn : t -> Turn.t option
 (** [active_turn t] is the active unfinished turn, if any. *)
+
+val active_turn_id : t -> Turn.Id.t option
+(** [active_turn_id t] is the active unfinished turn's id, if any. *)
 
 val turn_outcome : Turn.Id.t -> t -> Turn.Outcome.t option
 (** [turn_outcome id t] is the terminal outcome of turn [id], if [id] has
@@ -287,10 +290,29 @@ val tool_claims :
 (** [tool_claims t] is every tool claim and its optional result, in start order.
     A valid terminal turn has no unfinished claim. *)
 
-val waiting : t -> Waiting.t list
-(** [waiting t] is the current active turn's durable waiting boundaries, with
-    pending permissions first in request order followed by pending tool claims
-    in start order. *)
+val waiting : t -> Waiting.t option
+(** [waiting t] is the current active turn's next waiting boundary, if any.
+
+    Durable permission and tool-claim boundaries take precedence. Otherwise an
+    unanswered call named in the active turn's recorded host tools is returned
+    as {!Waiting.Host_tool}. *)
+
+module Phase : sig
+  (** Coarse read-time execution phases. *)
+
+  type t = Idle | Waiting of Waiting.t | Active
+  (** The type for a reconstructed session's execution phase. *)
+
+  val to_string : t -> string
+  (** [to_string t] is ["idle"], ["waiting"], or ["active"]. *)
+
+  val pp : Format.formatter -> t -> unit
+  (** [pp ppf t] formats [t] for diagnostics. *)
+end
+
+val phase : t -> Phase.t
+(** [phase t] is [t]'s read-time execution phase. Host-handled calls are
+    classified from the active turn's durable {!Turn.host_tools}. *)
 
 val grants : t -> Spice_permission.Policy.Grants.t
 (** [grants t] is the runtime permission grants reconstructed from durable

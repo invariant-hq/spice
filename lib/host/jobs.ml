@@ -443,13 +443,11 @@ let parked_boundary entry =
   let session =
     Spice_session_store.Document.session (Live.document entry.live)
   in
-  match
-    ( Spice_session.Run.phase session,
-      Spice_session.State.active_turn (Spice_session.state session) )
-  with
-  | ( Spice_session.Run.Phase.Waiting (Spice_session.Waiting.Host_tool waiting),
-      Some turn ) ->
-      Some (turn, Spice_llm.Tool.Call.id waiting.Spice_session.Waiting.call)
+  match Spice_session.State.waiting (Spice_session.state session) with
+  | Some (Spice_session.Waiting.Host_tool waiting) ->
+      Some
+        ( waiting.Spice_session.Waiting.turn,
+          Spice_llm.Tool.Call.id waiting.Spice_session.Waiting.call )
   | _ -> None
 
 (* Resume a blocked child in place: its attachment is still live, so the

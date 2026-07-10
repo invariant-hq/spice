@@ -8,7 +8,7 @@ type t = {
   title : string option;
   preview : string option;
   lifecycle : Spice_session.Metadata.Status.t;
-  phase : Spice_session.Run.Phase.t;
+  phase : Spice_session.State.Phase.t;
   event_count : int;
   turns : int;
   active_turn : Spice_session.Turn.Id.t option;
@@ -81,10 +81,10 @@ let of_session ?revision session =
     title = Spice_session.Metadata.title metadata;
     preview = preview_of_session session;
     lifecycle = Spice_session.Metadata.status metadata;
-    phase = Spice_session.Run.phase session;
+    phase = Spice_session.State.phase state;
     event_count = List.length (Spice_session.events session);
     turns = List.length (Spice_session.State.turns state);
-    active_turn = Spice_session.State.active_turn state;
+    active_turn = Spice_session.State.active_turn_id state;
     cwd = Spice_session.Metadata.cwd metadata;
     forked_from = Spice_session.Metadata.fork metadata;
     created_at = Spice_session.Metadata.created_at metadata;

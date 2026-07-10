@@ -339,8 +339,9 @@ module Run : sig
 
       Every function that starts or advances a run requires
       {!Metadata.Status.Active}. It returns {!Error.Archived} or
-      {!Error.Deleted} before planning any external effect otherwise. {!phase}
-      is a read-only projection and accepts every lifecycle status.
+      {!Error.Deleted} before planning any external effect otherwise.
+      {!State.phase} is the parameter-free read-only execution projection and
+      accepts every lifecycle status.
 
       The save-before-effect rule is part of the contract. In particular,
       {!Step.Run_tool} contains a durable {!Tool_claim.Started.t} event that
@@ -358,8 +359,6 @@ module Run : sig
       | Tool of Spice_tool.Error.t
           (** Tool dispatch failed before execution. *)
       | No_active_turn  (** The session has no active turn to advance. *)
-      | Unknown_active_turn of Turn.Id.t
-          (** The active turn id is not present in reconstructed state. *)
       | Permission_not_pending of Permission.Id.t
           (** A permission answer referenced no pending permission request. *)
       | Tool_claim_not_pending of Tool_claim.Id.t
@@ -506,28 +505,6 @@ module Run : sig
     val pp_next : Format.formatter -> next -> unit
     (** [pp_next ppf next] formats [next] for diagnostics. *)
   end
-
-  module Phase : sig
-    (** Read-time execution phase of a saved session. *)
-
-    type t =
-      | Idle
-      | Waiting of Waiting.t
-      | Active  (** The type for coarse session execution phases. *)
-
-    val to_string : t -> string
-    (** [to_string t] is ["idle"], ["waiting"], or ["active"]. *)
-
-    val pp : Format.formatter -> t -> unit
-    (** [pp ppf t] formats [t] for diagnostics. *)
-  end
-
-  val phase : session -> Phase.t
-  (** [phase session] is [session]'s read-time execution phase.
-
-      Host-handled calls are classified from the active turn's recorded
-      {!Turn.host_tools}, so this projection is parameter-free and historically
-      stable. *)
 
   val start :
     Config.t ->

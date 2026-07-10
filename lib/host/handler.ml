@@ -38,7 +38,7 @@ let for_tool name handler ~cancelled document call =
   else Ok None
 
 let active_turn session =
-  match Spice_session.State.active_turn (Spice_session.state session) with
+  match Spice_session.State.active_turn_id (Spice_session.state session) with
   | Some turn -> Ok turn
   | None ->
       Error
