@@ -30,7 +30,7 @@ let platform_facts () =
   else ("unix", false)
 
 (* One resolution feeds both status and explain. *)
-let resolve_posture host =
+let resolve_posture ~stdenv host =
   let open Result.Syntax in
   let* workspace =
     Spice_host.workspace host
@@ -38,7 +38,7 @@ let resolve_posture host =
         `Runtime (Spice_host.Host.Error.message error))
   in
   let effective =
-    resolve_sandbox host ~workspace
+    resolve_sandbox ~stdenv host ~workspace
       { sandbox_flag = None; require_sandbox = false }
   in
   Ok (workspace, effective)
@@ -141,8 +141,8 @@ let status_json host effective =
     ]
 
 let status json verbose overrides cwd =
-  with_loaded_host ?cwd ~overrides @@ fun host ->
-  match resolve_posture host with
+  with_loaded_host ?cwd ~overrides @@ fun ~stdenv host ->
+  match resolve_posture ~stdenv host with
   | Error (`Runtime message) -> Runtime_error message
   | Ok (_workspace, effective) ->
       if json then
@@ -313,8 +313,8 @@ let explain_json host workspace effective =
     ]
 
 let explain json overrides cwd =
-  with_loaded_host ?cwd ~overrides @@ fun host ->
-  match resolve_posture host with
+  with_loaded_host ?cwd ~overrides @@ fun ~stdenv host ->
+  match resolve_posture ~stdenv host with
   | Error (`Runtime message) -> Runtime_error message
   | Ok (workspace, effective) ->
       if json then

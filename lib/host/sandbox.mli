@@ -219,11 +219,12 @@ val resolve :
   ?writable_roots:string list ->
   ?network:Network.t ->
   ?toolchain_caches:bool ->
+  stdenv:Eio_unix.Stdenv.base ->
   env:(string -> string option) ->
   workspace:Spice_workspace.t ->
   unit ->
   Effective.t
-(** [resolve ~env ~workspace ()] resolves the effective posture.
+(** [resolve ~stdenv ~env ~workspace ()] resolves the effective posture.
 
     [flag] is the per-run CLI override and wins over [config_mode], which wins
     over the built-in default {!Mode.Workspace_write}. [require] defaults to
@@ -232,9 +233,12 @@ val resolve :
 
     Confined modes make the workspace roots (workspace-write only), [/tmp], and
     [$TMPDIR] writable, canonicalized with [realpath] where they exist so the
-    described confinement matches the enforced one. [env] supplies [$TMPDIR] and
-    the private deterministic host test seam:
-    [_SPICE_TEST_SANDBOX_UNAVAILABLE=1] forces the refusing backend.
+    described confinement matches the enforced one. [stdenv] supplies the
+    process and clock capabilities for a bounded platform availability probe.
+    [env] supplies [$TMPDIR] and the private deterministic host test seam:
+    [_SPICE_TEST_SANDBOX_UNAVAILABLE=1] forces the refusing backend, while
+    [_SPICE_TEST_BUBBLEWRAP_PROBE] substitutes only the availability probe
+    executable. Neither seam changes a production enforcement prefix.
 
     [writable_roots] are configured extra writable subtrees for workspace-write,
     given as raw path spellings (absolute, or [~]-prefixed for the home

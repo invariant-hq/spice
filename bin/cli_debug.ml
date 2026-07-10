@@ -293,7 +293,7 @@ let declarations ~sw ~stdenv host ~model mode =
     Spice_host.workspace host |> Result.map_error (fun error -> `Host error)
   in
   let effective =
-    resolve_sandbox host ~workspace
+    resolve_sandbox ~stdenv host ~workspace
       {
         sandbox_flag = Some Spice_host.Sandbox.Mode.Workspace_write;
         require_sandbox = false;

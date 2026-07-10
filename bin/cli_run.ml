@@ -628,7 +628,7 @@ let assemble ?cwd_override_abs ?skills:preloaded_skills ~sw ~stdenv ~json ~store
      (the summary prints between the gate and a model-selection error), then
      [Run.start] composes the run mechanics over the gated plan. *)
   let* workspace = assembly (Spice_host.workspace host) in
-  let effective = resolve_sandbox host ~workspace sandbox in
+  let effective = resolve_sandbox ~stdenv host ~workspace sandbox in
   let permission = permission_args host permission_mode in
   let* plan =
     Spice_host.Run.plan ~workspace ~sandbox:effective ~permission ()

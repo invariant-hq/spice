@@ -131,7 +131,7 @@ let%expect_test
     Spice_workspace.single (Spice_workspace.Root.make (Host.Config.cwd config))
   in
   let sandbox =
-    Host.Sandbox.resolve ~flag:Host.Sandbox.Mode.Danger_full_access
+    Host.Sandbox.resolve ~flag:Host.Sandbox.Mode.Danger_full_access ~stdenv
       ~env:(Host.Env.get process_env) ~workspace ()
   in
   let plan =
@@ -231,7 +231,7 @@ let%expect_test
     Spice_workspace.single (Spice_workspace.Root.make (Host.Config.cwd config))
   in
   let sandbox =
-    Host.Sandbox.resolve ~flag:Host.Sandbox.Mode.Danger_full_access
+    Host.Sandbox.resolve ~flag:Host.Sandbox.Mode.Danger_full_access ~stdenv
       ~env:(Host.Env.get process_env) ~workspace ()
   in
   let plan =

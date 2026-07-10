@@ -668,7 +668,7 @@ let save_model_selection ~stdenv host ~selector ~effort =
 (* The effective sandbox for a run: the [--sandbox] flag over the config mode,
    gated, protecting the same host authority roots as the headless CLI so the
    frontends confine identically. *)
-let resolve_sandbox ?flag host ~workspace =
+let resolve_sandbox ?flag ~stdenv host ~workspace =
   let process_env = Spice_host.Env.current () in
   let config = Spice_host.Host.config host in
   let sandbox_config = Spice_host.Config.sandbox config in
@@ -680,6 +680,7 @@ let resolve_sandbox ?flag host ~workspace =
     ~network:(Spice_host.Config.Sandbox.network sandbox_config)
     ~toolchain_caches:
       (Spice_host.Config.Sandbox.toolchain_caches sandbox_config)
+    ~stdenv
     ~env:(Spice_host.Env.get process_env)
     ~workspace ()
 
@@ -696,7 +697,7 @@ let build_run ?sandbox_flag ~sw ~stdenv ~host ~session_id () =
     Spice_workspace.single
       (Spice_workspace.Root.make (Spice_host.Config.cwd config))
   in
-  let sandbox = resolve_sandbox ?flag:sandbox_flag host ~workspace in
+  let sandbox = resolve_sandbox ?flag:sandbox_flag ~stdenv host ~workspace in
   let permission = Spice_host.Config.permission_posture config in
   let* plan =
     Spice_host.Run.plan ~workspace ~sandbox ~permission ()
@@ -903,7 +904,7 @@ let run_user_shell ?sandbox_flag ~stdenv ~host ~cancelled command =
     Spice_workspace.single
       (Spice_workspace.Root.make (Spice_host.Config.cwd config))
   in
-  let sandbox = resolve_sandbox ?flag:sandbox_flag host ~workspace in
+  let sandbox = resolve_sandbox ?flag:sandbox_flag ~stdenv host ~workspace in
   match Spice_host.Sandbox.gate sandbox with
   | Error error -> Error (Spice_host.Sandbox.Gate_error.message error)
   | Ok () ->

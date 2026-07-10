@@ -12,7 +12,6 @@ module Log = (val Logs.src_log log_src : Logs.LOG)
 let executable = "/usr/bin/bwrap"
 
 type availability_error =
-  | Not_linux
   | Wsl1_unsupported
   | Bubblewrap_not_found
   | Bubblewrap_probe_failed of string
@@ -36,67 +35,47 @@ let is_wsl1 () =
         && not (String.includes ~affix:"wsl2" version)
     | exception Sys_error _ -> false
 
-let availability_error () =
-  if not (is_linux ()) then Some Not_linux
-  else if is_wsl1 () then Some Wsl1_unsupported
+let availability_error executable =
+  if is_wsl1 () then Some Wsl1_unsupported
   else if not (Sys.file_exists executable) then Some Bubblewrap_not_found
   else None
 
-let process_status_text = function
-  | Unix.WEXITED code -> Printf.sprintf "exited %d" code
-  | Unix.WSIGNALED signal -> Printf.sprintf "signaled %d" signal
-  | Unix.WSTOPPED signal -> Printf.sprintf "stopped %d" signal
+let probe_argv executable =
+  [|
+    executable;
+    "--unshare-user";
+    "--unshare-pid";
+    "--ro-bind";
+    "/";
+    "/";
+    "--dev";
+    "/dev";
+    "--proc";
+    "/proc";
+    "--";
+    "/bin/true";
+  |]
 
-let probe () =
-  let argv =
-    [|
-      executable;
-      "--unshare-user";
-      "--unshare-pid";
-      "--ro-bind";
-      "/";
-      "/";
-      "--dev";
-      "/dev";
-      "--proc";
-      "/proc";
-      "--";
-      "/bin/true";
-    |]
-  in
-  let null = Unix.openfile "/dev/null" [ Unix.O_RDWR ] 0 in
-  Fun.protect
-    ~finally:(fun () -> Unix.close null)
-    (fun () ->
-      match Unix.create_process executable argv null null null with
-      | pid -> (
-          match snd (Unix.waitpid [] pid) with
-          | Unix.WEXITED 0 -> Ok ()
-          | status -> Error (process_status_text status))
-      | exception Unix.Unix_error (error, fn, arg) ->
-          Error (Printf.sprintf "%s(%s): %s" fn arg (Unix.error_message error)))
-
-let error_message = function
-  | Not_linux -> "Linux Bubblewrap unavailable: host is not Linux"
+let error_message executable = function
   | Wsl1_unsupported -> "Linux Bubblewrap unavailable: WSL1 is not supported"
   | Bubblewrap_not_found ->
       Printf.sprintf "Linux Bubblewrap unavailable: %s not found" executable
   | Bubblewrap_probe_failed reason ->
       "Linux Bubblewrap unavailable: probe failed: " ^ reason
 
-let available () =
-  match availability_error () with
+let available ~executable ~probe () =
+  match availability_error executable with
   | None -> (
-      match probe () with
+      match probe ~executable ~argv:(probe_argv executable) with
       | Ok () ->
           Log.debug (fun m -> m "bubblewrap probe succeeded");
           Ok ()
       | Error reason ->
           Log.debug (fun m -> m "bubblewrap probe failed: %s" reason);
           Error
-            (Error.unavailable (error_message (Bubblewrap_probe_failed reason)))
-      )
-  | Some error -> Error (Error.unavailable (error_message error))
+            (Error.unavailable
+               (error_message executable (Bubblewrap_probe_failed reason))))
+  | Some error -> Error (Error.unavailable (error_message executable error))
 
 let path path = Spice_path.Abs.to_string path
 
@@ -148,4 +127,7 @@ let prepare policy =
   let hash_input = String.concat "\x00" prefix in
   Ok (Backend.prepared ~prefix ~profile:(Spice_digest.string hash_input))
 
-let backend = Backend.make ~id:"linux-bubblewrap" ~available ~prepare ()
+let make ~probe_executable ~probe () =
+  Backend.make ~id:"linux-bubblewrap"
+    ~available:(available ~executable:probe_executable ~probe)
+    ~prepare ()

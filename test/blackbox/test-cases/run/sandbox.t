@@ -145,6 +145,45 @@ seam pins the backend; the platform line is host-dependent and normalized.
   $ _SPICE_TEST_SANDBOX_UNAVAILABLE=1 SPICE_SANDBOX_MODE=workspace-write spice sandbox status --json --cwd "$PWD" | sed -E 's/"platform":\{"id":"[a-z]+","supported":(true|false)\}/"platform":$PLATFORM/'
   {"schema_version":1,"type":"sandbox_status","mode":"workspace-write","origin":"config","require":"enforced","platform":$PLATFORM,"backend":{"id":"none","available":false,"enforcement":"refused"},"restricted_modes_available":false,"diagnostics":["sandbox backend forced unavailable (_SPICE_TEST_SANDBOX_UNAVAILABLE=1)"]}
 
+The Bubblewrap probe is an availability question, so a non-terminating probe
+must become refused data before the outer watchdog fires. The private seam
+changes only the probe executable; production platform selection and command
+wrapping remain fixed.
+
+  $ cat > probe-forever <<'SH'
+  > #!/bin/sh
+  > exec /bin/sleep 30
+  > SH
+  $ chmod +x probe-forever
+  $ run_probe_status() {
+  >   _SPICE_TEST_BUBBLEWRAP_PROBE="$PWD/probe-forever" \
+  >     SPICE_SANDBOX_MODE=workspace-write \
+  >     spice sandbox status --json --cwd "$PWD" >probe-status.json 2>&1 &
+  >   command_pid=$!
+  >   (sleep 4; kill -TERM "$command_pid" 2>/dev/null) &
+  >   watchdog_pid=$!
+  >   wait "$command_pid"
+  >   command_status=$?
+  >   kill "$watchdog_pid" 2>/dev/null || true
+  >   wait "$watchdog_pid" 2>/dev/null || true
+  >   return "$command_status"
+  > }
+  $ run_probe_status; echo exit:$?
+  exit:0
+  $ grep -o 'probe failed: timed out after 1s' probe-status.json
+  probe failed: timed out after 1s
+
+A completed nonzero probe is structured as ordinary unavailable data too.
+
+  $ cat > probe-exit-7 <<'SH'
+  > #!/bin/sh
+  > exit 7
+  > SH
+  $ chmod +x probe-exit-7
+  $ _SPICE_TEST_BUBBLEWRAP_PROBE="$PWD/probe-exit-7" SPICE_SANDBOX_MODE=workspace-write spice sandbox status --json --cwd "$PWD" >probe-exit.json
+  $ grep -o 'probe failed: exited 7' probe-exit.json
+  probe failed: exited 7
+
 sandbox explain reports the policy a run would apply, including protected
 metadata and environment stripping facts, without secret values.
 

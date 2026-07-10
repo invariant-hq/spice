@@ -314,22 +314,78 @@ let forced_unavailable ~env =
              (Printf.sprintf "unknown _SPICE_TEST_SANDBOX_UNAVAILABLE value %S"
                 other))
 
-(* Backend selection is platform-owned. The environment seam only forces an
-   unavailable backend for blackbox tests; it does not select an implementation.
-*)
-let host_backend ~env =
+let bubblewrap_probe_timeout = 1.0
+let bubblewrap_probe_cache = Atomic.make None
+
+let process_status_text = function
+  | `Exited code -> Printf.sprintf "exited %d" code
+  | `Signaled signal -> Printf.sprintf "signaled %d" signal
+
+let run_bubblewrap_probe ~stdenv ~executable ~argv =
+  let clock = Eio.Stdenv.clock stdenv in
+  let process_mgr = Eio.Stdenv.process_mgr stdenv in
+  let ( / ) = Eio.Path.( / ) in
+  let null_path = Eio.Stdenv.fs stdenv / "/dev/null" in
+  try
+    match
+      Eio.Time.with_timeout clock bubblewrap_probe_timeout (fun () ->
+          Ok
+            (Eio.Path.with_open_out ~create:`Never null_path (fun null ->
+                 (* The child belongs to this inner switch. Timeout or caller
+                    cancellation releases it, which kills and reaps the child
+                    before the exception can leave [Switch.run]. *)
+                 Eio.Switch.run (fun sw ->
+                     let process =
+                       Eio.Process.spawn ~sw process_mgr ~stdin:null
+                         ~stdout:null ~stderr:null ~executable
+                         (Array.to_list argv)
+                     in
+                     Eio.Process.await process))))
+    with
+    | Ok (`Exited 0) -> Ok ()
+    | Ok status -> Error (process_status_text status)
+    | Error `Timeout ->
+        Error (Printf.sprintf "timed out after %gs" bubblewrap_probe_timeout)
+  with
+  | Eio.Cancel.Cancelled _ as ex -> raise ex
+  | ex -> Error (Printexc.to_string ex)
+
+let cached_bubblewrap_probe ~stdenv ~executable ~argv =
+  match Atomic.get bubblewrap_probe_cache with
+  | Some result -> result
+  | None ->
+      let result = run_bubblewrap_probe ~stdenv ~executable ~argv in
+      ignore (Atomic.compare_and_set bubblewrap_probe_cache None (Some result));
+      result
+
+let bubblewrap_backend ~stdenv ~cached probe_executable =
+  let probe =
+    if cached then cached_bubblewrap_probe ~stdenv
+    else run_bubblewrap_probe ~stdenv
+  in
+  Spice_sandbox.Bubblewrap.make ~probe_executable ~probe ()
+
+(* Backend selection is platform-owned. The environment seams force only
+   deterministic availability behavior for blackbox tests; production backend
+   selection and enforcement prefixes remain fixed. *)
+let host_backend ~stdenv ~env =
   match forced_unavailable ~env with
   | Some backend -> backend
-  | None when is_linux () -> Spice_sandbox.Bubblewrap.backend
-  | None when Sys.file_exists Spice_sandbox.Seatbelt.executable ->
-      Spice_sandbox.Seatbelt.backend
-  | None ->
-      Spice_sandbox.Backend.none
-        ~reason:"no supported sandbox backend on this platform"
+  | None -> (
+      match env "_SPICE_TEST_BUBBLEWRAP_PROBE" with
+      | Some executable -> bubblewrap_backend ~stdenv ~cached:false executable
+      | None when is_linux () ->
+          bubblewrap_backend ~stdenv ~cached:true
+            Spice_sandbox.Bubblewrap.executable
+      | None when Sys.file_exists Spice_sandbox.Seatbelt.executable ->
+          Spice_sandbox.Seatbelt.backend
+      | None ->
+          Spice_sandbox.Backend.none
+            ~reason:"no supported sandbox backend on this platform")
 
 let resolve ?flag ?config_mode ?(require = Require.Enforced) ?(protect = [])
     ?(writable_roots = []) ?(network = Network.Restricted)
-    ?(toolchain_caches = true) ~env ~workspace () =
+    ?(toolchain_caches = true) ~stdenv ~env ~workspace () =
   let mode, origin =
     match (flag, config_mode) with
     | Some mode, _ -> (mode, Status.Flag)
@@ -349,7 +405,7 @@ let resolve ?flag ?config_mode ?(require = Require.Enforced) ?(protect = [])
   in
   let protect = List.map canonical protect in
   let spec = sandbox_of_mode ~writable ~protect ~network mode in
-  let backend = host_backend ~env in
+  let backend = host_backend ~stdenv ~env in
   let sandbox = Spice_sandbox.seal ~backend spec in
   { Effective.mode; origin; require; spec; backend; sandbox }
 

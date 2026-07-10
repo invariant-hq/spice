@@ -12,6 +12,14 @@ module Abs = Spice_path.Abs
 module Digest = Spice_digest
 module Json = Jsont.Json
 
+let bubblewrap_backend =
+  Bubblewrap.make ~probe_executable:Bubblewrap.executable
+    ~probe:(fun ~executable ~argv ->
+      match Array.to_list argv with
+      | program :: _ when String.equal program executable -> Ok ()
+      | _ -> Error "probe argv does not start with its executable")
+    ()
+
 let abs path = Abs.of_string_exn path
 let argv program args = Sandbox.Argv.make ~program args
 let argv_list argv = Sandbox.Argv.to_list argv
@@ -205,10 +213,10 @@ let backend_prefix_preserves_command () =
 
 let bubblewrap_backend_identity () =
   equal string ~msg:"bubblewrap backend id" "linux-bubblewrap"
-    (Sandbox.Backend.id Bubblewrap.backend)
+    (Sandbox.Backend.id bubblewrap_backend)
 
 let bubblewrap_prepared policy =
-  match Sandbox.Backend.prepare Bubblewrap.backend policy with
+  match Sandbox.Backend.prepare bubblewrap_backend policy with
   | Ok prepared -> prepared
   | Error error -> fail (Sandbox.Error.message error)
 

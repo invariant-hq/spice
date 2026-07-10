@@ -12,5 +12,13 @@ val executable : string
 (** [executable] is the system Bubblewrap path Spice will use. It is absolute so
     a workspace-local [bwrap] on [PATH] cannot be selected. *)
 
-val backend : Backend.t
-(** [backend] is the Linux Bubblewrap backend value. *)
+val make :
+  probe_executable:string ->
+  probe:(executable:string -> argv:string array -> (unit, string) result) ->
+  unit ->
+  Backend.t
+(** [make ~probe_executable ~probe ()] is a Linux Bubblewrap backend.
+    [probe] runs the fixed namespace probe through [probe_executable] and
+    returns a diagnostic reason when it cannot complete successfully. Prepared
+    commands always use {!executable}; overriding the probe cannot alter the
+    enforcement prefix. *)

@@ -419,7 +419,7 @@ let with_loaded_host ?cwd ?(overrides = []) f =
   Eio_main.run @@ fun stdenv ->
   match load_host ?cwd ~overrides stdenv with
   | Error error -> status (assembly (Error error))
-  | Ok host -> f host
+  | Ok host -> f ~stdenv host
 
 (* Run assembly shared by [spice run] and [spice debug]: the debug surfaces
    print exactly what an exec run sends, so both build the same config. *)
@@ -463,7 +463,7 @@ type sandbox_args = {
 (* One resolution feeds exec, debug, and the sandbox status surfaces. The
    require gate is separate so surfaces that only describe the posture can
    resolve without failing on unavailable backends. *)
-let resolve_sandbox host ~workspace args =
+let resolve_sandbox ~stdenv host ~workspace args =
   let process_env = Spice_host.Env.current () in
   let config = Spice_host.Host.config host in
   let sandbox_config = Spice_host.Config.sandbox config in
@@ -479,6 +479,7 @@ let resolve_sandbox host ~workspace args =
     ~network:(Spice_host.Config.Sandbox.network sandbox_config)
     ~toolchain_caches:
       (Spice_host.Config.Sandbox.toolchain_caches sandbox_config)
+    ~stdenv
     ~env:(Spice_host.Env.get process_env)
     ~workspace ()
 
