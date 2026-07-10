@@ -314,6 +314,11 @@ module Run = struct
     | Session_error.Turn_not_finished _ ->
         assert false
 
+  let require_active_session session =
+    match require_active_status session with
+    | Ok () -> Ok ()
+    | Error error -> Error (of_append_error error)
+
   module Config = struct
     type t = {
       tools : Tool.Catalog.t;
@@ -414,6 +419,7 @@ module Run = struct
   end
 
   let active_turn session =
+    let* () = require_active_session session in
     let state = state session in
     match State.active_turn state with
     | None -> Error Error.No_active_turn
@@ -423,9 +429,8 @@ module Run = struct
         | Some turn -> Ok (id, turn))
 
   let active_turn_id session =
-    match State.active_turn (state session) with
-    | None -> Error Error.No_active_turn
-    | Some id -> Ok id
+    let* id, _ = active_turn session in
+    Ok id
 
   let request_for_turn config session turn =
     let state = state session in
@@ -755,6 +760,7 @@ module Run = struct
   let resume config session = plan config session
 
   let start config ~id ~input ~model ?options ?mode ?origin ?max_steps session =
+    let* () = require_active_session session in
     let host_tools = List.map Llm.Tool.name (Config.host_tools config) in
     let turn =
       Turn.make ~id ~input ~model ?options ?mode ?origin ?max_steps ~host_tools
@@ -775,6 +781,7 @@ module Run = struct
         ~next:(Step.Finished { turn = turn_id; outcome })
 
   let finish_tool config id result session =
+    let* () = require_active_session session in
     match State.pending_tool_claim id (state session) with
     | None -> Error (Error.Tool_claim_not_pending id)
     | Some saved ->
@@ -787,6 +794,7 @@ module Run = struct
 
   let resolve_permission config ?(message = "Permission denied.") ?via id answer
       session =
+    let* () = require_active_session session in
     (* The product invariant is that unattended resolution can only deny; a
        host bug pairing unattended provenance with an allow must fail loudly
        rather than be laundered into a reviewer allow. The JSON decoder rejects
@@ -828,6 +836,7 @@ module Run = struct
     && String.equal (Llm.Tool.Result.name result) (Llm.Tool.Call.name call)
 
   let answer_host_tool_result config waiting result session =
+    let* () = require_active_session session in
     if not (host_tool_matches_result waiting result) then
       let call = waiting.Waiting.call in
       Error

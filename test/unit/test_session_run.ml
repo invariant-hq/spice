@@ -47,6 +47,17 @@ let session_with turn =
   | Ok session -> session
   | Error error -> failf "turn start failed: %a" Session.Error.pp error
 
+let with_status status session =
+  let metadata =
+    Session.Metadata.with_status status (Session.metadata session)
+  in
+  match
+    Session.make ~id:(Session.id session) ~metadata
+      ~events:(Session.events session)
+  with
+  | Ok session -> session
+  | Error error -> failf "status fixture failed: %a" Session.Error.pp error
+
 let call ?(id = "call-1") ?(name = "review_tool") () =
   Llm.Tool.Call.make ~id ~name ~input:(Json.object' []) ()
 
@@ -407,6 +418,20 @@ let prelude_reaches_model_request () =
                 "Be brief." text
           | _ -> failf "unexpected prelude messages in request")
       | next -> failf "expected model request, got %a" Run.Step.pp_next next)
+
+let resume_requires_active_lifecycle () =
+  let config = config [] in
+  let check status expected =
+    match Run.resume config (with_status status (session ())) with
+    | Error Run.Error.Archived when expected = `Archived -> ()
+    | Error Run.Error.Deleted when expected = `Deleted -> ()
+    | Error error -> failf "unexpected lifecycle error: %a" Run.Error.pp error
+    | Ok step ->
+        failf "inactive session planned an external boundary: %a"
+          Run.Step.pp_next (Run.Step.next step)
+  in
+  check Session.Metadata.Status.Archived `Archived;
+  check Session.Metadata.Status.Deleted `Deleted
 
 let resolve_permission_deny_answers_blocked_call () =
   let config = config [ executable_tool () ] in
@@ -868,6 +893,7 @@ let () =
       test "interrupt finishes turn as cancelled"
         interrupt_finishes_turn_as_cancelled;
       test "config prelude reaches model request" prelude_reaches_model_request;
+      test "resume requires active lifecycle" resume_requires_active_lifecycle;
       test "resolve permission deny answers blocked call"
         resolve_permission_deny_answers_blocked_call;
       test "answer tool records tool result" answer_tool_records_tool_result;

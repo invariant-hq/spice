@@ -325,10 +325,21 @@ module Run : sig
       next external boundary. It does not call the model, run tools, save
       sessions, or own workspace state.
 
-      Hosts call {!start}, {!resume}, or a continuation function, durably save
-      {!Step.events} and {!Step.session}, interpret {!Step.next}, and feed the
-      external result back with {!accept_response}, {!finish_tool},
-      {!resolve_permission}, or {!answer_host_tool}.
+      Hosts call {!start}, {!resume}, or a continuation function and persist the
+      checked transition with one of two strategies:
+      - an append store appends {!Step.events} to the input session and verifies
+        that the saved result represents {!Step.session};
+      - a whole-document store saves {!Step.session} and uses {!Step.events}
+        only as the transition delta for observation.
+
+      The chosen durable write must complete before the host interprets
+      {!Step.next} and feeds the external result back with {!accept_response},
+      {!finish_tool}, {!resolve_permission}, or {!answer_host_tool}.
+
+      Every function that starts or advances a run requires
+      {!Metadata.Status.Active}. It returns {!Error.Archived} or
+      {!Error.Deleted} before planning any external effect otherwise. {!phase}
+      is a read-only projection and accepts every lifecycle status.
 
       The save-before-effect rule is part of the contract. In particular,
       {!Step.Run_tool} contains a durable {!Tool_claim.Started.t} event that
@@ -448,24 +459,26 @@ module Run : sig
     (** The type for a checked session transition.
 
         [events t] is the exact event suffix applied to the input session, and
-        [session t] is the validated session after that suffix. Hosts should
-        save both before interpreting [next t]. Some steps append no events;
-        callers still receive the session that was used to compute the boundary.
-    *)
+        [session t] is the validated session after that suffix. An append store
+        persists [events t] against the input document; a whole-document store
+        persists [session t]. These are alternative representations of the same
+        transition, not two updates to apply. The chosen write must complete
+        before interpreting [next t]. Some steps append no events; callers still
+        receive the session used to compute the boundary. *)
 
     (** The type for external boundaries after a planned transition. *)
     type next =
       | Request_model of Spice_llm.Request.t
           (** The active transcript is ready for the model.
 
-              The host should save {!events}, call the model with the request,
-              then continue with {!Run.accept_response}. *)
+              The host persists the checked transition, calls the model with the
+              request, then continues with {!Run.accept_response}. *)
       | Run_tool of { claim : Tool_claim.Started.t; call : Spice_tool.Call.t }
           (** An executable tool call is decoded, permitted, and claimed.
 
               [claim] has a deterministic id derived from the active turn and
-              model tool-call id. The host should save {!events}, run [call] at
-              most once, then continue with {!Run.finish_tool}. *)
+              model tool-call id. The host persists the checked transition, runs
+              [call] at most once, then continues with {!Run.finish_tool}. *)
       | Waiting of Waiting.t
           (** The active turn is waiting for host or user input. Planning has
               not performed the waiting effect. *)
@@ -484,7 +497,8 @@ module Run : sig
     (** [session t] is the validated session after {!events} [t]. *)
 
     val next : t -> next
-    (** [next t] is the next external boundary after saving {!events} [t]. *)
+    (** [next t] is the next external boundary after persisting the checked
+        transition [t]. *)
 
     val pp_next : Format.formatter -> next -> unit
     (** [pp_next ppf next] formats [next] for diagnostics. *)
