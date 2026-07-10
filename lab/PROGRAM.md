@@ -78,10 +78,10 @@ LOOP until budget is exhausted or the user stops you:
    arguments and result head — the patterns that matter are visible only
    here: a pinned `cache_r` while `in` grows, an oversized tool result
    injected into context, a give-up after two steps, a missing verification
-   step. Detectors catch only what they were taught to see; the digests are
-   where new hypotheses and new detector ideas come from. Record every
-   observation in `HYPOTHESES.md` with an evidence pointer
-   (campaign/arm/task/run and step numbers).
+   step. The behavior counters quantify only what they were built to count;
+   the digests are where new hypotheses come from. Record every observation in
+   `HYPOTHESES.md` with an evidence pointer (campaign/arm/task/run and step
+   numbers).
 2. Pick the highest-value open hypothesis from `HYPOTHESES.md`. Apply the
    treatment on the branch. T3 requires a `design-note.md` in the experiment
    dir first (problem, alternatives, `.mli` sketch; load the relevant
@@ -137,6 +137,13 @@ are unread evidence.
   output_total`) over all completed runs, with failed/timed-out runs imputed
   at the worst value observed for that task across both arms. Duration is
   computed the same way and reported; success is per-task counts.
+- Baseline check: before treating a behavior, confirm the subject actually
+  exhibits it — read its prevalence in the behavior counters
+  (`analysis/trace-metrics.jsonl`, or the Behavior-counters table in
+  `analysis.md`). A treatment aimed at a behavior the baseline barely shows is
+  a wasted experiment (a reread-discipline prompt once ran against a model
+  whose baseline had 1 repeat across 18 runs). The counters never decide a
+  verdict; they only tell you whether an experiment is worth running.
 - Tripwire: any task all-pass in the reference and all-fail in the candidate →
   `discard`.
 - Guardrail: success dropping on ≥2 tasks → `discard` regardless of the

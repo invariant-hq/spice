@@ -7,7 +7,6 @@ open Windtrap
 module Eval = Spice_eval
 module Trace = Spice_eval_trace.Trace
 module Metrics = Spice_eval_trace.Trace_metrics
-module Insight = Spice_eval_trace.Insight
 module Timing = Spice_eval_trace.Timing
 module Session = Spice_session
 module Llm = Spice_llm
@@ -300,30 +299,21 @@ let segments_split_on_compaction () =
   equal (list int) ~msg:"step segment indices" [ 0; 1 ]
     (List.map Trace.Step.segment_index (Trace.steps t))
 
-let repeated_call_detector () =
-  let calls =
-    List.init 4 (fun index ->
-        ( call
-            ~id:(Printf.sprintf "c%d" index)
-            ~name:"shell" (command_input "ls"),
-          false,
-          "listing" ))
-  in
-  let firing =
-    Insight.detect Insight.builtin
-      (Trace.of_session (executed ~declarations:[ "shell" ] calls))
+let repeated_call_count () =
+  let repeats_of doc =
+    (Metrics.of_trace (Trace.of_session doc)).Metrics.repeated_call_count
   in
   let repeated =
-    List.filter (fun i -> i.Insight.detector = "repeated-call") firing
+    executed ~declarations:[ "shell" ]
+      (List.init 4 (fun index ->
+           ( call
+               ~id:(Printf.sprintf "c%d" index)
+               ~name:"shell" (command_input "ls"),
+             false,
+             "listing" )))
   in
-  equal int ~msg:"one repeated group" 1 (List.length repeated);
-  (match repeated with
-  | [ insight ] ->
-      equal string ~msg:"repeated severity" "major"
-        (Insight.severity_to_string insight.Insight.severity);
-      equal (option int) ~msg:"repeated waste" (Some 21)
-        insight.Insight.waste_tokens
-  | _ -> failf "expected one repeated-call insight");
+  (* Four identical calls: three beyond the first in their group. *)
+  equal int ~msg:"repeats beyond first" 3 (repeats_of repeated);
   let distinct =
     executed ~declarations:[ "shell" ]
       [
@@ -331,13 +321,9 @@ let repeated_call_detector () =
         (call ~id:"b" ~name:"shell" (command_input "pwd"), false, "y");
       ]
   in
-  equal int ~msg:"no repeat" 0
-    (List.length
-       (List.filter
-          (fun i -> i.Insight.detector = "repeated-call")
-          (Insight.detect Insight.builtin (Trace.of_session distinct))))
+  equal int ~msg:"distinct calls do not repeat" 0 (repeats_of distinct)
 
-let failure_streak_detector () =
+let failure_streak_count () =
   let streak error_run =
     executed ~declarations:[ "shell" ]
       (List.init error_run (fun index ->
@@ -348,16 +334,13 @@ let failure_streak_detector () =
              true,
              "failed" )))
   in
-  let insights_of doc =
-    List.filter
-      (fun i -> i.Insight.detector = "failure-streak")
-      (Insight.detect Insight.builtin (Trace.of_session doc))
+  let streak_of doc =
+    (Metrics.of_trace (Trace.of_session doc)).Metrics.failure_streak_max
   in
-  equal int ~msg:"streak of three fires" 1
-    (List.length (insights_of (streak 3)));
-  equal int ~msg:"streak of two silent" 0 (List.length (insights_of (streak 2)))
+  equal int ~msg:"streak of three" 3 (streak_of (streak 3));
+  equal int ~msg:"streak of two" 2 (streak_of (streak 2))
 
-let reread_detector () =
+let reread_count () =
   let reread =
     executed ~declarations:[ "read_file" ]
       [
@@ -376,17 +359,13 @@ let reread_detector () =
         (call ~id:"r2" ~name:"read_file" (path_input "lib/a.ml"), false, "body");
       ]
   in
-  let reread_insights doc =
-    List.filter
-      (fun i -> i.Insight.detector = "reread-unchanged")
-      (Insight.detect Insight.builtin (Trace.of_session doc))
+  let rereads_of doc =
+    (Metrics.of_trace (Trace.of_session doc)).Metrics.reread_count
   in
-  equal int ~msg:"unchanged reread fires" 1
-    (List.length (reread_insights reread));
-  equal int ~msg:"edited reread silent" 0
-    (List.length (reread_insights with_edit))
+  equal int ~msg:"unchanged reread counted" 1 (rereads_of reread);
+  equal int ~msg:"reread after edit not counted" 0 (rereads_of with_edit)
 
-let shell_family_detector () =
+let shell_families () =
   let shells =
     executed ~declarations:[ "shell" ]
       [
@@ -398,28 +377,23 @@ let shell_family_detector () =
       ]
   in
   let t = Trace.of_session shells in
+  let expected = [ ("git commit", 1); ("git status", 1); ("ls", 1) ] in
   equal
     (list (pair string int))
-    ~msg:"families"
-    [ ("git commit", 1); ("git status", 1); ("ls", 1) ]
-    (Trace.shell_families t);
-  let histogram =
-    List.filter
-      (fun i -> i.Insight.detector = "shell-family-histogram")
-      (Insight.detect Insight.builtin t)
-  in
-  equal int ~msg:"histogram fires once" 1 (List.length histogram);
+    ~msg:"trace families" expected (Trace.shell_families t);
+  equal
+    (list (pair string int))
+    ~msg:"metrics families" expected (Metrics.of_trace t).Metrics.shell_families;
   let no_shell =
     executed ~declarations:[ "read_file" ]
       [
         (call ~id:"r" ~name:"read_file" (path_input "lib/a.ml"), false, "body");
       ]
   in
-  equal int ~msg:"no shell no histogram" 0
-    (List.length
-       (List.filter
-          (fun i -> i.Insight.detector = "shell-family-histogram")
-          (Insight.detect Insight.builtin (Trace.of_session no_shell))))
+  equal
+    (list (pair string int))
+    ~msg:"no shell no families" []
+    (Metrics.of_trace (Trace.of_session no_shell)).Metrics.shell_families
 
 let timing_join () =
   let agent_jsonl =
@@ -460,24 +434,6 @@ let timing_join () =
         ~msg:"step duration" (Some 0.5)
         (Trace.Step.duration_s step)
   | _ -> failf "expected one step"
-
-let insight_codec_round_trips () =
-  let insight =
-    {
-      Insight.detector = "repeated-call";
-      severity = Insight.Major;
-      steps = (0, 2);
-      message = "shell called 3 times";
-      evidence = "shell {}";
-      waste_tokens = Some 42;
-    }
-  in
-  let decoded = decode Insight.jsont (encode Insight.jsont insight) in
-  equal string ~msg:"detector" insight.Insight.detector decoded.Insight.detector;
-  equal string ~msg:"severity" "major"
-    (Insight.severity_to_string decoded.Insight.severity);
-  equal (pair int int) ~msg:"steps" (0, 2) decoded.Insight.steps;
-  equal (option int) ~msg:"waste" (Some 42) decoded.Insight.waste_tokens
 
 (* The analyze subcommand decodes captured session.json with the same codec the
    session store writes; confirm a round-trip through it yields the same trace. *)
@@ -523,12 +479,11 @@ let () =
       test "excludes host tool calls" host_tool_calls_excluded;
       test "counts rejections" rejections_counted;
       test "splits segments on compaction" segments_split_on_compaction;
-      test "repeated-call detector" repeated_call_detector;
-      test "failure-streak detector" failure_streak_detector;
-      test "reread-unchanged detector" reread_detector;
-      test "shell-family histogram detector" shell_family_detector;
+      test "counts repeated calls" repeated_call_count;
+      test "counts failure streaks" failure_streak_count;
+      test "counts unchanged rereads" reread_count;
+      test "breaks down shell families" shell_families;
       test "joins timing" timing_join;
       test "decodes from a json document" decodes_from_json_document;
-      test "insight codec round-trips" insight_codec_round_trips;
       test "marker scan" markers_scan;
     ]

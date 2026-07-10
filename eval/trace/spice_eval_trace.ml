@@ -6,4 +6,3 @@
 module Timing = Timing
 module Trace = Trace
 module Trace_metrics = Trace_metrics
-module Insight = Insight

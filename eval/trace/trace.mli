@@ -6,11 +6,11 @@
 (** The ordered, usage-attributed view of one session.
 
     A {!t} is the narrow waist of trace analysis: {!of_session} produces it from
-    a decoded session document, and {!Trace_metrics} and {!Insight} consume it.
-    It reconstructs, in causal order, the provider responses of a run
-    ({!Step.t}), the executable tool calls each response issued and their
-    model-visible results ({!Call.t}), the compaction resets that delimit
-    segments, and the per-turn tool declarations.
+    a decoded session document, and {!Trace_metrics} consumes it. It
+    reconstructs, in causal order, the provider responses of a run ({!Step.t}),
+    the executable tool calls each response issued and their model-visible
+    results ({!Call.t}), the compaction resets that delimit segments, and the
+    per-turn tool declarations.
 
     The reconstruction follows the session's own event semantics
     ({!Spice_session.Event}): a step is one [Response_appended]; an executed
@@ -152,9 +152,9 @@ val segments : t -> Step.t list list
 
 val declared_tools : t -> string list
 (** [declared_tools t] is the sorted, deduplicated union of the tool names
-    declared across [t]'s turns ([Turn_started]'s declarations). Opportunity
-    detectors gate on this so a run whose catalog lacked a tool is never faulted
-    for not using it. *)
+    declared across [t]'s turns ([Turn_started]'s declarations) — the catalog
+    snapshot an analysis consults to avoid faulting a run for not using a tool
+    its catalog never offered. *)
 
 val model : t -> Spice_llm.Model.t option
 (** [model t] is the request model when every turn used the same one, else
@@ -168,8 +168,8 @@ val reasoning_effort : t -> Spice_llm.Request.Options.Reasoning_effort.t option
 
 (** {1:derivations Shared derivations}
 
-    These are the canonical orderings both {!Trace_metrics} and {!Insight}
-    consume, so a metric and its detector never drift. *)
+    These are the canonical orderings {!Trace_metrics} consumes, so every
+    derived counter shares one definition. *)
 
 val rereads : t -> (Call.t * Call.t) list
 (** [rereads t] are the [(original, reread)] pairs where [reread] is a

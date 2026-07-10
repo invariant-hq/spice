@@ -14,7 +14,6 @@ module Model = Spice_provider.Model
 module Llm_usage = Spice_llm.Usage
 module Trace = Spice_eval_trace.Trace
 module Trace_metrics = Spice_eval_trace.Trace_metrics
-module Insight = Spice_eval_trace.Insight
 module Timing = Spice_eval_trace.Timing
 
 let exits = CCmd.Exit.defaults
@@ -2036,10 +2035,7 @@ let analyze_run dir =
       let digest =
         Format.asprintf "%a" (fun ppf trace -> Trace.pp_digest ppf trace) trace
       in
-      Ok
-        ( Trace_metrics.of_trace trace,
-          Insight.detect Insight.builtin trace,
-          digest )
+      Ok (Trace_metrics.of_trace trace, digest)
 
 (* Prepend task and run_index to a codec-encoded object, keeping every codec
    field flat alongside them. *)
@@ -2075,15 +2071,22 @@ let analysis_markdown ~result_dir ~rows ~analyzed ~skipped ~errors =
   add "# Trace analysis\n\n";
   add "Result directory: `%s`\n\n" result_dir;
   add
-    "Per-run transcript digests are under `analysis/digests/` — read them; \
-     detectors only catch what they were taught to see.\n\n";
+    "Per-run transcript digests are under `analysis/digests/` — read them; the \
+     counters below quantify known behaviors, but discovery lives in the \
+     digests.\n\n";
+  add
+    "The behavior counters exist to check whether a treatment moved the \
+     behavior it targeted (cross-arm deltas) and whether that behavior is even \
+     present at baseline before it is worth treating; they inform hypotheses \
+     and never decide a verdict.\n\n";
   add "## Per-run\n\n";
   add
     "| Task | Run | Success | In tokens | Out tokens | Tool calls | Failures | \
-     Insights |\n";
-  add "| --- | ---: | :---: | ---: | ---: | ---: | ---: | ---: |\n";
+     Rereads | Repeats | Max streak |\n";
+  add
+    "| --- | ---: | :---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n";
   List.iter
-    (fun (task, run_index, metrics, insights) ->
+    (fun (task, run_index, metrics) ->
       let in_tokens =
         metrics.Trace_metrics.input_tokens
         + metrics.Trace_metrics.cache_read_tokens
@@ -2093,38 +2096,66 @@ let analysis_markdown ~result_dir ~rows ~analyzed ~skipped ~errors =
         metrics.Trace_metrics.output_tokens
         + metrics.Trace_metrics.reasoning_tokens
       in
-      add "| %s | %d | %s | %d | %d | %d | %d | %d |\n" task run_index
+      add "| %s | %d | %s | %d | %d | %d | %d | %d | %d | %d |\n" task run_index
         (row_success rows task run_index)
         in_tokens out_tokens metrics.Trace_metrics.tool_calls
-        metrics.Trace_metrics.tool_failures (List.length insights))
+        metrics.Trace_metrics.tool_failures metrics.Trace_metrics.reread_count
+        metrics.Trace_metrics.repeated_call_count
+        metrics.Trace_metrics.failure_streak_max)
     analyzed;
-  add "\n## Top insights\n\n";
-  let located =
-    List.concat_map
-      (fun (task, run_index, _, insights) ->
-        List.map (fun insight -> (task, run_index, insight)) insights)
-      analyzed
+  add "\n## Behavior counters\n\n";
+  add "| Task | Runs | Rereads | Repeats | Max streak | Top shell families |\n";
+  add "| --- | ---: | ---: | ---: | ---: | --- |\n";
+  let tasks =
+    List.sort_uniq String.compare (List.map (fun (task, _, _) -> task) analyzed)
   in
-  let detectors =
-    List.sort_uniq String.compare
-      (List.map (fun (_, _, insight) -> insight.Insight.detector) located)
-  in
-  if detectors = [] then add "No insights.\n"
-  else
+  let top_shell_families group =
+    let tally = Hashtbl.create 16 in
     List.iter
-      (fun detector ->
-        let items =
-          List.filter
-            (fun (_, _, insight) -> insight.Insight.detector = detector)
-            located
-        in
-        add "- **%s** (%d)" detector (List.length items);
-        match items with
-        | (task, run_index, insight) :: _ ->
-            add ": %s — `%s` [%s/%d]\n" insight.Insight.message
-              insight.Insight.evidence task run_index
-        | [] -> add "\n")
-      detectors;
+      (fun metrics ->
+        List.iter
+          (fun (family, count) ->
+            let prev =
+              Option.value (Hashtbl.find_opt tally family) ~default:0
+            in
+            Hashtbl.replace tally family (prev + count))
+          metrics.Trace_metrics.shell_families)
+      group;
+    Hashtbl.fold (fun family count acc -> (family, count) :: acc) tally []
+    |> List.sort (fun (family_a, count_a) (family_b, count_b) ->
+        match Int.compare count_b count_a with
+        | 0 -> String.compare family_a family_b
+        | order -> order)
+  in
+  List.iter
+    (fun task ->
+      let group =
+        List.filter_map
+          (fun (t, _, metrics) -> if t = task then Some metrics else None)
+          analyzed
+      in
+      let sum field =
+        List.fold_left (fun acc metrics -> acc + field metrics) 0 group
+      in
+      let rereads = sum (fun m -> m.Trace_metrics.reread_count) in
+      let repeats = sum (fun m -> m.Trace_metrics.repeated_call_count) in
+      let max_streak =
+        List.fold_left
+          (fun acc metrics -> max acc metrics.Trace_metrics.failure_streak_max)
+          0 group
+      in
+      let families =
+        match top_shell_families group with
+        | [] -> "-"
+        | families ->
+            List.filteri (fun index _ -> index < 3) families
+            |> List.map (fun (family, count) ->
+                Printf.sprintf "`%s` \xc3\x97%d" family count)
+            |> String.concat ", "
+      in
+      add "| %s | %d | %d | %d | %d | %s |\n" task (List.length group) rereads
+        repeats max_streak families)
+    tasks;
   if skipped > 0 then
     add
       "\n%d run(s) had no session.json and were skipped (non-Spice adapters).\n"
@@ -2164,15 +2195,15 @@ let analyze_command =
             incr skipped
           else
             match analyze_run dir with
-            | Ok (metrics, insights, digest) ->
+            | Ok (metrics, digest) ->
                 (* One readable transcript digest per run: the reviewable form
-                   of the session for humans and researcher agents; findings
-                   that no detector encodes are found by reading these. *)
+                   of the session for humans and researcher agents; behavior the
+                   counters do not quantify is found by reading these. *)
                 write_file
                   (Filename.concat digest_dir
                      (Printf.sprintf "%s-%d.txt" task run_index))
                   digest;
-                analyzed := (task, run_index, metrics, insights) :: !analyzed
+                analyzed := (task, run_index, metrics) :: !analyzed
             | Error message -> errors := (task, run_index, message) :: !errors)
         (run_dirs result_dir);
       let analyzed = List.rev !analyzed in
@@ -2181,19 +2212,13 @@ let analyze_command =
         (Filename.concat analysis_dir "trace-metrics.jsonl")
         (String.concat ""
            (List.map
-              (fun (task, run_index, metrics, _) ->
+              (fun (task, run_index, metrics) ->
                 flatten_line ~task ~run_index Trace_metrics.jsont metrics ^ "\n")
               analyzed));
-      write_file
-        (Filename.concat analysis_dir "insights.jsonl")
-        (String.concat ""
-           (List.concat_map
-              (fun (task, run_index, _, insights) ->
-                List.map
-                  (fun insight ->
-                    flatten_line ~task ~run_index Insight.jsont insight ^ "\n")
-                  insights)
-              analyzed));
+      (* A prior run of an older analyze wrote insights.jsonl; drop any such
+         leftover so a rerun leaves no product this analyze no longer emits. *)
+      let stale_insights = Filename.concat analysis_dir "insights.jsonl" in
+      if Sys.file_exists stale_insights then Sys.remove stale_insights;
       write_file
         (Filename.concat result_dir "analysis.md")
         (analysis_markdown ~result_dir ~rows ~analyzed ~skipped:!skipped ~errors);
@@ -2203,8 +2228,7 @@ let analyze_command =
       0
   in
   CCmd.v
-    (CCmd.info "analyze"
-       ~doc:"Analyze captured session documents into metrics and insights."
+    (CCmd.info "analyze" ~doc:"Analyze captured session documents into metrics."
        ~exits)
     CTerm.(const run $ result_dir)
 

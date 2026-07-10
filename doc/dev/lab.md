@@ -52,22 +52,22 @@ that is a deliberate invariant of the event model — so wall-clock timing is
 recovered separately, from `agent.jsonl` joined with `agent.timing.jsonl`.
 
 `spice-eval analyze RESULT_DIR` decodes each run's `session.json`, builds a
-`Trace.t`, and writes four products:
+`Trace.t`, and writes three products:
 
 - `analysis/trace-metrics.jsonl` — one flat object per run: task id, run index,
   then every `Trace_metrics` field (token lanes, tool calls and failures,
   per-segment input growth, cache-hit rate, calls and result bytes by tool name,
   re-read and repeated-call counts, the longest failure streak, the shell
   command-family histogram, and the recovered model and reasoning effort).
-- `analysis/insights.jsonl` — one object per structured detector observation.
 - `analysis/digests/<task>-<n>.txt` — one readable transcript digest per run:
   every step's usage lanes and every tool call with elided arguments and
   result head. The digests are the reviewable form of the session and the
-  primary source of new hypotheses; detectors only catch what they were
-  taught to see, and the research program requires reading digests before
-  picking a treatment.
+  primary source of new hypotheses; the counters quantify only known behaviors,
+  so the research program requires reading digests before picking a treatment.
 - `analysis.md` — a per-run table joined with each row's success, and a
-  top-insights summary grouped by detector.
+  per-task **behavior counters** table (rereads, repeated calls, longest failure
+  streak, and top shell families, summed over the task's runs) for spotting
+  cross-arm behavior deltas and checking a behavior's baseline prevalence.
 
 `analyze` is idempotent and deterministic: rerunning it rewrites the outputs.
 Runs with no `session.json` (the `cmd`, `noop`, `claude`, and `codex` adapters
@@ -131,8 +131,7 @@ produces and every analysis consumes:
 
 ```ocaml
 let trace = Trace.of_session ?timing session in
-let metrics = Trace_metrics.of_trace trace in          (* flat jsont record *)
-let insights = Insight.detect Insight.builtin trace in (* jsont observations *)
+let metrics = Trace_metrics.of_trace trace in (* flat jsont record *)
 ```
 
 A `Trace.t` reconstructs, in causal order, the provider responses (`Step.t`,
@@ -140,28 +139,26 @@ each with its per-response usage), the executable tool calls each issued and
 their model-visible results (`Call.t`, with status ok/failed/rejected and result
 byte size), and the compaction resets that delimit **segments** — context-shape
 metrics restart per segment because a compaction resets the replay transcript.
-Each turn's declared tools (`declared_tools`) are the catalog snapshot that
-opportunity detectors gate on. Shared derivations (`rereads`, `repeated_groups`,
-`failure_streaks`, `shell_families`) are exposed so a metric and its detector
-never drift, and `pp_digest` renders a token-bounded view for LLM review.
+Each turn's declared tools (`declared_tools`) are the provider-facing catalog
+snapshot for that turn. Shared derivations (`rereads`, `repeated_groups`,
+`failure_streaks`, `shell_families`) back the `Trace_metrics` counters, and
+`pp_digest` renders a token-bounded view for LLM review.
 
-An `Insight.t` is one structured observation: `{ detector; severity; steps;
-message; evidence; waste_tokens }`. A `detector` is a pure, deterministic
-`Trace.t -> Insight.t list`. The built-in catalog (`Insight.builtin`):
+`Trace_metrics.of_trace` folds a trace into a flat record of counters. Four of
+them name behaviors a treatment might target: `reread_count` (unchanged
+re-reads), `repeated_call_count` (identical calls beyond the first in their
+group), `failure_streak_max` (the longest run of consecutive same-tool
+failures), and `shell_families` (the `shell` command-family histogram). Each is
+a pure, deterministic fold over the shared `Trace.t` derivations.
 
-| detector | fires when | signal | severity |
-| --- | --- | --- | --- |
-| `repeated-call` | identical tool name and arguments run two or more times | wasted work; waste is the repeats' result bytes | Minor, Major at four or more |
-| `failure-streak` | three or more consecutive failures of the same tool | flailing; error-message quality | Major |
-| `reread-unchanged` | a `read_file` of a path already read with no intervening change to it | context discipline; waste is the re-read's result bytes | Minor |
-| `shell-family-histogram` | any `shell` call exists (fires once) | tool-gap discovery, via the command-family breakdown | Info |
-
-**Detector counts are diagnostic, never decision metrics.** A detector keys on
-syntactic identity, so a prompt treatment can zero a count without changing
-anything real (Goodhart). Insights feed hypotheses and reports; decisions run on
-real resources — tokens, cost, duration — plus success. This rule is repeated in
-`Trace_metrics`, `Insight`, and the analysis output because it is the single
-easiest mistake to make with this data.
+**These counters are diagnostic, never decision metrics.** A counter keys on
+syntactic identity, so a prompt treatment can zero it without changing anything
+real (Goodhart). They earn their keep in two ways — measuring whether a
+treatment moved the behavior it targeted (cross-arm deltas), and confirming a
+behavior is present at baseline before it is worth treating — and they feed
+hypotheses and reports, but decisions run on real resources: tokens, cost,
+duration, plus success. This rule is repeated in `Trace_metrics` and the
+analysis output because it is the single easiest mistake to make with this data.
 
 ## The lab workflow
 
@@ -307,12 +304,13 @@ Keep the fixture neutral: plausible product names, an `AGENTS.md` that reads as
 an ordinary contributor note, no evaluation vocabulary anywhere the agent can
 see it. The marker lint is the backstop, not the licence to be careless.
 
-**Add a detector.** A detector is a pure `Trace.t -> Insight.t list`; add it to
-`Insight.builtin` under a stable name, reuse the shared derivations on `Trace.t`
-rather than re-deriving orderings, gate opportunity detectors on
+**Add a counter.** A `Trace_metrics` counter is a pure fold over the shared
+`Trace.t` derivations (`rereads`, `repeated_groups`, `failure_streaks`,
+`shell_families`) — reuse them rather than re-deriving orderings. Add the field
+to the record and its `jsont` codec, gate any opportunity counter on
 `declared_tools` so a run whose catalog lacked a tool is never faulted for not
-using it, and unit-test it in `eval/test/test_trace.ml`. It stays diagnostic: a
-new detector never becomes a decision metric.
+using it, and cover it in `eval/test/test_trace.ml`. It stays diagnostic: a new
+counter never becomes a decision metric.
 
 **Design-gated treatments.** Prompt-prose (T1) and output-shaping or config
 (T2) treatments edit, build, and run. Tool-semantics, new-tool, and
@@ -340,6 +338,3 @@ them yet:
 - **Trace review** — the diagnostic LLM judge over `Trace.pp_digest`. The
   digest rendering exists on `Trace.t`, but `analyze` has no `--review-model`
   wiring yet; its findings would feed hypotheses, never row scores.
-- The remaining detectors from the catalog (`whole-file-rewrite`,
-  `truncated-then-reread`, `context-growth`, `shell-grep-ident`,
-  `search-then-read-chain`, `shell-dune-loop`, `sed-edit`).

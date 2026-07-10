@@ -12,9 +12,8 @@ directory at the repository root.
   `test/`.
 - `trace/` — the pure `spice_eval_trace` library: it decodes a captured
   session document into `Trace.t` (ordered, usage-attributed), then derives
-  `Trace_metrics.t` numbers and `Insight.t` observations. It depends on
-  `spice.session`/`spice.llm`, not on `spice_eval`, so the core stays
-  agent-agnostic. Unit-tested in `test/`.
+  `Trace_metrics.t` numbers. It depends on `spice.session`/`spice.llm`, not on
+  `spice_eval`, so the core stays agent-agnostic. Unit-tested in `test/`.
 - `bin/` — the `spice-eval` executable: workspace materialization,
   subprocess adapters, the judge, artifact IO, corpus suite selection, and
   the `analyze` trace pass.
@@ -46,6 +45,8 @@ normal spice environment.
 
 - `smoke` — tiny deterministic tasks for harness and catastrophic-regression
   checks.
+- `screen` — a small, cheap subset of `core` spanning categories; the research
+  lab's inner-loop suite.
 - `core` — common user workflows such as bugfixes, docs, tests, and refactors.
 - `long` — larger multi-step engineering tasks. This suite is intentionally
   empty until tasks pass `TASK_RUBRIC.md`.
@@ -104,11 +105,13 @@ decodes it with the session codec, and writes:
   per-segment input growth, cache-hit rate, `calls_by_name`, result bytes,
   re-read and repeated-call counts, the longest failure streak, the shell
   command-family histogram, and the recovered model and reasoning effort).
-- `analysis/insights.jsonl` — one object per structured observation from the
-  built-in detectors: `repeated-call`, `failure-streak`, `reread-unchanged`,
-  and `shell-family-histogram`.
+- `analysis/digests/<task>-<n>.txt` — one readable transcript digest per run:
+  every step's usage lanes and every tool call with elided arguments and result
+  head. The digests are the reviewable form of the session and where new
+  hypotheses come from.
 - `analysis.md` — a per-run table (joined with each row's success) and a
-  top-insights summary grouped by detector.
+  per-task behavior-counters table (rereads, repeated calls, longest failure
+  streak, and top shell families, summed over the task's runs).
 
 ```sh
 dune exec spice-eval -- run --suite smoke --model openai/gpt-5.5 --output _evals/results/run1
@@ -117,10 +120,11 @@ dune exec spice-eval -- analyze _evals/results/run1
 
 `analyze` is idempotent and deterministic: rerunning it rewrites the outputs.
 Runs without a `session.json` (the `cmd`, `noop`, `claude`, and `codex`
-adapters produce none) are skipped and noted once in `analysis.md`. Insight
-counts are diagnostic only — a detector keys on syntactic identity, so a prompt
-change can zero it without changing anything real; never treat them as a
-decision metric.
+adapters produce none) are skipped and noted once in `analysis.md`. The
+behavior counters exist to measure whether a treatment moved the behavior it
+targeted and to check a behavior's baseline prevalence before treating it; they
+key on syntactic identity, so a prompt change can zero one without changing
+anything real — never treat them as a decision metric.
 
 When `analysis/trace-metrics.jsonl` is present and `report` is given a result
 directory, the report appends a compact per-task trace section (mean tokens by

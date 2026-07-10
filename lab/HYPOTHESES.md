@@ -4,10 +4,11 @@ A living backlog of spice-improvement hypotheses. Each names its treatment
 tier (T1 prompt prose; T2 output shaping / error wording / config defaults; T3
 tool semantics, new tools, catalog shape — `design-note.md` first), its
 primary decision metric (a real resource — tokens, cost, duration — plus
-success), and a diagnostic that the trace analysis can corroborate.
-Insight/detector counts are diagnostics only, never decision metrics: they key
-on syntactic identity and a prompt treatment can zero them without changing
-anything real (Goodhart).
+success), and a diagnostic that the trace analysis can corroborate. The
+behavior counters in `Trace_metrics` (rereads, repeated calls, failure
+streaks, shell families) are diagnostics only, never decision metrics: they
+key on syntactic identity and a prompt treatment can zero them without
+changing anything real (Goodhart).
 
 Status legend: `open` (not yet screened), `screening`, `candidate`,
 `kept`, `discarded`. Update the status and record the measured effect size as
@@ -15,15 +16,15 @@ each hypothesis moves.
 
 | # | hypothesis | tier | primary metric | diagnostic | status |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Tool-doc contrast for code intel | T1 | total tokens | ocaml-share | open |
-| 2 | Diagnostics-first build loop | T1 | tokens per fix | `shell-dune-loop` count | open |
+| 1 | Tool-doc contrast for code intel | T1 | total tokens | `ocaml_*` call share | open |
+| 2 | Diagnostics-first build loop | T1 | tokens per fix | `dune build` shell-family count | open |
 | 3 | Result truncation tuning | T2 | input tokens | (guardrail: success) | open |
-| 4 | Error messages that name the next move | T2 | duration, tokens | `failure-streak`, `whole-file-rewrite` | open |
+| 4 | Error messages that name the next move | T2 | duration, tokens | failure streaks; whole-file rewrites | open |
 | 5 | Editor family default per model | T2 | edit-failure rate by model | — | open |
 | 6 | Merge interchangeable handles | T3 | tokens | calls per step | open |
 | 7 | First-turn workspace brief | T3 | tokens before first edit | (guardrail: context size) | open |
 | 8 | Doc-writing ground-truth habit | T1 | docs judge scores | — | open |
-| 9 | Shell-family tool gaps | discovery | tokens | `shell-family-histogram` | open |
+| 9 | Shell-family tool gaps | discovery | tokens | shell-families counter | open |
 | 10 | Extend the provider prompt cache past the static prefix | T3 | fresh (uncached) input per step | per-response `cache_read` growth | open — top priority |
 | 11 | Malformed tool-call recovery instead of run abort | T3 | agent-failure rate on local models | provider-error rows | open |
 | 12 | Context-discipline prompt rule (rereads/repeats) | T1 | total tokens | `reread-unchanged`, `repeated-call` | discarded |
@@ -33,12 +34,13 @@ each hypothesis moves.
 1. **Tool-doc contrast for code intel** (T1). Sharpen the guidance that
    distinguishes `search_text` from `ocaml_find_references` /
    `ocaml_find_definitions` so the model reaches for the semantic tools when
-   they apply. Metric: total tokens. Diagnostic: `ocaml_*` share of calls,
-   `shell-grep-ident`, `search-then-read-chain`.
+   they apply. Metric: total tokens. Diagnostic (read from the digests):
+   `ocaml_*` share of calls, shelling out to grep for identifiers, and
+   search-then-read chains.
 
 2. **Diagnostics-first build loop** (T1). Prefer `ocaml_dune_diagnostics` over
-   parsing `shell dune build` output. Metric: tokens per fix. Diagnostic:
-   `shell-dune-loop` count.
+   parsing `shell dune build` output. Metric: tokens per fix. Diagnostic: the
+   `dune build` share of the shell-families counter.
 
 3. **Result truncation tuning** (T2). Tighter `read_file` / `search_text` caps
    with "refine with…" tails. Metric: input tokens. Guardrail: success must not
@@ -46,7 +48,8 @@ each hypothesis moves.
 
 4. **Error messages that name the next move** (T2). When a tool fails, the
    message should name the corrective action. Metric: duration and tokens.
-   Diagnostic: `failure-streak`, `whole-file-rewrite`.
+   Diagnostic: the failure-streak counter and whole-file rewrites read from the
+   digests.
 
 5. **Editor family default per model** (T2). Now runnable because the subject
    config is constructed by the instrument, so a config-default treatment
@@ -63,9 +66,9 @@ each hypothesis moves.
 8. **Doc-writing ground-truth habit** (T1). Check `ocaml_type_at` / `ocaml_docs`
    before writing doc comments. Metric: docs judge scores.
 
-9. **Shell-family tool gaps** (standing discovery). Recurring shell families in
-   the `shell-family-histogram` nominate new `ocaml_*` tools; each becomes its
-   own T3 hypothesis with a design note.
+9. **Shell-family tool gaps** (standing discovery). Recurring families in the
+   shell-families counter nominate new `ocaml_*` tools; each becomes its own T3
+   hypothesis with a design note.
 
 10. **Extend the provider prompt cache past the static prefix** (T3, top
     priority). Evidence (campaign `g55b`, 2026-07-10, all 18 calibration runs

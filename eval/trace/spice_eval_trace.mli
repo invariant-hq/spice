@@ -10,7 +10,7 @@
     and their model-visible results, permission replies, and compaction resets.
     This library decodes that document into {!Trace.t} — the ordered,
     usage-attributed view of a run — and derives from it flat {!Trace_metrics.t}
-    numbers and structured {!Insight.t} observations.
+    numbers.
 
     The library is pure: it consumes an already-decoded {!Spice_session.t} and
     two verbatim run-artifact strings (the [--json] event stream and its
@@ -28,6 +28,3 @@ module Trace = Trace
 
 module Trace_metrics = Trace_metrics
 (** Flat derived metrics over a {!Trace.t}. *)
-
-module Insight = Insight
-(** Structured deterministic observations over a {!Trace.t}. *)
