@@ -55,7 +55,8 @@ module Started : sig
   (** The type for a durable started tool claim.
 
       State replay additionally requires [turn] to be the active unfinished turn
-      and [call] to be pending in the transcript. *)
+      and [call] to be pending in the transcript, with no other unresolved
+      durable permission or tool-claim boundary. *)
 
   val make : id:Id.t -> turn:Turn.Id.t -> call:Spice_llm.Tool.Call.t -> t
   (** [make ~id ~turn ~call] is a started claim of model tool call [call] during

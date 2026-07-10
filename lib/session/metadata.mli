@@ -141,13 +141,13 @@ val touch : Time.t -> t -> t
     Raises [Invalid_argument] if [time] is before [created_at t]. *)
 
 val is_active : t -> bool
-(** [is_active t] is [true] iff [status t] is {!Active}. *)
+(** [is_active t] is [true] iff [status t] is {!Status.Active}. *)
 
 val is_archived : t -> bool
-(** [is_archived t] is [true] iff [status t] is {!Archived}. *)
+(** [is_archived t] is [true] iff [status t] is {!Status.Archived}. *)
 
 val is_deleted : t -> bool
-(** [is_deleted t] is [true] iff [status t] is {!Deleted}. *)
+(** [is_deleted t] is [true] iff [status t] is {!Status.Deleted}. *)
 
 val equal : t -> t -> bool
 (** [equal a b] is [true] iff [a] and [b] are the same metadata. *)

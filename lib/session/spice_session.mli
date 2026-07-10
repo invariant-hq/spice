@@ -381,7 +381,8 @@ module Run : sig
               replay invariants. *)
 
     val message : t -> string
-    (** [message e] is a human-readable diagnostic for [e]. *)
+    (** [message e] is a human-readable diagnostic for [e]. The wording is not
+        stable machine-readable syntax; callers should match on [e]. *)
 
     val pp : Format.formatter -> t -> unit
     (** [pp ppf e] formats [e] for diagnostics. *)
@@ -426,8 +427,10 @@ module Run : sig
 
         [denial_message] renders the model-visible tool error text for a tool
         call denied by policy without review. It defaults to a stable generic
-        message. The function must be pure; its result becomes durable
-        transcript state.
+        message. The function must be deterministic, must not raise, and must
+        return a non-empty string because its result becomes durable transcript
+        state. Exceptions propagate from run planning, and an empty result
+        raises [Invalid_argument] when the tool result is constructed.
 
         Raises [Invalid_argument] if [tools] contains duplicate tool names, if
         an executable tool cannot be projected to a model-visible declaration,
@@ -584,9 +587,9 @@ module Run : sig
       synthesized interrupted tool result ([reason], or ["interrupted"] when
       absent), so the saved transcript stays provider-well-formed and the next
       turn's request is not rejected for missing tool results. A planned but
-      unrun executable claim is finished with that result; a settled host-tool
-      call or a not-yet-claimed call gets a direct tool result. This is the same
-      error-result shape a normally interrupted tool records.
+      unrun executable claim is finished with that result; a pending host-tool
+      call or a not-yet-claimed executable call gets a direct tool result. This
+      is the same error-result shape a normally interrupted tool records.
 
       Returns {!Error.No_active_turn} if [session] has no active turn. Raises
       [Invalid_argument] if [reason] is present and empty. *)
