@@ -37,8 +37,7 @@ spice is the ocaml coding-agent.
 - write for future readers: do not depend on temporary plans or ledgers,
   unexplained local jargon, or chronology that is not needed to understand the
   resulting code.
-- never amend, rewrite, squash, or push commits unless the user explicitly
-  requests it.
+- never mention build, test or other obvious, assumed checks in the commits.
 
 ## api design rules
 
