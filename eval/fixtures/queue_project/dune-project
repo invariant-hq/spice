@@ -1,9 +1,9 @@
 (lang dune 3.22)
 
-(name eval_queue)
+(name queues)
 
 (package
- (name eval_queue)
+ (name queues)
  (allow_empty)
  (depends
   (ocaml

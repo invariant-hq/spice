@@ -8,9 +8,16 @@ directory at the repository root.
 ## Layout
 
 - `lib/` — the pure `spice_eval` library: usage, checks, tasks, result rows,
-  scoring, reports. Unit-tested in `test/`.
+  scoring, reports, and marker scanning for subject blindness. Unit-tested in
+  `test/`.
+- `trace/` — the pure `spice_eval_trace` library: it decodes a captured
+  session document into `Trace.t` (ordered, usage-attributed), then derives
+  `Trace_metrics.t` numbers and `Insight.t` observations. It depends on
+  `spice.session`/`spice.llm`, not on `spice_eval`, so the core stays
+  agent-agnostic. Unit-tested in `test/`.
 - `bin/` — the `spice-eval` executable: workspace materialization,
-  subprocess adapters, the judge, artifact IO, and corpus suite selection.
+  subprocess adapters, the judge, artifact IO, corpus suite selection, and
+  the `analyze` trace pass.
 - `fixtures/` — task fixture projects, copied into fresh run workspaces.
   Declared `data_only_dirs`: some are deliberately broken (failing tests,
   missing docs), so dune must not build them in place.
@@ -23,6 +30,7 @@ dune build
 dune exec spice-eval -- list --checks
 # Live run: real spice against the configured provider.
 dune exec spice-eval -- run --suite smoke --model openai/gpt-5.5 --runs 1
+dune exec spice-eval -- analyze _evals/results/<dir>
 dune exec spice-eval -- report _evals/results/<dir>
 dune exec spice-eval -- compare <baseline-rows> _evals/results/<dir>
 ```
@@ -62,11 +70,61 @@ slicing. See `TASK_RUBRIC.md` before adding tasks.
 
 ```sh
 dune exec spice-eval -- run --suite smoke \
-  --agent 'cmd:printf "let answer = 42\n" > lib/spice_eval_smoke.ml'
+  --agent 'cmd:printf "let answer = 42\n" > lib/basics.ml'
 ```
 
 Fields an adapter cannot recover from its agent are omitted from the row,
 never zeroed.
+
+## Subject isolation and blindness
+
+The agent must not be able to tell it is being evaluated, and must not inherit
+the developer's personal spice configuration. The `spice` adapter therefore
+constructs the subject environment rather than passing the developer's through:
+every `SPICE_*` variable is dropped, and the subject gets a fresh per-run
+`SPICE_DATA_HOME` and a seeded `SPICE_CONFIG_HOME` holding only credentials and
+an empty `config.json` — the subject runs on pure spice defaults (no global
+`AGENTS.md`, no personal model or editor overrides). `SPICE_AUTO_TITLE=0`
+avoids an unmetered post-turn titling request. Provider API keys pass through.
+
+Each run materializes its workspace under a marker-free temporary root (never
+under `_evals/`), commits a neutral git baseline (`Initial commit`, plausible
+author), and — between setup and agent start — runs a marker lint over
+everything the harness introduced (workspace paths and contents, the injected
+environment). A marker hit fails the run at the `Harness` stage: a compromised
+trial is never scored.
+
+## Trace analysis
+
+`analyze RESULT_DIR` reads each `<task>-<n>/session.json` captured by `run`,
+decodes it with the session codec, and writes:
+
+- `analysis/trace-metrics.jsonl` — one flat object per run: task id, run index,
+  then every `Trace_metrics` field (token lanes, tool calls and failures,
+  per-segment input growth, cache-hit rate, `calls_by_name`, result bytes,
+  re-read and repeated-call counts, the longest failure streak, the shell
+  command-family histogram, and the recovered model and reasoning effort).
+- `analysis/insights.jsonl` — one object per structured observation from the
+  built-in detectors: `repeated-call`, `failure-streak`, `reread-unchanged`,
+  and `shell-family-histogram`.
+- `analysis.md` — a per-run table (joined with each row's success) and a
+  top-insights summary grouped by detector.
+
+```sh
+dune exec spice-eval -- run --suite smoke --model openai/gpt-5.5 --output _evals/results/run1
+dune exec spice-eval -- analyze _evals/results/run1
+```
+
+`analyze` is idempotent and deterministic: rerunning it rewrites the outputs.
+Runs without a `session.json` (the `cmd`, `noop`, `claude`, and `codex`
+adapters produce none) are skipped and noted once in `analysis.md`. Insight
+counts are diagnostic only — a detector keys on syntactic identity, so a prompt
+change can zero it without changing anything real; never treat them as a
+decision metric.
+
+When `analysis/trace-metrics.jsonl` is present and `report` is given a result
+directory, the report appends a compact per-task trace section (mean tokens by
+lane, mean tool calls, mean failures).
 
 ## Judging quality checks
 
@@ -82,8 +140,9 @@ diff, and the criterion — never the agent transcript) and must answer with a
 JSON `{"score", "rationale"}` object. Samples are recorded on the finding;
 the judge model is part of the row identity, and rows with different judge
 identities should not be averaged together. Without `--judge-model`, quality
-checks record `skipped` and are excluded from the base score. Note that
-judge calls create ordinary spice sessions in your session store.
+checks record `skipped` and are excluded from the base score. Judge calls run
+`--ephemeral`, so they leave nothing in any session store; the subject's own
+session lands in the per-run captured `store/`, not the developer's store.
 
 ## Costs
 
@@ -100,9 +159,17 @@ Each run writes `_evals/results/<timestamp>/` (override with `--output`):
 - `rows.jsonl` — one schema-versioned result row per task × run index:
   series identity (task, agent + version, model, judge model, Spice version),
   run index, status, metrics, and one finding per check.
-- `<task>-<n>/` — per-run artifacts: the workspace as the agent left it,
-  the agent log, `git-diff.stdout`, per-command check output, judge
-  prompts/replies.
+- `<task>-<n>/` — per-run artifacts:
+  - `workspace/` — the workspace as the agent left it, minus `_build`.
+  - `agent.jsonl` — the `spice run --json` event stream, byte-identical.
+  - `agent.timing.jsonl` — harness arrival stamps, one `{"line", "ts_ms"}`
+    object per stream line (lines arriving in one read chunk share a stamp);
+    `analyze` joins it for per-call durations.
+  - `session.json` — the captured subject session document (the transcript
+    ground truth `analyze` decodes), also archived whole under `store/`.
+  - `store/` — the subject's whole per-run data home (sessions, checkpoints,
+    todos, goals, blobs): cheap now, unrecoverable later.
+  - `git-diff.stdout`, per-command check output, judge prompts/replies.
 
 A baseline is a blessed `rows.jsonl`. To keep one, copy it under
 `eval/baselines/<name>.jsonl` and commit it deliberately; `compare` exits

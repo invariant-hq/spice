@@ -1,9 +1,9 @@
 (lang dune 3.22)
 
-(name eval_calc)
+(name calc)
 
 (package
- (name eval_calc)
+ (name calc)
  (allow_empty)
  (depends
   (ocaml

@@ -5,7 +5,7 @@
 
 module Eval = Spice_eval
 
-type suite = All | Smoke | Core | Long | Robustness
+type suite = All | Smoke | Screen | Core | Long | Robustness
 
 let all_suite = All
 let smoke_suite = Smoke
@@ -13,6 +13,7 @@ let smoke_suite = Smoke
 let pp_suite ppf = function
   | All -> Format.pp_print_string ppf "all"
   | Smoke -> Format.pp_print_string ppf "smoke"
+  | Screen -> Format.pp_print_string ppf "screen"
   | Core -> Format.pp_print_string ppf "core"
   | Long -> Format.pp_print_string ppf "long"
   | Robustness -> Format.pp_print_string ppf "robustness"
@@ -20,6 +21,7 @@ let pp_suite ppf = function
 let suite_of_string = function
   | "all" -> Ok All
   | "smoke" -> Ok Smoke
+  | "screen" -> Ok Screen
   | "core" -> Ok Core
   | "long" -> Ok Long
   | "robustness" -> Ok Robustness
@@ -72,12 +74,12 @@ let smoke_task =
   task "smoke-edit" ~tier:"smoke" ~category:"bugfix" ~size:"S"
     ~source:(Eval.Task.dir "eval/fixtures/smoke_project")
     ~prompt:
-      "Make the smallest correct edit so lib/spice_eval_smoke.ml defines \
-       answer as 42. Do not edit dune-project."
+      "Make the smallest correct edit so lib/basics.ml defines answer as 42. \
+       Do not edit dune-project."
     [
       dune_build;
       Eval.Check.gate "answer"
-        (Eval.Check.shell "grep -q 'let answer = 42' lib/spice_eval_smoke.ml");
+        (Eval.Check.shell "grep -q 'let answer = 42' lib/basics.ml");
       scope ~within:[ "lib/**" ];
     ]
 
@@ -391,11 +393,26 @@ let core =
 
 let long = []
 let robustness = [ stats_median_contract; warning_real_fix ]
+
+(* The lab's inner-loop suite: one cheap task per category, chosen for fast,
+   deterministic grading. Kept separate from [core] so screening iterations
+   never touch the confirmation-only tasks. *)
+let screen =
+  [
+    words_bugfix;
+    greeter_refactor;
+    counter_docs;
+    calc_tests;
+    slug_feature;
+    build_linking_fix;
+  ]
+
 let all = smoke @ core @ long @ robustness
 
 let tasks = function
   | All -> all
   | Smoke -> smoke
+  | Screen -> screen
   | Core -> core
   | Long -> long
   | Robustness -> robustness

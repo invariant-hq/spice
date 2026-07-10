@@ -13,6 +13,9 @@
 module Usage = Usage
 (** Provider-neutral token usage observed during eval runs. *)
 
+module Markers = Markers
+(** Evaluation-marker scanning for subject blindness. *)
+
 module Check = Check
 (** Named grading descriptions. *)
 

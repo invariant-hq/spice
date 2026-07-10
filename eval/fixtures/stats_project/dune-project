@@ -1,9 +1,9 @@
 (lang dune 3.22)
 
-(name eval_stats)
+(name stats)
 
 (package
- (name eval_stats)
+ (name stats)
  (allow_empty)
  (depends
   (ocaml

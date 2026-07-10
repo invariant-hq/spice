@@ -1,9 +1,9 @@
 (lang dune 3.22)
 
-(name eval_build)
+(name mathtools)
 
 (package
- (name eval_build)
+ (name mathtools)
  (allow_empty)
  (depends
   (ocaml

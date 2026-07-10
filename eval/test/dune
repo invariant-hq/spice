@@ -2,3 +2,17 @@
  (name test_eval)
  (modules test_eval)
  (libraries windtrap jsont spice_eval))
+
+(test
+ (name test_trace)
+ (modules test_trace)
+ (libraries
+  windtrap
+  jsont
+  jsont.bytesrw
+  spice_eval
+  spice_eval_trace
+  spice_session
+  spice_llm
+  spice_permission
+  spice_path))

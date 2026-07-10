@@ -1,9 +1,9 @@
 (lang dune 3.22)
 
-(name eval_auth)
+(name accounts)
 
 (package
- (name eval_auth)
+ (name accounts)
  (allow_empty)
  (depends
   (ocaml

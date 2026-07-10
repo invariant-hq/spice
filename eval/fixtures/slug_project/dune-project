@@ -1,9 +1,9 @@
 (lang dune 3.22)
 
-(name eval_slug)
+(name slug)
 
 (package
- (name eval_slug)
+ (name slug)
  (allow_empty)
  (depends
   (ocaml

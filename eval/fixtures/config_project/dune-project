@@ -1,9 +1,9 @@
 (lang dune 3.22)
 
-(name eval_config)
+(name configlib)
 
 (package
- (name eval_config)
+ (name configlib)
  (allow_empty)
  (depends
   (ocaml

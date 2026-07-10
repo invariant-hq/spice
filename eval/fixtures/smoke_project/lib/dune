@@ -1,2 +1,2 @@
 (library
- (name spice_eval_smoke))
+ (name basics))

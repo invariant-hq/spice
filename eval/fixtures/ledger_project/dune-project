@@ -1,9 +1,9 @@
 (lang dune 3.22)
 
-(name eval_ledger)
+(name ledger)
 
 (package
- (name eval_ledger)
+ (name ledger)
  (allow_empty)
  (depends
   (ocaml

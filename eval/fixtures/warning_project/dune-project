@@ -1,9 +1,9 @@
 (lang dune 3.22)
 
-(name eval_warning)
+(name casefold)
 
 (package
- (name eval_warning)
+ (name casefold)
  (allow_empty)
  (depends
   (ocaml

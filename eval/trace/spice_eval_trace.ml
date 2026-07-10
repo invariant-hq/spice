@@ -3,9 +3,7 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-module Usage = Usage
-module Markers = Markers
-module Check = Check
-module Task = Task
-module Result = Result
-module Report = Report
+module Timing = Timing
+module Trace = Trace
+module Trace_metrics = Trace_metrics
+module Insight = Insight

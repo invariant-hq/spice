@@ -1,0 +1,4 @@
+(library
+ (name spice_eval_trace)
+ (modules spice_eval_trace timing trace trace_metrics insight)
+ (libraries jsont jsont.bytesrw spice_session spice_llm))

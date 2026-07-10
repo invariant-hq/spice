@@ -1,9 +1,9 @@
 (lang dune 3.22)
 
-(name eval_counter)
+(name counter)
 
 (package
- (name eval_counter)
+ (name counter)
  (allow_empty)
  (depends
   (ocaml

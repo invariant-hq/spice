@@ -12,6 +12,10 @@ module Json = Jsont.Json
 module Catalog = Spice_provider.Catalog
 module Model = Spice_provider.Model
 module Llm_usage = Spice_llm.Usage
+module Trace = Spice_eval_trace.Trace
+module Trace_metrics = Spice_eval_trace.Trace_metrics
+module Insight = Spice_eval_trace.Insight
+module Timing = Spice_eval_trace.Timing
 
 let exits = CCmd.Exit.defaults
 let stdout_printf format = Format.printf (format ^^ "%!")
@@ -89,15 +93,44 @@ let skip_copy_name = function
   | ".git" | ".spice" | "_build" -> true
   | _ -> false
 
-let rec copy_dir ~src ~dst =
+let rec copy_tree ~skip ~src ~dst =
   ensure_dir dst;
   Sys.readdir src |> Array.to_list
   |> List.iter (fun name ->
-      if not (skip_copy_name name) then
+      if not (skip name) then
         let src_path = Filename.concat src name in
         let dst_path = Filename.concat dst name in
-        if Sys.is_directory src_path then copy_dir ~src:src_path ~dst:dst_path
+        if Sys.is_directory src_path then
+          copy_tree ~skip ~src:src_path ~dst:dst_path
         else copy_file ~src:src_path ~dst:dst_path)
+
+let copy_dir ~src ~dst = copy_tree ~skip:skip_copy_name ~src ~dst
+
+let rec remove_tree path =
+  match Unix.lstat path with
+  | exception Unix.Unix_error (Unix.ENOENT, _, _) -> ()
+  | { Unix.st_kind = Unix.S_DIR; _ } -> (
+      Array.iter
+        (fun name -> remove_tree (Filename.concat path name))
+        (Sys.readdir path);
+      try Unix.rmdir path with Unix.Unix_error _ -> ())
+  | _ -> ( try Sys.remove path with Sys_error _ -> ())
+
+(* Fresh directories under the system temp dir. Subject-visible paths and
+   environment values must stay free of evaluation markers, so nothing under
+   the repository's [_evals] directory is ever exposed to the agent. *)
+let fresh_temp_dir prefix =
+  let rec attempt budget =
+    if budget = 0 then
+      invalid_arg ("spice-eval: cannot create temp dir for " ^ prefix)
+    else
+      let name = Printf.sprintf "%s-%04x" prefix (Random.bits () land 0xffff) in
+      let path = Filename.concat (Filename.get_temp_dir_name ()) name in
+      match Unix.mkdir path 0o700 with
+      | () -> path
+      | exception Unix.Unix_error (Unix.EEXIST, _, _) -> attempt (budget - 1)
+  in
+  attempt 20
 
 let with_output_files stdout_path stderr_path f =
   ensure_dir (Filename.dirname stdout_path);
@@ -133,12 +166,13 @@ let env_binding_name binding =
   | None -> binding
   | Some (name, _) -> name
 
-let env_with_extra env_extra =
+let env_with_extra ?(drop = Fun.const false) env_extra =
   let overridden = List.map fst env_extra |> List.sort_uniq String.compare in
   let inherited =
     Unix.environment () |> Array.to_list
     |> List.filter (fun binding ->
-        not (List.mem (env_binding_name binding) overridden))
+        let name = env_binding_name binding in
+        (not (List.mem name overridden)) && not (drop name))
   in
   inherited @ List.map (fun (name, value) -> name ^ "=" ^ value) env_extra
   |> Array.of_list
@@ -169,14 +203,28 @@ let wait_with_timeout ?timeout_s pid =
   in
   loop ()
 
-let run_process ?timeout_s ?(env_extra = []) ~cwd ~stdout_path ~stderr_path argv
-    =
-  with_output_files stdout_path stderr_path @@ fun stdout_fd stderr_fd ->
-  let env = env_with_extra env_extra in
+(* Stamped execution: the child's stdout goes through a pipe so the harness
+   can record each line's arrival time in a JSONL sidecar while writing the
+   stdout file byte-identical. Lines delivered in one read share a stamp.
+   After a timeout kill (or child exit) the loop keeps draining to EOF for a
+   bounded grace period: grandchildren outside the killed group could hold
+   the write end open forever, and an unread full pipe would deadlock. *)
+let run_process_stamped ?timeout_s ~env ~cwd ~stdout_path ~stderr_path
+    ~timing_path argv =
+  ensure_dir (Filename.dirname stdout_path);
+  ensure_dir (Filename.dirname stderr_path);
+  ensure_dir (Filename.dirname timing_path);
+  let stderr_fd =
+    Unix.openfile stderr_path
+      [ Unix.O_CREAT; Unix.O_WRONLY; Unix.O_TRUNC ]
+      0o644
+  in
+  let read_fd, write_fd = Unix.pipe () in
   let pid = Unix.fork () in
   if pid = 0 then (
     (try ignore (Unix.setsid ()) with Unix.Unix_error _ -> ());
-    Unix.dup2 stdout_fd Unix.stdout;
+    Unix.close read_fd;
+    Unix.dup2 write_fd Unix.stdout;
     Unix.dup2 stderr_fd Unix.stderr;
     (match Unix.chdir cwd with
     | () -> ()
@@ -185,7 +233,95 @@ let run_process ?timeout_s ?(env_extra = []) ~cwd ~stdout_path ~stderr_path argv
         exit 127);
     (match Unix.execvpe argv.(0) argv env with _ -> () | exception _ -> ());
     exit 127)
-  else wait_with_timeout ?timeout_s pid
+  else (
+    Unix.close write_fd;
+    let stdout_chan = open_out_bin stdout_path in
+    let timing_chan = open_out timing_path in
+    let start = Unix.gettimeofday () in
+    let buffer = Bytes.create 65536 in
+    let lines = ref 0 in
+    let status = ref None in
+    let timed_out = ref false in
+    let drain_deadline = ref None in
+    let eof = ref false in
+    let reap ~blocking =
+      if Option.is_none !status then
+        match Unix.waitpid (if blocking then [] else [ Unix.WNOHANG ]) pid with
+        | 0, _ -> ()
+        | _, terminal -> status := Some terminal
+        | exception Unix.Unix_error (Unix.ECHILD, _, _) ->
+            status := Some (Unix.WEXITED 127)
+    in
+    let bound_drain () =
+      if Option.is_none !drain_deadline then
+        drain_deadline := Some (Unix.gettimeofday () +. 5.)
+    in
+    while not !eof do
+      (match Unix.select [ read_fd ] [] [] 0.05 with
+      | [], _, _ -> ()
+      | _ :: _, _, _ -> (
+          match Unix.read read_fd buffer 0 (Bytes.length buffer) with
+          | 0 -> eof := true
+          | count ->
+              output stdout_chan buffer 0 count;
+              let ts_ms = Int64.of_float (Unix.gettimeofday () *. 1000.) in
+              for i = 0 to count - 1 do
+                if Bytes.get buffer i = '\n' then (
+                  incr lines;
+                  Printf.fprintf timing_chan "{\"line\":%d,\"ts_ms\":%Ld}\n"
+                    !lines ts_ms)
+              done
+          | exception Unix.Unix_error (Unix.EINTR, _, _) -> ())
+      | exception Unix.Unix_error (Unix.EINTR, _, _) -> ());
+      reap ~blocking:false;
+      if Option.is_some !status then bound_drain ();
+      (match timeout_s with
+      | Some limit
+        when (not !timed_out) && Unix.gettimeofday () -. start >= limit ->
+          kill_group pid;
+          timed_out := true;
+          bound_drain ()
+      | Some _ | None -> ());
+      match !drain_deadline with
+      | Some deadline when Unix.gettimeofday () >= deadline -> eof := true
+      | Some _ | None -> ()
+    done;
+    Unix.close read_fd;
+    close_out stdout_chan;
+    close_out timing_chan;
+    Unix.close stderr_fd;
+    if !timed_out then kill_group pid;
+    reap ~blocking:true;
+    {
+      status = Option.value !status ~default:(Unix.WEXITED 127);
+      duration_s = Unix.gettimeofday () -. start;
+      timed_out = !timed_out;
+    })
+
+let run_process ?timeout_s ?(env_extra = []) ?env_drop ?timing_path ~cwd
+    ~stdout_path ~stderr_path argv =
+  let env = env_with_extra ?drop:env_drop env_extra in
+  match timing_path with
+  | Some timing_path ->
+      run_process_stamped ?timeout_s ~env ~cwd ~stdout_path ~stderr_path
+        ~timing_path argv
+  | None ->
+      with_output_files stdout_path stderr_path @@ fun stdout_fd stderr_fd ->
+      let pid = Unix.fork () in
+      if pid = 0 then (
+        (try ignore (Unix.setsid ()) with Unix.Unix_error _ -> ());
+        Unix.dup2 stdout_fd Unix.stdout;
+        Unix.dup2 stderr_fd Unix.stderr;
+        (match Unix.chdir cwd with
+        | () -> ()
+        | exception exn ->
+            prerr_endline ("chdir failed: " ^ Printexc.to_string exn);
+            exit 127);
+        (match Unix.execvpe argv.(0) argv env with
+        | _ -> ()
+        | exception _ -> ());
+        exit 127)
+      else wait_with_timeout ?timeout_s pid
 
 let run_shell ?timeout_s ?env_extra ~cwd ~stdout_path ~stderr_path command =
   run_process ?timeout_s ?env_extra ~cwd ~stdout_path ~stderr_path
@@ -482,18 +618,20 @@ let git_baseline workspace artifact_dir =
     let git_exclude = workspace / ".git" / "info" / "exclude" in
     append_line git_exclude "_build/";
     append_line git_exclude ".spice/";
+    (* The identity and message are agent-visible via [git log]; they must
+       look like an ordinary checkout, not like harness machinery. *)
     let config_email =
       run "git-config-email"
-        [| "git"; "config"; "user.email"; "spice-eval@example.invalid" |]
+        [| "git"; "config"; "user.email"; "alex@reedholm.dev" |]
     in
     let config_name =
-      run "git-config-name" [| "git"; "config"; "user.name"; "spice eval" |]
+      run "git-config-name" [| "git"; "config"; "user.name"; "Alex Reed" |]
     in
     let add = run "git-add" [| "git"; "add"; "-A" |] in
     (* --allow-empty: a clean git-source checkout has nothing to commit. *)
     let commit =
       run "git-commit"
-        [| "git"; "commit"; "--allow-empty"; "-m"; "spice eval baseline" |]
+        [| "git"; "commit"; "--allow-empty"; "-m"; "Initial commit" |]
     in
     if not (process_success config_email.status) then
       Error
@@ -669,8 +807,59 @@ let collect_findings ~evaluate ?judge checks =
   loop [] false checks
 
 (* The spice adapter: drives [spice run --json] and reads the metrics member
-   of the final JSONL event, which is exactly the product surface the eval
-   milestone adds. The task prompt is passed verbatim. *)
+   of the final JSONL event. The task prompt is passed verbatim.
+
+   The subject environment is constructed, not inherited: every SPICE_*
+   variable is dropped so the developer's personal configuration (global
+   AGENTS.md, model/reasoning/editor overrides) can neither leak into the
+   subject's prompt nor mask the configuration under test. The subject gets a
+   fresh data home (captured into the run artifacts afterwards — the session
+   document there is the transcript ground truth) and a seeded config home
+   holding only credentials and the instrument's canonical configuration. *)
+
+let spice_env_drop name = String.starts_with ~prefix:"SPICE_" name
+
+let real_config_home () =
+  match Sys.getenv_opt "SPICE_CONFIG_HOME" with
+  | Some path when not (String.is_empty path) -> path
+  | Some _ | None ->
+      let base =
+        match Sys.getenv_opt "XDG_CONFIG_HOME" with
+        | Some path when not (String.is_empty path) -> path
+        | Some _ | None -> (
+            match Sys.getenv_opt "HOME" with
+            | Some home -> Filename.concat home ".config"
+            | None -> ".config")
+      in
+      Filename.concat base "spice"
+
+let seed_subject_state () =
+  let root = fresh_temp_dir "state" in
+  let data_home = Filename.concat root "data" in
+  let config_home = Filename.concat root "config" in
+  ensure_dir data_home;
+  ensure_dir config_home;
+  let auth = Filename.concat (real_config_home ()) "auth.json" in
+  if Sys.file_exists auth then
+    copy_file ~src:auth ~dst:(Filename.concat config_home "auth.json");
+  write_file (Filename.concat config_home "config.json") "{}\n";
+  (root, data_home, config_home)
+
+let archive_subject_store ~data_home ~artifact_dir =
+  match artifact_dir with
+  | None -> ()
+  | Some dir ->
+      copy_tree ~skip:(Fun.const false) ~src:data_home
+        ~dst:(Filename.concat dir "store");
+      let sessions = Filename.concat data_home "sessions" in
+      if Sys.file_exists sessions && Sys.is_directory sessions then
+        Sys.readdir sessions |> Array.to_list
+        |> List.iter (fun name ->
+            let doc =
+              Filename.concat (Filename.concat sessions name) "session.json"
+            in
+            if Sys.file_exists doc then
+              copy_file ~src:doc ~dst:(Filename.concat dir "session.json"))
 
 let spice_run ~bin ~model ctx ~prompt =
   let artifact path fallback =
@@ -680,6 +869,16 @@ let spice_run ~bin ~model ctx ~prompt =
   in
   let stdout_path = artifact "agent.jsonl" ".jsonl" in
   let stderr_path = artifact "agent.stderr" ".stderr" in
+  let timing_path = artifact "agent.timing.jsonl" ".timing" in
+  let state_root, data_home, config_home = seed_subject_state () in
+  let env_extra =
+    ctx.Agent.env_extra
+    @ [
+        ("SPICE_DATA_HOME", data_home);
+        ("SPICE_CONFIG_HOME", config_home);
+        ("SPICE_AUTO_TITLE", "0");
+      ]
+  in
   let args =
     [
       bin;
@@ -699,8 +898,14 @@ let spice_run ~bin ~model ctx ~prompt =
     @ [ prompt ]
   in
   let result =
-    run_process ?timeout_s:ctx.Agent.timeout_s ~env_extra:ctx.Agent.env_extra
-      ~cwd:(Sys.getcwd ()) ~stdout_path ~stderr_path (Array.of_list args)
+    Fun.protect
+      ~finally:(fun () ->
+        archive_subject_store ~data_home ~artifact_dir:ctx.Agent.artifact_dir;
+        remove_tree state_root)
+      (fun () ->
+        run_process ?timeout_s:ctx.Agent.timeout_s ~env_extra
+          ~env_drop:spice_env_drop ~timing_path ~cwd:(Sys.getcwd ())
+          ~stdout_path ~stderr_path (Array.of_list args))
   in
   let log = Some stdout_path in
   if result.timed_out then
@@ -1097,6 +1302,71 @@ let make_judge ~spice_bin ~judge_model ~judge_samples ~artifact_dir ~task_prompt
 
 let default_timeout_s = 600.
 
+(* The workspace the agent sees lives under the system temp dir with a name
+   derived from the project, never under [_evals]: its absolute path is the
+   agent's cwd and must carry no evaluation marker. *)
+let workspace_prefix task =
+  let sanitize text =
+    String.lowercase_ascii text
+    |> String.map (fun c ->
+        match c with 'a' .. 'z' | '0' .. '9' -> c | _ -> '-')
+  in
+  let base =
+    match Eval.Task.source task with
+    | Eval.Task.Dir path -> Filename.basename path
+    | Eval.Task.Git { url; _ } ->
+        Filename.remove_extension (Filename.basename url)
+  in
+  let base =
+    if String.ends_with ~suffix:"_project" base then
+      String.sub base 0 (String.length base - String.length "_project")
+    else base
+  in
+  match sanitize base with "" -> "work" | prefix -> prefix
+
+(* Nothing the harness introduces into the agent-visible surface may carry an
+   evaluation marker: workspace path, file names, file contents, injected
+   environment. A hit fails the run at the harness stage — a compromised
+   trial must not be scored. PATH is exempt: its inherited tail is the
+   developer's own environment, which any local spice run would see. *)
+let blindness_lint ~env_extra workspace =
+  let hits = ref [] in
+  let scan source text =
+    List.iter
+      (fun hit -> hits := (source, hit) :: !hits)
+      (Eval.Markers.scan text)
+  in
+  scan "workspace path" workspace;
+  List.iter
+    (fun (name, value) ->
+      if name <> "PATH" then scan ("env " ^ name) (name ^ "=" ^ value))
+    env_extra;
+  let max_scan_bytes = 1_048_576 in
+  let rec walk path =
+    Sys.readdir path |> Array.to_list
+    |> List.iter (fun name ->
+        if name <> ".git" then begin
+          let entry = Filename.concat path name in
+          scan "file name" name;
+          if Sys.is_directory entry then walk entry
+          else if
+            match (Unix.lstat entry).Unix.st_kind with
+            | Unix.S_REG -> (Unix.stat entry).Unix.st_size <= max_scan_bytes
+            | _ -> false
+          then scan ("file " ^ entry) (read_file entry)
+        end)
+  in
+  walk workspace;
+  match List.rev !hits with
+  | [] -> Ok ()
+  | (source, first) :: rest ->
+      Error
+        (Format.asprintf "blindness lint: %s: %a%s" source Eval.Markers.pp_hit
+           first
+           (match rest with
+           | [] -> ""
+           | rest -> Printf.sprintf " (+%d more)" (List.length rest)))
+
 let setup_workspace ~env_extra task workspace artifact_dir =
   let rec loop index = function
     | [] -> Ok ()
@@ -1124,8 +1394,7 @@ let skipped_findings task = List.map Eval.Result.skipped (Eval.Task.checks task)
 let run_one ~result_dir ~rows_path ~env_extra ~agent ~agent_version ~model
     ~spice_bin ~spice_version ~judge_model ~judge_samples task run_index =
   let artifact_dir = run_artifact_dir result_dir task run_index in
-  let workspace = Filename.concat artifact_dir "workspace" in
-  ensure_dir workspace;
+  let workspace = fresh_temp_dir (workspace_prefix task) in
   let series =
     {
       Eval.Result.task = Eval.Task.id task;
@@ -1140,6 +1409,13 @@ let run_one ~result_dir ~rows_path ~env_extra ~agent ~agent_version ~model
     }
   in
   let finish outcome findings =
+    (* Preserve the workspace as the agent (and grading) left it, minus the
+       build directory, before the temp copy is removed. *)
+    if Sys.file_exists workspace && Sys.is_directory workspace then
+      copy_tree
+        ~skip:(fun name -> name = "_build")
+        ~src:workspace
+        ~dst:(Filename.concat artifact_dir "workspace");
     let row =
       Eval.Result.make ~series ~run_index ~status:outcome.Agent.Outcome.status
         ~metrics:outcome.Agent.Outcome.metrics ~findings ()
@@ -1147,6 +1423,7 @@ let run_one ~result_dir ~rows_path ~env_extra ~agent ~agent_version ~model
     append_line rows_path (encode_row row);
     row
   in
+  Fun.protect ~finally:(fun () -> remove_tree workspace) @@ fun () ->
   match materialize_source (Eval.Task.source task) workspace artifact_dir with
   | Error message ->
       finish
@@ -1164,68 +1441,77 @@ let run_one ~result_dir ~rows_path ~env_extra ~agent ~agent_version ~model
               finish
                 (outcome_error ~stage:Eval.Result.Harness message)
                 (skipped_findings task)
-          | Ok () ->
-              let limits = Eval.Task.limits task in
-              let ctx =
-                {
-                  Agent.workspace;
-                  max_steps =
-                    Option.bind limits (fun limits -> limits.Eval.Task.steps);
-                  timeout_s =
-                    Some
-                      (Option.value
-                         (Option.bind limits (fun limits ->
-                              limits.Eval.Task.timeout_s))
-                         ~default:default_timeout_s);
-                  artifact_dir = Some artifact_dir;
-                  env_extra;
-                }
-              in
-              let outcome =
-                match Agent.run agent ctx ~prompt:(Eval.Task.prompt task) with
-                | outcome -> outcome
-                | exception exn ->
-                    outcome_error
-                      ("agent adapter raised: " ^ Printexc.to_string exn)
-              in
-              let diff_files, diff =
-                match capture_diff workspace artifact_dir with
-                | Ok diff -> diff
-                | Error message ->
-                    write_file
-                      (Filename.concat artifact_dir "diff-error.txt")
-                      message;
-                    ([], "")
-              in
-              let cmd_counter = ref 0 in
-              let evaluate_cmd command =
-                incr cmd_counter;
-                let stdout_path =
-                  Filename.concat artifact_dir
-                    (Printf.sprintf "check-cmd-%02d.stdout" !cmd_counter)
-                in
-                let stderr_path =
-                  Filename.concat artifact_dir
-                    (Printf.sprintf "check-cmd-%02d.stderr" !cmd_counter)
-                in
-                let result =
-                  run_shell ~timeout_s:default_timeout_s ~env_extra
-                    ~cwd:workspace ~stdout_path ~stderr_path command
-                in
-                if process_success result.status then Ok ()
-                else Error (status_message result.status)
-              in
-              let evaluate probe =
-                evaluate_test ~shell:evaluate_cmd ~diff_files ~diff probe
-              in
-              let judge =
-                make_judge ~spice_bin ~judge_model ~judge_samples ~artifact_dir
-                  ~task_prompt:(Eval.Task.prompt task) ~diff
-              in
-              let findings =
-                collect_findings ~evaluate ?judge (Eval.Task.checks task)
-              in
-              finish outcome findings))
+          | Ok () -> (
+              match blindness_lint ~env_extra workspace with
+              | Error message ->
+                  finish
+                    (outcome_error ~stage:Eval.Result.Harness message)
+                    (skipped_findings task)
+              | Ok () ->
+                  let limits = Eval.Task.limits task in
+                  let ctx =
+                    {
+                      Agent.workspace;
+                      max_steps =
+                        Option.bind limits (fun limits ->
+                            limits.Eval.Task.steps);
+                      timeout_s =
+                        Some
+                          (Option.value
+                             (Option.bind limits (fun limits ->
+                                  limits.Eval.Task.timeout_s))
+                             ~default:default_timeout_s);
+                      artifact_dir = Some artifact_dir;
+                      env_extra;
+                    }
+                  in
+                  let outcome =
+                    match
+                      Agent.run agent ctx ~prompt:(Eval.Task.prompt task)
+                    with
+                    | outcome -> outcome
+                    | exception exn ->
+                        outcome_error
+                          ("agent adapter raised: " ^ Printexc.to_string exn)
+                  in
+                  let diff_files, diff =
+                    match capture_diff workspace artifact_dir with
+                    | Ok diff -> diff
+                    | Error message ->
+                        write_file
+                          (Filename.concat artifact_dir "diff-error.txt")
+                          message;
+                        ([], "")
+                  in
+                  let cmd_counter = ref 0 in
+                  let evaluate_cmd command =
+                    incr cmd_counter;
+                    let stdout_path =
+                      Filename.concat artifact_dir
+                        (Printf.sprintf "check-cmd-%02d.stdout" !cmd_counter)
+                    in
+                    let stderr_path =
+                      Filename.concat artifact_dir
+                        (Printf.sprintf "check-cmd-%02d.stderr" !cmd_counter)
+                    in
+                    let result =
+                      run_shell ~timeout_s:default_timeout_s ~env_extra
+                        ~cwd:workspace ~stdout_path ~stderr_path command
+                    in
+                    if process_success result.status then Ok ()
+                    else Error (status_message result.status)
+                  in
+                  let evaluate probe =
+                    evaluate_test ~shell:evaluate_cmd ~diff_files ~diff probe
+                  in
+                  let judge =
+                    make_judge ~spice_bin ~judge_model ~judge_samples
+                      ~artifact_dir ~task_prompt:(Eval.Task.prompt task) ~diff
+                  in
+                  let findings =
+                    collect_findings ~evaluate ?judge (Eval.Task.checks task)
+                  in
+                  finish outcome findings)))
 
 (* CLI arguments *)
 
@@ -1234,7 +1520,7 @@ let suite =
     value
     & opt (conv (Corpus.suite_of_string, Corpus.pp_suite)) Corpus.all_suite
     & info [ "suite" ] ~docv:"SUITE"
-        ~doc:"Corpus suite: all, smoke, core, long, or robustness.")
+        ~doc:"Corpus suite: all, smoke, screen, core, long, or robustness.")
 
 let task_metadata key task = List.assoc_opt key (Eval.Task.metadata task)
 
@@ -1394,6 +1680,73 @@ let print_markdown_report report =
           (fun rate -> rate *. 100.)
           (Eval.Report.cache_hit_rate report)))
 
+(* When a report is run over a result directory that has already been analyzed,
+   join the per-run trace metrics into a compact per-task section. *)
+let read_trace_metric_rows dir =
+  let path =
+    Filename.concat (Filename.concat dir "analysis") "trace-metrics.jsonl"
+  in
+  if not (Sys.file_exists path) then None
+  else
+    Some
+      (String.split_on_char '\n' (read_file path)
+      |> List.filter_map (fun line ->
+          match decode_json line with Ok json -> Some json | Error _ -> None))
+
+let print_trace_join ~markdown path =
+  if Sys.file_exists path && Sys.is_directory path then
+    match read_trace_metric_rows path with
+    | None | Some [] -> ()
+    | Some rows ->
+        let tasks =
+          List.sort_uniq String.compare
+            (List.filter_map (json_string_member "task") rows)
+        in
+        let mean field group =
+          match group with
+          | [] -> 0.
+          | _ ->
+              float_of_int
+                (List.fold_left
+                   (fun acc json ->
+                     acc + Option.value (json_int_member field json) ~default:0)
+                   0 group)
+              /. float_of_int (List.length group)
+        in
+        if markdown then (
+          stdout_printf "\n### Trace metrics (mean per task)\n\n";
+          stdout_printf
+            "| Task | Runs | In | Out | Reasoning | Cache read | Tool calls | \
+             Failures |\n";
+          stdout_printf
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+        else (
+          stdout_printf "\nTrace metrics (mean per task):\n";
+          stdout_printf
+            "Task\tRuns\tIn\tOut\tReasoning\tCache read\tTool calls\tFailures\n");
+        List.iter
+          (fun task ->
+            let group =
+              List.filter
+                (fun json -> json_string_member "task" json = Some task)
+                rows
+            in
+            let runs = List.length group in
+            let input = mean "input_tokens" group in
+            let output = mean "output_tokens" group in
+            let reasoning = mean "reasoning_tokens" group in
+            let cache_read = mean "cache_read_tokens" group in
+            let calls = mean "tool_calls" group in
+            let failures = mean "tool_failures" group in
+            if markdown then
+              stdout_printf
+                "| %s | %d | %.0f | %.0f | %.0f | %.0f | %.1f | %.1f |\n" task
+                runs input output reasoning cache_read calls failures
+            else
+              stdout_printf "%s\t%d\t%.0f\t%.0f\t%.0f\t%.0f\t%.1f\t%.1f\n" task
+                runs input output reasoning cache_read calls failures)
+          tasks
+
 let report_command =
   let markdown =
     CArg.(value & flag & info [ "markdown" ] ~doc:"Print Markdown output.")
@@ -1447,6 +1800,7 @@ let report_command =
         let report = Eval.Report.of_results ~cost rows in
         if markdown then print_markdown_report report
         else print_text_report report;
+        print_trace_join ~markdown path;
         0
   in
   CCmd.v
@@ -1626,6 +1980,217 @@ let run_command =
       const run $ suite $ agent $ model $ runs $ tasks $ judge_model
       $ judge_samples $ output)
 
+(* Analyze command *)
+
+let is_digits text =
+  text <> "" && String.for_all (fun c -> c >= '0' && c <= '9') text
+
+(* Run artifact directories are named "<task>-<run_index>". Task ids may
+   contain hyphens, so split at the last hyphen and require a numeric suffix. *)
+let parse_run_name name =
+  match String.rindex_opt name '-' with
+  | None -> None
+  | Some index ->
+      let task = String.sub name 0 index in
+      let suffix =
+        String.sub name (index + 1) (String.length name - index - 1)
+      in
+      if task <> "" && is_digits suffix then Some (task, int_of_string suffix)
+      else None
+
+let run_dirs result_dir =
+  match Sys.readdir result_dir with
+  | exception Sys_error _ -> []
+  | entries ->
+      Array.to_list entries
+      |> List.filter_map (fun name ->
+          let path = Filename.concat result_dir name in
+          if Sys.is_directory path then
+            Option.map
+              (fun (task, run_index) -> (path, task, run_index))
+              (parse_run_name name)
+          else None)
+      |> List.sort (fun (_, task_a, index_a) (_, task_b, index_b) ->
+          match String.compare task_a task_b with
+          | 0 -> Int.compare index_a index_b
+          | order -> order)
+
+let load_timing dir =
+  let events = Filename.concat dir "agent.jsonl" in
+  let stamps = Filename.concat dir "agent.timing.jsonl" in
+  if Sys.file_exists events && Sys.file_exists stamps then
+    Some
+      (Timing.of_artifacts ~agent_jsonl:(read_file events)
+         ~timing_jsonl:(read_file stamps))
+  else None
+
+let analyze_run dir =
+  match
+    Jsont_bytesrw.decode_string Spice_session.jsont
+      (read_file (Filename.concat dir "session.json"))
+  with
+  | Error message -> Error ("session decode failed: " ^ message)
+  | Ok session ->
+      let timing = load_timing dir in
+      let trace = Trace.of_session ?timing session in
+      Ok (Trace_metrics.of_trace trace, Insight.detect Insight.builtin trace)
+
+(* Prepend task and run_index to a codec-encoded object, keeping every codec
+   field flat alongside them. *)
+let flatten_line ~task ~run_index codec value =
+  match Json.encode codec value with
+  | Error message -> failwith message
+  | Ok (Jsont.Object (members, _)) -> (
+      let prefixed =
+        Json.object'
+          (Json.mem (Json.name "task") (Json.string task)
+          :: Json.mem (Json.name "run_index") (Json.int run_index)
+          :: members)
+      in
+      match Jsont_bytesrw.encode_string Jsont.json prefixed with
+      | Ok text -> text
+      | Error message -> failwith message)
+  | Ok _ -> failwith "expected a JSON object"
+
+let row_success rows task run_index =
+  List.find_opt
+    (fun row ->
+      let series = Eval.Result.series row in
+      String.equal series.Eval.Result.task task
+      && Eval.Result.run_index row = run_index)
+    rows
+  |> Option.map (fun row ->
+      if (Eval.Result.score row).Eval.Result.success then "yes" else "no")
+  |> Option.value ~default:"-"
+
+let analysis_markdown ~result_dir ~rows ~analyzed ~skipped ~errors =
+  let buffer = Buffer.create 4096 in
+  let add format = Printf.ksprintf (Buffer.add_string buffer) format in
+  add "# Trace analysis\n\n";
+  add "Result directory: `%s`\n\n" result_dir;
+  add "## Per-run\n\n";
+  add
+    "| Task | Run | Success | In tokens | Out tokens | Tool calls | Failures | \
+     Insights |\n";
+  add "| --- | ---: | :---: | ---: | ---: | ---: | ---: | ---: |\n";
+  List.iter
+    (fun (task, run_index, metrics, insights) ->
+      let in_tokens =
+        metrics.Trace_metrics.input_tokens
+        + metrics.Trace_metrics.cache_read_tokens
+        + metrics.Trace_metrics.cache_write_tokens
+      in
+      let out_tokens =
+        metrics.Trace_metrics.output_tokens
+        + metrics.Trace_metrics.reasoning_tokens
+      in
+      add "| %s | %d | %s | %d | %d | %d | %d | %d |\n" task run_index
+        (row_success rows task run_index)
+        in_tokens out_tokens metrics.Trace_metrics.tool_calls
+        metrics.Trace_metrics.tool_failures (List.length insights))
+    analyzed;
+  add "\n## Top insights\n\n";
+  let located =
+    List.concat_map
+      (fun (task, run_index, _, insights) ->
+        List.map (fun insight -> (task, run_index, insight)) insights)
+      analyzed
+  in
+  let detectors =
+    List.sort_uniq String.compare
+      (List.map (fun (_, _, insight) -> insight.Insight.detector) located)
+  in
+  if detectors = [] then add "No insights.\n"
+  else
+    List.iter
+      (fun detector ->
+        let items =
+          List.filter
+            (fun (_, _, insight) -> insight.Insight.detector = detector)
+            located
+        in
+        add "- **%s** (%d)" detector (List.length items);
+        match items with
+        | (task, run_index, insight) :: _ ->
+            add ": %s — `%s` [%s/%d]\n" insight.Insight.message
+              insight.Insight.evidence task run_index
+        | [] -> add "\n")
+      detectors;
+  if skipped > 0 then
+    add
+      "\n%d run(s) had no session.json and were skipped (non-Spice adapters).\n"
+      skipped;
+  (match errors with
+  | [] -> ()
+  | _ ->
+      add "\n";
+      List.iter
+        (fun (task, run_index, message) ->
+          add "Analysis error for %s/%d: %s\n" task run_index message)
+        errors);
+  Buffer.contents buffer
+
+let analyze_command =
+  let result_dir =
+    CArg.(
+      required
+      & pos 0 (some string) None
+      & info [] ~docv:"RESULT_DIR" ~doc:"Result directory produced by run.")
+  in
+  let run result_dir =
+    if not (Sys.file_exists result_dir && Sys.is_directory result_dir) then (
+      stderr_printf "spice-eval: not a directory: %s\n" result_dir;
+      CCmd.Exit.some_error)
+    else
+      let rows =
+        match read_rows result_dir with Ok rows -> rows | Error _ -> []
+      in
+      let analyzed = ref [] and skipped = ref 0 and errors = ref [] in
+      List.iter
+        (fun (dir, task, run_index) ->
+          if not (Sys.file_exists (Filename.concat dir "session.json")) then
+            incr skipped
+          else
+            match analyze_run dir with
+            | Ok (metrics, insights) ->
+                analyzed := (task, run_index, metrics, insights) :: !analyzed
+            | Error message -> errors := (task, run_index, message) :: !errors)
+        (run_dirs result_dir);
+      let analyzed = List.rev !analyzed in
+      let errors = List.rev !errors in
+      let analysis_dir = Filename.concat result_dir "analysis" in
+      ensure_dir analysis_dir;
+      write_file
+        (Filename.concat analysis_dir "trace-metrics.jsonl")
+        (String.concat ""
+           (List.map
+              (fun (task, run_index, metrics, _) ->
+                flatten_line ~task ~run_index Trace_metrics.jsont metrics ^ "\n")
+              analyzed));
+      write_file
+        (Filename.concat analysis_dir "insights.jsonl")
+        (String.concat ""
+           (List.concat_map
+              (fun (task, run_index, _, insights) ->
+                List.map
+                  (fun insight ->
+                    flatten_line ~task ~run_index Insight.jsont insight ^ "\n")
+                  insights)
+              analyzed));
+      write_file
+        (Filename.concat result_dir "analysis.md")
+        (analysis_markdown ~result_dir ~rows ~analyzed ~skipped:!skipped ~errors);
+      stdout_printf "analyzed %d run(s); skipped %d; errors %d\n"
+        (List.length analyzed) !skipped (List.length errors);
+      stdout_printf "analysis: %s\n" (Filename.concat result_dir "analysis.md");
+      0
+  in
+  CCmd.v
+    (CCmd.info "analyze"
+       ~doc:"Analyze captured session documents into metrics and insights."
+       ~exits)
+    CTerm.(const run $ result_dir)
+
 let command =
   let man =
     [
@@ -1639,6 +2204,14 @@ let command =
   in
   CCmd.group
     (CCmd.info "spice-eval" ~doc:"Run and report Spice evaluations." ~man ~exits)
-    [ list_command; run_command; report_command; compare_command ]
+    [
+      list_command;
+      run_command;
+      analyze_command;
+      report_command;
+      compare_command;
+    ]
 
-let () = exit (CCmd.eval' command)
+let () =
+  Random.self_init ();
+  exit (CCmd.eval' command)

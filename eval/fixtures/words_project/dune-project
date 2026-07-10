@@ -1,9 +1,9 @@
 (lang dune 3.22)
 
-(name eval_words)
+(name words)
 
 (package
- (name eval_words)
+ (name words)
  (allow_empty)
  (depends
   (ocaml
