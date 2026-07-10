@@ -26,8 +26,18 @@ let collapse_whitespace s =
     s;
   Buffer.contents b
 
+let utf8_boundary text index =
+  let rec loop index =
+    if index <= 0 then 0
+    else
+      let code = Char.code text.[index] in
+      if code land 0b1100_0000 = 0b1000_0000 then loop (index - 1) else index
+  in
+  loop (min index (String.length text))
+
 let truncate_bytes ~max s =
-  if String.length s <= max then s else String.sub s 0 max
+  if String.length s <= max then s
+  else String.sub s 0 (utf8_boundary s max)
 
 let child_session_title spawn =
   let role =

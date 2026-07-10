@@ -104,8 +104,8 @@ summary after the run. The parent's post-spawn request races the child's
 first request, so the fake server matches script items by content.
 
   $ cat > subagent.jsonl <<'JSONL'
-  > {"expect":{"body_contains":["\"name\":\"spawn_subagent\""],"body_not_contains":["subagent explore launched"]},"response":{"id":"resp-subagent","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-subagent","call_id":"subagent-1","name":"spawn_subagent","arguments":"{\"role\":\"explore\",\"task\":\"Map host workflow UI\"}"}]}}
-  > {"expect":{"body_contains":["Role: explore","Map host workflow UI"],"body_not_contains":["subagent explore launched"]},"response":{"id":"resp-subagent-child","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"child exploration findings"}]}]}}
+  > {"expect":{"body_contains":["\"name\":\"spawn_subagent\""],"body_not_contains":["subagent explore launched"]},"response":{"id":"resp-subagent","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-subagent","call_id":"subagent-1","name":"spawn_subagent","arguments":"{\"role\":\"explore\",\"task\":\"Inspect aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaé suffix\"}"}]}}
+  > {"expect":{"body_contains":["Role: explore","é suffix"],"body_not_contains":["subagent explore launched"]},"response":{"id":"resp-subagent-child","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"child exploration findings"}]}]}}
   > {"expect":{"body_contains":["function_call_output","subagent-1","subagent explore launched"]},"response":{"id":"resp-subagent-final","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Delegated."}]}]}}
   > JSONL
   $ SPICE_FAKE_PROVIDER_UNORDERED=1 start_fake_openai subagent.jsonl subagent-capture subagent-port
@@ -127,6 +127,8 @@ completed run with the child's final text as its summary.
   "status":{"type":"completed"
   $ spice session show --json subagent-run | grep -o '"summary":"child exploration findings"'
   "summary":"child exploration findings"
+  $ spice session show subagent-run-sub-subagent-1 | grep '^title'
+  title: subagent explore: Inspect aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
 Opaque provider call ids remain distinct subagent identities even when they
 differ only by punctuation. The parent id also contains a slash, exercising
