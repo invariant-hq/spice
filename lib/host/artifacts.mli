@@ -120,7 +120,8 @@ module Plan : sig
   (** [list ~fs ~root ~session] lists [session]'s plans. A missing directory is
       an empty list; results are newest first by
       {!Spice_protocol.Plan.updated_at}, then by id. Malformed files or a stored
-      session that does not match [session] are {!Error.Corrupt_file}. *)
+      session or id that does not match the directory and filename key are
+      {!Error.Corrupt_file}. *)
 
   (** The type for storing a proposal: committed replacement state, or a
       model-visible refusal that leaves existing plans unchanged. *)
@@ -292,8 +293,8 @@ module Subagent_run : sig
     (Spice_protocol.Subagent_run.t list, Error.t) result
   (** [list ~fs ~root ~parent] lists the runs [parent] spawned, sorted by
       creation time and then child id. A missing directory is an empty list;
-      non-JSON entries are ignored. A file whose stored parent does not match
-      [parent] is {!Error.Corrupt_file}. *)
+      non-JSON entries are ignored. A file whose stored parent or child does not
+      match its directory and filename key is {!Error.Corrupt_file}. *)
 
   val children :
     fs:Eio.Fs.dir_ty Eio.Path.t ->

@@ -176,7 +176,9 @@ let list_dir ~fs codec dir =
             else
               let* text = io p (fun () -> Eio.Path.load (fs_path ~fs p)) in
               let* value = decode codec p text in
-              collect (value :: acc) names
+              collect
+                ((p, Filename.remove_extension name, value) :: acc)
+                names
     in
     collect [] (List.sort String.compare names)
 
@@ -278,11 +280,28 @@ module Plan = struct
     in
     let rec check acc = function
       | [] -> Ok (List.sort compare_newest acc)
-      | plan :: rest ->
-          if Spice_session.Id.equal (plan_session plan) session then
-            check (plan :: acc) rest
-          else
-            let p = path ~root ~session (Spice_protocol.Plan.id plan) in
+      | (p, escaped_id, plan) :: rest ->
+          let* id_text = unescaped_component p escaped_id in
+          let* id =
+            match Spice_protocol.Plan.Id.of_string id_text with
+            | Ok id -> Ok id
+            | Error message ->
+                Error (Error.Corrupt_file { path = p; message })
+          in
+          if not (Spice_protocol.Plan.Id.equal (Spice_protocol.Plan.id plan) id)
+          then
+            Error
+              (Error.Corrupt_file
+                 {
+                   path = p;
+                   message =
+                     Printf.sprintf
+                       "plan id %S does not match filename key %S"
+                       (Spice_protocol.Plan.Id.to_string
+                          (Spice_protocol.Plan.id plan))
+                       id_text;
+                 })
+          else if not (Spice_session.Id.equal (plan_session plan) session) then
             Error
               (Error.Corrupt_file
                  {
@@ -293,6 +312,7 @@ module Plan = struct
                        (Spice_session.Id.to_string (plan_session plan))
                        (Spice_session.Id.to_string session);
                  })
+          else check (plan :: acc) rest
     in
     check [] plans
 
@@ -591,12 +611,15 @@ module Subagent_run = struct
     in
     let rec check acc = function
       | [] -> Ok (List.rev acc)
-      | run :: rest ->
-          let p =
-            child_path ~root ~parent
-              ~child:(Spice_protocol.Subagent_run.child run)
+      | (p, escaped_child, run) :: rest ->
+          let* child_text = unescaped_component p escaped_child in
+          let* child =
+            if String.is_empty child_text then
+              corrupt p "child session id must not be empty"
+            else Ok (Spice_session.Id.of_string child_text)
           in
           let* run = check_parent p ~parent run in
+          let* run = check_child p ~child run in
           check (run :: acc) rest
     in
     let* runs = check [] runs in
