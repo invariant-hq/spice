@@ -35,8 +35,9 @@ val run :
     - [matrix] is the terminal backend. Defaults to [Matrix_eio.create] over
       [stdenv]'s TTY; supplying one skips the interactive-TTY gate, since the
       backend owns its own I/O.
-    - [probe] is forwarded to {!Mosaic.run}: it receives the runtime quiescence
-      probe before the loop starts.
+    - [probe] receives the {!Mosaic.Probe.t} before the loop starts, extended
+      with [spice.live] for main-session work through its terminal event or
+      settlement, and [spice.jobs] for child-run drains owned outside Mosaic.
     - [process_env] is the environment snapshot host configuration reads.
       Defaults to {!Spice_host.Env.current}.
 

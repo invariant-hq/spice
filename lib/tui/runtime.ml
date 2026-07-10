@@ -1377,6 +1377,12 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
            one. *)
         let attachment = ref None in
         let created_session = ref None in
+        let job_registries = ref [] in
+        let main_pending = ref false in
+        (* [Live] can keep draining child jobs after it emits [Turn_finished].
+           The UI is stable at that terminal event, so the main-session check
+           tracks the user-visible turn boundary; child work remains visible
+           independently through the [spice.jobs] check below. *)
         (* A resume/fork in flight, armed SYNCHRONOUSLY in the command
            interpreter (before its perform fork) and resolved once the document
            is loaded (or forked). While set, [ensure_attachment] awaits it and
@@ -1407,10 +1413,22 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
           current_stop := stop;
           previous ()
         in
+        let submit live command =
+          main_pending := true;
+          Spice_host.Live.submit live command
+        in
+        let detach live =
+          Spice_host.Live.detach live;
+          main_pending := false
+        in
         let subscribe live =
           Spice_host.Live.events live (fun event ->
-              deliver (App.live_event ~now:(Eio.Time.now clock) event));
+              deliver (App.live_event ~now:(Eio.Time.now clock) event);
+              match event with
+              | Spice_protocol.Event.Turn_finished _ -> main_pending := false
+              | _ -> ());
           Spice_host.Live.on_settled live (fun result ->
+              main_pending := false;
               deliver
                 (App.settled ~now:(Eio.Time.now clock)
                    (settled_of_result result)))
@@ -1429,6 +1447,7 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
            delivering the children it is still draining — every run reaches the
            shell exactly once, none is dropped across the swap. *)
         let subscribe_jobs jobs =
+          job_registries := jobs :: !job_registries;
           Spice_host.Jobs.subscribe jobs (fun event ->
               let now () = Eio.Time.now clock in
               match event with
@@ -1544,7 +1563,7 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                      no-op ([Live.detach] is idempotent), but the consumer owns
                      the swap outright rather than relying on that ordering. *)
                   (match !attachment with
-                  | Some (old_live, _) -> Spice_host.Live.detach old_live
+                  | Some (old_live, _) -> detach old_live
                   | None -> ());
                   attachment := Some (live, run);
                   created_session := Some session_id;
@@ -1575,9 +1594,7 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
            resolves once this returns, so [ensure_attachment] awaits it rather
            than minting a fresh session. *)
         let enter_session document =
-          (match !attachment with
-          | Some (live, _) -> Spice_host.Live.detach live
-          | None -> ());
+          (match !attachment with Some (live, _) -> detach live | None -> ());
           attachment := None;
           let session_id =
             Spice_session.id (Spice_session_store.Document.session document)
@@ -2001,13 +2018,12 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                               ~config:(Spice_host.Host.config host)
                               ~model ~effort prompt
                           in
-                          Spice_host.Live.submit live
-                            (Spice_protocol.Command.Start turn)))
+                          submit live (Spice_protocol.Command.Start turn)))
           | App.Interrupt ->
               perform (fun () ->
                   match !attachment with
                   | Some (live, _) ->
-                      Spice_host.Live.submit live
+                      submit live
                         (Spice_protocol.Command.Interrupt { reason = None })
                   | None -> ())
           (* Decision-dialog continuations: submit the typed command to the
@@ -2017,7 +2033,7 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
               perform (fun () ->
                   match !attachment with
                   | Some (live, _) ->
-                      Spice_host.Live.submit live
+                      submit live
                         (Spice_protocol.Command.Reply
                            { permission; answer; via = None; message })
                   | None -> ())
@@ -2062,7 +2078,7 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                       | Error message ->
                           Log.err (fun m ->
                               m "always-allow runner rebind failed: %s" message));
-                      Spice_host.Live.submit live
+                      submit live
                         (Spice_protocol.Command.Reply
                            {
                              permission;
@@ -2077,14 +2093,14 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
               perform (fun () ->
                   match !attachment with
                   | Some (live, _) ->
-                      Spice_host.Live.submit live
+                      submit live
                         (Spice_protocol.Command.Answer { turn; call_id; answer })
                   | None -> ())
           | App.Resolve_plan { turn; call_id; decision } ->
               perform (fun () ->
                   match !attachment with
                   | Some (live, _) ->
-                      Spice_host.Live.submit live
+                      submit live
                         (Spice_protocol.Command.Resolve_plan
                            { turn; call_id; decision })
                   | None -> ())
@@ -2160,7 +2176,7 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                      the one [adopt] just ran. *)
                   resume_pending := None;
                   (match !attachment with
-                  | Some (live, _) -> Spice_host.Live.detach live
+                  | Some (live, _) -> detach live
                   | None -> ());
                   attachment := None;
                   adopt ignore;
@@ -2465,6 +2481,17 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
             view = App.view;
             subscriptions = App.subscriptions;
           }
+        in
+        let probe =
+          Option.map
+            (fun receive runtime_probe ->
+              runtime_probe
+              |> Mosaic.Probe.with_pending ~name:"spice.live" (fun () ->
+                  !main_pending)
+              |> Mosaic.Probe.with_pending ~name:"spice.jobs" (fun () ->
+                  List.exists Spice_host.Jobs.is_pending !job_registries)
+              |> receive)
+            probe
         in
         Mosaic.run ~matrix ~process_perform ?probe app;
         Ok { last_session = !created_session }
