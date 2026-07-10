@@ -384,6 +384,25 @@ let print t =
 
 let project t = t.project
 
+(* Release a held response and wait only until the provider writes it. This is
+   the seam for a child response that immediately schedules parent work: waiting
+   for the whole application to settle would consume that continuation too. *)
+let release_response t name =
+  let provider = provider t in
+  let served0 = Provider_runtime.served provider in
+  Provider_runtime.release provider name;
+  let rec await_served spent =
+    if Provider_runtime.served provider > served0 then ()
+    else if spent > settle_budget then
+      Util.failf "tui harness: released gate %S but its response was never sent"
+        name
+    else (
+      check_alive t;
+      breathe t;
+      await_served (spent + 1))
+  in
+  await_served 0
+
 (* Release a held response and wait for the main-session terminal boundary. The
    probe remains pending across the socket read, session save, and terminal
    event delivery, so no provider counter or screen-state proxy is needed. *)

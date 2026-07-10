@@ -46,6 +46,11 @@ val request : now:float -> prompt:string -> t -> t
     {!in_flight} is [true] from here. Built from {!idle}, so it clears any
     settled prior turn's buffers. *)
 
+val continue : now:float -> t -> t
+(** [continue ~now t] marks an internal continuation requested without new user
+    input. It has the same pending lifecycle and working clock as {!request},
+    but does not synthesize a user block in the ephemeral tail. *)
+
 val rebase_pending : by:float -> t -> t
 (** [rebase_pending ~by t] shifts a still-pending turn's ({!request}) elapsed
     clock by [by] seconds; a no-op once the turn is running. The shell applies

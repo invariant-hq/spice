@@ -213,6 +213,7 @@
   spice_host
   spice_protocol
   spice_session
+  spice_session_run
   spice_session_store
   spice_llm
   spice_path

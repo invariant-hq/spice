@@ -206,6 +206,10 @@ type t = {
      below-footer switcher strip. Empty until the first spawn, refilled from
      artifacts on a resume ([Thread_runs_loaded]). *)
   thread_runs : Spice_protocol.Subagent_run.t list;
+  (* A settled-child notice that no parent model request has injected yet.
+     [Notices_injected] clears it exactly at the request boundary; if the parent
+     settles first, this bit schedules one input-less continuation. *)
+  subagent_wake_pending : bool;
   (* The threads-strip focus (doc/plans/tui-next-threads.md §2.2, §2.6): [None] is
      the unfocused 3-row glance the composer owns; [Some i] is the focused browse
      stepped into by [↓] on an empty draft, [i] the selected row (0 = [main]).
@@ -332,7 +336,11 @@ type msg =
       message : string;
       now : float;
     }
-  | Thread_settled of { run : Spice_protocol.Subagent_run.t; now : float }
+  | Thread_settled of {
+      run : Spice_protocol.Subagent_run.t;
+      now : float;
+      wake : bool;
+    }
   (* Read-only drill-in (doc/plans/tui-next-threads.md §2.3, §6 phase 5a).
      [Thread_strip_clicked] is a mouse click on switcher row [i] (absolute index
      in the row list) — it selects the row and, if it is a settled child, drills
@@ -369,6 +377,7 @@ type command =
   | Reload_brief
   | Reload_health
   | Start_turn of string
+  | Start_subagent_wake
   | Interrupt
   | Interrupt_force
   | Load_sessions
@@ -480,7 +489,7 @@ let snapshot_refreshed snapshot = Snapshot_refreshed snapshot
 let thread_runs_loaded ~session runs = Thread_runs_loaded { session; runs }
 let thread_started run = Thread_started run
 let thread_asked ~now ~message run = Thread_asked { run; message; now }
-let thread_settled ~now run = Thread_settled { run; now }
+let thread_settled ~now ~wake run = Thread_settled { run; now; wake }
 
 let thread_document_loaded ~run ~now events =
   Thread_document_loaded { run; events; now }
@@ -581,6 +590,7 @@ let init_model ~snapshot ~reduced_motion =
     armed = None;
     show_reasoning = true;
     thread_runs = [];
+    subagent_wake_pending = false;
     strip_focus = None;
     strip_hover = None;
     drill = None;
@@ -764,6 +774,19 @@ let start_turn value t =
       else
         let turn = Turn.request ~now:chat.now ~prompt:value chat.turn in
         ({ t with phase = Chat { chat with turn } }, [ Start_turn value ])
+
+(* Start one continuation only when the parent has no user work or other effect
+   in flight. It carries no user input; the subagent notices themselves are the
+   model-visible context. *)
+let start_subagent_wake t =
+  match t.phase with
+  | Chat chat
+    when (not (Turn.in_flight chat.turn))
+         && t.queued = [] && Option.is_none t.shell ->
+      let turn = Turn.continue ~now:chat.now chat.turn in
+      ( { t with phase = Chat { chat with turn } },
+        [ Start_subagent_wake ] )
+  | Chat _ | Prelude -> (t, [])
 
 (* Start a user shell command (03-composer.md §Shell mode): echo the [!command]
    as a durable user block, pin the running header above the composer, and hand
@@ -1061,6 +1084,7 @@ let dispatch_command ?(argument = None) command t =
               attached = false;
               queued = [];
               thread_runs = [];
+              subagent_wake_pending = false;
               strip_focus = None;
               strip_hover = None;
               drill = None;
@@ -1825,9 +1849,22 @@ let update msg t =
   | Live_event { event; now } -> (
       match t.phase with
       | Chat chat ->
+          let subagent_wake_pending =
+            match event with
+            | Spice_protocol.Event.Notices_injected notices
+              when List.exists
+                     (fun notice ->
+                       String.equal
+                         (Spice_protocol.Notice.source notice)
+                         "subagents")
+                     notices ->
+                false
+            | _ -> t.subagent_wake_pending
+          in
           ( {
               t with
               attached = true;
+              subagent_wake_pending;
               phase =
                 Chat
                   (apply_event ~show_reasoning:t.show_reasoning ~now event chat);
@@ -1853,6 +1890,7 @@ let update msg t =
                 }
               in
               match t.queued with
+              | [] when t.subagent_wake_pending -> start_subagent_wake t
               | [] -> (t, [])
               | next :: queued -> start_turn next { t with queued })
           | Waiting pending -> (
@@ -1972,6 +2010,7 @@ let update msg t =
           session_id = Some session;
           attached = true;
           thread_runs = runs;
+          subagent_wake_pending = false;
           strip_focus;
           drill = None;
         },
@@ -1995,14 +2034,23 @@ let update msg t =
         let t = { t with thread_runs = upsert_run run t.thread_runs } in
         (append_chat_notice ~now t (Notice.Event line), [])
       else (t, [])
-  | Thread_settled { run; now } ->
+  | Thread_settled { run; now; wake } ->
       (* The terminal transition writes the settled line to the parent transcript
          once (02-tools.md §Subagents; subagent-tui.md decision 9) and drops the
          run from the live [* N agents] count via the upsert. *)
       if owns_run t run then
         let line, _severity = Thread_view.settled_line run in
-        let t = { t with thread_runs = upsert_run run t.thread_runs } in
-        (append_chat_notice ~now t (Notice.Event (notice_headline line)), [])
+        let t =
+          {
+            t with
+            thread_runs = upsert_run run t.thread_runs;
+            subagent_wake_pending = wake || t.subagent_wake_pending;
+          }
+        in
+        let t =
+          append_chat_notice ~now t (Notice.Event (notice_headline line))
+        in
+        if wake then start_subagent_wake t else (t, [])
       else (t, [])
   | Thread_strip_hovered hover -> ({ t with strip_hover = hover }, [])
   | Thread_strip_clicked i ->
@@ -2674,6 +2722,7 @@ let update msg t =
           in
           let t = { t with phase = Chat chat } in
           match t.queued with
+          | [] when t.subagent_wake_pending -> start_subagent_wake t
           | [] -> (t, [])
           | next :: queued -> submit_text next { t with queued }))
 

@@ -22,7 +22,8 @@ open Tui_harness
    would have to answer. *)
 
 let no_wake project =
-  Project.write project ".spice/config.json" {|{"run":{"subagent_wake":false}}|}
+  Project.write_scratch project "config/spice/config.json"
+    {|{"run":{"subagent_wake":false}}|}
 
 let seed_prompt_session project id ~title ~prompt =
   Project.write_path
@@ -129,6 +130,56 @@ let%expect_test "a spawned child shows the agents count and settles as a notice"
 22 |
 23 |     ◯ main
 24 |     ✓ Explore   survey the code · 0s · ↓ 0 tokens|}]
+
+let%expect_test "an idle parent consumes a settled child in one wake turn" =
+  let script =
+    [
+      spawn ~call_id:"wake-child" ~task:"inspect the wake path" ();
+      parent_done ~gate:"parent" "Delegated the wake check.";
+      child ~gate:"child" ~task:"inspect the wake path"
+        "Wake-path findings.";
+      Provider_script.message
+        ~expect:[ "source: subagents"; "Wake-path findings." ]
+        ~id:"resp-parent-wake" "Integrated the child result.";
+    ]
+  in
+  Tui.run ~name:"threads-wake" ~unordered:true ~provider:script @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "delegate wake check";
+  Tui.enter t;
+  ignore (Tui.await_request t 1 : string);
+  ignore (Tui.await_request t 3 : string);
+  Tui.release t "parent";
+  Tui.settle t;
+  Tui.release_response t "child";
+  ignore (Tui.await_request t 4 : string);
+  Tui.settle_turn t;
+  Tui.print t;
+  [%expect
+    {|01 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+02 |        sandbox: danger-full-access (config)
+03 |
+04 | ❯ delegate wake check
+05 |
+06 | ⏺ Task(@explore — inspect the wake path)
+07 |   ⎿  done
+08 |
+09 | ⏺ Delegated the wake check.
+10 |
+11 |   ● Agent "inspect the wake path" finished · 0 tool uses · ↓ 0 tokens · 0s
+12 |
+13 | ⏺ Integrated the child result.
+14 |
+15 |   subagent explore finished (session ses_$ID-sub-wake-
+16 | child)
+17 |
+18 | ────────────────────────────────────────────────────────────────────────────────
+19 | ❯ message spice
+20 | ────────────────────────────────────────────────────────────────────────────────
+21 |   $PROJECT · gpt-5.5 medium · dune: ✗      ? for shortcuts
+22 |
+23 |     ◯ main
+24 |     ✓ Explore   inspect the wake path · 0s · ↓ 0 tokens|}]
 
 (* {2 Three children in one turn} *)
 

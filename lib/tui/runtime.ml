@@ -723,15 +723,14 @@ let turn_reasoning config model =
   | Some effort -> Some effort
   | None -> Spice_provider.Model.default_reasoning model
 
-let make_turn ~clock ~config ~model ~effort prompt =
+let make_turn ?origin ~clock ~config ~model ~effort input =
   let reasoning_effort =
     match effort with Some _ -> effort | None -> turn_reasoning config model
   in
   let options = Spice_host.Turn_options.resolve ~model ?reasoning_effort () in
   Spice_protocol.Command.Start.make
     ~id:(Spice_host.Session.fresh_turn_id ~clock)
-    ~input:(Spice_session.Turn.Input.user_text prompt)
-    ~options ()
+    ~input ~options ?origin ()
 
 (* The unified @ completion's ignore set: the host's default ignores plus
    picker-local extras — directories a mention would never target (VCS innards,
@@ -1448,12 +1447,16 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
            shell exactly once, none is dropped across the swap. *)
         let subscribe_jobs jobs =
           job_registries := jobs :: !job_registries;
+          let wake =
+            Spice_host.Config.Runtime.subagent_wake
+              (Spice_host.Config.runtime (Spice_host.Host.config host))
+          in
           Spice_host.Jobs.subscribe jobs (fun event ->
               let now () = Eio.Time.now clock in
               match event with
               | Spice_host.Jobs.Started run -> deliver (App.thread_started run)
               | Spice_host.Jobs.Settled run ->
-                  deliver (App.thread_settled ~now:(now ()) run)
+                  deliver (App.thread_settled ~now:(now ()) ~wake run)
               | Spice_host.Jobs.Asked { run; message } ->
                   deliver (App.thread_asked ~now:(now ()) ~message run)
               | Spice_host.Jobs.Progress _ | Spice_host.Jobs.Blocked _
@@ -1969,6 +1972,33 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                           ~title:(model_provider_title provider)
                           settled)))
         in
+        let start_turn ?origin input =
+          perform (fun () ->
+              match ensure_attachment () with
+              | Error message ->
+                  deliver
+                    (App.settled ~now:(Eio.Time.now clock)
+                       (failed_settle message))
+              | Ok (live, run) -> (
+                  (* Every turn re-binds its contract — selection, fresh
+                     credential store, current mode — and swaps the runner
+                     before submitting, so a /login or /model between turns
+                     takes effect on this very turn. *)
+                  match bind_runner run with
+                  | Error message ->
+                      deliver
+                        (App.settled ~now:(Eio.Time.now clock)
+                           (failed_settle message))
+                  | Ok (runner, model, effort) ->
+                      Spice_host.Live.set_runner live runner;
+                      refresh_snapshot ();
+                      let turn =
+                        make_turn ?origin ~clock
+                          ~config:(Spice_host.Host.config host)
+                          ~model ~effort input
+                      in
+                      submit live (Spice_protocol.Command.Start turn)))
+        in
         let command = function
           | App.Quit -> Mosaic.Cmd.quit
           | App.Reload_brief ->
@@ -1994,31 +2024,10 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
                              health))
                   end)
           | App.Start_turn prompt ->
-              perform (fun () ->
-                  match ensure_attachment () with
-                  | Error message ->
-                      deliver
-                        (App.settled ~now:(Eio.Time.now clock)
-                           (failed_settle message))
-                  | Ok (live, run) -> (
-                      (* Every turn re-binds its contract — selection, fresh
-                         credential store, current mode — and swaps the runner
-                         before submitting, so a /login or /model between turns
-                         takes effect on this very turn. *)
-                      match bind_runner run with
-                      | Error message ->
-                          deliver
-                            (App.settled ~now:(Eio.Time.now clock)
-                               (failed_settle message))
-                      | Ok (runner, model, effort) ->
-                          Spice_host.Live.set_runner live runner;
-                          refresh_snapshot ();
-                          let turn =
-                            make_turn ~clock
-                              ~config:(Spice_host.Host.config host)
-                              ~model ~effort prompt
-                          in
-                          submit live (Spice_protocol.Command.Start turn)))
+              start_turn (Spice_session.Turn.Input.user_text prompt)
+          | App.Start_subagent_wake ->
+              start_turn ~origin:"subagent-wake"
+                Spice_session.Turn.Input.continue
           | App.Interrupt ->
               perform (fun () ->
                   match !attachment with

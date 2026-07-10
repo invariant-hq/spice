@@ -71,6 +71,11 @@ type command =
           {!Spice_host.Live} on the first one and submits the prompt. Emitted on
           every non-empty submit — the host queues a submit made while a turn is
           in flight, so the shell never blocks one. *)
+  | Start_subagent_wake
+      (** Start an input-less continuation for pending subagent notices. The
+          runtime records the turn with the [subagent-wake] origin; continuation
+          input keeps scheduling out of prompt history and the transcript.
+          Emitted at most once while the parent is idle. *)
   | Interrupt
       (** Interrupt the in-flight turn cooperatively. Emitted on the second esc
           of the two-stage interrupt while a turn streams. Ctrl+C never emits
@@ -448,11 +453,14 @@ val thread_asked :
     shell writes the gray [› Message from @<role>: <message>] relay notice to
     the parent transcript and upserts [run]. *)
 
-val thread_settled : now:float -> Spice_protocol.Subagent_run.t -> msg
-(** [thread_settled ~now run] is the message the runtime dispatches when [run]
+val thread_settled :
+  now:float -> wake:bool -> Spice_protocol.Subagent_run.t -> msg
+(** [thread_settled ~now ~wake run] is the message the runtime dispatches when [run]
     reaches a caller-facing settlement ({!Spice_host.Jobs} [Settled]): the shell
     writes [run]'s settled line to the parent transcript once and upserts it,
-    dropping it from the live count. *)
+    dropping it from the live count. When [wake] is true, an unread settlement
+    schedules one input-less continuation once the parent is idle; several
+    settlements before that request coalesce. *)
 
 val thread_document_loaded :
   run:Spice_session.Id.t -> now:float -> Spice_protocol.Event.t list -> msg

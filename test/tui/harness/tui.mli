@@ -75,6 +75,11 @@ val await_turn : t -> int -> string
 val release : t -> string -> unit
 (** [release session gate] resolves provider [gate] and settles the app. *)
 
+val release_response : t -> string -> unit
+(** [release_response session gate] resolves provider [gate] and waits only
+    until its response is written. Unlike {!release}, it does not wait for work
+    that response schedules to settle. *)
+
 val release_background : t -> string -> unit
 (** [release_background session gate] resolves a child-run provider [gate] and
     waits until its delivery is rendered, while allowing unrelated held work to

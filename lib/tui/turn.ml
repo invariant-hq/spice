@@ -36,7 +36,7 @@ type permission_pending = {
    Turn_started as it emits the real User block); [Running] is live, between
    Turn_started and Turn_finished. [in_flight] holds from [Pending] onward so the
    spinner tick and esc-interrupt engage within a frame of submit. *)
-type phase = Idle | Pending of string | Running
+type phase = Idle | Pending of string option | Running
 
 (* The cooperative-interrupt axis, orthogonal to [phase]: [Interrupting] once esc
    flips a live turn to draining, [forcing] once a further esc escalates the
@@ -152,7 +152,10 @@ let todo_board t = t.todo
    user's clock started at submit). Built from [idle] so any settled prior turn's
    buffers are cleared. *)
 let request ~now ~prompt _t =
-  { idle with phase = Pending prompt; turn_started = now }
+  { idle with phase = Pending (Some prompt); turn_started = now }
+
+let continue ~now _t =
+  { idle with phase = Pending None; turn_started = now }
 
 (* Rebase a still-pending turn's clock by [by] seconds. The pending timer runs in
    the drop-relative modeled clock (starting at 0 at the drop); the first
@@ -802,7 +805,8 @@ let tail ~now ~spinner:_ ~width ~show_reasoning ~expanded t =
      for the document block is seamless. *)
   let pending =
     match t.phase with
-    | Pending prompt -> [ Transcript.user_block prompt ]
+    | Pending (Some prompt) -> [ Transcript.user_block prompt ]
+    | Pending None -> []
     | Idle | Running -> []
   in
   let parts =
