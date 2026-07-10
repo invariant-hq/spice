@@ -67,7 +67,7 @@ A session with an active turn refuses a new prompt.
 
   $ mkdir -p $SPICE_TEST_DATA_HOME/sessions/running
   $ cat > $SPICE_TEST_DATA_HOME/sessions/running/session.json <<JSON
-  > {"version":1,"id":"running","metadata":{"cwd":"$PWD","title":"Running","status":"active","created_at":1,"updated_at":2},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"Continue"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}}]}
+  > {"version":1,"id":"running","metadata":{"cwd":"$PWD","title":"Running","status":"active","created_at":1,"updated_at":2},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"Continue"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"declarations":[],"host_tools":[],"max_steps":100}}]}
   > JSON
   $ SPICE_MODEL=openai/gpt-5.5 spice run resume running "another prompt"
   spice: run resume cannot accept PROMPT while a turn is active

@@ -65,7 +65,7 @@ usage error before provider credentials are loaded.
 
   $ mkdir -p $SPICE_TEST_DATA_HOME/sessions/active-plan
   $ cat > $SPICE_TEST_DATA_HOME/sessions/active-plan/session.json <<JSON
-  > {"version":1,"id":"active-plan","metadata":{"cwd":"$PWD","title":"Active plan","status":"active","created_at":1,"updated_at":1},"events":[{"type":"turn_started","turn":{"id":"turn-1","mode":"plan","input":{"type":"user","content":[{"type":"text","text":"Plan this"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}}]}
+  > {"version":1,"id":"active-plan","metadata":{"cwd":"$PWD","title":"Active plan","status":"active","created_at":1,"updated_at":1},"events":[{"type":"turn_started","turn":{"id":"turn-1","mode":"plan","input":{"type":"user","content":[{"type":"text","text":"Plan this"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"declarations":[],"host_tools":[],"max_steps":100}}]}
   > JSON
 
   $ spice run resume active-plan --mode build

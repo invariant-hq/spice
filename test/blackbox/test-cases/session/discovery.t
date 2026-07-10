@@ -7,7 +7,7 @@ fall back to the preview.
 
   $ mkdir -p $SPICE_TEST_DATA_HOME/sessions/preview
   $ cat > $SPICE_TEST_DATA_HOME/sessions/preview/session.json <<JSON
-  > {"version":1,"id":"preview","metadata":{"cwd":"$PWD","status":"active","created_at":1,"updated_at":199880000},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"one two   three\nfour five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}}]}
+  > {"version":1,"id":"preview","metadata":{"cwd":"$PWD","status":"active","created_at":1,"updated_at":199880000},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"one two   three\nfour five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"declarations":[],"host_tools":[],"max_steps":100}}]}
   > JSON
   $ spice session show preview | grep '^preview'
   preview: one two three four five six seven eight nine ten eleven twelve thirteen fourteen…
@@ -48,10 +48,10 @@ scope and adds the CWD column.
   $ spice session list | grep '^remote' || echo hidden
   hidden
   $ SPICE_NOW=200000000 spice session list --all
-  ID       PHASE   AGE     CWD                                                                                                                                 TITLE
+  ID       PHASE   AGE     CWD                                                                                                                                   TITLE
   preview  active  2m ago  $TESTCASE_ROOT  one two three four five six seven eight nine ten eleven twelve thirteen fourteen…
   hours    idle    2h ago  $TESTCASE_ROOT  Hours
-  remote   idle    2d ago  /other/place                                                                                                                        Remote
+  remote   idle    2d ago  /other/place                                                                                                                          Remote
   days     idle    2d ago  $TESTCASE_ROOT  Days
 
 The default limit is 25, the human output says when it truncated, and

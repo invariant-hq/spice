@@ -39,8 +39,8 @@ The saved session is waiting on the durable host-tool call.
   answer: spice run reply 'needs-answer' --question 'question-1' --answer TEXT
   $ spice session show --json needs-answer | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"active_turn":"turn_[^"]+"/"active_turn":"turn_$ID"/; s/"turn":"turn_[^"]+"/"turn":"turn_$ID"/; s/"created_at":[0-9]+/"created_at":$TIME/g; s/"updated_at":[0-9]+/"updated_at":$TIME/g'
   {"schema_version":1,"type":"session","session":{"id":"needs-answer","title":null,"preview":"deploy the app","lifecycle":"active","phase":"waiting","forked_from":null,"event_count":2,"active_turn":"turn_$ID","cwd":"$TESTCASE_ROOT","created_at":$TIME,"updated_at":$TIME,"revision":"sha256:$HASH","active_model":"openai/responses:gpt-5.5","last_outcome":null,"waiting":{"kind":"host_tool","turn":"turn_$ID","tool_call_id":"question-1","tool":"ask_user","question":"Which deployment target should I use?"},"workflow_mode":"build"},"latest_compaction":null,"context":{"projected_input_tokens_estimate":68,"basis":"estimate","context_window":1050000,"auto_compaction_limit":1030000}}
-  $ spice session export needs-answer | grep -o '"name":"ask_user"'
-  "name":"ask_user"
+  $ spice session export needs-answer | grep -o '"name":"ask_user"' | wc -l | tr -d ' '
+  2
 
 Answering the question appends a model-visible tool result and resumes the turn.
 
