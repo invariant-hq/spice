@@ -9,8 +9,17 @@ Skill resources: read through the tool, contained to the skill directory.
   > See notes.md for details.
   > EOF
   $ printf 'the extra notes\n' > .spice/skills/demo/notes.md
+  $ mkdir .spice/skills/demo/examples
+  $ printf 'nested notes\n' > .spice/skills/demo/examples/nested.md
   $ printf 'secret outside\n' > outside.txt
   $ ln -s ../../../outside.txt .spice/skills/demo/escape.txt
+
+Discovery advertises only immediate regular files that the resource reader can
+actually open inside the skill root.
+
+  $ spice skills show demo | sed -n '/^resources:/,/^$/p' | sed '/^$/d'
+  resources:
+    notes.md
 
 The tool serves a resource file; an escaping symlink and a traversal path
 are refused; builtins report product-facing guidance when a non-empty resource

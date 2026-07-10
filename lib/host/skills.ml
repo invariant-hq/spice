@@ -399,8 +399,22 @@ let list_resources ~fs ~workspace dir_path =
   match Spice_workspace_fs.read_dir_names ~fs ~workspace dir_path with
   | Error _ -> []
   | Ok names ->
+      let workspace =
+        Spice_workspace.single
+          (Spice_workspace.Root.make (Spice_workspace.Path.abs dir_path))
+      in
       names
       |> List.filter (fun name -> not (String.equal name skill_file))
+      |> List.filter (fun name ->
+          match Spice_workspace_fs.resolve ~workspace name with
+          | Error _ -> false
+          | Ok path -> (
+              match
+                Spice_workspace_fs.regular_opt ~fs ~workspace
+                  ~follow_symlink:true path
+              with
+              | Ok (Some _) -> true
+              | Ok None | Error _ -> false))
       |> List.sort String.compare
 
 let read_candidate ~fs ~workspace ~dir_path skill_path =
