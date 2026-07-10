@@ -415,6 +415,10 @@ module Config_file : sig
   val user : paths -> Spice_path.Abs.t
   (** [user paths] is the user config path. *)
 
+  val project_root : paths -> Spice_path.Abs.t
+  (** [project_root paths] is the discovered enclosing project root, or the
+      absolute invocation directory when no project marker exists. *)
+
   val project : paths -> Spice_path.Abs.t
   (** [project paths] is the shared project config path. *)
 

@@ -12,25 +12,34 @@ open Cli_common
 let workspace = CArg.(value & pos 0 string "." & info [] ~docv:"DIR")
 let trust_error error = Spice_host.Trust.Error.message error
 
-let dormant_note =
-  "note: trust currently gates nothing; project config always loads with \
-   workspace-safe filtering. The decision is recorded for future trust-gated \
-   features."
-
 let update action label workspace =
   Eio_main.run @@ fun stdenv ->
   let process_env = Spice_host.Env.current () in
-  match Spice_host.Trust.load ~stdenv ~process_env () with
-  | Error error -> Runtime_error (trust_error error)
-  | Ok trust -> (
-      match action ~stdenv trust ~workspace with
+  match
+    Spice_host.Config.Config_file.discover ~stdenv ~process_env ~cwd:workspace
+      ()
+  with
+  | Error error -> Runtime_error (Spice_host.Config.Error.message error)
+  | Ok files -> (
+      let root = Spice_host.Config.Config_file.project_root files in
+      match action ~stdenv ~process_env ~root () with
       | Error error -> Runtime_error (trust_error error)
-      | Ok path ->
-          stdout_printf "%s %s\n%s\n" label path dormant_note;
+      | Ok trust ->
+          stdout_printf "%s %s\n" label
+            (Spice_host.Trust.root trust |> Spice_path.Abs.to_string);
           Success)
 
-let trust workspace = update Spice_host.Trust.grant "trusted" workspace
-let untrust workspace = update Spice_host.Trust.revoke "untrusted" workspace
+let trust workspace =
+  update
+    (fun ~stdenv ~process_env ~root () ->
+      Spice_host.Trust.trust ~stdenv ~process_env ~root ())
+    "trusted" workspace
+
+let untrust workspace =
+  update
+    (fun ~stdenv ~process_env ~root () ->
+      Spice_host.Trust.untrust ~stdenv ~process_env ~root ())
+    "untrusted" workspace
 
 let trust_command =
   CCmd.v
@@ -41,11 +50,9 @@ let trust_command =
            `S CManpage.s_description;
            `P
              "Records a workspace trust decision user-side, never in the \
-              workspace; $(b,untrust) revokes it. The decision currently gates \
-              nothing: project config always loads, reduced to workspace-safe \
-              inputs by construction. It is kept for future trust-gated \
-              features that load workspace-authored authority (hooks, project \
-              permission rules).";
+              workspace; $(b,untrust) records an explicit refusal. The nearest \
+              enclosing project root is used, so invoking the command from a \
+              project subdirectory updates the same decision.";
          ]
        ~exits)
     (exit_term CTerm.(const trust $ workspace))

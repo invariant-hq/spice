@@ -1924,6 +1924,7 @@ module Files = struct
   type kind = User | Project | Project_local
 
   type t = {
+    project_root : Spice_path.Abs.t;
     user : Spice_path.Abs.t;
     project : Spice_path.Abs.t;
     project_local : Spice_path.Abs.t;
@@ -1935,6 +1936,7 @@ module Files = struct
     | Project_local -> t.project_local
 
   let user t = t.user
+  let project_root t = t.project_root
   let project t = t.project
   let project_local t = t.project_local
   let path_string t kind = path t kind |> Spice_path.Abs.to_string
@@ -1957,7 +1959,7 @@ module Files = struct
       project_local_config_path project_root
       |> abs_path ~name:"project-local config path"
     in
-    Ok { user; project; project_local }
+    Ok { project_root; user; project; project_local }
 
   let load_path ~stdenv path = load_layer_path ~stdenv path
 
@@ -2000,6 +2002,7 @@ module Config_file = struct
   let empty = Layer.empty
   let path = Files.path
   let user = Files.user
+  let project_root = Files.project_root
   let project = Files.project
   let project_local = Files.project_local
   let discover = Files.discover
@@ -2522,8 +2525,9 @@ let load ~stdenv ?process_env ?cwd ?extra_config_file ?data_home
   let process_env = Option.value process_env ~default:(Env.current ()) in
   let getenv = Env.get process_env in
   let cwd = Option.value cwd ~default:(cwd_default stdenv) in
+  let* files = Files.discover ~stdenv ~process_env ~cwd () in
+  let project_root = Files.project_root files in
   let* cwd = canonical_cwd stdenv cwd in
-  let project_root = discover_project_root stdenv cwd in
   let* base = host_cwd stdenv in
   let* data_home =
     match data_home with
@@ -2542,9 +2546,7 @@ let load ~stdenv ?process_env ?cwd ?extra_config_file ?data_home
     resolve_under ~base ~name:"auth_store_path"
       (User_dirs.auth_store_path getenv)
   in
-  let* user_config_file =
-    resolve_under ~base ~name:"user config path" (User_dirs.config_path getenv)
-  in
+  let user_config_file = Files.user files in
   let* extra_config_file =
     let raw =
       match extra_config_file with
@@ -2560,16 +2562,14 @@ let load ~stdenv ?process_env ?cwd ?extra_config_file ?data_home
         let* path = resolve_under ~base ~name:"extra config path" path in
         Ok (Some path)
   in
-  let project_config_file = project_config_path project_root in
-  let project_local_config_file = project_local_config_path project_root in
+  let project_config_path = Files.project files in
+  let project_local_config_path = Files.project_local files in
+  let project_config_file = Spice_path.Abs.to_string project_config_path in
+  let project_local_config_file =
+    Spice_path.Abs.to_string project_local_config_path
+  in
   let* user =
     load_layer_path ~stdenv (Spice_path.Abs.to_string user_config_file)
-  in
-  let* project_config_path =
-    abs_path ~name:"project config source path" project_config_file
-  in
-  let* project_local_config_path =
-    abs_path ~name:"project-local config source path" project_local_config_file
   in
   let user_source = Source.User { path = user_config_file } in
   let project_source = Source.Project { path = project_config_path } in
@@ -2649,14 +2649,6 @@ let load ~stdenv ?process_env ?cwd ?extra_config_file ?data_home
         | [] -> None
         | rules -> Some (source, rules))
       (extra_layers @ [ (user_source, user) ])
-  in
-  let files =
-    Files.
-      {
-        user = user_config_file;
-        project = project_config_path;
-        project_local = project_local_config_path;
-      }
   in
   Log.debug (fun m ->
       m "config assembled layers=[%s] resolved_keys=%d"
