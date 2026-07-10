@@ -43,6 +43,10 @@ let bootstrap ~stdenv ~registry ?cwd ?(overrides = []) () =
 let timestamp_now stdenv =
   Eio.Stdenv.clock stdenv |> Eio.Time.now |> Float.floor |> Int64.of_float
 
+let provider_error_of_host ~provider error =
+  Spice_llm.Error.make ~kind:Spice_llm.Error.Auth ~provider
+    (Spice_diagnostic.to_string (Host.Error.diagnostic error))
+
 let with_refresh_retry ~rebuild ~refresh client =
   let provider = Spice_llm.Client.provider client in
   let current = ref client in
@@ -57,8 +61,9 @@ let with_refresh_retry ~rebuild ~refresh client =
                 | Ok client ->
                     current := client;
                     Spice_llm.Client.stream ~cancelled client request
-                | Error (_ : Host.Error.t) -> result)
-            | Ok None | Error (_ : Host.Error.t) -> result)
+                | Error error -> Error (provider_error_of_host ~provider error))
+            | Error error -> Error (provider_error_of_host ~provider error)
+            | Ok None -> result)
         | _ -> result)
     | result -> result
   in

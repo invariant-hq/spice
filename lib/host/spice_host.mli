@@ -171,7 +171,9 @@ val client :
     client is built — a permanent refresh rejection fails with
     {!Host.Error.Blocked_credential} — and clients for refreshable OAuth routes
     retry one request once after a provider [Auth] failure when a forced refresh
-    produced a replacement credential.
+    produced a replacement credential. A permanent forced-refresh rejection or
+    replacement-client build failure supersedes the provider's stale auth error
+    and is returned from the stream with its host diagnostic and repair hint.
 
     If the adapter exposes a model-artifact preparation capability, the returned
     client prepares [model] before the first stream and reports progress through

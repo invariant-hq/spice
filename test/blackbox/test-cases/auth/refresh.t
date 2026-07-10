@@ -115,6 +115,30 @@ local expiry looked fine — the provider is the authority on token validity.
   $ grep -c "authorization: Bearer oauth-access-retried" capture-retry/request-3.headers
   1
 
+A provider rejection followed by a permanent forced-refresh failure reports
+the newer blocked-credential diagnosis, rather than hiding it behind the 401
+that initiated recovery.
+
+  $ printf '{"version":1,"credentials":{"openai":{"default":{"kind":"oauth","access_token":"oauth-access-revoked","refresh_token":"refresh-dead","expires_at":9999999999,"account_id":"acct-42"}}}}' > "$XDG_CONFIG_HOME/spice/auth.json"
+  $ cat > script-retry-fail.jsonl <<'JSONL'
+  > {"expect":{"request_line":"POST /v1/responses HTTP/1.1"},"http":{"status":401,"json":{"error":{"message":"token expired"}}}}
+  > {"expect":{"request_line":"POST /oauth/token HTTP/1.1"},"http":{"status":400,"json":{"error":"invalid_grant"}}}
+  > JSONL
+  $ start_fake_server script-retry-fail.jsonl capture-retry-fail port-retry-fail
+  $ export SPICE_OPENAI_BASE_URL="http://127.0.0.1:$(cat port-retry-fail)/v1"
+  $ export SPICE_OPENAI_AUTH_BASE_URL="http://127.0.0.1:$(cat port-retry-fail)"
+  $ spice run --cwd "$PWD" --id retry-fail-run "retry doomed prompt"
+  permission: default
+  sandbox: danger-full-access (config)
+  backend: none not_requested
+  network: enabled
+  warning: command sandbox disabled by explicit user choice
+  spice: blocked credential for provider openai: refresh_failed
+  Hint: run `spice auth status openai` and the repair command it names
+  Hint: check the provider login or credential
+  [1]
+  $ wait_fake_server
+
 A permanent refresh rejection fails the run that discovered it, immediately
 and with repair guidance — live knowledge, nothing cached. The session
 document is not created, and a later run learns the same truth the same way.
