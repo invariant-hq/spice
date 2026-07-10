@@ -295,7 +295,7 @@ module Native = struct
   module Inotify = struct
     external supported : unit -> bool = "spice_file_watcher_inotify_supported"
 
-    external create : unit -> Unix.file_descr
+    external create : unit -> Unix.file_descr * Unix.file_descr
       = "spice_file_watcher_inotify_create"
 
     external add_watch : Unix.file_descr -> string -> int
@@ -304,17 +304,20 @@ module Native = struct
     external rm_watch : Unix.file_descr -> int -> unit
       = "spice_file_watcher_inotify_rm_watch"
 
-    external read : Unix.file_descr -> unit = "spice_file_watcher_inotify_read"
+    external wake : Unix.file_descr -> unit = "spice_file_watcher_inotify_wake"
+
+    external read : Unix.file_descr -> Unix.file_descr -> bool
+      = "spice_file_watcher_inotify_read"
 
     type state = {
       fd : Unix.file_descr;
+      wake_fd : Unix.file_descr;
       signal : Signal.t;
       mutex : Mutex.t;
       mutable watches : int list;
-      mutable closed : bool;
+      mutable stop_requested : bool;
+      mutable resources_closed : bool;
     }
-
-    let is_closed state = Mutex.protect state.mutex (fun () -> state.closed)
 
     let clear_watches state =
       List.iter
@@ -325,7 +328,7 @@ module Native = struct
 
     let rebuild state dirs =
       Mutex.protect state.mutex (fun () ->
-          if state.closed then Error "watcher is closed"
+          if state.stop_requested then Error "watcher is closed"
           else begin
             clear_watches state;
             let rec loop = function
@@ -343,68 +346,118 @@ module Native = struct
             loop dirs
           end)
 
-    let close_state state =
-      let should_close =
+    let close_fd fd =
+      match Unix.close fd with () -> () | exception Unix.Unix_error _ -> ()
+
+    let release_resources state =
+      let resources =
         Mutex.protect state.mutex (fun () ->
-            if state.closed then false
+            if state.resources_closed then None
             else begin
-              state.closed <- true;
+              state.resources_closed <- true;
+              Some (state.fd, state.wake_fd)
+            end)
+      in
+      Option.iter
+        (fun (fd, wake_fd) ->
+          close_fd fd;
+          close_fd wake_fd)
+        resources
+
+    let request_stop state =
+      let should_close, wake_error =
+        Mutex.protect state.mutex (fun () ->
+            if state.stop_requested then (false, None)
+            else begin
+              state.stop_requested <- true;
+              let wake_error =
+                match wake state.wake_fd with
+                | () -> None
+                | exception ex -> Some ex
+              in
+              (true, wake_error)
+            end)
+      in
+      if should_close then Signal.close state.signal;
+      Option.iter
+        (fun ex ->
+          Log.warn (fun m ->
+              m "failed to wake inotify reader during close: %s"
+                (Printexc.to_string ex)))
+        wake_error
+
+    let terminate_state state reason =
+      let should_terminate =
+        Mutex.protect state.mutex (fun () ->
+            if state.stop_requested then false
+            else begin
+              state.stop_requested <- true;
               true
             end)
       in
-      if should_close then begin
-        Signal.close state.signal;
-        match Unix.close state.fd with
-        | () -> ()
-        | exception Unix.Unix_error _ -> ()
-      end
+      if should_terminate then Signal.terminate state.signal reason
+
+    let finish_reader state =
+      let should_close_signal =
+        Mutex.protect state.mutex (fun () ->
+            if state.stop_requested then false
+            else begin
+              state.stop_requested <- true;
+              true
+            end)
+      in
+      if should_close_signal then Signal.close state.signal;
+      release_resources state
 
     let make ~sw ~dirs =
       if not (supported ()) then None
       else
         match create () with
         | exception _ -> None
-        | fd ->
+        | fd, wake_fd ->
             let signal = Signal.make () in
             let state =
               {
                 fd;
+                wake_fd;
                 signal;
                 mutex = Mutex.create ();
                 watches = [];
-                closed = false;
+                stop_requested = false;
+                resources_closed = false;
               }
             in
             begin match rebuild state dirs with
             | Ok () ->
+                (* Ownership transfers to this reader before it can block. A
+                   close request only writes [wake_fd]; the reader drains that
+                   wakeup and releases both descriptors from its finalizer. *)
                 Eio.Fiber.fork_daemon ~sw (fun () ->
                     let rec loop () =
-                      if is_closed state then `Stop_daemon
-                      else
-                        match
-                          Eio_unix.run_in_systhread
-                            ~label:"spice-file-watcher-inotify-read" (fun () ->
-                              read state.fd)
-                        with
-                        | () ->
-                            Signal.notify signal;
-                            loop ()
-                        | exception Unix.Unix_error (Unix.EBADF, _, _) ->
-                            `Stop_daemon
-                        | exception ex ->
-                            Signal.terminate signal (Printexc.to_string ex);
-                            `Stop_daemon
+                      match
+                        Eio_unix.run_in_systhread
+                          ~label:"spice-file-watcher-inotify-read" (fun () ->
+                            read state.fd state.wake_fd)
+                      with
+                      | true ->
+                          Signal.notify signal;
+                          loop ()
+                      | false -> ()
+                      | exception ex ->
+                          terminate_state state (Printexc.to_string ex)
                     in
-                    loop ());
+                    Fun.protect ~finally:(fun () -> finish_reader state) loop;
+                    `Stop_daemon);
                 Some
                   ({
                      wakeup = signal;
                      rebuild = rebuild state;
-                     close = (fun () -> close_state state);
+                     close = (fun () -> request_stop state);
                    }
                     : t)
             | Error _ ->
-                close_state state;
+                request_stop state;
+                release_resources state;
                 None
             end
   end
@@ -569,7 +622,7 @@ let make ~sw ~clock ?(backend = `Best) ?(poll_interval = 0.25)
           in
           (* The native backends block a dedicated fiber in an
                      uncancellable [run_in_systhread] ([Condition.wait] for
-                     FSEvents, [read] for inotify) that only [close] wakes.
+                     FSEvents, [poll] for inotify) that [close] wakes.
                      Closing from [Switch.on_release] deadlocks: a switch runs
                      its release handlers only once every fiber has finished,
                      but the await fiber cannot finish until [close] wakes it,

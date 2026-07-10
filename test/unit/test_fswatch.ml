@@ -639,9 +639,12 @@ let with_native_watcher ?(poll_interval = 0.01) root f =
       skip ~reason:"native backend unavailable" ()
   | Error error -> failf "native watcher failed: %a" Error.pp error
 
-let native_close_wakes_next () =
+let native_idle_close_joins_reader () =
   with_temp_dir @@ fun root ->
   with_native_watcher root @@ fun ~sw ~clock watcher ->
+  (* On Linux, leaving [with_eio] joins the inotify reader as well as returning
+     [None] from [next]. The timeout therefore covers the idle blocked-reader
+     teardown contract, not only the public stream wakeup. *)
   Eio.Fiber.fork ~sw (fun () ->
       Eio.Time.sleep clock 0.05;
       Fswatch.close watcher);
@@ -730,7 +733,8 @@ let () =
       group "native"
         [
           test "best backend constructs" best_backend_constructs;
-          test ~timeout:4.0 "native close wakes next" native_close_wakes_next;
+          test ~timeout:4.0 "native idle close joins reader"
+            native_idle_close_joins_reader;
           test ~timeout:2.0 "native wakeup observes create"
             native_wakeup_observes_create;
           test ~timeout:2.0 "native wakeup observes nested create"

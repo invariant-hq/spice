@@ -10,6 +10,8 @@
 
 #if defined(__linux__)
 #include <limits.h>
+#include <poll.h>
+#include <sys/eventfd.h>
 #include <sys/inotify.h>
 #include <unistd.h>
 
@@ -32,10 +34,23 @@ CAMLprim value spice_file_watcher_inotify_supported(value unit) {
 
 CAMLprim value spice_file_watcher_inotify_create(value unit) {
   CAMLparam1(unit);
-  int fd = inotify_init1(IN_CLOEXEC);
+  CAMLlocal1(result);
+  int fd = inotify_init1(IN_CLOEXEC | IN_NONBLOCK);
   if (fd == -1)
     uerror("inotify_init1", Nothing);
-  CAMLreturn(Val_int(fd));
+
+  int wake_fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+  if (wake_fd == -1) {
+    int error = errno;
+    close(fd);
+    errno = error;
+    uerror("eventfd", Nothing);
+  }
+
+  result = caml_alloc_tuple(2);
+  Store_field(result, 0, Val_int(fd));
+  Store_field(result, 1, Val_int(wake_fd));
+  CAMLreturn(result);
 }
 
 CAMLprim value spice_file_watcher_inotify_add_watch(value fd, value path) {
@@ -64,28 +79,102 @@ static int event_is_interesting(const struct inotify_event *event) {
                  IN_MOVE_SELF | IN_DELETE_SELF | IN_UNMOUNT);
 }
 
-CAMLprim value spice_file_watcher_inotify_read(value fd) {
+CAMLprim value spice_file_watcher_inotify_wake(value fd) {
   CAMLparam1(fd);
-  int c_fd = Int_val(fd);
-  char buffer[65536] __attribute__((aligned(__alignof__(struct inotify_event))));
-  ssize_t length;
+  uint64_t increment = 1;
 
   for (;;) {
-    caml_release_runtime_system();
-    length = read(c_fd, buffer, sizeof(buffer));
-    caml_acquire_runtime_system();
-
+    ssize_t length = write(Int_val(fd), &increment, sizeof(increment));
+    if (length == (ssize_t)sizeof(increment))
+      CAMLreturn(Val_unit);
     if (length == -1 && errno == EINTR)
       continue;
+    if (length == -1 && errno == EAGAIN)
+      CAMLreturn(Val_unit);
     if (length == -1)
+      uerror("eventfd write", Nothing);
+    errno = EIO;
+    uerror("eventfd write", Nothing);
+  }
+}
+
+CAMLprim value spice_file_watcher_inotify_read(value fd, value wake_fd) {
+  CAMLparam2(fd, wake_fd);
+  int c_fd = Int_val(fd);
+  int c_wake_fd = Int_val(wake_fd);
+  char buffer[65536] __attribute__((aligned(__alignof__(struct inotify_event))));
+
+  for (;;) {
+    struct pollfd poll_fds[2] = {
+        {.fd = c_wake_fd, .events = POLLIN},
+        {.fd = c_fd, .events = POLLIN},
+    };
+    ssize_t length = -1;
+    int error = 0;
+    int stopped = 0;
+
+    caml_release_runtime_system();
+
+    for (;;) {
+      int ready = poll(poll_fds, 2, -1);
+      if (ready == -1 && errno == EINTR)
+        continue;
+      if (ready == -1) {
+        error = errno;
+        break;
+      }
+
+      /* Stop wins when both descriptors are ready: no notification may keep
+         the owner from joining a reader after shutdown was requested. */
+      if (poll_fds[0].revents & (POLLIN | POLLERR | POLLHUP | POLLNVAL)) {
+        uint64_t counter;
+        while (read(c_wake_fd, &counter, sizeof(counter)) == -1 &&
+               errno == EINTR) {
+        }
+        stopped = 1;
+        break;
+      }
+
+      if (poll_fds[1].revents & POLLIN) {
+        length = read(c_fd, buffer, sizeof(buffer));
+        if (length == -1 && errno == EINTR)
+          continue;
+        if (length == -1 && errno == EAGAIN)
+          continue;
+        if (length == -1) {
+          error = errno;
+          break;
+        }
+        if (length == 0) {
+          error = EIO;
+          break;
+        }
+        break;
+      }
+
+      if (poll_fds[1].revents & POLLNVAL) {
+        error = EBADF;
+        break;
+      }
+      if (poll_fds[1].revents & (POLLERR | POLLHUP)) {
+        error = EIO;
+        break;
+      }
+    }
+
+    caml_acquire_runtime_system();
+
+    if (error != 0) {
+      errno = error;
       uerror("read", Nothing);
-    if (length <= 0)
-      continue;
+    }
+    if (stopped)
+      CAMLreturn(Val_false);
 
     for (char *ptr = buffer; ptr < buffer + length;) {
       const struct inotify_event *event = (const struct inotify_event *)ptr;
       if (event_is_interesting(event))
-        CAMLreturn(Val_unit);
+        CAMLreturn(Val_true);
       ptr += sizeof(struct inotify_event) + event->len;
     }
   }
@@ -115,9 +204,15 @@ CAMLprim value spice_file_watcher_inotify_rm_watch(value fd, value watch) {
   unix_error(ENOTSUP, "inotify_rm_watch", Nothing);
 }
 
-CAMLprim value spice_file_watcher_inotify_read(value fd) {
+CAMLprim value spice_file_watcher_inotify_wake(value fd) {
   (void)fd;
-  unix_error(ENOTSUP, "read", Nothing);
+  unix_error(ENOTSUP, "eventfd write", Nothing);
+}
+
+CAMLprim value spice_file_watcher_inotify_read(value fd, value wake_fd) {
+  (void)fd;
+  (void)wake_fd;
+  unix_error(ENOTSUP, "poll", Nothing);
 }
 
 #endif
