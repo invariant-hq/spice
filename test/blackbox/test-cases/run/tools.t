@@ -507,7 +507,9 @@ the apply_patch family.
   settles as cancelled and any partial work in its session remains
   inspectable.
   
-  Cancelling a run that already settled is an error and changes nothing.
+  Cancellation is idempotent: cancelling an already cancelled run returns its
+  recorded result without another transition. Cancelling a run that already
+  completed or failed is an error and changes nothing.
   
   Input schema: {"type":"object","properties":{"run":{"type":"string"}},"required":["run"],"additionalProperties":false}
   

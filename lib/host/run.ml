@@ -401,18 +401,15 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
     let run = Spice_protocol.Subagent.Cancel.Request.run request in
     match Jobs.cancel jobs ~caller run with
     | Error _ as error -> error
-    | Ok () -> (
-        match Jobs.wait jobs ~caller run with
-        | Error _ as error -> error
-        | Ok (record, _) ->
-            Ok
-              ("subagent "
-              ^ Spice_protocol.Subagent.Role.to_string
-                  (Spice_protocol.Subagent_run.role record)
-              ^ " cancelled (session "
-              ^ Spice_session.Id.to_string
-                  (Spice_protocol.Subagent_run.child record)
-              ^ ")."))
+    | Ok (record, _) ->
+        Ok
+          ("subagent "
+          ^ Spice_protocol.Subagent.Role.to_string
+              (Spice_protocol.Subagent_run.role record)
+          ^ " cancelled (session "
+          ^ Spice_session.Id.to_string
+              (Spice_protocol.Subagent_run.child record)
+          ^ ").")
   in
   let message_run ~caller ~runner request =
     match

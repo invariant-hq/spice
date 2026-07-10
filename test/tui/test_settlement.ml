@@ -77,6 +77,19 @@ let scripted_client ~child_started ~next_root_started =
         Ok (Llm.Stream.of_list [ Llm.Stream.Finished (spawn_response ~model) ]))
     ()
 
+let cancellation_client ~child_started =
+  let provider = Llm.Provider.make "openai" in
+  Llm.Client.make ~provider
+    ~run:(fun ~cancelled:_ request ->
+      let model = Llm.Request.model request in
+      if request_contains request "first child stalls" then
+        Ok (blocked_stream ~started:child_started ~model)
+      else
+        Ok
+          (Llm.Stream.of_list
+             [ Llm.Stream.Finished (response ~model "second child completed") ]))
+    ()
+
 let get_or_fail pp = function
   | Ok value -> value
   | Error error -> failwith (Format.asprintf "%a" pp error)
@@ -90,6 +103,13 @@ let make_start id prompt =
 let turn_of_settlement = function
   | Ok (_, Protocol.Outcome.Finished { turn; _ }) -> Some turn
   | Ok (_, Protocol.Outcome.Waiting _) | Error _ -> None
+
+let is_cancelled = function
+  | Host.Jobs.Interrupted { cancelled = true; _ } -> true
+  | Host.Jobs.Summary _ | Host.Jobs.Blocked_on _
+  | Host.Jobs.Interrupted { cancelled = false; _ }
+  | Host.Jobs.Failed_with _ | Host.Jobs.Wait_interrupted ->
+      false
 
 let%expect_test
     "a durable root settlement is published before unrelated child teardown" =
@@ -188,3 +208,178 @@ let%expect_test
       List.rev !settlements
       |> List.iter (fun turn -> print_endline (Session.Turn.Id.to_string turn));
       [%expect {|turn-root-first|}])
+
+let%expect_test
+    "cancelling a stalled child settles once and releases its capacity" =
+  Project.with_temp "cancel-settlement" @@ fun project ->
+  Project.write_scratch project "config/spice/config.json"
+    {|{"run":{"subagent_max_concurrent":1}}|};
+  let bindings = Project.bindings project in
+  Project.apply bindings;
+  let process_env = Project.env_snapshot bindings in
+  Eio_main.run @@ fun stdenv ->
+  Eio.Switch.run @@ fun sw ->
+  let config =
+    Host.Config.load ~stdenv ~process_env ~cwd:(Project.root project) ()
+    |> get_or_fail Host.Config.Error.pp
+  in
+  let host =
+    Host.Host.load ~stdenv ~registry:Spice_host_builtin.registry ~config ()
+    |> get_or_fail Host.Host.Error.pp
+  in
+  let workspace =
+    Spice_workspace.single (Spice_workspace.Root.make (Host.Config.cwd config))
+  in
+  let sandbox =
+    Host.Sandbox.resolve ~flag:Host.Sandbox.Mode.Danger_full_access
+      ~env:(Host.Env.get process_env) ~workspace ()
+  in
+  let plan =
+    Host.Run.plan ~workspace ~sandbox
+      ~permission:(Host.Config.permission_posture config)
+      ()
+    |> get_or_fail Host.Sandbox.Gate_error.pp
+  in
+  let store = Host.Session.store ~stdenv host in
+  let parent = Session.Id.of_string "session-cancel-settlement" in
+  let run =
+    Host.Run.start ~sw ~stdenv host plan ~store ~session:parent
+      ~http:(Spice_host_builtin.web_http_client stdenv)
+      ~fetch_https:(Spice_host_builtin.web_fetch_https ())
+      ()
+    |> get_or_fail Host.Host.Error.pp
+  in
+  Fun.protect
+    ~finally:(fun () -> Host.Run.stop run)
+    (fun () ->
+      let model =
+        Host.Models.for_select (Host.Host.catalog host) "openai/gpt-5.5"
+        |> get_or_fail Host.Host.Error.pp
+      in
+      let child_started, resolve_child_started = Eio.Promise.create () in
+      let client = cancellation_client ~child_started:resolve_child_started in
+      let runner =
+        Host.Run.runner run ~mode:Protocol.Mode.Build ~model ~client
+        |> get_or_fail Host.Host.Error.pp
+      in
+      let created_at =
+        Eio.Time.now (Eio.Stdenv.clock stdenv)
+        |> Session.Time.of_unix_seconds_float
+      in
+      Host.Session.create ~store ~id:parent ~cwd:(Host.Run.cwd run) ~created_at
+        ()
+      |> get_or_fail Protocol.Error.pp
+      |> ignore;
+      let jobs = Host.Run.jobs run in
+      let settled = ref [] in
+      Host.Jobs.subscribe jobs (function
+        | Host.Jobs.Settled record -> settled := record :: !settled
+        | Host.Jobs.Started _ | Host.Jobs.Progress _ | Host.Jobs.Blocked _
+        | Host.Jobs.Asked _ | Host.Jobs.Resumed _ -> ());
+      let spawn task call_id =
+        let request =
+          Protocol.Subagent.Spawn.make ~role:Protocol.Subagent.Role.Explore
+            ~task ()
+          |> Result.get_ok
+        in
+        Host.Jobs.spawn jobs ~parent
+          ~parent_turn:(Session.Turn.Id.of_string "turn-parent")
+          ~parent_call_id:call_id ~spawn:request ~depth:1
+          {
+            Host.Jobs.runner = (fun _ ~notices:_ -> Ok runner);
+            prompt = task;
+            title = task;
+            cwd = Host.Run.cwd run;
+          }
+      in
+      let child = spawn "first child stalls" "first" |> Result.get_ok in
+      let clock = Eio.Stdenv.clock stdenv in
+      Eio.Time.with_timeout_exn clock 5. (fun () ->
+          Eio.Promise.await child_started);
+      let first_cancel, resolve_first_cancel = Eio.Promise.create () in
+      let second_cancel, resolve_second_cancel = Eio.Promise.create () in
+      Eio.Fiber.fork ~sw (fun () ->
+          resolve_once resolve_first_cancel
+            (Host.Jobs.cancel jobs ~caller:parent child));
+      Eio.Fiber.fork ~sw (fun () ->
+          resolve_once resolve_second_cancel
+            (Host.Jobs.cancel jobs ~caller:parent child));
+      let first_result, second_result =
+        Eio.Time.with_timeout_exn clock 5. (fun () ->
+            (Eio.Promise.await first_cancel, Eio.Promise.await second_cancel))
+      in
+      let cancelled_record, cancelled_outcome = Result.get_ok first_result in
+      let concurrent_record, concurrent_outcome = Result.get_ok second_result in
+      let concurrent_agrees =
+        Protocol.Subagent_run.equal cancelled_record concurrent_record
+        && is_cancelled concurrent_outcome
+      in
+      let repeated_record, repeated_outcome =
+        Host.Jobs.cancel jobs ~caller:parent child |> Result.get_ok
+      in
+      let repeat_agrees =
+        Protocol.Subagent_run.equal cancelled_record repeated_record
+        && is_cancelled repeated_outcome
+      in
+      let waited_record, waited_outcome =
+        Host.Jobs.wait ~cancelled:(fun () -> true) jobs ~caller:parent child
+        |> Result.get_ok
+      in
+      let wait_agrees =
+        Protocol.Subagent_run.equal cancelled_record waited_record
+        && is_cancelled cancelled_outcome
+        && is_cancelled waited_outcome
+      in
+      let list_agrees =
+        Host.Jobs.list jobs
+        |> List.find_opt (fun record ->
+            Session.Id.equal child (Protocol.Subagent_run.child record))
+        |> Option.fold ~none:false ~some:(fun record ->
+            Protocol.Subagent_run.equal cancelled_record record)
+      in
+      let recovered =
+        Host.Jobs.create ~sw ~stdenv ~store ~parent ~max_concurrent:1
+          ~max_depth:1 ~max_exchanges:1
+      in
+      let recovered_record, recovered_outcome =
+        Host.Jobs.wait recovered ~caller:parent child |> Result.get_ok
+      in
+      let durable_agrees =
+        Protocol.Subagent_run.equal cancelled_record recovered_record
+        && is_cancelled recovered_outcome
+      in
+      let child_settlements =
+        List.filter
+          (fun record ->
+            Session.Id.equal child (Protocol.Subagent_run.child record))
+          !settled
+        |> List.length
+      in
+      Printf.printf "cancelled: %b\n" (is_cancelled cancelled_outcome);
+      Printf.printf "concurrent cancel agrees: %b\n" concurrent_agrees;
+      Printf.printf "repeat cancel agrees: %b\n" repeat_agrees;
+      Printf.printf "wait agrees: %b\n" wait_agrees;
+      Printf.printf "list agrees: %b\n" list_agrees;
+      Printf.printf "durable recovery agrees: %b\n" durable_agrees;
+      Printf.printf "child settlements: %d\n" child_settlements;
+      let second = spawn "second child settles" "second" |> Result.get_ok in
+      let second_record, _ =
+        Eio.Time.with_timeout_exn clock 5. (fun () ->
+            Host.Jobs.wait jobs ~caller:parent second)
+        |> Result.get_ok
+      in
+      Printf.printf "settlements: %d\n" (List.length !settled);
+      print_endline
+        (Protocol.Subagent_run.Status.to_string
+           (Protocol.Subagent_run.status second_record));
+      [%expect
+        {|
+        cancelled: true
+        concurrent cancel agrees: true
+        repeat cancel agrees: true
+        wait agrees: true
+        list agrees: true
+        durable recovery agrees: true
+        child settlements: 1
+        settlements: 2
+        completed|}])

@@ -177,13 +177,22 @@ val drain : ?cancelled:(unit -> bool) -> t -> unit
     and are ignored. *)
 
 val cancel :
-  t -> caller:Spice_session.Id.t -> Spice_session.Id.t -> (unit, string) result
-(** [cancel t ~caller run] cancels descendant [run]: an unsettled run gets an interrupt on its
-    attachment and settles as cancelled through the ordinary settlement path; a
-    run parked on a waiting boundary is cancelled directly — a pure ledger
+  t ->
+  caller:Spice_session.Id.t ->
+  Spice_session.Id.t ->
+  (Spice_protocol.Subagent_run.t * outcome, string) result
+(** [cancel t ~caller run] cancels descendant [run] and blocks until its
+    settlement is durable and published. An unsettled run is interrupted out
+    of band so a child blocked inside provider or tool I/O cannot hold the
+    operation indefinitely; [cancel] returns the ordinary settlement only
+    after the attachment and running-capacity slot have been released. A run
+    parked on a waiting boundary is cancelled directly — a pure ledger
     transition plus release of the held attachment, published as {!Settled}.
-    Errors when [run] is not a strict descendant of [caller], is not registered,
-    or already settled terminally. *)
+
+    Cancelling an already-cancelled run is idempotent: it returns the recorded
+    settlement without another ledger transition or {!Settled} event. Errors
+    when [run] is not a strict descendant of [caller], is not registered, or
+    already completed or failed. *)
 
 val message :
   runner:resume_runner ->

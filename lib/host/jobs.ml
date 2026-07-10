@@ -737,14 +737,13 @@ let cancel t ~caller child =
   | None ->
       (match entry.live with
       | Some live ->
-          Live.submit live
-            (Spice_protocol.Command.Interrupt { reason = None });
-          Ok ()
+          Live.force_interrupt live;
+          Eio.Promise.await entry.settled
       | None ->
           Error
             ("subagent run has no live owner: "
             ^ Spice_session.Id.to_string child))
-  | Some (Ok (record, _)) -> (
+  | Some (Ok (record, outcome)) -> (
       match Spice_protocol.Subagent_run.status record with
       | Spice_protocol.Subagent_run.Status.Blocked _ ->
           (* A parked run has no drain to interrupt: cancellation is a pure
@@ -761,12 +760,16 @@ let cancel t ~caller child =
           entry.live <- None;
           rearm entry;
           emit t (Settled record);
-          ignore
-            (Eio.Promise.try_resolve entry.resolve
-               (Ok (record, Interrupted { reason = None; cancelled = true }))
-              : bool);
-          Ok ()
-      | _ ->
+          let settlement =
+            Ok (record, Interrupted { reason = None; cancelled = true })
+          in
+          ignore (Eio.Promise.try_resolve entry.resolve settlement : bool);
+          settlement
+      | Spice_protocol.Subagent_run.Status.Cancelled _ -> Ok (record, outcome)
+      | Spice_protocol.Subagent_run.Status.Completed _
+      | Spice_protocol.Subagent_run.Status.Failed _
+      | Spice_protocol.Subagent_run.Status.Queued
+      | Spice_protocol.Subagent_run.Status.Running _ ->
           Error
             ("subagent run already settled: " ^ Spice_session.Id.to_string child)
       )
