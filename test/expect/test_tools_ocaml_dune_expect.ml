@@ -87,6 +87,7 @@ let with_project f =
   Eio_main.run @@ fun env ->
   f ~root ~fs:(Eio.Stdenv.fs env)
     ~process_mgr:(Eio.Stdenv.process_mgr env)
+    ~clock:(Eio.Stdenv.clock env)
     ~cwd:(Eio.Path.( / ) (Eio.Stdenv.fs env) root)
     ~net:(Eio.Stdenv.net env) ~workspace
 
@@ -233,10 +234,10 @@ let%expect_test "ocaml_dune_describe captures dune stderr" =
 
 let%expect_test "ocaml_dune_diagnostics exposes a stable bounded tool contract"
     =
-  with_project @@ fun ~root ~fs ~process_mgr:_ ~cwd:_ ~net ~workspace ->
+  with_project @@ fun ~root ~fs ~process_mgr:_ ~clock ~cwd:_ ~net ~workspace ->
   ignore root;
   let dune = Spice_ocaml_dune.Rpc.Instance.create ~fs ~net ~workspace () in
-  let tool = Diagnostics.tool ~dune () in
+  let tool = Diagnostics.tool ~clock ~dune () in
   let call = decode_call tool ~name:Diagnostics.name in
   Printf.printf "tool: %s\n" (Tool.Call.tool call);
   Printf.printf "permissions: %d\n" (List.length (Tool.Call.permissions call));
@@ -259,17 +260,17 @@ let%expect_test "ocaml_dune_diagnostics exposes a stable bounded tool contract"
 let%expect_test
     "ocaml_dune_diagnostics reports unavailable without a matching Dune RPC \
      instance" =
-  with_project @@ fun ~root ~fs ~process_mgr:_ ~cwd:_ ~net ~workspace ->
+  with_project @@ fun ~root ~fs ~process_mgr:_ ~clock ~cwd:_ ~net ~workspace ->
   ignore root;
   let dune = Spice_ocaml_dune.Rpc.Instance.create ~fs ~net ~workspace () in
-  let tool = Diagnostics.tool ~dune () in
+  let tool = Diagnostics.tool ~clock ~dune () in
   let call = decode_call tool ~name:Diagnostics.name in
   Tool.Call.run call () |> print_status_kind;
   [%expect {| status: failed unavailable |}]
 
 let%expect_test "ocaml_dune_diagnostics does not start the shared Dune instance"
     =
-  with_project @@ fun ~root ~fs ~process_mgr:_ ~cwd:_ ~net ~workspace ->
+  with_project @@ fun ~root ~fs ~process_mgr:_ ~clock ~cwd:_ ~net ~workspace ->
   ignore root;
   let starts = ref 0 in
   let start () =
@@ -282,7 +283,7 @@ let%expect_test "ocaml_dune_diagnostics does not start the shared Dune instance"
       ~sleep:(fun _ -> ())
       ~startup_timeout:0.0 ()
   in
-  let tool = Diagnostics.tool ~dune () in
+  let tool = Diagnostics.tool ~clock ~dune () in
   let call = decode_call tool ~name:Diagnostics.name in
   Tool.Call.run call () |> print_status_kind;
   Tool.Call.run call () |> print_status_kind;
