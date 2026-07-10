@@ -45,7 +45,7 @@ module Session_error = Error
 type t = {
   id : Id.t;
   metadata : Metadata.t;
-  events : Event.t list;
+  events_rev : Event.t list;
   state : State.t;
 }
 
@@ -54,19 +54,19 @@ type session = t
 let make ~id ~metadata ~events =
   match State.of_events events with
   | Error error -> Error (Error.State error)
-  | Ok state -> Ok { id; metadata; events; state }
+  | Ok state -> Ok { id; metadata; events_rev = List.rev events; state }
 
 let create ~id ?title ~cwd ~created_at () =
   {
     id;
     metadata = Metadata.make ?title ~cwd ~created_at ~updated_at:created_at ();
-    events = [];
+    events_rev = [];
     state = State.empty;
   }
 
 let id t = t.id
 let metadata t = t.metadata
-let events t = t.events
+let events t = List.rev t.events_rev
 let state t = t.state
 
 let require_not_deleted t =
@@ -89,17 +89,24 @@ let append event t =
   | Ok () -> (
       match State.apply event t.state with
       | Error error -> Error (Error.State error)
-      | Ok state -> Ok { t with events = t.events @ [ event ]; state })
+      | Ok state -> Ok { t with events_rev = event :: t.events_rev; state })
 
 let append_all events t =
-  let rec loop t = function
-    | [] -> Ok t
-    | event :: events -> (
-        match append event t with
-        | Error _ as error -> error
-        | Ok t -> loop t events)
-  in
-  loop t events
+  match events with
+  | [] -> Ok t
+  | _ -> (
+      match require_active_status t with
+      | Error _ as error -> error
+      | Ok () -> (
+          match State.apply_all events t.state with
+          | Error error -> Error (Error.State error)
+          | Ok state ->
+              Ok
+                {
+                  t with
+                  events_rev = List.rev_append events t.events_rev;
+                  state;
+                }))
 
 let set_title title t =
   { t with metadata = Metadata.with_title title t.metadata }
@@ -151,13 +158,13 @@ let fork ~id ?title ~cwd ~created_at t =
       | Ok () ->
           let forked_from =
             Metadata.Forked_from.make ~parent:t.id
-              ~copied_events:(List.length t.events)
+              ~copied_events:(List.length t.events_rev)
           in
           let metadata =
             Metadata.make ?title ~forked_from ~cwd ~created_at
               ~updated_at:created_at ()
           in
-          make ~id ~metadata ~events:t.events)
+          Ok { id; metadata; events_rev = t.events_rev; state = t.state })
 
 let turn_started_index events turn_id =
   let rec loop i = function
@@ -177,23 +184,26 @@ let turn_finished_index events turn_id =
   in
   loop 0 events
 
-let resolve_anchor anchor t =
+let resolve_anchor_in events anchor t =
   let turn_id = Anchor.turn anchor in
   match Anchor.edge anchor with
   | Anchor.Before -> (
-      match turn_started_index t.events turn_id with
+      match turn_started_index events turn_id with
       | Some index -> Ok index
       | None -> Error (Error.Unknown_turn turn_id))
   | Anchor.After -> (
       match State.turn turn_id t.state with
       | None -> Error (Error.Unknown_turn turn_id)
       | Some _ -> (
-          match turn_finished_index t.events turn_id with
+          match turn_finished_index events turn_id with
           | Some index -> Ok (index + 1)
           | None -> Error (Error.Turn_not_finished turn_id)))
 
+let resolve_anchor anchor t = resolve_anchor_in (events t) anchor t
+
 let dropped_turns anchor t =
-  match resolve_anchor anchor t with
+  let events = events t in
+  match resolve_anchor_in events anchor t with
   | Error _ as error -> error
   | Ok cut ->
       let rec loop i acc = function
@@ -203,7 +213,7 @@ let dropped_turns anchor t =
             loop (i + 1) acc events
         | _ :: events -> loop (i + 1) acc events
       in
-      Ok (loop 0 [] t.events)
+      Ok (loop 0 [] events)
 
 let rewind ~id ?title ~cwd ~created_at anchor t =
   match require_not_deleted t with
@@ -212,10 +222,11 @@ let rewind ~id ?title ~cwd ~created_at anchor t =
       match require_no_active_turn t with
       | Error _ as error -> error
       | Ok () -> (
-          match resolve_anchor anchor t with
+          let events = events t in
+          match resolve_anchor_in events anchor t with
           | Error _ as error -> error
           | Ok copied_events ->
-              let events = List.take copied_events t.events in
+              let events = List.take copied_events events in
               let forked_from =
                 Metadata.Forked_from.make ~parent:t.id ~copied_events
               in

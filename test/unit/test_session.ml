@@ -745,6 +745,54 @@ let session_document_appends_and_tracks_state () =
   equal int ~msg:"state is derived from events" 2
     (Llm.Transcript.length (State.transcript (Session.state session)))
 
+let append_paths_preserve_event_order () =
+  let turn = turn () in
+  let appended =
+    [
+      Session.Event.turn_started turn;
+      Session.Event.response_appended (response (assistant_text "Done."));
+      Session.Event.turn_finished ~turn:(Session.Turn.id turn)
+        Session.Turn.Outcome.completed;
+    ]
+  in
+  let fresh id =
+    Session.create ~id:(Session.Id.of_string id) ~cwd ~created_at:(time 1) ()
+  in
+  let batch =
+    match Session.Log.append_all appended (fresh "session-batch") with
+    | Ok session -> session
+    | Error error -> failf "batch append failed: %a" Session.Error.pp error
+  in
+  let incremental =
+    List.fold_left
+      (fun session event ->
+        match Session.Log.append event session with
+        | Ok session -> session
+        | Error error ->
+            failf "incremental append failed: %a" Session.Error.pp error)
+      (fresh "session-incremental") appended
+  in
+  let same_events expected actual =
+    List.equal Session.Event.equal (Session.events expected)
+      (Session.events actual)
+  in
+  is_true ~msg:"batch and incremental append keep application order"
+    (same_events batch incremental);
+  let decoded = decode Session.jsont (encode Session.jsont batch) in
+  is_true ~msg:"session JSON preserves chronological event order"
+    (same_events batch decoded);
+  let archived =
+    match Session.archive batch with
+    | Ok session -> session
+    | Error error -> failf "archive failed: %a" Session.Error.pp error
+  in
+  match Session.Log.append_all [] archived with
+  | Error error ->
+      failf "empty append changed behavior: %a" Session.Error.pp error
+  | Ok unchanged ->
+      is_true ~msg:"empty append leaves inactive history unchanged"
+        (same_events archived unchanged)
+
 let permission_denial_result_must_match_blocked_call () =
   let turn = turn () in
   let call = tool_call ~id:"permission-call" ~name:"tool_reviewed" () in
@@ -1427,6 +1475,8 @@ let () =
         terminal_turns_reject_unresolved_waiting;
       test "session document appends and tracks state"
         session_document_appends_and_tracks_state;
+      test "append paths preserve event order"
+        append_paths_preserve_event_order;
       test "permission denial result must match blocked call"
         permission_denial_result_must_match_blocked_call;
       test "permission decision eliminator" permission_decision_eliminator;
