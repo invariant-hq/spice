@@ -450,9 +450,13 @@ module Run = struct
       (State.transcript state)
     |> Result.map_error (fun error -> Error.Request error)
 
-  let finish session turn outcome =
+  type decision =
+    | Continue of Event.t
+    | Boundary of Event.t list * Step.next
+
+  let finish turn outcome =
     let event = Event.turn_finished ~turn outcome in
-    Step.make ~session ~events:[ event ] ~next:(Step.Finished { turn; outcome })
+    Boundary ([ event ], Step.Finished { turn; outcome })
 
   let effective_step_limit config turn =
     min (Turn.max_steps turn) (Config.safety_step_cap config)
@@ -465,10 +469,10 @@ module Run = struct
       | None -> 0
     in
     if response_count >= effective_step_limit config turn then
-      finish session turn_id Turn.Outcome.step_limit
+      Ok (finish turn_id Turn.Outcome.step_limit)
     else
       let* request = request_for_turn config session turn in
-      Step.make ~session ~events:[] ~next:(Step.Request_model request)
+      Ok (Boundary ([], Step.Request_model request))
 
   let tool_result_from_output call result =
     match (Tool.Result.status result, Tool.Result.output result) with
@@ -608,21 +612,20 @@ module Run = struct
       ^ Spice_digest.key ~length:16 ~domain:"spice.session.tool_claim.v1"
           [ Turn.Id.to_string turn_id; Llm.Tool.Call.id call ])
 
-  let request_permission session turn_id call request_index review =
+  let request_permission turn_id call request_index review =
     let requested =
       Permission.Requested.of_review
         ~id:(permission_id turn_id call request_index review)
         ~turn:turn_id ~tool_call:call review
     in
-    Step.make ~session
-      ~events:[ Event.permission_requested requested ]
-      ~next:(Step.Waiting (Waiting.Permission requested))
+    Boundary
+      ( [ Event.permission_requested requested ],
+        Step.Waiting (Waiting.Permission requested) )
 
   let first_waiting state =
     match State.waiting state with waiting :: _ -> Some waiting | [] -> None
 
-  let waiting_transition session waiting =
-    Step.make ~session ~events:[] ~next:(Step.Waiting waiting)
+  let waiting_transition waiting = Boundary ([], Step.Waiting waiting)
 
   module Phase = struct
     type t = Idle | Waiting of Waiting.t | Active
@@ -660,25 +663,13 @@ module Run = struct
             | Some waiting -> Phase.Waiting waiting
             | None -> Phase.Active))
 
-  let rec normalize config session events =
-    match append_all events session with
-    | Error error -> Error (of_append_error error)
-    | Ok session ->
-        let* step = plan config session in
-        Ok
-          (Step.of_applied
-             ~events:(events @ Step.events step)
-             ~session:(Step.session step) ~next:(Step.next step))
+  let continue_tool_error call message =
+    Continue
+      (Event.message_appended
+         (Llm.Message.tool_result
+            (Llm.Tool.Result.text ~error:true call message)))
 
-  and append_tool_result config session result =
-    normalize config session
-      [ Event.message_appended (Llm.Message.tool_result result) ]
-
-  and append_tool_error config session call message =
-    append_tool_result config session
-      (Llm.Tool.Result.text ~error:true call message)
-
-  and review_tool_permissions config session turn_id call tool_call =
+  let review_tool_permissions config session turn_id call tool_call =
     let state = state session in
     let rec loop request_index = function
       | [] -> Ok `Allowed
@@ -700,78 +691,98 @@ module Run = struct
       match Tool.Call.permissions tool_call with
       | requests -> Ok (`Requests requests)
       | exception exn ->
-          let* step =
-            append_tool_error config session call
-              ("tool permission planner raised: " ^ Printexc.to_string exn)
-          in
-          Ok (`Step step)
+          Ok
+            (`Decision
+              (continue_tool_error call
+                 ("tool permission planner raised: " ^ Printexc.to_string exn)))
     in
     match planning with
-    | `Step step -> Ok (`Step step)
+    | `Decision decision -> Ok (`Decision decision)
     | `Requests requests -> (
         let* decision = loop 0 requests in
         match decision with
         | `Allowed -> Ok `Allowed
         | `Denied denials ->
             let denial = fst denials in
-            let* step =
-              append_tool_error config session call
-                (Config.denial_message config denial)
-            in
-            Ok (`Step step)
+            Ok
+              (`Decision
+                (continue_tool_error call (Config.denial_message config denial)))
         | `Review (request_index, review) ->
-            let* step =
-              request_permission session turn_id call request_index review
-            in
-            Ok (`Step step))
+            Ok
+              (`Decision
+                (request_permission turn_id call request_index review)))
 
-  and run_tool_action session turn_id call tool_call =
+  let run_tool_action turn_id call tool_call =
     let execution =
       Tool_claim.Started.make
         ~id:(tool_claim_id turn_id call)
         ~turn:turn_id ~call
     in
-    Step.make ~session
-      ~events:[ Event.tool_claim_started execution ]
-      ~next:(Step.Run_tool { claim = execution; call = tool_call })
+    Boundary
+      ( [ Event.tool_claim_started execution ],
+        Step.Run_tool { claim = execution; call = tool_call } )
 
-  and tool_action config session turn_id turn call =
+  let tool_action config session turn_id turn call =
     if is_host_tool_name (Turn.host_tools turn) call then
-      Step.make ~session ~events:[]
-        ~next:(Step.Waiting (Waiting.host_tool ~turn:turn_id call))
+      Ok (Boundary ([], Step.Waiting (Waiting.host_tool ~turn:turn_id call)))
     else if not (is_declared (Turn.declarations turn) call) then
-      append_tool_error config session call
-        (Tool.Error.message (Tool.Error.Unknown_tool (Llm.Tool.Call.name call)))
+      Ok
+        (continue_tool_error call
+           (Tool.Error.message
+              (Tool.Error.Unknown_tool (Llm.Tool.Call.name call))))
     else
       match decode_tool (Config.tool_catalog config) call with
       | Error (Error.Tool tool_error) ->
-          append_tool_error config session call (Tool.Error.message tool_error)
+          Ok (continue_tool_error call (Tool.Error.message tool_error))
       | Error error -> Error error
       | Ok tool_call -> (
           let* permission =
             review_tool_permissions config session turn_id call tool_call
           in
           match permission with
-          | `Step step -> Ok step
-          | `Allowed -> run_tool_action session turn_id call tool_call)
+          | `Decision decision -> Ok decision
+          | `Allowed -> Ok (run_tool_action turn_id call tool_call))
 
-  and plan config session =
+  let plan config session =
     let* turn_id, turn = active_turn session in
     let state = state session in
     match first_waiting state with
     | Some (Waiting.Permission request) ->
-        waiting_transition session (Waiting.Permission request)
+        Ok (waiting_transition (Waiting.Permission request))
     | Some (Waiting.Tool_claim execution) ->
-        waiting_transition session (Waiting.Tool_claim execution)
+        Ok (waiting_transition (Waiting.Tool_claim execution))
     | Some (Waiting.Host_tool _ as waiting) ->
-        waiting_transition session waiting
+        Ok (waiting_transition waiting)
     | None -> (
         match Llm.Transcript.state (State.transcript state) with
         | Llm.Transcript.Ready -> model_action config session turn_id turn
         | Llm.Transcript.Awaiting_tool_results (call, _) ->
             tool_action config session turn_id turn call)
 
-  let resume config session = plan config session
+  let append_for_run events session =
+    append_all events session |> Result.map_error of_append_error
+
+  let normalize config session events =
+    let rec loop session emitted events =
+      match append_for_run events session with
+      | Error error -> Error error
+      | Ok session ->
+          let emitted = List.rev_append events emitted in
+          (match plan config session with
+          | Error error -> Error error
+          | Ok (Continue event) -> loop session emitted [ event ]
+          | Ok (Boundary (events, next)) -> (
+              match append_for_run events session with
+              | Error error -> Error error
+              | Ok session ->
+                  Ok
+                    (Step.of_applied
+                       ~events:(List.rev_append emitted events)
+                       ~session ~next)))
+    in
+    loop session [] events
+
+  let resume config session = normalize config session []
 
   let start config ~id ~input ~model ?options ?mode ?origin ?max_steps session =
     let* () = require_active_session session in

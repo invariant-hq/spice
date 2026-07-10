@@ -8,9 +8,15 @@
  (modules bench_diff)
  (libraries spice_diff))
 
+(executable
+ (name bench_session)
+ (modules bench_session)
+ (libraries jsont spice_llm spice_path spice_permission spice_session))
+
 (rule
  (alias bench)
  (action
   (progn
    (run ./bench_path.exe)
-   (run ./bench_diff.exe))))
+   (run ./bench_diff.exe)
+   (run ./bench_session.exe))))

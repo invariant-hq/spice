@@ -606,6 +606,117 @@ let resumed_turn_rejects_new_executable_tool () =
           failf "new executable escaped the accepted contract: %a"
             Run.Step.pp_next next)
 
+let automatic_rejections_preserve_order () =
+  let call_count = 1_000 in
+  let calls =
+    List.init call_count (fun index ->
+        call ~id:("call-" ^ string_of_int index) ~name:"missing_tool" ())
+  in
+  let assistant =
+    List.map Llm.Message.Assistant.tool_call calls
+    |> Llm.Message.Assistant.make
+  in
+  let response = Llm.Response.make ~model assistant in
+  let config = config [] in
+  let started =
+    match
+      Run.start config ~id:(Session.Turn.Id.of_string "turn-rejections")
+        ~input:(Session.Turn.Input.user_text "Continue.") ~model
+        (empty_session ())
+    with
+    | Ok step -> step
+    | Error error -> failf "start failed: %a" Run.Error.pp error
+  in
+  match Run.accept_response config response (Run.Step.session started) with
+  | Error error -> failf "response failed: %a" Run.Error.pp error
+  | Ok step -> (
+      (match Run.Step.next step with
+      | Run.Step.Request_model _ -> ()
+      | next ->
+          failf "automatic rejection did not reach the model: %a"
+            Run.Step.pp_next next);
+      match Run.Step.events step with
+      | Session.Event.Response_appended _ :: result_events ->
+          equal int ~msg:"one result is emitted per rejected call" call_count
+            (List.length result_events);
+          List.iter2
+            (fun expected event ->
+              match event with
+              | Session.Event.Message_appended (Llm.Message.Tool_result result)
+                ->
+                  equal string ~msg:"rejection results preserve provider order"
+                    (Llm.Tool.Call.id expected)
+                    (Llm.Tool.Result.call_id result);
+                  equal string ~msg:"rejection result keeps the tool name"
+                    (Llm.Tool.Call.name expected)
+                    (Llm.Tool.Result.name result);
+                  is_true ~msg:"automatic rejection is a tool error"
+                    (Llm.Tool.Result.is_error result)
+              | _ -> failf "expected a tool-result event")
+            calls result_events
+      | _ -> failf "expected the response before rejection results")
+
+let mixed_call_interrupt_preserves_boundaries () =
+  let host_tool =
+    Llm.Tool.make ~name:"ask_user" ~input_schema:(Json.object' []) ()
+  in
+  let policy =
+    Permission.Policy.make [ Permission.Policy.Rule.allow_all_dangerously ]
+  in
+  let config =
+    config ~policy ~host_tools:[ host_tool ] [ executable_tool () ]
+  in
+  let started =
+    match
+      Run.start config ~id:(Session.Turn.Id.of_string "turn-mixed")
+        ~input:(Session.Turn.Input.user_text "Handle the calls.") ~model
+        (empty_session ())
+    with
+    | Ok step -> step
+    | Error error -> failf "start failed: %a" Run.Error.pp error
+  in
+  let missing = call ~id:"call-missing" ~name:"missing_tool" () in
+  let executable = call ~id:"call-executable" () in
+  let host = call ~id:"call-host" ~name:"ask_user" () in
+  let response =
+    Llm.Response.make ~model
+      (Llm.Message.Assistant.make
+         (List.map Llm.Message.Assistant.tool_call
+            [ missing; executable; host ]))
+  in
+  let claimed =
+    match Run.accept_response config response (Run.Step.session started) with
+    | Ok step -> step
+    | Error error -> failf "response failed: %a" Run.Error.pp error
+  in
+  let claim = tool_claim_from_step claimed in
+  (match Run.Step.events claimed with
+  | [
+   Session.Event.Response_appended _;
+   Session.Event.Message_appended (Llm.Message.Tool_result rejected);
+   Session.Event.Tool_claim_started started_claim;
+  ] ->
+      equal string ~msg:"automatic rejection is first" "call-missing"
+        (Llm.Tool.Result.call_id rejected);
+      is_true ~msg:"step returns the persisted executable claim"
+        (Session.Tool_claim.Started.equal claim started_claim)
+  | _ -> failf "unexpected mixed-call normalization events");
+  match Run.interrupt ~reason:"cancelled" (Run.Step.session claimed) with
+  | Error error -> failf "interrupt failed: %a" Run.Error.pp error
+  | Ok step -> (
+      match Run.Step.events step with
+      | [
+       Session.Event.Tool_claim_finished finished;
+       Session.Event.Message_appended (Llm.Message.Tool_result host_result);
+       Session.Event.Turn_finished _;
+      ] ->
+          equal string ~msg:"claimed call is finished first" "call-executable"
+            (Llm.Tool.Result.call_id
+               (Session.Tool_claim.Finished.result finished));
+          equal string ~msg:"unclaimed host call is answered second" "call-host"
+            (Llm.Tool.Result.call_id host_result)
+      | _ -> failf "unexpected mixed-call interrupt events")
+
 let accepted_host_tool_keeps_routing () =
   let declaration =
     Llm.Tool.make ~name:"review_tool" ~input_schema:(Json.object' []) ()
@@ -1137,6 +1248,10 @@ let () =
         resumed_turn_keeps_accepted_tool_declarations;
       test "resumed turn rejects new executable tool"
         resumed_turn_rejects_new_executable_tool;
+      test "automatic rejections preserve order"
+        automatic_rejections_preserve_order;
+      test "mixed call interrupt preserves boundaries"
+        mixed_call_interrupt_preserves_boundaries;
       test "accepted host tool keeps routing" accepted_host_tool_keeps_routing;
       test "turn tool contract is checked" turn_tool_contract_is_checked;
       test "resume requires active lifecycle" resume_requires_active_lifecycle;
