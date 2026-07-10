@@ -13,12 +13,25 @@ This is the operational contract: how the harness stays deterministic, which
 boundary belongs in which suite, and what breaks determinism. The harness itself
 is `test/tui/harness/`.
 
+Both test boundaries use the single wrapped `tui_harness` library. Its public
+surface is deliberately small:
+
+- `Project`, `Key`, and `Screen` provide shared fixtures and assertions;
+- `Provider_script` describes requests and replies once for both interpreters;
+- `Tui` drives the deterministic in-process application;
+- `Pty` drives a real process and terminal emulator;
+- `Provider_process` runs the external fake provider needed by PTY tests.
+
+The Eio provider runtime and low-level PTY implementation remain private to the
+library. PTY test executables live under `test/tui/pty/`; application tests stay
+directly under `test/tui/`.
+
 ## Choose the test boundary
 
 | Boundary under test | Home |
 | --- | --- |
 | Application state, rendering, input decoding, provider turns, dialogs, session persistence, tool execution, resize/reflow | `test/tui/` |
-| Raw-mode and alternate-screen setup/restore, primary-screen goodbye output, real `SIGWINCH`, OSC title emission, CLI launch wiring, and a real Dune-watch handshake | `test/tui-pty/` |
+| Raw-mode and alternate-screen setup/restore, primary-screen goodbye output, real `SIGWINCH`, OSC title emission, CLI launch wiring, and a real Dune-watch handshake | `test/tui/pty/` |
 | CLI argument resolution, exit codes, and real OS-sandbox enforcement | Cram/black-box tests |
 
 `Tui.await_exit` and `Tui.outcome` verify that the in-process application exits
@@ -36,9 +49,11 @@ seam, but it does not replace a smoke test that proves connection to a real
 
 The app runs under `Spice_tui.run` with its environment swapped through public
 seams: a headless `Matrix_test` backend (mosaic's `matrix.test`), one virtual
-clock, a pinned process-environment snapshot, and the Mosaic runtime probe. The
-mosaic loop runs in one Eio fiber and parks in the backend's `on_idle`; the test
-script runs in another. A test:
+clock, a pinned process-environment snapshot, and one composable
+`Mosaic.Probe.t`. Mosaic contributes message, perform, and render checks; Spice
+adds main-session work through its terminal event or settlement and child-run
+Live drains to that same value. The Mosaic loop runs in one Eio fiber and parks
+in the backend's `on_idle`; the test script runs in another. A test:
 
 - **drives** with `Tui.keys` / `Tui.enter` / `Tui.paste` / `Tui.resize` (raw
   bytes through the real input parser, so decode regressions stay covered);
@@ -113,11 +128,11 @@ timer case directly.
 
 ## Settle and advance
 
-- `settle` blocks until the backend is parked, the probe reports no pending
-  messages / in-flight performs / unsettled renderer, no redraw is queued, and a
-  short scheduler drain turns up nothing new. A perform parked on a **held**
-  provider gate counts as settled — that held mid-flight state is exactly what a
-  test observes. It carries a loud budget; it never hangs.
+- `settle` blocks until the backend is parked, the one probe reports no pending
+  Mosaic or Spice work, no redraw is queued, and a short scheduler drain turns
+  up nothing new. Work parked on a **held** provider gate counts as settled —
+  that held mid-flight state is exactly what a test observes. It carries a loud
+  budget; it never hangs or advances virtual time.
 - `advance dt` steps virtual time forward by `dt` in cadence-sized steps, firing
   due `Sub.every` / `Sub.on_tick` timers, then settles without quantizing.
   Elapsed counters tick exactly `dt`; ages age exactly `dt`.
@@ -138,21 +153,20 @@ several tool calls, and plain HTTP responses. Choose the synchronization helper
 for the transition being observed:
 
 - After `Tui.await_request`, a named provider gate keeps a mid-flight frame
-  stable. `Tui.release` waits until the response is fully written and the app
-  has left the working regime; call `Tui.settle` before printing the resulting
-  frame.
+  stable. `Tui.release` waits for the main-session terminal boundary and
+  settles the resulting frame. No provider counter or spinner-state proxy is
+  involved.
 - After a tool-call request that should suspend into a question or permission
-  dialog, call `Tui.await_suspend`. A plain settle can return before the drain
-  fiber has read the response. `await_suspend` is a widened quiet drain because
-  the application exposes no positive dialog-open signal; do not replace it
-  with repeated settles or sleeps.
+  dialog, call `Tui.await_suspend`. It settles against the same Live-aware probe,
+  so the dialog is rendered only after the drain reaches its waiting boundary.
 - After a force-interrupt or another keystroke that ends a turn while its
   provider gate remains held, call `Tui.settle_turn`. A plain settle is allowed
-  to stop at the deliberately held `Interrupting…` state.
+  to stop at the deliberately held `Interrupting…` state; `settle_turn` waits
+  specifically for the main-session check before settling the frame.
 
 These helpers move no virtual time. Do not use `Tui.advance` as an async-work
-barrier: it changes elapsed counters and spinner state and can expose unrelated
-save races.
+barrier: it changes elapsed counters and spinner state and can trigger unrelated
+time-dependent work.
 
 The only real-clock sleep in the harness is a 1 ms scheduler breath while real
 IO (localhost HTTP, tool subprocesses, fswatch systhreads) is genuinely in
@@ -172,7 +186,8 @@ flight; park-waiting is condition-based, not polled.
 - **Send Enter as its own write** (`Tui.enter`), never `"/cmd\r"` in one chunk.
 - **Reduced motion and workspace tooling are off by default**; opt in per test
   with `~env` only when the animation or the dune footer is the behaviour under
-  test (workspace tooling on spawns a real `dune`, ~1.5 s and a footer race).
+  test (workspace tooling on spawns a real `dune`, so initial readiness depends
+  on host scheduling).
 - Non-visual observables (exit outcome, session-document contents) go through
   the doc-introspection seam, sparingly — never as a screen substring.
 - Seed files, sessions, and Git state through the `~seed` callback. It runs

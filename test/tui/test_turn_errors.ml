@@ -22,7 +22,7 @@ let responses = "POST /v1/responses HTTP/1.1"
 let%expect_test "a 401 from the provider settles a failure notice" =
   let script =
     [
-      Provider.http ~expect:[ "say hello" ] ~gate:"fin" ~line:responses
+      Provider_script.http ~expect:[ "say hello" ] ~gate:"fin" ~line:responses
         ~status:401
         {|{"error":{"message":"invalid api key","type":"authentication_error"}}|};
     ]
@@ -66,17 +66,14 @@ let%expect_test "a 401 from the provider settles a failure notice" =
    completion — the retry reaches the provider as a SECOND request, which
    [await_request t 2] proves (it fails loudly if no retry is sent). The frame is
    goldened while the recovery is HELD on the gate, so it is deterministic: the
-   turn is still working (it survived the 500), not settled. Goldening the
-   post-recovery settled frame would race the turn-finished socket completion
-   against settle (a harness limitation — the socket read is not a tracked
-   perform, so no amount of settling reliably waits for it), so the resilience is
-   proved by the retry request plus the stable in-flight frame instead. *)
+   turn is still working (it survived the 500), not settled. The retry request
+   plus this stable in-flight frame are the resilience contract under test. *)
 let%expect_test "a 5xx is retried rather than failing the turn" =
   let script =
     [
-      Provider.http ~expect:[ "say hello" ] ~line:responses ~status:500
+      Provider_script.http ~expect:[ "say hello" ] ~line:responses ~status:500
         {|{"error":{"message":"internal server error","type":"server_error"}}|};
-      Provider.message ~expect:[ "say hello" ] ~gate:"fin" ~id:"resp-1"
+      Provider_script.message ~expect:[ "say hello" ] ~gate:"fin" ~id:"resp-1"
         "Recovered after a retry.";
     ]
   in
@@ -125,7 +122,7 @@ let%expect_test "a 5xx is retried rather than failing the turn" =
 let%expect_test "an empty or whitespace-only submit is a no-op" =
   let script =
     [
-      Provider.message ~expect:[ "say hello" ] ~gate:"fin" ~id:"resp-1"
+      Provider_script.message ~expect:[ "say hello" ] ~gate:"fin" ~id:"resp-1"
         "Only reply.";
     ]
   in
@@ -203,8 +200,8 @@ let%expect_test "an empty or whitespace-only submit is a no-op" =
    the wire (it fails loudly if the first reply is absent from the request), so
    the context-carrying is proved even though the second turn's completion is held
    — the golden shows the first exchange settled and the second turn in flight, a
-   deterministic frame (the second turn's post-settle frame would race the
-   turn-finished socket completion; see the retry test).
+   deterministic frame. The post-completion frame is already covered by the
+   retry test, so it is not duplicated here.
 
    KNOWN BUG still visible here (row 22): a follow-up turn submitted from the
    transcript does NOT clear the composer draft. During an in-flight turn the
@@ -217,9 +214,9 @@ let%expect_test "an empty or whitespace-only submit is a no-op" =
 let%expect_test "a second turn carries the first exchange as context" =
   let script =
     [
-      Provider.message ~expect:[ "first question" ] ~gate:"t1" ~id:"resp-1"
-        "First reply.";
-      Provider.message
+      Provider_script.message ~expect:[ "first question" ] ~gate:"t1"
+        ~id:"resp-1" "First reply.";
+      Provider_script.message
         ~expect:[ "second question"; "First reply." ]
         ~gate:"t2" ~id:"resp-2" "Second reply.";
     ]

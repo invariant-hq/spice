@@ -24,7 +24,7 @@ let now_ms = 1_000_000
    deterministic under virtual time) and no events, so it lists but replays
    empty. *)
 let seed_session project id ~title ~updated_at_ms =
-  Util.write_file
+  Project.write_path
     (Project.data project
        (Filename.concat "sessions" (Filename.concat id "session.json")))
     (Printf.sprintf
@@ -34,7 +34,8 @@ let seed_session project id ~title ~updated_at_ms =
 (* Four sessions, newest first, all a few ms below the epoch so every age reads
    "just now" and recency order is fixed. *)
 let seed_four project =
-  seed_session project "ses_1" ~title:"parser streaming fix" ~updated_at_ms:now_ms;
+  seed_session project "ses_1" ~title:"parser streaming fix"
+    ~updated_at_ms:now_ms;
   seed_session project "ses_2" ~title:"config gadt rework"
     ~updated_at_ms:(now_ms - 1000);
   seed_session project "ses_3" ~title:"review layer wiring"
@@ -45,12 +46,19 @@ let seed_four project =
 (* A resumable session carrying one finished turn, so resuming it replays a real
    transcript. Recent enough to head the recents list. *)
 let seed_prompt project id ~title ~prompt =
-  Util.write_file
+  Project.write_path
     (Project.data project
        (Filename.concat "sessions" (Filename.concat id "session.json")))
     (Printf.sprintf
        {|{"version":1,"id":"%s","metadata":{"title":"%s","status":"active","cwd":"%s","created_at":1,"updated_at":%d},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"%s"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"max_steps":100,"declarations":[],"host_tools":[]}},{"type":"turn_finished","turn":"turn-1","outcome":{"type":"completed"}}]}|}
        id title (Project.root project) now_ms prompt)
+
+let session_file_contains project id needle =
+  Screen.contains
+    (Project.read_path
+       (Project.data project
+          (Filename.concat "sessions" (Filename.concat id "session.json"))))
+    needle
 
 let open_panel t =
   Tui.keys t "/sessions";
@@ -60,7 +68,7 @@ let open_panel t =
 
 let open_screen t =
   open_panel t;
-  Tui.keys t Keys.tab;
+  Tui.keys t Key.tab;
   Tui.settle t
 
 (* {2 Resume at launch} *)
@@ -69,8 +77,7 @@ let open_screen t =
    session's finished turn folds back through the reducer so its user prompt
    lands as a User block, and the home welcome notice is gone. *)
 let%expect_test "resume opens on the replayed transcript" =
-  Tui.run ~name:"session-resume" ~session:"ses_resume"
-    ~seed:(fun project ->
+  Tui.run ~name:"session-resume" ~session:"ses_resume" ~seed:(fun project ->
       seed_prompt project "ses_resume" ~title:"streaming parser fix"
         ~prompt:"trace the streaming parser bug")
   @@ fun t ->
@@ -109,7 +116,7 @@ let%expect_test "resume opens on the replayed transcript" =
 let%expect_test "resume then submit lands the reply in the resumed transcript" =
   let script =
     [
-      Provider.message ~expect:[ "off-by-one" ] ~gate:"fin" ~id:"resp-1"
+      Provider_script.message ~expect:[ "off-by-one" ] ~gate:"fin" ~id:"resp-1"
         "The streaming parser drops the final chunk.";
     ]
   in
@@ -267,8 +274,7 @@ let%expect_test "empty workspace shows the one-sentence empty state" =
 (* ↵ on the selection attaches and replays the session, so the chat opens with
    the transcript rebuilt and the panel chrome gone. *)
 let%expect_test "enter resumes the selected session into chat" =
-  Tui.run ~name:"session-panel-resume"
-    ~seed:(fun project ->
+  Tui.run ~name:"session-panel-resume" ~seed:(fun project ->
       seed_prompt project "ses_resume" ~title:"resume target"
         ~prompt:"hello from the past")
   @@ fun t ->
@@ -313,7 +319,7 @@ let%expect_test "tab promotes the panel to the browse screen" =
   Tui.keys t "/sessions";
   Tui.enter t;
   Tui.settle t;
-  Tui.keys t Keys.tab;
+  Tui.keys t Key.tab;
   Tui.settle t;
   Tui.print t;
   [%expect
@@ -348,8 +354,7 @@ let%expect_test "tab promotes the panel to the browse screen" =
    transcript carries the /fork echo, the lineage record naming the parent's
    title, and the inherited history replays below. *)
 let%expect_test "fork continues in a child with the lineage record" =
-  Tui.run ~name:"session-fork" ~session:"ses_parent"
-    ~seed:(fun project ->
+  Tui.run ~name:"session-fork" ~session:"ses_parent" ~seed:(fun project ->
       seed_prompt project "ses_parent" ~title:"streaming parser fix"
         ~prompt:"trace the streaming parser bug")
   @@ fun t ->
@@ -422,9 +427,9 @@ let%expect_test "fork on the home stage flashes the no-session guard" =
    seeds the composer with [/rename ], so typing the title and submitting fires
    the rename. The echo carrying the full [/rename <title>] line proves the seed
    happened, and the settle copy names the new title. *)
-let%expect_test "rename seeds bare, renames with a title, and echoes the result" =
-  Tui.run ~name:"session-rename" ~session:"ses_rename"
-    ~seed:(fun project ->
+let%expect_test "rename seeds bare, renames with a title, and echoes the result"
+    =
+  Tui.run ~name:"session-rename" ~session:"ses_rename" ~seed:(fun project ->
       seed_prompt project "ses_rename" ~title:"streaming parser fix"
         ~prompt:"trace the streaming parser bug")
   @@ fun t ->
@@ -467,8 +472,9 @@ let%expect_test "rename seeds bare, renames with a title, and echoes the result"
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗    ? for shortcuts|}];
   (* The new title persisted to the store, not just the transcript. *)
   print_string
-    (if Seed.session_file_contains (Tui.project t) "ses_rename"
-          "the tokenizer rewrite"
+    (if
+       session_file_contains (Tui.project t) "ses_rename"
+         "the tokenizer rewrite"
      then "persisted: true\n"
      else "persisted: false\n");
   [%expect {| persisted: true |}]
@@ -513,8 +519,8 @@ let%expect_test "draft seeds the composer on the home stage" =
 let%expect_test "prompt submits the first turn at launch" =
   let script =
     [
-      Provider.message ~expect:[ "fix the parser" ] ~gate:"fin" ~id:"resp-1"
-        "The parser drops the final chunk.";
+      Provider_script.message ~expect:[ "fix the parser" ] ~gate:"fin"
+        ~id:"resp-1" "The parser drops the final chunk.";
     ]
   in
   Tui.run ~name:"session-prompt" ~submit:"fix the parser" ~provider:script
@@ -552,8 +558,7 @@ let%expect_test "prompt submits the first turn at launch" =
 (* Resuming through the quick switcher replaces the attached replay rather than
    merging it with the previous session. *)
 let%expect_test "resuming a second session replaces the first replay" =
-  Tui.run ~name:"session-resume-replace" ~session:"ses_a"
-    ~seed:(fun project ->
+  Tui.run ~name:"session-resume-replace" ~session:"ses_a" ~seed:(fun project ->
       seed_prompt project "ses_a" ~title:"streaming parser fix"
         ~prompt:"trace the streaming parser bug";
       seed_prompt project "ses_b" ~title:"config gadt rework"
@@ -566,7 +571,8 @@ let%expect_test "resuming a second session replaces the first replay" =
   Tui.enter t;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -598,10 +604,11 @@ let%expect_test "browse navigation, filtering, rename, and delete round trip" =
   Tui.run ~name:"session-screen-lifecycle" ~seed:seed_four @@ fun t ->
   Tui.settle t;
   open_screen t;
-  Tui.keys t Keys.down;
+  Tui.keys t Key.down;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 | ──  sessions ──────────────────────────────────────────────────────4 sessions ──
+  [%expect
+    {|01 | ──  sessions ──────────────────────────────────────────────────────4 sessions ──
 02 |
 03 |   today
 04 |     parser streaming fix                                   just now · 0 turns
@@ -628,7 +635,8 @@ let%expect_test "browse navigation, filtering, rename, and delete round trip" =
   Tui.keys t "/gadt";
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 | ──  sessions ──────────────────────────────────────────────────────4 sessions ──
+  [%expect
+    {|01 | ──  sessions ──────────────────────────────────────────────────────4 sessions ──
 02 |   /gadt  1 match
 03 |
 04 |   today
@@ -652,7 +660,7 @@ let%expect_test "browse navigation, filtering, rename, and delete round trip" =
 22 |
 23 |
 24 ||}];
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t;
   Tui.keys t "r";
   Tui.settle t;
@@ -660,7 +668,8 @@ let%expect_test "browse navigation, filtering, rename, and delete round trip" =
   Tui.enter t;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 | ──  sessions ──────────────────────────────────────────────────────4 sessions ──
+  [%expect
+    {|01 | ──  sessions ──────────────────────────────────────────────────────4 sessions ──
 02 |
 03 |   today
 04 |   ❯ parser streaming fix renamed                           just now · 0 turns
@@ -687,7 +696,8 @@ let%expect_test "browse navigation, filtering, rename, and delete round trip" =
   Tui.keys t "d";
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 | ──  sessions ──────────────────────────────────────────────────────4 sessions ──
+  [%expect
+    {|01 | ──  sessions ──────────────────────────────────────────────────────4 sessions ──
 02 |
 03 |   today
 04 |   delete "parser streaming fix renamed"? press d again · esc cancel
@@ -711,14 +721,15 @@ let%expect_test "browse navigation, filtering, rename, and delete round trip" =
 22 |
 23 |
 24 ||}];
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t;
   Tui.keys t "d";
   Tui.settle t;
   Tui.keys t "d";
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 | ──  sessions ──────────────────────────────────────────────────────3 sessions ──
+  [%expect
+    {|01 | ──  sessions ──────────────────────────────────────────────────────3 sessions ──
 02 |
 03 |   today
 04 |   ❯ config gadt rework                                     just now · 0 turns
@@ -746,11 +757,12 @@ let%expect_test "browse navigation, filtering, rename, and delete round trip" =
 (* Tab promotes an empty panel to the screen's own empty state. A panel filter
    is otherwise carried into the screen and remains open for editing. *)
 let%expect_test "browse empty state and panel filter carry-over" =
-  (Tui.run ~name:"session-screen-empty" @@ fun t ->
-   Tui.settle t;
-   open_screen t;
-   Tui.print t;
-   [%expect {|01 | ──  sessions ──────────────────────────────────────────────────────0 sessions ──
+  ( Tui.run ~name:"session-screen-empty" @@ fun t ->
+    Tui.settle t;
+    open_screen t;
+    Tui.print t;
+    [%expect
+      {|01 | ──  sessions ──────────────────────────────────────────────────────0 sessions ──
 02 |
 03 |   No sessions in this workspace.
 04 |
@@ -773,16 +785,18 @@ let%expect_test "browse empty state and panel filter carry-over" =
 21 |
 22 |
 23 |
-24 ||}]);
+24 ||}]
+  );
   Tui.run ~name:"session-screen-carry" ~seed:seed_four @@ fun t ->
   Tui.settle t;
   open_panel t;
   Tui.keys t "gadt";
   Tui.settle t;
-  Tui.keys t Keys.tab;
+  Tui.keys t Key.tab;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 | ──  sessions ──────────────────────────────────────────────────────4 sessions ──
+  [%expect
+    {|01 | ──  sessions ──────────────────────────────────────────────────────4 sessions ──
 02 |   /gadt  1 match
 03 |
 04 |   today
@@ -812,8 +826,8 @@ let%expect_test "browse empty state and panel filter carry-over" =
 let%expect_test "clear preserves the old session and attaches a fresh turn" =
   let script =
     [
-      Provider.message ~expect:[ "off-by-one" ] ~gate:"fin" ~id:"resp-clear"
-        "The tokenizer drops the final chunk.";
+      Provider_script.message ~expect:[ "off-by-one" ] ~gate:"fin"
+        ~id:"resp-clear" "The tokenizer drops the final chunk.";
     ]
   in
   Tui.run ~name:"session-clear" ~session:"ses_clear" ~provider:script
@@ -832,7 +846,8 @@ let%expect_test "clear preserves the old session and attaches a fresh turn" =
   Tui.release t "fin";
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -857,8 +872,9 @@ let%expect_test "clear preserves the old session and attaches a fresh turn" =
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗     ? for shortcuts|}];
   print_string
-    (if Seed.session_file_contains (Tui.project t) "ses_clear"
-          "trace the streaming parser bug"
+    (if
+       session_file_contains (Tui.project t) "ses_clear"
+         "trace the streaming parser bug"
      then "previous session preserved\n"
      else "previous session missing\n");
   [%expect {| previous session preserved |}]
@@ -866,18 +882,19 @@ let%expect_test "clear preserves the old session and attaches a fresh turn" =
 (* /compact records the host refusal without removing visible history. The
    home-stage /compact and /rename commands surface their no-session guards. *)
 let%expect_test "compact result and no-session command guards render" =
-  (Tui.run ~name:"session-compact" ~session:"ses_compact" ~provider:[]
-     ~seed:(fun project ->
-       seed_prompt project "ses_compact" ~title:"streaming parser fix"
-         ~prompt:"trace the streaming parser bug")
-   @@ fun t ->
-   Tui.settle t;
-   Tui.keys t "/compact";
-   Tui.settle t;
-   Tui.enter t;
-   Tui.settle t;
-   Tui.print t;
-   [%expect {|01 |
+  ( Tui.run ~name:"session-compact" ~session:"ses_compact" ~provider:[]
+      ~seed:(fun project ->
+        seed_prompt project "ses_compact" ~title:"streaming parser fix"
+          ~prompt:"trace the streaming parser bug")
+  @@ fun t ->
+    Tui.settle t;
+    Tui.keys t "/compact";
+    Tui.settle t;
+    Tui.enter t;
+    Tui.settle t;
+    Tui.print t;
+    [%expect
+      {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -900,7 +917,8 @@ let%expect_test "compact result and no-session command guards render" =
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ message spice
 23 | ────────────────────────────────────────────────────────────────────────────────
-24 |   $PROJECT · gpt-5.5 medium · dune: ✗   ? for shortcuts|}]);
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗   ? for shortcuts|}]
+  );
   Tui.run ~name:"session-command-guards" @@ fun t ->
   Tui.settle t;
   Tui.keys t "/compact";
@@ -908,7 +926,8 @@ let%expect_test "compact result and no-session command guards render" =
   Tui.enter t;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |
 03 |
 04 |
@@ -940,7 +959,8 @@ let%expect_test "compact result and no-session command guards render" =
   Tui.enter t;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |
 03 |
 04 |

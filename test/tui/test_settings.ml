@@ -17,7 +17,7 @@ let right = "\027[C"
 
 let read_config t =
   let path = Project.scratch (Tui.project t) "config/spice/config.json" in
-  if Sys.file_exists path then Util.read_file path else ""
+  if Sys.file_exists path then Project.read_path path else ""
 
 (* Open the settings screen via [/settings], Enter run through the palette. *)
 let open_settings t =
@@ -66,7 +66,7 @@ let%expect_test "tab switches to the status fact sheet" =
   Tui.run ~name:"settings-status" @@ fun t ->
   Tui.settle t;
   open_settings t;
-  Tui.keys t Keys.tab;
+  Tui.keys t Key.tab;
   Tui.settle t;
   Tui.print t;
   [%expect
@@ -103,8 +103,8 @@ let%expect_test "enum row expands to a radio and commits" =
   Tui.settle t;
   open_settings t;
   (* Model, Small model, Reasoning: two Downs land on the enum row. *)
-  Tui.keys t Keys.down;
-  Tui.keys t Keys.down;
+  Tui.keys t Key.down;
+  Tui.keys t Key.down;
   Tui.settle t;
   Tui.keys t right;
   Tui.settle t;
@@ -136,7 +136,7 @@ let%expect_test "enum row expands to a radio and commits" =
 24 |   … +12 more|}];
   print_string
     (Printf.sprintf "reasoning written: %b\n"
-       (Util.contains (read_config t) "reasoning"));
+       (Screen.contains (read_config t) "reasoning"));
   [%expect {| reasoning written: true |}]
 
 (* A boolean row toggles on [↵] and persists. Thinking summaries defaults true;
@@ -145,18 +145,17 @@ let%expect_test "boolean row toggles and persists" =
   Tui.run ~name:"settings-bool" @@ fun t ->
   Tui.settle t;
   open_settings t;
-  Tui.keys t Keys.down;
-  Tui.keys t Keys.down;
-  Tui.keys t Keys.down;
+  Tui.keys t Key.down;
+  Tui.keys t Key.down;
+  Tui.keys t Key.down;
   Tui.settle t;
   Tui.enter t;
   Tui.settle t;
   print_string
     (Printf.sprintf "thinking written: %b\nfalse written: %b\n"
-       (Util.contains (read_config t) "thinking")
-       (Util.contains (read_config t) "false"));
-  [%expect
-    {|thinking written: true
+       (Screen.contains (read_config t) "thinking")
+       (Screen.contains (read_config t) "false"));
+  [%expect {|thinking written: true
 false written: true|}]
 
 (* The skills tab lists the discovered builtin skills and toggles one on [↵],
@@ -166,9 +165,9 @@ let%expect_test "skills tab lists and toggles a skill" =
   Tui.run ~name:"settings-skills" @@ fun t ->
   Tui.settle t;
   open_settings t;
-  Tui.keys t Keys.tab;
-  Tui.keys t Keys.tab;
-  Tui.keys t Keys.tab;
+  Tui.keys t Key.tab;
+  Tui.keys t Key.tab;
+  Tui.keys t Key.tab;
   Tui.settle t;
   Tui.enter t;
   Tui.settle t;
@@ -200,7 +199,7 @@ let%expect_test "skills tab lists and toggles a skill" =
 24 ||}];
   print_string
     (Printf.sprintf "disabled written: %b\n"
-       (Util.contains (read_config t) "disabled"));
+       (Screen.contains (read_config t) "disabled"));
   [%expect {| disabled written: true |}]
 
 (* The [/] filter narrows the active tab's rows: [sandbox] keeps the two sandbox
@@ -248,9 +247,9 @@ let%expect_test "esc clears the filter then closes the screen" =
   Tui.keys t "/";
   Tui.keys t "sandbox";
   Tui.settle t;
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t;
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t;
   Tui.print t;
   [%expect

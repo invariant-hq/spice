@@ -13,8 +13,8 @@ open Tui_harness
 let%expect_test "a held turn shows working state, ticks, then settles" =
   let script =
     [
-      Provider.message ~expect:[ "say hello" ] ~gate:"turn-1" ~id:"resp-1"
-        "Hello from the fake provider.";
+      Provider_script.message ~expect:[ "say hello" ] ~gate:"turn-1"
+        ~id:"resp-1" "Hello from the fake provider.";
     ]
   in
   Tui.run ~name:"turn-hold" ~provider:script @@ fun t ->

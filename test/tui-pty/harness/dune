@@ -1,4 +1,0 @@
-(library
- (name tui_pty_harness)
- (modules util keys project screen provider seed docs term)
- (libraries unix jsont jsont.bytesrw matrix.pty matrix.vte))

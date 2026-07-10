@@ -10,18 +10,18 @@
 
    The goodbye lands on the primary screen after the alternate screen restores,
    so the assertions read the final captured frame once spice has exited
-   ([Term.quit] drives the double-Ctrl+C chord and waits for exit). The alt-screen
+   ([Pty.quit] drives the double-Ctrl+C chord and waits for exit). The alt-screen
    composer placeholder [message spice] being gone from the captured frame is what
    distinguishes the restored goodbye from the running UI — the lockup alone would
    also match the banner record still on the alternate screen. *)
 
-open Tui_pty_harness
+open Tui_harness
 
 let reduced_motion = [ ("SPICE_REDUCED_MOTION", "1") ]
-let print_fact = Util.print_fact
+let print_fact label value = Printf.printf "%s: %b\n" label value
 
 let run ?env ?rows ?cols ?provider project f =
-  Term.run ?env ?rows ?cols ?provider project f
+  Pty.run ?env ?rows ?cols ?provider project f
 
 (* The static lockup's second row — the frozen mark the goodbye reprints
    (Theme.lockup). Its wordmark and resting heap are stable across runs. *)
@@ -35,16 +35,16 @@ let%expect_test
     "quitting after a conversation prints the lockup and resume hint" =
   Project.with_temp "next-exit-session" @@ fun project ->
   let answer = "The retry logic backs off exponentially." in
-  Provider.with_openai project ~answer ~body_contains:[ "retry" ]
+  Provider_process.with_openai project ~answer ~expect:[ "retry" ]
   @@ fun provider ->
   run project ~provider ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
-  Term.wait t (Screen.has "dune:");
-  Term.send t "explain the retry logic";
-  Term.wait t (Screen.has "❯ explain the retry logic");
-  Term.send t Keys.enter;
-  Term.wait t (fun s -> Screen.has answer s && Screen.has "? for shortcuts" s);
-  Term.quit t;
-  let screen = Term.screen t in
+  Pty.wait t (Screen.has "dune:");
+  Pty.send t "explain the retry logic";
+  Pty.wait t (Screen.has "❯ explain the retry logic");
+  Pty.send t Key.enter;
+  Pty.wait t (fun s -> Screen.has answer s && Screen.has "? for shortcuts" s);
+  Pty.quit t;
+  let screen = Pty.screen t in
   print_fact "goodbye replaced the running UI"
     (Screen.lacks "message spice" screen);
   print_fact "lockup on the restored screen" (Screen.has lockup_row screen);
@@ -62,9 +62,9 @@ let%expect_test
     "quitting from the prelude prints the lockup with no resume hint" =
   Project.with_temp "next-exit-prelude" @@ fun project ->
   run project ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
-  Term.wait t (Screen.has "dune:");
-  Term.quit t;
-  let screen = Term.screen t in
+  Pty.wait t (Screen.has "dune:");
+  Pty.quit t;
+  let screen = Pty.screen t in
   print_fact "goodbye replaced the running UI"
     (Screen.lacks "message spice" screen);
   print_fact "lockup on the restored screen" (Screen.has lockup_row screen);

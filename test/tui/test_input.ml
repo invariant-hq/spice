@@ -55,8 +55,8 @@ let%expect_test "interleaved typing and cursor motion edit in place" =
   Tui.run ~name:"input-interleave" @@ fun t ->
   Tui.settle t;
   Tui.keys t "abcd";
-  Tui.keys t Keys.left;
-  Tui.keys t Keys.left;
+  Tui.keys t Key.left;
+  Tui.keys t Key.left;
   Tui.keys t "X";
   Tui.settle t;
   Tui.print t;
@@ -128,7 +128,7 @@ let%expect_test "a small unicode paste inserts inline" =
 let%expect_test "ctrl+o on the transcript (regression guard)" =
   let script =
     [
-      Provider.message ~expect:[ "say hello" ] ~gate:"fin" ~id:"resp-1"
+      Provider_script.message ~expect:[ "say hello" ] ~gate:"fin" ~id:"resp-1"
         "Hello from spice.";
     ]
   in
@@ -139,7 +139,7 @@ let%expect_test "ctrl+o on the transcript (regression guard)" =
   ignore (Tui.await_request t 1 : string);
   Tui.release t "fin";
   Tui.settle t;
-  Tui.keys t Keys.ctrl_o;
+  Tui.keys t Key.ctrl_o;
   Tui.settle t;
   Tui.print t;
   [%expect

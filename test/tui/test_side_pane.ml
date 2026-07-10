@@ -24,10 +24,12 @@ open Tui_harness
    board in flight (the test_tools/test_todo_board idiom). *)
 
 let todo ~expect ~id ~call_id board =
-  Provider.tool_call ~expect ~id ~call_id ~name:"todo_write" ~arguments:board ()
+  Provider_script.tool_call ~expect ~id ~call_id ~name:"todo_write"
+    ~arguments:board ()
 
 let final ~id answer =
-  Provider.message ~expect:[ "function_call_output" ] ~gate:"fin" ~id answer
+  Provider_script.message ~expect:[ "function_call_output" ] ~gate:"fin" ~id
+    answer
 
 let board_seven =
   {|{"todos":[{"id":"t1","content":"scaffold the module","status":"in_progress","priority":"high","position":0},{"id":"t2","content":"write the mli","status":"pending","priority":"medium","position":1},{"id":"t3","content":"wire the shell","status":"pending","priority":"medium","position":2},{"id":"t4","content":"add the tests","status":"pending","priority":"medium","position":3},{"id":"t5","content":"update the plan","status":"pending","priority":"low","position":4},{"id":"t6","content":"read the spec","status":"completed","priority":"high","position":5},{"id":"t7","content":"grep the host","status":"completed","priority":"medium","position":6}]}|}
@@ -89,7 +91,7 @@ let%expect_test "wide: the board routes to the pane, not the strip" =
 let%expect_test "wide: the idle pane hosts the workspace glance" =
   let script =
     [
-      Provider.message ~expect:[ "say hello" ] ~gate:"fin" ~id:"r-g1"
+      Provider_script.message ~expect:[ "say hello" ] ~gate:"fin" ~id:"r-g1"
         "Hello there.";
     ]
   in

@@ -13,8 +13,8 @@ open Tui_harness
 
 let script =
   [
-    Provider.message ~expect:[ "say hello" ] ~gate:"composer" ~id:"resp-1"
-      "Hello from the fake provider.";
+    Provider_script.message ~expect:[ "say hello" ] ~gate:"composer"
+      ~id:"resp-1" "Hello from the fake provider.";
   ]
 
 (* One completed turn, leaving the composer below a settled reply. *)
@@ -34,11 +34,12 @@ let%expect_test "newline grows the composer; esc clears and up recalls" =
   Tui.run ~name:"composer-multiline" ~provider:script @@ fun t ->
   reach_transcript t;
   Tui.keys t "line one";
-  Tui.keys t Keys.linefeed;
+  Tui.keys t Key.linefeed;
   Tui.keys t "line two";
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -62,10 +63,11 @@ let%expect_test "newline grows the composer; esc clears and up recalls" =
 22 |   line two
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗    ? for shortcuts|}];
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -89,10 +91,11 @@ let%expect_test "newline grows the composer; esc clears and up recalls" =
 22 |   line two
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   Esc again to clear|}];
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -116,10 +119,11 @@ let%expect_test "newline grows the composer; esc clears and up recalls" =
 22 | ❯ message spice
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗    ? for shortcuts|}];
-  Tui.keys t Keys.up;
+  Tui.keys t Key.up;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -153,7 +157,8 @@ let%expect_test "a large paste collapses and backspace deletes the chunk" =
   Tui.paste t "alpha\nbeta\ngamma\ndelta";
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -177,10 +182,11 @@ let%expect_test "a large paste collapses and backspace deletes the chunk" =
 22 | ❯ [Pasted text #1 +3 lines]
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗    ? for shortcuts|}];
-  Tui.keys t Keys.backspace;
+  Tui.keys t Key.backspace;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -212,10 +218,11 @@ let%expect_test "ctrl+c discards a draft in one press and up recalls it" =
   reach_transcript t;
   Tui.keys t "discard me";
   Tui.settle t;
-  Tui.keys t Keys.ctrl_c;
+  Tui.keys t Key.ctrl_c;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -239,10 +246,11 @@ let%expect_test "ctrl+c discards a draft in one press and up recalls it" =
 22 | ❯ message spice
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗    ? for shortcuts|}];
-  Tui.keys t Keys.up;
+  Tui.keys t Key.up;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -277,7 +285,8 @@ let%expect_test
   Tui.keys t "?";
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -301,10 +310,11 @@ let%expect_test
 22 |   ?  this help   esc esc      interrupt turn  pageup pagedown  scroll
 23 |                                               ctrl+c ctrl+c    quit
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}];
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -331,7 +341,8 @@ let%expect_test
   Tui.keys t "!ls";
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -355,10 +366,11 @@ let%expect_test
 22 | ! !ls
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   esc exit shell · ↵ run                                               ! shell|}];
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)

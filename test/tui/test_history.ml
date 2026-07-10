@@ -14,9 +14,19 @@ open Tui_harness
 
 let script =
   [
-    Provider.message ~expect:[ "say hello" ] ~gate:"history" ~id:"resp-1"
+    Provider_script.message ~expect:[ "say hello" ] ~gate:"history" ~id:"resp-1"
       "Hello from the fake provider.";
   ]
+
+let history_entry ~ts text =
+  Printf.sprintf
+    {|{"schema_version":1,"type":"composer.history_entry","session_id":"ses_test","ts":%d,"draft":{"text":%S}}|}
+    ts text
+
+let seed_history project lines =
+  Project.write_path
+    (Project.state project "history.jsonl")
+    (String.concat "\n" lines ^ "\n")
 
 let reach_transcript t =
   Tui.settle t;
@@ -31,13 +41,14 @@ let reach_transcript t =
    in-session submission share one history. *)
 let%expect_test "up walks recall from the turn prompt into the loaded history" =
   Tui.run ~name:"history-load" ~provider:script ~seed:(fun p ->
-      Seed.history p [ Seed.history_entry ~ts:1000 "alpha prompt" ])
+      seed_history p [ history_entry ~ts:1000 "alpha prompt" ])
   @@ fun t ->
   reach_transcript t;
-  Tui.keys t Keys.up;
+  Tui.keys t Key.up;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -61,10 +72,11 @@ let%expect_test "up walks recall from the turn prompt into the loaded history" =
 22 | ❯ say hello
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗      ? for shortcuts|}];
-  Tui.keys t Keys.up;
+  Tui.keys t Key.up;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -94,17 +106,17 @@ let%expect_test "up walks recall from the turn prompt into the loaded history" =
    (the draft keeps the text, no turn starts). *)
 let%expect_test "ctrl+r fuzzy-searches history and inserts the pick" =
   Tui.run ~name:"history-search" ~provider:script ~seed:(fun p ->
-      Seed.history p
+      seed_history p
         [
-          Seed.history_entry ~ts:1000 "alpha one";
-          Seed.history_entry ~ts:2000 "beta two";
+          history_entry ~ts:1000 "alpha one"; history_entry ~ts:2000 "beta two";
         ])
   @@ fun t ->
   reach_transcript t;
-  Tui.keys t Keys.ctrl_r;
+  Tui.keys t Key.ctrl_r;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -131,7 +143,8 @@ let%expect_test "ctrl+r fuzzy-searches history and inserts the pick" =
   Tui.keys t "bt";
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -155,10 +168,11 @@ let%expect_test "ctrl+r fuzzy-searches history and inserts the pick" =
 22 | ⌕ bt
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   ↵ insert · esc cancel · type to search                             ⌕ history|}];
-  Tui.keys t Keys.enter;
+  Tui.keys t Key.enter;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -191,10 +205,11 @@ let%expect_test "ctrl+r borrows the draft and esc restores it" =
   reach_transcript t;
   Tui.keys t "keep me";
   Tui.settle t;
-  Tui.keys t Keys.ctrl_r;
+  Tui.keys t Key.ctrl_r;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -218,10 +233,11 @@ let%expect_test "ctrl+r borrows the draft and esc restores it" =
 22 | ⌕ search history
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   ↵ insert · esc cancel · type to search                             ⌕ history|}];
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -250,15 +266,16 @@ let%expect_test "ctrl+r borrows the draft and esc restores it" =
    note. *)
 let%expect_test "ctrl+r shows the no-match note" =
   Tui.run ~name:"history-nomatch" ~provider:script ~seed:(fun p ->
-      Seed.history p [ Seed.history_entry ~ts:1000 "alpha one" ])
+      seed_history p [ history_entry ~ts:1000 "alpha one" ])
   @@ fun t ->
   reach_transcript t;
-  Tui.keys t Keys.ctrl_r;
+  Tui.keys t Key.ctrl_r;
   Tui.settle t;
   Tui.keys t "zzq";
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)

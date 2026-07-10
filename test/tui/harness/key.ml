@@ -3,7 +3,7 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-(* Raw byte encodings for terminal input. Feed to {!Term.send}; the driver
+(* Raw byte encodings for terminal input. Feed to {!Pty.send}; the driver
    never schedules writes, so these carry no timing. *)
 
 let enter = "\r"

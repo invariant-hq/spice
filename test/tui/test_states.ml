@@ -19,7 +19,7 @@ open Tui_harness
 let%expect_test "ctrl+c on an empty draft arms the quit chord" =
   Tui.run ~name:"states-quit-arm" @@ fun t ->
   Tui.settle t;
-  Tui.keys t Keys.ctrl_c;
+  Tui.keys t Key.ctrl_c;
   Tui.settle t;
   Tui.print t;
   [%expect
@@ -94,9 +94,9 @@ let%expect_test "a connected account changes the account line and footer" =
 let%expect_test "the quit chord exits the app cleanly" =
   Tui.run ~name:"states-quit-exit" @@ fun t ->
   Tui.settle t;
-  Tui.keys t Keys.ctrl_c;
+  Tui.keys t Key.ctrl_c;
   Tui.settle t;
-  Tui.keys t Keys.ctrl_c;
+  Tui.keys t Key.ctrl_c;
   Tui.await_exit t;
   (* [outcome] raises if the run errored, so retrieving it proves a clean Ok
      exit (its [last_session] is [None] until the turn loop lands). *)
@@ -106,9 +106,10 @@ let%expect_test "the quit chord exits the app cleanly" =
 
 (* Deliberately not covered here (see the coverage report):
    - workspace-tooling knob variants (auto/on): the eager launch spawns a real
-     `dune` subprocess that the health probe races the settle to connect to — a
-     genuinely flaky footer under the harness. Deterministic dune-state coverage
-     needs the faked dune-RPC seam (v3 plan §6, a Phase-2 item), not env knobs.
+     `dune` subprocess whose readiness is outside the virtual clock, making the
+     first sampled footer depend on host scheduling. Deterministic dune-state
+     coverage needs the faked dune-RPC seam (v3 plan §6, a Phase-2 item), not env
+     knobs.
    - empty-store / sessions-empty and the git workspace block: owned by the
      session-lifecycle and home ports (suite-port-3).
    - a confined (read-only/workspace-write) sandbox mode was observed to suppress

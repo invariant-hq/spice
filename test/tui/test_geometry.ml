@@ -120,7 +120,7 @@ let%expect_test "the idle home stage across the size ladder" =
 let%expect_test "the side pane presence tracks the width threshold in chat" =
   let script =
     [
-      Provider.message ~expect:[ "say hello" ] ~gate:"fin" ~id:"resp-1"
+      Provider_script.message ~expect:[ "say hello" ] ~gate:"fin" ~id:"resp-1"
         "Hello from spice.";
     ]
   in
@@ -184,8 +184,8 @@ let%expect_test "the side pane presence tracks the width threshold in chat" =
 22 | ❯ queue a message — sends after this turn
 23 | ────────────────────────────────────────────────────────────────────────────────────────────────────
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗                  ? for shortcuts|}];
-  (* Release for a clean teardown; the settled frame is not goldened (it would
-     race the turn-finished update against settle — see the mid-turn test). *)
+  (* Release for a clean teardown; the held frame above is the geometry contract
+     under test, so the settled frame is not duplicated here. *)
   Tui.release t "fin";
   Tui.settle t
 
@@ -197,8 +197,8 @@ let%expect_test "the side pane presence tracks the width threshold in chat" =
 let%expect_test "a resize mid-turn reflows the in-flight frame" =
   let held =
     [
-      Provider.message ~expect:[ "resize me" ] ~gate:"turn-1" ~id:"resp-1"
-        "Reflowed and settled.";
+      Provider_script.message ~expect:[ "resize me" ] ~gate:"turn-1"
+        ~id:"resp-1" "Reflowed and settled.";
     ]
   in
   Tui.run ~name:"geometry-midturn" ~provider:held @@ fun t ->
@@ -253,11 +253,7 @@ let%expect_test "a resize mid-turn reflows the in-flight frame" =
 14 | ❯ queue a message — sends after this turn
 15 | ────────────────────────────────────────────────────────────────────────
 16 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}];
-  (* Release for a clean teardown; the settled frame is deliberately not
-     goldened. The reflow is proved by the two HELD frames above (stable while the
-     gate holds the completion); a golden of the post-release settled frame would
-     race the turn-finished update against settle (answer rendered, working line
-     not yet cleared) — the settle-at-the-async-edge risk, avoided by not
-     asserting it here. *)
+  (* Release for a clean teardown. The two held frames above are the reflow
+     contract, so the post-release settled frame is not duplicated here. *)
   Tui.release t "turn-1";
   Tui.settle t

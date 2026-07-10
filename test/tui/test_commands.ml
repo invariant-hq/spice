@@ -122,7 +122,7 @@ let%expect_test "esc closes the palette and clears the input" =
   Tui.settle t;
   Tui.keys t "/q";
   Tui.settle t;
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t;
   Tui.print t;
   [%expect
@@ -273,7 +273,8 @@ let%expect_test "the sandbox flag overrides the configured mode" =
   Tui.enter t;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: read-only (flag)

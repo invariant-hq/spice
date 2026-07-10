@@ -24,24 +24,32 @@ open Tui_harness
 let no_wake project =
   Project.write project ".spice/config.json" {|{"run":{"subagent_wake":false}}|}
 
+let seed_prompt_session project id ~title ~prompt =
+  Project.write_path
+    (Project.data project
+       (Filename.concat "sessions" (Filename.concat id "session.json")))
+    (Printf.sprintf
+       {|{"version":1,"id":"%s","metadata":{"title":"%s","status":"active","cwd":"%s","created_at":1,"updated_at":1},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"%s"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"max_steps":100,"declarations":[],"host_tools":[]}},{"type":"turn_finished","turn":"turn-1","outcome":{"type":"completed"}}]}|}
+       id title (Project.root project) prompt)
+
 (* The parent's delegating step: a [spawn_subagent] function_call, run for real.
    Under the unordered matcher the initial request (arrival 1) consumes this — the
    follow-up carries the same "delegate" word but by then the item is claimed. *)
 let spawn ?(role = "explore") ?(task = "survey the code") ~call_id () =
-  Provider.tool_call ~expect:[ "delegate" ] ~id:("resp-" ^ call_id) ~call_id
-    ~name:"spawn_subagent"
+  Provider_script.tool_call ~expect:[ "delegate" ] ~id:("resp-" ^ call_id)
+    ~call_id ~name:"spawn_subagent"
     ~arguments:(Printf.sprintf {|{"role":%S,"task":%S}|} role task)
     ()
 
 (* The parent's follow-up step, after the launch ack folds into its request. Held
    so the parent working line is observable, then released to settle it. *)
 let parent_done ?(id = "resp-parent-done") ~gate answer =
-  Provider.message ~expect:[ "launched" ] ~gate ~id answer
+  Provider_script.message ~expect:[ "launched" ] ~gate ~id answer
 
 (* A child subagent's own turn, matched on its task text and held on its gate so
    its run is observable while the count is asserted. *)
 let child ?(id = "resp-child") ~gate ~task answer =
-  Provider.message ~expect:[ task ] ~gate ~id answer
+  Provider_script.message ~expect:[ task ] ~gate ~id answer
 
 (* {2 Spawn, count, settle} *)
 
@@ -133,7 +141,7 @@ let%expect_test "three children in one turn show the count and three strip rows"
     =
   let script =
     [
-      Provider.tool_calls ~expect:[ "delegate" ] ~id:"resp-m1"
+      Provider_script.tool_calls ~expect:[ "delegate" ] ~id:"resp-m1"
         ~calls:
           [
             ( "c1",
@@ -252,7 +260,7 @@ let%expect_test
     "wide short: the pane agents glance folds, keeping the browse hint" =
   let script =
     [
-      Provider.tool_calls ~expect:[ "delegate" ] ~id:"resp-ps1"
+      Provider_script.tool_calls ~expect:[ "delegate" ] ~id:"resp-ps1"
         ~calls:
           [
             ( "c1",
@@ -375,7 +383,7 @@ let%expect_test "the switcher strip engages, walks, and releases on the arrows"
   Tui.release t "parent";
   Tui.settle t;
   (* [↓] engages: the main row takes the [❯] cursor. *)
-  Tui.keys t Keys.down;
+  Tui.keys t Key.down;
   Tui.settle t;
   Tui.print t;
   [%expect
@@ -404,7 +412,7 @@ let%expect_test "the switcher strip engages, walks, and releases on the arrows"
 23 |   ❯ ◯ main
 24 |     • Explore   survey the code · 0s|}];
   (* [↓] again walks onto the child row, deselecting main. *)
-  Tui.keys t Keys.down;
+  Tui.keys t Key.down;
   Tui.settle t;
   Tui.print t;
   [%expect
@@ -433,7 +441,7 @@ let%expect_test "the switcher strip engages, walks, and releases on the arrows"
 23 |     ◯ main
 24 |   ❯ • Explore   survey the code · 0s|}];
   (* [esc] releases; the strip stays, now unfocused. *)
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t;
   Tui.print t;
   [%expect
@@ -477,7 +485,7 @@ let%expect_test
   Tui.run ~name:"threads-resume-live" ~unordered:true ~provider:script
     ~seed:(fun project ->
       no_wake project;
-      Seed.prompt_session_titled project "ses_live" ~title:"resume target"
+      seed_prompt_session project "ses_live" ~title:"resume target"
         ~prompt:"hello from the past")
   @@ fun t ->
   Tui.settle t;

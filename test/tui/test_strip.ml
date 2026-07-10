@@ -27,9 +27,10 @@ let%expect_test
     "a submit during a turn queues in the strip and drains on settle" =
   let script =
     [
-      Provider.message ~expect:[ "hold" ] ~gate:"held" ~id:"resp-1"
+      Provider_script.message ~expect:[ "hold" ] ~gate:"held" ~id:"resp-1"
         "First turn done.";
-      Provider.message ~expect:[ "changelog" ] ~id:"resp-2" "Changelog updated.";
+      Provider_script.message ~expect:[ "changelog" ] ~id:"resp-2"
+        "Changelog updated.";
     ]
   in
   Tui.run ~name:"strip-queue" ~provider:script @@ fun t ->
@@ -111,7 +112,7 @@ let%expect_test
 let%expect_test "up-arrow pops the queued prompt back into the composer" =
   let script =
     [
-      Provider.message ~expect:[ "hold" ] ~gate:"held" ~id:"resp-1"
+      Provider_script.message ~expect:[ "hold" ] ~gate:"held" ~id:"resp-1"
         "First turn done.";
     ]
   in
@@ -151,7 +152,7 @@ let%expect_test "up-arrow pops the queued prompt back into the composer" =
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗   ? for shortcuts|}];
   (* [↑] pops the queued prompt back; the strip clears, the turn keeps running. *)
-  Tui.keys t Keys.up;
+  Tui.keys t Key.up;
   Tui.settle t;
   Tui.print t;
   [%expect
@@ -192,10 +193,10 @@ let%expect_test "up-arrow pops the queued prompt back into the composer" =
 let%expect_test "a queued correction sends after the turn is interrupted" =
   let script =
     [
-      Provider.message ~expect:[ "wrong" ] ~gate:"held" ~id:"resp-1"
+      Provider_script.message ~expect:[ "wrong" ] ~gate:"held" ~id:"resp-1"
         "This wrong-direction answer is interrupted.";
-      Provider.message ~expect:[ "changelog" ] ~gate:"correction" ~id:"resp-2"
-        "Changelog updated after the interrupt.";
+      Provider_script.message ~expect:[ "changelog" ] ~gate:"correction"
+        ~id:"resp-2" "Changelog updated after the interrupt.";
     ]
   in
   Tui.run ~name:"strip-interrupt-queue" ~unordered:true ~provider:script
@@ -209,7 +210,7 @@ let%expect_test "a queued correction sends after the turn is interrupted" =
   Tui.enter t;
   Tui.settle t;
   (* First esc arms the interrupt; the queue is untouched — the row stays. *)
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t;
   Tui.print t;
   [%expect
@@ -240,9 +241,9 @@ let%expect_test "a queued correction sends after the turn is interrupted" =
   (* Second esc fires the cooperative interrupt (Interrupting…); third forces it,
      the turn settles Interrupted, and the queued correction drains as its own
      turn (held on its gate, then released to settle). *)
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t;
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   ignore (Tui.await_request t 2 : string);
   Tui.release t "correction";
   Tui.settle t;
@@ -281,7 +282,7 @@ let%expect_test "a queued correction sends after the turn is interrupted" =
 let%expect_test "ctrl+o raises then clears the verbose strip row" =
   let script =
     [
-      Provider.message ~expect:[ "plain" ] ~gate:"fin" ~id:"resp-1"
+      Provider_script.message ~expect:[ "plain" ] ~gate:"fin" ~id:"resp-1"
         "A plain settled answer.";
     ]
   in
@@ -293,7 +294,7 @@ let%expect_test "ctrl+o raises then clears the verbose strip row" =
   Tui.release t "fin";
   Tui.settle t;
   (* ctrl+o raises the verbose row. *)
-  Tui.keys t Keys.ctrl_o;
+  Tui.keys t Key.ctrl_o;
   Tui.settle t;
   Tui.print t;
   [%expect
@@ -322,7 +323,7 @@ let%expect_test "ctrl+o raises then clears the verbose strip row" =
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗     ? for shortcuts|}];
   (* A second ctrl+o clears it. *)
-  Tui.keys t Keys.ctrl_o;
+  Tui.keys t Key.ctrl_o;
   Tui.settle t;
   Tui.print t;
   [%expect

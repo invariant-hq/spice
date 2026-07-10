@@ -22,7 +22,7 @@ let right = "\027[C"
 (* The user config the panel writes, under the isolated XDG home. *)
 let read_config t =
   let path = Project.scratch (Tui.project t) "config/spice/config.json" in
-  if Sys.file_exists path then Util.read_file path else ""
+  if Sys.file_exists path then Project.read_path path else ""
 
 (* Open the model panel via [/model] from the home stage: the palette filters to
    the command, and Enter runs it. *)
@@ -143,7 +143,7 @@ let%expect_test "left returns effort to the default" =
   open_model t;
   Tui.keys t right;
   Tui.settle t;
-  Tui.keys t Keys.left;
+  Tui.keys t Key.left;
   Tui.settle t;
   Tui.print t;
   [%expect
@@ -211,10 +211,9 @@ let%expect_test "select persists the model and effort, then closes" =
 24 |   model set to openai/gpt-5.5 · high effort — effective next turn|}];
   print_string
     (Printf.sprintf "model written: %b\nreasoning written: %b\n"
-       (Util.contains (read_config t) "gpt-5.5")
-       (Util.contains (read_config t) "reasoning"));
-  [%expect
-    {|
+       (Screen.contains (read_config t) "gpt-5.5")
+       (Screen.contains (read_config t) "reasoning"));
+  [%expect {|
     model written: true
     reasoning written: true |}]
 
@@ -300,10 +299,11 @@ let%expect_test "escape from a settings-opened model panel restores settings" =
   Tui.settle t;
   Tui.enter t;
   Tui.settle t;
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 | ──  settings ─────────────────────────────────────────────────────────────env ──
+  [%expect
+    {|01 | ──  settings ─────────────────────────────────────────────────────────────env ──
 02 |
 03 |   config · status · usage · skills
 04 |

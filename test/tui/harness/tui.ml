@@ -35,7 +35,7 @@ type t = {
   mutable exit_result : (Spice_tui.outcome, Spice_tui.Error.t) result option;
       (** the [Spice_tui.run] result, set once the loop fiber exits *)
   project : Project.t;
-  provider : Provider.t option;
+  provider : Provider_runtime.t option;
 }
 
 (* The virtual clock's launch instant. Ages, elapsed counters, and session-id
@@ -86,13 +86,18 @@ let set_time t time =
 (* Quiescence: the loop is parked, no messages are pending, the renderer
    reports no async work (nudged with a redraw when it does), no frame sits
    gated behind the virtual render cadence, and a scheduler drain settles
-   nothing new. In-flight performs do NOT block settling — a perform parked on
-   a held provider gate is exactly the stable mid-flight state a test wants to
+   nothing new. In-flight performs normally block settling; work parked on a
+   held provider gate is the deliberate stable mid-flight state a test wants to
    observe. *)
 let gate_held t =
   match t.provider with
-  | Some provider -> Provider.any_held provider
+  | Some provider -> Provider_runtime.any_held provider
   | None -> false
+
+let provider t =
+  match t.provider with
+  | Some provider -> provider
+  | None -> failwith "tui harness: no provider script was given to run"
 
 (* Wake the loop and block until it parks again — event-paced, no sleep.
    Every wake leads to exactly one fresh park (the loop always returns to
@@ -125,9 +130,17 @@ let step_to t target =
   in
   loop ()
 
-let next_second t =
-  let position = Matrix_test.now t.backend -. epoch in
-  epoch +. Float.ceil (position +. 1e-6)
+let messages_pending = "messages"
+let performs_pending = "performs"
+let render_pending = "render"
+let live_pending = "spice.live"
+let jobs_pending = "spice.jobs"
+let pending probe name = List.mem name (Mosaic.Probe.pending probe)
+
+let held_work name =
+  String.equal name performs_pending
+  || String.equal name live_pending
+  || String.equal name jobs_pending
 
 let settle_budget = 20_000 (* iterations, ~1ms each: fail loudly, never hang *)
 
@@ -136,41 +149,24 @@ let rec settle_from t spent =
     let probe = Option.get t.probe in
     mark "settle iteration";
     Printf.eprintf
-      "[settle %d] performs:%b messages:%b render:%b redraw:%b \
-       parked:%b         gate:%b now:%.3f\n\
-       %!"
-      spent
-      (Mosaic.Probe.performs_pending probe)
-      (Mosaic.Probe.messages_pending probe)
-      (Mosaic.Probe.render_pending probe)
+      "[settle %d] pending:%s redraw:%b parked:%b gate:%b now:%.3f\n%!" spent
+      (String.concat "," (Mosaic.Probe.pending probe))
       (Matrix.redraw_requested (Matrix_test.app t.backend))
       t.parked (gate_held t)
       (Matrix_test.now t.backend -. epoch));
   (if spent > settle_budget then
      let probe = Option.get t.probe in
      Util.failf
-       "tui harness: settle did not converge (performs:%b messages:%b        \
-        render:%b redraw:%b parked:%b gate_held:%b)"
-       (Mosaic.Probe.performs_pending probe)
-       (Mosaic.Probe.messages_pending probe)
-       (Mosaic.Probe.render_pending probe)
+       "tui harness: settle did not converge (pending:%s redraw:%b parked:%b \
+        gate_held:%b)"
+       (String.concat "," (Mosaic.Probe.pending probe))
        (Matrix.redraw_requested (Matrix_test.app t.backend))
        t.parked (gate_held t));
   wait_parked t;
   let probe = Option.get t.probe in
-  if Mosaic.Probe.performs_pending probe && not (gate_held t) then (
-    (* Asynchronous work (the brief load, a turn past its released gate) is
-       in flight and nothing is deliberately held: wait for its completion —
-       the perform wrapper wakes the loop when it finishes. Some background
-       work also sleeps on the (virtual) clock — the dune RPC probe's retry
-       backoff, for example — so periodically step time forward one second,
-       as real waiting would. Held-gate states never reach this branch, so
-       observed elapsed counters stay frozen where tests need them. *)
-    breathe t;
-    if spent mod 32 = 31 then step_to t (next_second t);
-    settle_from t (spent + 1))
-  else if
-    Mosaic.Probe.messages_pending probe
+  let work = Mosaic.Probe.pending probe in
+  if
+    List.mem messages_pending work
     || Matrix.redraw_requested (Matrix_test.app t.backend)
   then (
     (* Async work landed a message or a redraw between the loop parking and
@@ -181,9 +177,17 @@ let rec settle_from t spent =
        [Sub.every]) a frame past where the interaction left them. *)
     round_trip t;
     settle_from t (spent + 1))
-  else if Mosaic.Probe.render_pending probe then (
+  else if List.mem render_pending work then (
     Matrix.request_redraw (Matrix_test.app t.backend);
     round_trip t;
+    settle_from t (spent + 1))
+  else if List.exists (fun name -> not (gate_held t && held_work name)) work
+  then (
+    (* The remaining checks are application or perform fibers. Let Eio poll
+       real IO without moving the virtual clock. A deliberately held provider
+       request is a stable observation point, so its perform/Live checks do not
+       prevent settlement. *)
+    breathe t;
     settle_from t (spent + 1))
   else
     (* Quiet-confirmation drain: a few scheduler rounds must pass without a
@@ -221,29 +225,56 @@ let settle t =
    This helper instead requires a pending perform as a positive signal, drains
    every queued message/redraw/render at the current virtual instant, and only
    returns after a short quiet confirmation. *)
-let settle_pending_perform t =
+let settle_pending_perform ?(provider_responses = 0) t =
+  if provider_responses < 0 then
+    invalid_arg "Tui.settle_pending_perform: negative provider response count";
+  let provider_ready () =
+    match (provider_responses, t.provider) with
+    | 0, _ -> true
+    | _, Some provider -> Provider_runtime.served provider >= provider_responses
+    | _, None ->
+        invalid_arg
+          "Tui.settle_pending_perform: provider responses requested without a \
+           provider"
+  in
   let rec loop spent quiet =
     if spent > settle_budget then
       Util.failf "tui harness: a pending perform never reached a stable frame";
     wait_parked t;
     let probe = Option.get t.probe in
+    let work = Mosaic.Probe.pending probe in
     if
-      Mosaic.Probe.messages_pending probe
+      List.mem messages_pending work
       || Matrix.redraw_requested (Matrix_test.app t.backend)
     then (
       round_trip t;
       loop (spent + 1) 0)
-    else if Mosaic.Probe.render_pending probe then (
+    else if List.mem render_pending work then (
       Matrix.request_redraw (Matrix_test.app t.backend);
       round_trip t;
       loop (spent + 1) 0)
-    else if Mosaic.Probe.performs_pending probe then
-      if quiet >= 3 then ()
-      else (
+    else if not (provider_ready ()) then (
+      breathe t;
+      loop (spent + 1) 0)
+    else if List.mem performs_pending work then (
+      let other_work =
+        List.exists
+          (fun name ->
+            not
+              (String.equal name performs_pending
+              || (gate_held t && held_work name)))
+          work
+      in
+      if other_work then (
+        breathe t;
+        loop (spent + 1) 0)
+      else if quiet >= 3 then ()
+      else
         let before = (t.idles, t.wakes, t.async_wakes) in
         breathe t;
         let quiet =
-          if t.parked && before = (t.idles, t.wakes, t.async_wakes) then quiet + 1
+          if t.parked && before = (t.idles, t.wakes, t.async_wakes) then
+            quiet + 1
           else 0
         in
         loop (spent + 1) quiet)
@@ -253,97 +284,27 @@ let settle_pending_perform t =
   in
   loop 0 0
 
-(* The turn has left the working regime. While a turn runs, the working-line
-   spinner's [Sub.every] keeps the loop's park timeout at the spinner interval
-   (~0.1 s); a settled turn parks either with no timer or on the idle chat's slow
-   (~2 s) refresh. So a park with the timeout absent or well above the spinner
-   interval is the load-INDEPENDENT signal that the turn ended — unlike a fixed
-   breath count, which the deltas-to-completion gap can outrun under heavy
-   parallel load. *)
-let left_working_regime t =
-  t.parked && match t.last_timeout with None -> true | Some s -> s > 0.5
-
-(* Breaths of quiet required after the working regime ends before the frame is
-   taken as ready — a small render-settle confirm on top of the positive signal
-   above, not the wait itself. *)
-let release_confirm = 4
-
-(* Wait for an in-flight turn to settle: it has {!left_working_regime} and then
-   a few quiet breaths. The completion — a gate release's terminal event, or a
-   force-interrupt's synthesized settle — runs on the drain fiber past the probe,
-   so this positive, load-independent signal is what {!release} and {!settle_turn}
-   share instead of a fixed breath count. [what] labels the loud failure. *)
-let await_turn_settled t what =
-  let rec loop spent quiet =
-    if left_working_regime t && quiet >= release_confirm then ()
-    else if spent > settle_budget then
-      Util.failf "tui harness: %s but the turn never settled" what
-    else (
-      check_alive t;
-      let before = t.async_wakes in
+let await_probe_clear t name what =
+  let rec loop spent =
+    if spent > settle_budget then
+      Util.failf "tui harness: %s but %s remained pending" what name;
+    check_alive t;
+    wait_parked t;
+    let probe = Option.get t.probe in
+    if pending probe name then (
       breathe t;
-      let quiet =
-        if left_working_regime t && t.async_wakes = before then quiet + 1 else 0
-      in
-      loop (spent + 1) quiet)
+      loop (spent + 1))
   in
-  loop 0 0
+  loop 0
 
-(* Settle after a keystroke that ends an in-flight turn without a gate release —
-   a force-interrupt esc, say. Such a turn settles on the drain fiber past the
-   probe (its synthesized [Interrupted] result → session save → dispatch), and
-   the gate is still nominally held, so a plain {!settle} relaxes around the held
-   gate and can return on the pre-settle "Interrupting…" frame. Wait for the turn
-   to leave the working regime first, exactly as {!release} does for a gate
-   release, then settle the resulting frame. *)
+(* A force-interrupt can end the main turn while its provider gate remains
+   nominally held. Wait for the main-session terminal boundary, then settle the
+   message and render checks it produced. *)
 let settle_turn t =
-  await_turn_settled t "ended a turn";
+  await_probe_clear t live_pending "ended a turn";
   settle t
 
-(* Wait for an in-flight turn to suspend into a dialog it opens off a tool call
-   (a permission prompt, an [ask_user] question). The dialog opens when the drain
-   reads the tool-call response — a socket read past the probe — but unlike a
-   completion the turn stays in flight (its working-line spinner sub stays live),
-   so {!left_working_regime} never fires; and unlike a completion there is no text
-   to stream (the response is a [function_call]), so the FIRST out-of-loop wake
-   after the request arrives IS the dialog opening. Call it right after the
-   {!await_request} for the tool-call request (which returns before the response
-   is even served, so the dialog cannot already be open): wait for that first
-   wake, then settle the suspended — hence stable — dialog frame. *)
-(* Breaths of quiet {!await_suspend} confirms before taking a dialog as open.
-   Wider than a completion's confirm because there is no positive signal to fall
-   back on: it is the whole wait, so it must outlast the tool-call-response poll
-   under load. Even so it is not a guarantee — see {!await_suspend}. *)
-let suspend_confirm = 30
-
-(* Wait for an in-flight turn to suspend into a dialog it opens off a tool call
-   (a permission prompt, an [ask_user] question). Unlike a completion this has NO
-   load-independent signal: the turn stays in flight (its working-line spinner sub
-   stays live, so {!left_working_regime} never fires), and the dialog opens when
-   the drain reads the (ungated) tool-call response — a socket read past the probe
-   whose delivery is gated on a real eio poll — after which the app is probe-quiet
-   in a state indistinguishable, to the harness, from the brief pre-read quiet.
-   Often the dialog is already open by the time this runs ({!await_request}'s own
-   settling drove the poll); under contention it is not, and the poll can outrun
-   settle's short quiet-drain. So settle, then confirm over a generous quiet
-   window, re-settling on any drain wake — a widened drain, not a positive wait.
-   Call it right after the {!await_request} for the tool-call request. *)
-let await_suspend t =
-  settle t;
-  let rec confirm spent quiet =
-    if quiet >= suspend_confirm then ()
-    else if spent > settle_budget then
-      Util.failf "tui harness: a dialog never stabilized"
-    else (
-      check_alive t;
-      let before = t.async_wakes in
-      breathe t;
-      if t.async_wakes = before then confirm (spent + 1) (quiet + 1)
-      else (
-        settle t;
-        confirm (spent + 1) 0))
-  in
-  confirm 0 0
+let await_suspend = settle
 
 (* Move virtual time forward by [dt] seconds, relative to the current instant.
    Displayed counters move by exactly [dt]. The trailing settle is
@@ -408,8 +369,8 @@ let keys t bytes =
   wake t;
   if ends_with_escape bytes then flush_pending_escape t
 
-let enter t = keys t Keys.enter
-let paste t text = keys t (Keys.bracketed_paste text)
+let enter t = keys t Key.enter
+let paste t text = keys t (Key.bracketed_paste text)
 
 let resize t ~width ~height =
   Matrix_test.resize t.backend ~width ~height;
@@ -423,54 +384,12 @@ let print t =
 
 let project t = t.project
 
-let provider t =
-  match t.provider with
-  | Some provider -> provider
-  | None -> failwith "tui harness: no provider script was given to run"
-
-(* Release a held provider gate and wait for the unblocked turn to settle, so a
-   following {!settle} observes the completion rather than racing it.
-
-   The turn's HTTP read and completion run on the {!Spice_host.Live} drain fiber,
-   forked off the Mosaic loop and NOT through [Cmd.perform] — the quiescence
-   probe never sees it. Between resolving the gate and the turn settling there is
-   a window with no probe-visible work and no gate held (the drain blocks in a
-   socket read, then in the completion's domain-blocking session-save [fsync]), so
-   a bare settle's short quiet-drain can declare quiescence too early — with the
-   working line still up (~3% of runs, worse under load).
-
-   Two phases, both driven by real-clock breaths (each lets eio poll the loopback
-   socket and run the drain fiber) with no virtual-time movement — so no elapsed
-   counter or spinner phase drifts:
-
-   - Phase 1 waits until the provider's [served] count passes this turn: the whole
-     (Content-Length-delimited) response is on the wire. It removes the dominant
-     flake — a settle that ran before the response was even written.
-   - Phase 2 waits until the app has {!left_working_regime} (the working-line
-     spinner is gone) and then a few quiet breaths. The regime check is the
-     load-independent signal that the turn actually settled: a fixed breath count
-     cannot bound the deltas-to-completion gap under heavy parallel load, but the
-     spinner disappearing is a fact about the app's state, not the wall clock.
-
-   (The old workaround, [advance] past the release, moved virtual time and — on
-   real tool-write turns — let a background workspace save race the turn save into
-   a session conflict; this moves no time.) *)
+(* Release a held response and wait for the main-session terminal boundary. The
+   probe remains pending across the socket read, session save, and terminal
+   event delivery, so no provider counter or screen-state proxy is needed. *)
 let release t name =
-  let provider = provider t in
-  let served0 = Provider.served provider in
-  Provider.release provider name;
-  let rec await_served spent =
-    if Provider.served provider > served0 then ()
-    else if spent > settle_budget then
-      Util.failf "tui harness: released gate %S but its response was never sent"
-        name
-    else (
-      check_alive t;
-      breathe t;
-      await_served (spent + 1))
-  in
-  await_served 0;
-  await_turn_settled t (Printf.sprintf "released gate %S" name)
+  Provider_runtime.release (provider t) name;
+  settle_turn t
 
 let release_background t name =
   let async0 = t.async_wakes in
@@ -489,23 +408,28 @@ let release_background t name =
   settle t
 
 (* Await the [index]th request while pumping the app: the turn pipeline
-   interleaves host work with messages the shell must process (and small
-   cadence-gated delays), so a plain condition wait can starve it. Each round
-   settles — flushing gated frames and messages — then breathes one real
-   millisecond for the pipeline's own IO. Fails loudly rather than hanging. *)
+   interleaves host work with messages the shell must process. *)
 let await_request t index =
   let provider = provider t in
   let rec wait rounds =
-    match Provider.request provider index with
+    match Provider_runtime.request provider index with
     | Some body -> body
     | None ->
         if rounds > 60_000 then
           Util.failf "tui harness: request %d never arrived" index;
+        if debug && rounds = 1_000 then
+          Printf.eprintf "[await_request %d] screen:\n%s\n%!" index
+            (Matrix_test.screen t.backend);
         settle t;
         breathe t;
         wait (rounds + 1)
   in
   wait 0
+
+let await_turn t index =
+  let body = await_request t index in
+  settle_turn t;
+  body
 
 let stop t =
   t.stopping <- true;
@@ -536,7 +460,7 @@ let sandbox_mode = function
   | `Danger_full_access -> Spice_host.Sandbox.Mode.Danger_full_access
 
 let auth_base_url provider =
-  let base = Provider.base_url provider in
+  let base = Provider_runtime.base_url provider in
   let suffix = "/v1" in
   if String.ends_with ~suffix base then
     String.sub base 0 (String.length base - String.length suffix)
@@ -566,7 +490,8 @@ let run ?(size = (80, 24)) ?(env = []) ?(unordered = false) ?(review = false)
   let provider =
     Option.map
       (fun script ->
-        Provider.start ~sw ~net:(Eio.Stdenv.net stdenv) ~unordered script)
+        Provider_runtime.start ~sw ~net:(Eio.Stdenv.net stdenv) ~unordered
+          script)
       script
   in
   let env =
@@ -578,7 +503,7 @@ let run ?(size = (80, 24)) ?(env = []) ?(unordered = false) ?(review = false)
   in
   let overrides =
     Project.bindings
-      ?openai_base_url:(Option.map Provider.base_url provider)
+      ?openai_base_url:(Option.map Provider_runtime.base_url provider)
       ~unset ~extra:env project
   in
   Project.apply overrides;
@@ -662,7 +587,9 @@ let run ?(size = (80, 24)) ?(env = []) ?(unordered = false) ?(review = false)
     Spice_tui.Startup.make
       ~cwd:(Spice_path.Abs.of_string_exn (Project.root project))
       ?session:(Option.map Spice_session.Id.of_string session)
-      ?launch ?sandbox:(Option.map sandbox_mode sandbox) ~input ()
+      ?launch
+      ?sandbox:(Option.map sandbox_mode sandbox)
+      ~input ()
   in
   mark "run: launching";
   Eio.Fiber.both

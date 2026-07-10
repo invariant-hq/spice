@@ -73,20 +73,29 @@ let%expect_test "typing lands in the composer" =
 
 let seed_recent_session project id ?title ~prompt ~updated_at () =
   let title =
-    match title with None -> "" | Some value -> Printf.sprintf {|"title":%S,|} value
+    match title with
+    | None -> ""
+    | Some value -> Printf.sprintf {|"title":%S,|} value
   in
-  Util.write_file
+  Project.write_path
     (Project.data project
        (Filename.concat "sessions" (Filename.concat id "session.json")))
     (Printf.sprintf
-       {|{"version":1,"id":%S,"metadata":{%s"status":"active","cwd":%S,"created_at":1,"updated_at":%d},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":%S}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"host_tools":[]}},{"type":"turn_finished","turn":"turn-1","outcome":{"type":"completed"}}]}|}
+       {|{"version":1,"id":%S,"metadata":{%s"status":"active","cwd":%S,"created_at":1,"updated_at":%d},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":%S}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"max_steps":100,"declarations":[],"host_tools":[]}},{"type":"turn_finished","turn":"turn-1","outcome":{"type":"completed"}}]}|}
        id title (Project.root project) updated_at prompt)
+
+let seed_subagent_run project ~parent ~child ~role ~task ~status_json =
+  Project.write_path
+    (Project.data project
+       (Filename.concat "subagents" (Filename.concat parent (child ^ ".json"))))
+    (Printf.sprintf
+       {|{"child":"%s","parent":"%s","parent_turn":"turn-1","parent_call_id":"call-1","spawn":{"role":"%s","task":"%s"},"depth":1,"status":%s,"created_at":2000}|}
+       child parent role task status_json)
 
 (* The home brief owns the live workspace facts. A real Git fixture with an
    uncommitted CR-bearing edit renders worktree and addressed-CR rows together. *)
 let%expect_test "the home stage renders worktree and CR facts" =
-  Tui.run ~name:"home-workspace"
-    ~seed:(fun project ->
+  Tui.run ~name:"home-workspace" ~seed:(fun project ->
       Project.write project "lib/code.ml" "let beta = 2\n";
       Project.git_baseline project;
       Project.write project "lib/code.ml"
@@ -94,7 +103,8 @@ let%expect_test "the home stage renders worktree and CR facts" =
   @@ fun t ->
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |
 03 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
 04 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
@@ -122,8 +132,7 @@ let%expect_test "the home stage renders worktree and CR facts" =
 (* A recent top-level session is named by its title; an untitled session falls
    back to its first prompt rather than leaking its opaque id. *)
 let%expect_test "recent session titles and prompt fallbacks render honestly" =
-  Tui.run ~name:"home-session-fallback"
-    ~seed:(fun project ->
+  Tui.run ~name:"home-session-fallback" ~seed:(fun project ->
       seed_recent_session project "ses_titled" ~title:"Parser refactor spike"
         ~prompt:"spike it" ~updated_at:999_999 ();
       seed_recent_session project "ses_untitled"
@@ -131,7 +140,8 @@ let%expect_test "recent session titles and prompt fallbacks render honestly" =
   @@ fun t ->
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |
 03 |
 04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
@@ -159,20 +169,20 @@ let%expect_test "recent session titles and prompt fallbacks render honestly" =
 (* Persisted subagent children never become the home stage's resumable recent
    session; the top-level parent remains the visible candidate. *)
 let%expect_test "subagent child sessions are excluded from the home recent" =
-  Tui.run ~name:"home-session-child"
-    ~seed:(fun project ->
+  Tui.run ~name:"home-session-child" ~seed:(fun project ->
       seed_recent_session project "ses_main" ~title:"Main investigation"
         ~prompt:"investigate" ~updated_at:999_999 ();
       seed_recent_session project "ses_sub" ~title:"subagent explore: survey"
         ~prompt:"survey" ~updated_at:1_000_000 ();
-      Seed.subagent_run project ~parent:"ses_main" ~child:"ses_sub"
+      seed_subagent_run project ~parent:"ses_main" ~child:"ses_sub"
         ~role:"explore" ~task:"survey"
         ~status_json:
           {|{"type":"completed","completed_at":1000,"summary":"done"}|})
   @@ fun t ->
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |
 03 |
 04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
@@ -200,8 +210,7 @@ let%expect_test "subagent child sessions are excluded from the home recent" =
 (* Enter on an empty home draft resumes the recent session through the same
    host load and replay path as the sessions panel. *)
 let%expect_test "enter on an empty home draft resumes the newest session" =
-  Tui.run ~name:"home-session-enter"
-    ~seed:(fun project ->
+  Tui.run ~name:"home-session-enter" ~seed:(fun project ->
       seed_recent_session project "ses_recent" ~title:"Parser refactor spike"
         ~prompt:"spike it" ~updated_at:1_000_000 ())
   @@ fun t ->
@@ -209,7 +218,8 @@ let%expect_test "enter on an empty home draft resumes the newest session" =
   Tui.enter t;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -236,8 +246,7 @@ let%expect_test "enter on an empty home draft resumes the newest session" =
 
 (* The two-second brief tick re-reads Git state while the home remains idle. *)
 let%expect_test "the home worktree count refreshes after an edit" =
-  Tui.run ~name:"home-worktree-live"
-    ~seed:(fun project ->
+  Tui.run ~name:"home-worktree-live" ~seed:(fun project ->
       Project.write project "lib/code.ml" "let beta = 2\n";
       Project.write project "notes.txt" "baseline\n";
       Project.git_baseline project;
@@ -247,7 +256,8 @@ let%expect_test "the home worktree count refreshes after an edit" =
   Project.write (Tui.project t) "notes.txt" "changed\n";
   Tui.advance t 2.0;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |
 03 |
 04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
@@ -273,7 +283,7 @@ let%expect_test "the home worktree count refreshes after an edit" =
 24 |   ! not logged in · /login · $PROJECT · gpt-5.5 medium · dune: ✗|}]
 
 let rec advance_until t ~marker remaining =
-  if Util.contains (Tui.screen t) marker then ()
+  if Screen.contains (Tui.screen t) marker then ()
   else if remaining = 0 then failwith "home animation marker was never rendered"
   else (
     Tui.advance t 0.1;
@@ -286,12 +296,12 @@ let resting_row = "▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂"
    returns to rest, loops into the same pour frame, and the first printable key
    freezes the lockup permanently. *)
 let%expect_test "the home animation advances and freezes on a keystroke" =
-  Tui.run ~name:"home-motion" ~env:[ ("SPICE_REDUCED_MOTION", "0") ]
-  @@ fun t ->
+  Tui.run ~name:"home-motion" ~env:[ ("SPICE_REDUCED_MOTION", "0") ] @@ fun t ->
   Tui.settle t;
   advance_until t ~marker:pouring_row 30;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |
 03 |
 04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀
@@ -318,7 +328,8 @@ let%expect_test "the home animation advances and freezes on a keystroke" =
   advance_until t ~marker:resting_row 30;
   advance_until t ~marker:pouring_row 30;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |
 03 |
 04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀
@@ -346,7 +357,8 @@ let%expect_test "the home animation advances and freezes on a keystroke" =
   Tui.settle t;
   Tui.advance t 1.0;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |
 03 |
 04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
@@ -377,7 +389,8 @@ let%expect_test "reduced motion keeps the home lockup static" =
   Tui.settle t;
   Tui.advance t 1.0;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |
 03 |
 04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·

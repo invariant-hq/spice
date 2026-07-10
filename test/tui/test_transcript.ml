@@ -10,7 +10,7 @@ open Tui_harness
    a borderless ocaml fence, the interrupt ladder (esc interrupts, ctrl+c arms
    quit and never interrupts), mid-stream streaming observed pre-settle, and the
    reasoning ticker settling to a titled one-liner. Completions are held on a gate
-   ({!Provider.message} ~gate, or {!Provider.stream_hold} which flushes the deltas
+   ({!Provider_script.message} ~gate, or {!Provider_script.stream_hold} which flushes the deltas
    then holds before the terminal event) so the settled OR mid-flight frame is
    observed deterministically.
 
@@ -37,7 +37,7 @@ let run_turn t prompt =
 let%expect_test "the drop and a settled answer" =
   let script =
     [
-      Provider.message ~expect:[ "retry" ] ~gate:"fin" ~id:"resp-1"
+      Provider_script.message ~expect:[ "retry" ] ~gate:"fin" ~id:"resp-1"
         "The retry logic backs off exponentially.";
     ]
   in
@@ -80,7 +80,10 @@ let%expect_test "the document grammar spaces top-level blocks" =
      Each failure doubles the delay until it reaches the ceiling."
   in
   let script =
-    [ Provider.message ~expect:[ "design" ] ~gate:"fin" ~id:"resp-1" answer ]
+    [
+      Provider_script.message ~expect:[ "design" ] ~gate:"fin" ~id:"resp-1"
+        answer;
+    ]
   in
   Tui.run ~name:"transcript-blocks" ~provider:script @@ fun t ->
   Tui.settle t;
@@ -116,11 +119,17 @@ let%expect_test "the document grammar spaces top-level blocks" =
    markers and no box/gutter characters around it. *)
 let%expect_test "an ocaml fence renders borderless code" =
   let answer =
-    "Here is the helper:\n\n```ocaml\nlet add x y = x + y\n```\n\nCall it with \
-     two ints."
+    "Here is the helper:\n\n\
+     ```ocaml\n\
+     let add x y = x + y\n\
+     ```\n\n\
+     Call it with two ints."
   in
   let script =
-    [ Provider.message ~expect:[ "helper" ] ~gate:"fin" ~id:"resp-1" answer ]
+    [
+      Provider_script.message ~expect:[ "helper" ] ~gate:"fin" ~id:"resp-1"
+        answer;
+    ]
   in
   Tui.run ~name:"transcript-fence" ~provider:script @@ fun t ->
   Tui.settle t;
@@ -169,7 +178,7 @@ let%expect_test "an ocaml fence renders borderless code" =
 let%expect_test "esc interrupts an in-flight turn, forcing on the third press" =
   let script =
     [
-      Provider.message ~expect:[ "wait" ] ~gate:"held" ~id:"resp-1"
+      Provider_script.message ~expect:[ "wait" ] ~gate:"held" ~id:"resp-1"
         "This answer should never render.";
     ]
   in
@@ -180,7 +189,7 @@ let%expect_test "esc interrupts an in-flight turn, forcing on the third press" =
   ignore (Tui.await_request t 1 : string);
   Tui.settle t;
   (* First esc arms the interrupt. *)
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t;
   Tui.print t;
   [%expect
@@ -209,7 +218,7 @@ let%expect_test "esc interrupts an in-flight turn, forcing on the third press" =
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   Press Esc again to interrupt|}];
   (* Second esc fires the cooperative interrupt; the drain advertises the force. *)
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t;
   Tui.print t;
   [%expect
@@ -237,10 +246,10 @@ let%expect_test "esc interrupts an in-flight turn, forcing on the third press" =
 22 | ❯ queue a message — sends after this turn
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}];
-  (* Third esc forces it; the turn settles Interrupted. The force-interrupt's
-     settle runs on the drain fiber past the probe (like a gate-release
-     completion), so wait for the turn to leave the working regime. *)
-  Tui.keys t Keys.escape;
+  (* Third esc forces it. The main-session check remains pending until the
+     interrupted turn reaches its terminal event, even though the provider gate
+     itself remains held. *)
+  Tui.keys t Key.escape;
   Tui.settle_turn t;
   Tui.print t;
   [%expect
@@ -275,7 +284,7 @@ let%expect_test "esc interrupts an in-flight turn, forcing on the third press" =
 let%expect_test "ctrl+c while a turn runs arms quit and never interrupts" =
   let script =
     [
-      Provider.message ~expect:[ "keep" ] ~gate:"fin" ~id:"resp-1"
+      Provider_script.message ~expect:[ "keep" ] ~gate:"fin" ~id:"resp-1"
         "The turn finished despite the ctrl+c.";
     ]
   in
@@ -285,7 +294,7 @@ let%expect_test "ctrl+c while a turn runs arms quit and never interrupts" =
   Tui.enter t;
   ignore (Tui.await_request t 1 : string);
   Tui.settle t;
-  Tui.keys t Keys.ctrl_c;
+  Tui.keys t Key.ctrl_c;
   Tui.settle t;
   Tui.print t;
   [%expect
@@ -353,7 +362,10 @@ let%expect_test "ctrl+c while a turn runs arms quit and never interrupts" =
 let%expect_test "streaming is observed before the turn settles" =
   let answer = "Streaming reaches the screen before settle." in
   let script =
-    [ Provider.stream_hold ~expect:[ "stream" ] ~gate:"held" ~id:"resp-1" answer ]
+    [
+      Provider_script.stream_hold ~expect:[ "stream" ] ~gate:"held" ~id:"resp-1"
+        answer;
+    ]
   in
   Tui.run ~name:"transcript-stream" ~provider:script @@ fun t ->
   Tui.settle t;
@@ -426,7 +438,8 @@ let%expect_test "streaming is observed before the turn settles" =
    flushed, terminal held), then the block collapses to [∴ Thought for Ns ·
    <title>] with the title taken from the thought's leading [**bold**] line.
    Elapsed is virtual, frozen at 0s since the test advances no time. *)
-let%expect_test "reasoning streams a ticker then settles to a titled one-liner" =
+let%expect_test "reasoning streams a ticker then settles to a titled one-liner"
+    =
   let summary =
     "**Backoff plan**\n\
      The user asks how retries space out, so I walk the exponential schedule."
@@ -434,8 +447,8 @@ let%expect_test "reasoning streams a ticker then settles to a titled one-liner" 
   let answer = "Retries back off exponentially." in
   let script =
     [
-      Provider.stream_hold ~expect:[ "retries" ] ~gate:"held" ~reasoning:summary
-        ~id:"resp-1" answer;
+      Provider_script.stream_hold ~expect:[ "retries" ] ~gate:"held"
+        ~reasoning:summary ~id:"resp-1" answer;
     ]
   in
   Tui.run ~name:"transcript-reasoning" ~provider:script @@ fun t ->
@@ -530,8 +543,8 @@ let wheel_up ~col ~row = Printf.sprintf "\027[<64;%d;%dM" col row
 let%expect_test "overflow paging and wheel scrolling preserve the transcript" =
   let script =
     [
-      Provider.message ~expect:[ "overflow" ] ~gate:"fin" ~id:"resp-overflow"
-        overflow_answer;
+      Provider_script.message ~expect:[ "overflow" ] ~gate:"fin"
+        ~id:"resp-overflow" overflow_answer;
     ]
   in
   Tui.run ~name:"transcript-overflow" ~provider:script @@ fun t ->
@@ -542,7 +555,8 @@ let%expect_test "overflow paging and wheel scrolling preserve the transcript" =
   Tui.release t "fin";
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |   A jitter term spreads the retries apart.
+  [%expect
+    {|01 |   A jitter term spreads the retries apart.
 02 |
 03 |   The ceiling caps the longest wait.
 04 |
@@ -569,7 +583,8 @@ let%expect_test "overflow paging and wheel scrolling preserve the transcript" =
   Tui.keys t page_up;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -598,7 +613,8 @@ let%expect_test "overflow paging and wheel scrolling preserve the transcript" =
   Tui.keys t (wheel_up ~col:10 ~row:22);
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |   The delay doubles on each failure.
 03 |
 04 |   A jitter term spreads the retries apart.
@@ -627,11 +643,16 @@ let%expect_test "overflow paging and wheel scrolling preserve the transcript" =
    event is held, including a leading line outside the normal three-line ticker. *)
 let%expect_test "ctrl+o pins the streamed reasoning ticker open" =
   let reasoning =
-    "ALPHA leading marker line\nsecond thought\nthird thought\nfourth thought\nfifth thought\nomega trailing marker line"
+    "ALPHA leading marker line\n\
+     second thought\n\
+     third thought\n\
+     fourth thought\n\
+     fifth thought\n\
+     omega trailing marker line"
   in
   let script =
     [
-      Provider.stream_hold ~expect:[ "space out" ] ~reasoning ~gate:"fin"
+      Provider_script.stream_hold ~expect:[ "space out" ] ~reasoning ~gate:"fin"
         ~id:"resp-reasoning-pin" "Retries back off exponentially.";
     ]
   in
@@ -642,7 +663,8 @@ let%expect_test "ctrl+o pins the streamed reasoning ticker open" =
   ignore (Tui.await_request t 1 : string);
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -666,10 +688,11 @@ let%expect_test "ctrl+o pins the streamed reasoning ticker open" =
 22 | ❯ queue a message — sends after this turn
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}];
-  Tui.keys t Keys.ctrl_o;
+  Tui.keys t Key.ctrl_o;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -701,10 +724,10 @@ let%expect_test "ctrl+o pins the streamed reasoning ticker open" =
 let%expect_test "the working line shows committed output tokens" =
   let script =
     [
-      Provider.tool_call ~expect:[ "read the notes" ] ~output_tokens:3100
+      Provider_script.tool_call ~expect:[ "read the notes" ] ~output_tokens:3100
         ~id:"resp-token-read" ~call_id:"call-token-read" ~name:"read_file"
         ~arguments:{|{"path":"notes.txt"}|} ();
-      Provider.stream_hold ~expect:[ "function_call_output" ] ~gate:"fin"
+      Provider_script.stream_hold ~expect:[ "function_call_output" ] ~gate:"fin"
         ~id:"resp-token-answer" "The notes describe exponential backoff.";
     ]
   in
@@ -718,7 +741,8 @@ let%expect_test "the working line shows committed output tokens" =
   ignore (Tui.await_request t 2 : string);
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -745,7 +769,8 @@ let%expect_test "the working line shows committed output tokens" =
   Tui.release t "fin";
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -775,12 +800,12 @@ let%expect_test "the working line shows committed output tokens" =
 let%expect_test "thinking visibility hides reasoning and restores it" =
   let script =
     [
-      Provider.message ~expect:[ "start the session" ] ~id:"resp-thinking-1"
-        "Ready when you are.";
-      Provider.stream_hold ~expect:[ "reason while off" ]
+      Provider_script.message ~expect:[ "start the session" ]
+        ~id:"resp-thinking-1" "Ready when you are.";
+      Provider_script.stream_hold ~expect:[ "reason while off" ]
         ~reasoning:"**Hidden plan**\nThis must not render." ~gate:"hidden"
         ~id:"resp-thinking-2" "Answered while reasoning was hidden.";
-      Provider.stream_hold ~expect:[ "reason while on" ]
+      Provider_script.stream_hold ~expect:[ "reason while on" ]
         ~reasoning:"**Shown plan**\nThis must render." ~gate:"shown"
         ~id:"resp-thinking-3" "Answered while reasoning was shown.";
     ]
@@ -790,8 +815,7 @@ let%expect_test "thinking visibility hides reasoning and restores it" =
   Tui.keys t "start the session";
   Tui.settle t;
   Tui.enter t;
-  ignore (Tui.await_request t 1 : string);
-  Tui.settle t;
+  ignore (Tui.await_turn t 1 : string);
   Tui.keys t "/thinking";
   Tui.settle t;
   Tui.enter t;
@@ -802,7 +826,8 @@ let%expect_test "thinking visibility hides reasoning and restores it" =
   ignore (Tui.await_request t 2 : string);
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -838,7 +863,8 @@ let%expect_test "thinking visibility hides reasoning and restores it" =
   ignore (Tui.await_request t 3 : string);
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 | ❯ reason while off
 03 |
 04 | ⏺ Answered while reasoning was hidden.
@@ -865,7 +891,8 @@ let%expect_test "thinking visibility hides reasoning and restores it" =
   Tui.release t "shown";
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 | ⏺ Ready when you are.
+  [%expect
+    {|01 | ⏺ Ready when you are.
 02 |
 03 | ❯ /thinking
 04 |

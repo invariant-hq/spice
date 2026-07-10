@@ -13,7 +13,7 @@ open Tui_harness
 
 let script =
   [
-    Provider.message ~expect:[ "say hello" ] ~id:"resp-1"
+    Provider_script.message ~expect:[ "say hello" ] ~id:"resp-1"
       "Hello from the fake provider.";
   ]
 
@@ -27,8 +27,7 @@ let reach_transcript t =
   Tui.settle t;
   Tui.keys t "say hello";
   Tui.enter t;
-  ignore (Tui.await_request t 1 : string);
-  Tui.settle t
+  ignore (Tui.await_turn t 1 : string)
 
 (* "@" opens the unified list above the composer: directory rows carry a
    trailing "/", every row a "+" glyph, and the ignored [node_modules] is
@@ -39,7 +38,8 @@ let%expect_test "@ opens the list; dirs carry a slash; a no-match query notes" =
   Tui.keys t "@";
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -66,7 +66,8 @@ let%expect_test "@ opens the list; dirs carry a slash; a no-match query notes" =
   Tui.keys t "zzz";
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -98,10 +99,11 @@ let%expect_test "tab descends into a directory, children appear" =
   reach_transcript t;
   Tui.keys t "@";
   Tui.settle t;
-  Tui.keys t Keys.tab;
+  Tui.keys t Key.tab;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -134,7 +136,8 @@ let%expect_test "enter on a file inserts the ref and closes the list" =
   Tui.keys t "@readme";
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -158,10 +161,11 @@ let%expect_test "enter on a file inserts the ref and closes the list" =
 22 | ❯ @readme
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗    ? for shortcuts|}];
-  Tui.keys t Keys.enter;
+  Tui.keys t Key.enter;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -194,10 +198,11 @@ let%expect_test "esc leaves the @-token; backspace past @ closes and clears" =
   reach_transcript t;
   Tui.keys t "@lib";
   Tui.settle t;
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
@@ -221,13 +226,14 @@ let%expect_test "esc leaves the @-token; backspace past @ closes and clears" =
 22 | ❯ @lib
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗       ? for shortcuts|}];
-  Tui.keys t Keys.backspace;
-  Tui.keys t Keys.backspace;
-  Tui.keys t Keys.backspace;
-  Tui.keys t Keys.backspace;
+  Tui.keys t Key.backspace;
+  Tui.keys t Key.backspace;
+  Tui.keys t Key.backspace;
+  Tui.keys t Key.backspace;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)

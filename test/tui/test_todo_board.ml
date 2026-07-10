@@ -23,12 +23,14 @@ open Tui_harness
 
 (* A [todo_write] call the host runs for real, matched on the request body. *)
 let todo ~expect ~id ~call_id board =
-  Provider.tool_call ~expect ~id ~call_id ~name:"todo_write" ~arguments:board ()
+  Provider_script.tool_call ~expect ~id ~call_id ~name:"todo_write"
+    ~arguments:board ()
 
 (* The held follow-up step: matched on the tool result it now carries, held on the
    [fin] gate so the mirror is observable while the turn is in flight. *)
 let final ~id answer =
-  Provider.message ~expect:[ "function_call_output" ] ~gate:"fin" ~id answer
+  Provider_script.message ~expect:[ "function_call_output" ] ~gate:"fin" ~id
+    answer
 
 (* A seven-item board exercising the fold ladder: one running, four pending, two
    done. At the full budget the mirror shows the running and all pending rows plus
@@ -266,11 +268,11 @@ let%expect_test "an interrupt keeps the board on screen while items are open" =
   ignore (Tui.await_request t 1 : string);
   ignore (Tui.await_request t 2 : string);
   Tui.settle t;
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t;
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t;
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle_turn t;
   Tui.print t;
   [%expect

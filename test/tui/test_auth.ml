@@ -47,7 +47,7 @@ let%expect_test "ctrl+c cancels a waiting browser login, then regains quit" =
   Tui.settle t;
   (* Browser is the first declared method; the flow starts and waits. *)
   Tui.enter t;
-  Tui.keys t Keys.ctrl_c;
+  Tui.keys t Key.ctrl_c;
   Tui.settle t;
   Tui.print t;
   [%expect
@@ -77,7 +77,7 @@ let%expect_test "ctrl+c cancels a waiting browser login, then regains quit" =
 24 |   ↵ choose · esc back · type to filter · ↑↓ select|}];
   (* No flow is waiting now: the chord arms the exit notice as everywhere
      else. *)
-  Tui.keys t Keys.ctrl_c;
+  Tui.keys t Key.ctrl_c;
   Tui.settle t;
   Tui.print t;
   [%expect
@@ -112,7 +112,7 @@ let%expect_test "ctrl+c cancels a waiting browser login, then regains quit" =
 let%expect_test "a provider load error retries in place" =
   let store project = Project.scratch project "config/spice/auth.json" in
   Tui.run ~name:"auth-load-retry" ~seed:(fun project ->
-      Util.write_file (store project) "{\"version\":")
+      Project.write_path (store project) "{\"version\":")
   @@ fun t ->
   Tui.settle t;
   open_login t;
@@ -143,7 +143,9 @@ let%expect_test "a provider load error retries in place" =
 23 |
 24 |   ↵ retry · esc close|}];
   (* Repair the store behind the panel; [↵] retries the load. *)
-  Util.write_file (store (Tui.project t)) "{\"version\":1,\"credentials\":{}}\n";
+  Project.write_path
+    (store (Tui.project t))
+    "{\"version\":1,\"credentials\":{}}\n";
   Tui.enter t;
   Tui.settle t;
   Tui.print t;
@@ -256,7 +258,7 @@ let%expect_test "a home logout settle takes over the notice slot" =
    boot; no env var shadows it. *)
 let%expect_test "logging out a stored credential records the removal" =
   Tui.run ~name:"auth-logout-removed" ~seed:(fun project ->
-      Util.write_file
+      Project.write_path
         (Project.scratch project "config/spice/auth.json")
         {|{"version":1,"credentials":{"openai":{"default":{"kind":"api_key","api_key":"sk-test-abcd-9999"}}}}|})
   @@ fun t ->
@@ -300,7 +302,7 @@ let%expect_test "logging out a stored credential records the removal" =
    signed-in with the stored fingerprint. *)
 let%expect_test "a chat-phase login settles as a transcript record" =
   let script =
-    [ Provider.message ~expect:[ "say hello" ] ~id:"resp-1" "Hello!" ]
+    [ Provider_script.message ~expect:[ "say hello" ] ~id:"resp-1" "Hello!" ]
   in
   Tui.run ~name:"auth-chat-record" ~provider:script
     ~env:[ ("SPICE_ANTHROPIC_BASE_URL", "http://127.0.0.1:9/v1") ]
@@ -308,7 +310,7 @@ let%expect_test "a chat-phase login settles as a transcript record" =
   Tui.settle t;
   Tui.keys t "say hello";
   Tui.enter t;
-  Tui.settle t;
+  ignore (Tui.await_turn t 1 : string);
   open_login t;
   Tui.keys t "anthropic";
   Tui.settle t;
@@ -348,7 +350,7 @@ let%expect_test "a chat-phase login settles as a transcript record" =
    answers the post-save model-list check with 401. *)
 let%expect_test "a rejected key records saved-but-blocked" =
   let script =
-    [ Provider.http ~line:"GET /v1/models HTTP/1.1" ~status:401 "{}" ]
+    [ Provider_script.http ~line:"GET /v1/models HTTP/1.1" ~status:401 "{}" ]
   in
   Tui.run ~name:"auth-blocked-key" ~provider:script @@ fun t ->
   Tui.settle t;
@@ -476,7 +478,7 @@ let%expect_test "a home login settle hands off to the model picker" =
 22 |   ○ No effort  ← → to adjust
 23 |
 24 |   ↵ set default · ←→ effort · type to filter · ↑↓ select · esc close|}];
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t;
   Tui.print t;
   [%expect
@@ -514,7 +516,8 @@ let%expect_test "provider and login-method pickers render account state" =
   Tui.settle t;
   open_login t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |
 03 |
 04 |
@@ -543,7 +546,8 @@ let%expect_test "provider and login-method pickers render account state" =
   Tui.enter t;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |
 03 |
 04 |
@@ -583,7 +587,8 @@ let%expect_test "api-key entry masks the secret and escape walks back" =
   Tui.keys t "sk-secret-value-123";
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |
 03 |
 04 |
@@ -607,10 +612,11 @@ let%expect_test "api-key entry masks the secret and escape walks back" =
 22 |   enter save · esc back · paste works · your key is not shown
 23 |
 24 |   ↵ save · esc back|}];
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |
 03 |
 04 |
@@ -645,7 +651,8 @@ let%expect_test "browser authorization renders, copies, and cancels" =
   Tui.enter t;
   Tui.settle_pending_perform t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |
 03 |
 04 |
@@ -672,7 +679,8 @@ let%expect_test "browser authorization renders, copies, and cancels" =
   Tui.keys t "c";
   Tui.settle_pending_perform t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |
 03 |
 04 |
@@ -696,7 +704,7 @@ let%expect_test "browser authorization renders, copies, and cancels" =
 22 |   ⠋ Waiting for authorization… (0s · esc to cancel)
 23 |
 24 |   On a remote or headless machine? Press esc and choose device code.|}];
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t
 
 (* The fake local auth issuer serves a long-polling device challenge. Virtual
@@ -705,7 +713,7 @@ let%expect_test "browser authorization renders, copies, and cancels" =
 let%expect_test "device-code authorization renders, copies, and cancels" =
   let script =
     [
-      Provider.http
+      Provider_script.http
         ~line:"POST /api/accounts/deviceauth/usercode HTTP/1.1" ~status:200
         {|{"device_auth_id":"dev-1","user_code":"CODE-1234","expires_in":900,"interval":300}|};
     ]
@@ -718,9 +726,10 @@ let%expect_test "device-code authorization renders, copies, and cancels" =
   Tui.keys t "device";
   Tui.settle t;
   Tui.enter t;
-  Tui.settle_pending_perform t;
+  Tui.settle_pending_perform ~provider_responses:1 t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |
 03 |
 04 |
@@ -754,7 +763,7 @@ let%expect_test "device-code authorization renders, copies, and cancels" =
 32 ||}];
   Tui.keys t "c";
   Tui.settle_pending_perform t;
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t
 
 (* With no configured model, a successful saved API key changes the connected
@@ -773,7 +782,8 @@ let%expect_test "api-key login updates the derived model facts" =
   Tui.enter t;
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |
 03 |
 04 |

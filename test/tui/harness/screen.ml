@@ -7,6 +7,10 @@
    virtual — so only machine-dependent content is rewritten: session ids and
    the temp project root. *)
 
+let contains haystack needle = String.includes ~affix:needle haystack
+let has needle screen = contains screen needle
+let lacks needle screen = not (contains screen needle)
+
 let normalize_session_ids text =
   let len = String.length text in
   let out = Buffer.create len in
@@ -83,9 +87,8 @@ let normalize_elided_root root text =
     let ellipsis_len = String.length ellipsis in
     let rec loop index =
       if index + ellipsis_len > token_len then None
-      else if
-        String.equal (String.sub token index ellipsis_len) ellipsis
-      then Some index
+      else if String.equal (String.sub token index ellipsis_len) ellipsis then
+        Some index
       else loop (index + 1)
     in
     loop 0
@@ -107,7 +110,8 @@ let normalize_elided_root root text =
         | None -> None
         | Some at ->
             let suffix =
-              String.sub token (at + String.length ellipsis)
+              String.sub token
+                (at + String.length ellipsis)
                 (String.length token - at - String.length ellipsis)
             in
             if (not (String.is_empty suffix)) && String.ends_with ~suffix root
@@ -124,8 +128,7 @@ let normalize ~project screen =
   let root = Project.root project in
   Util.replace_all ~pattern:root ~with_:"$PROJECT" screen
   |> normalize_truncated_root root
-  |> normalize_elided_root root
-  |> normalize_localhost_ports
+  |> normalize_elided_root root |> normalize_localhost_ports
   |> normalize_session_ids
 
 let print ~project screen =

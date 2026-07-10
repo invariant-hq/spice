@@ -17,6 +17,7 @@ type t = {
   buf : Bytes.t;
   project : Project.t;
   mutable sync_active : bool;
+  mutable sync_tail : string;
   mutable exited : bool;
   mutable last_nonblank : string option;
 }
@@ -24,7 +25,7 @@ type t = {
 let default_rows = 14
 let default_cols = 112
 let default_deadline = 10.0
-let monotonic = Unix.gettimeofday
+let monotonic () = Mtime.Span.to_float_ns (Mtime_clock.elapsed ()) *. 1e-9
 
 let nonblank screen =
   let rec loop i =
@@ -50,9 +51,10 @@ let exited t = t.exited
 (* Terminals bracket frames in synchronized-output guards (mode 2026); a
    predicate must never observe the screen while a guard is open, or it can
    match on a torn frame. *)
-let update_sync_state ~sync_active raw_delta =
+let update_sync_state ~sync_active ~tail raw_delta =
   let enable = "\027[?2026h" in
   let disable = "\027[?2026l" in
+  let raw_delta = tail ^ raw_delta in
   let raw_len = String.length raw_delta in
   let starts_with_at index needle =
     let needle_len = String.length needle in
@@ -67,7 +69,10 @@ let update_sync_state ~sync_active raw_delta =
       loop (index + String.length disable) false
     else loop (index + 1) active
   in
-  loop 0 sync_active
+  let active = loop 0 sync_active in
+  let tail_len = min (String.length enable - 1) raw_len in
+  let tail = String.sub raw_delta (raw_len - tail_len) tail_len in
+  (active, tail)
 
 let pump t ~wait_s =
   if t.exited then ()
@@ -85,8 +90,12 @@ let pump t ~wait_s =
           let raw_delta = Bytes.sub_string t.buf 0 n in
           Buffer.add_string t.raw raw_delta;
           Vte.feed t.vte t.buf 0 n;
-          t.sync_active <-
-            update_sync_state ~sync_active:t.sync_active raw_delta;
+          let sync_active, sync_tail =
+            update_sync_state ~sync_active:t.sync_active ~tail:t.sync_tail
+              raw_delta
+          in
+          t.sync_active <- sync_active;
+          t.sync_tail <- sync_tail;
           if not t.sync_active then
             let current = Vte.to_string t.vte in
             if nonblank current then t.last_nonblank <- Some current
@@ -107,8 +116,8 @@ let wait ?(deadline = default_deadline) t predicate =
   let rec loop () =
     if settled () then ()
     else if t.exited then
-      fail_with_screen t "Term.wait: spice exited before condition held"
-    else if monotonic () >= limit then fail_with_screen t "Term.wait: timed out"
+      fail_with_screen t "Pty.wait: spice exited before condition held"
+    else if monotonic () >= limit then fail_with_screen t "Pty.wait: timed out"
     else (
       pump t ~wait_s:0.02;
       loop ())
@@ -120,9 +129,9 @@ let wait_raw ?(deadline = default_deadline) t predicate =
   let rec loop () =
     if predicate (Buffer.contents t.raw) then ()
     else if t.exited then
-      fail_with_screen t "Term.wait_raw: spice exited before condition held"
+      fail_with_screen t "Pty.wait_raw: spice exited before condition held"
     else if monotonic () >= limit then
-      fail_with_screen t "Term.wait_raw: timed out"
+      fail_with_screen t "Pty.wait_raw: timed out"
     else (
       pump t ~wait_s:0.02;
       loop ())
@@ -134,7 +143,7 @@ let wait_exit ?(deadline = default_deadline) t =
   while (not t.exited) && monotonic () < limit do
     pump t ~wait_s:0.02
   done;
-  if not t.exited then fail_with_screen t "Term.wait_exit: timed out"
+  if not t.exited then fail_with_screen t "Pty.wait_exit: timed out"
 
 let send t text =
   let len = String.length text in
@@ -166,7 +175,7 @@ let quit t =
   send t "\003";
   wait_exit t
 
-let spice_bin () = Util.resolve_env_path "SPICE_BIN"
+let spice_bin () = Project.resolve_env_path "SPICE_BIN"
 
 (* The footer renders a "dune:" status on every screen once the app is up;
    its presence is the boot marker. *)
@@ -175,11 +184,11 @@ let booted = Screen.has "dune:"
 let run_pty ?provider ?unset ?(env = []) ?(rows = default_rows)
     ?(cols = default_cols) ?(ready = booted) ~prog ~argv project f =
   let root = Project.root project in
-  let openai_base_url = Option.map Provider.base_url provider in
+  let openai_base_url = Option.map Provider_process.base_url provider in
   let winsize = Pty.{ rows; cols; xpixel = 0; ypixel = 0 } in
   let pty =
     Pty.spawn ~cwd:root
-      ~env:(Project.env ?openai_base_url ?unset ~extra:env project)
+      ~env:(Project.env_array ?openai_base_url ?unset ~extra:env project)
       ~winsize ~prog ~args:argv ()
   in
   Pty.set_nonblock pty;
@@ -191,6 +200,7 @@ let run_pty ?provider ?unset ?(env = []) ?(rows = default_rows)
       buf = Bytes.create 4096;
       project;
       sync_active = false;
+      sync_tail = "";
       exited = false;
       last_nonblank = None;
     }
@@ -207,8 +217,10 @@ let run ?provider ?(command = []) ?(args = []) ?unset ?env ?rows ?cols ?ready
   (* Cmdliner resolves subcommands from the first positional argument, so a
      subcommand under test must precede the [--cwd] option. *)
   run_pty ?provider ?unset ?env ?rows ?cols ?ready ~prog:(spice_bin ())
-    ~argv:(command @ ("--cwd" :: root :: args)) project f
+    ~argv:(command @ ("--cwd" :: root :: args))
+    project f
 
 let run_shell ?provider ?unset ?env ?rows ?cols ?ready project ~script f =
   run_pty ?provider ?unset ?env ?rows ?cols ?ready ~prog:"/bin/sh"
-    ~argv:[ "-c"; script; "spice-terminal-wrapper" ] project f
+    ~argv:[ "-c"; script; "spice-terminal-wrapper" ]
+    project f

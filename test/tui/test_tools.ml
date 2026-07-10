@@ -42,7 +42,8 @@ let edit_env = [ ("SPICE_PERMISSION_MODE", "accept-edits") ]
    time past the release would let a background workspace-change save race the
    turn save into a "session conflict" on these real edit/write turns. *)
 let final ~id answer =
-  Provider.message ~expect:[ "function_call_output" ] ~gate:"fin" ~id answer
+  Provider_script.message ~expect:[ "function_call_output" ] ~gate:"fin" ~id
+    answer
 
 (* Drive one tool-calling turn to its settled transcript: submit the prompt, sync
    on the initial request and the follow-up the tool result triggers, then release
@@ -61,7 +62,7 @@ let run_turn t prompt =
 let%expect_test "an edit renders a real inline diff" =
   let script =
     [
-      Provider.tool_call ~expect:[ "bump" ] ~id:"resp-update-call"
+      Provider_script.tool_call ~expect:[ "bump" ] ~id:"resp-update-call"
         ~call_id:"call-update" ~name:"edit_file"
         ~arguments:
           {|{"path":"notes.ml","old_string":"let y = 2","new_string":"let y = 3"}|}
@@ -110,9 +111,10 @@ let%expect_test "a write shows a capped content preview" =
   let contents = "line1\nline2\nline3\nline4\nline5\nline6\n" in
   let script =
     [
-      Provider.tool_call ~expect:[ "scaffold" ] ~id:"resp-create-call"
+      Provider_script.tool_call ~expect:[ "scaffold" ] ~id:"resp-create-call"
         ~call_id:"call-create" ~name:"write_file"
-        ~arguments:(Printf.sprintf {|{"path":"fresh.txt","contents":%S}|} contents)
+        ~arguments:
+          (Printf.sprintf {|{"path":"fresh.txt","contents":%S}|} contents)
         ();
       final ~id:"resp-create-final" "Wrote the scaffold.";
     ]
@@ -155,14 +157,13 @@ let%expect_test "a write shows a capped content preview" =
 let%expect_test "a read shows a summary only" =
   let script =
     [
-      Provider.tool_call ~expect:[ "inspect" ] ~id:"resp-read-call"
-        ~call_id:"call-read" ~name:"read_file" ~arguments:{|{"path":"data.txt"}|}
-        ();
+      Provider_script.tool_call ~expect:[ "inspect" ] ~id:"resp-read-call"
+        ~call_id:"call-read" ~name:"read_file"
+        ~arguments:{|{"path":"data.txt"}|} ();
       final ~id:"resp-read-final" "Read the data file.";
     ]
   in
-  Tui.run ~name:"tools-read" ~provider:script
-    ~seed:(fun project ->
+  Tui.run ~name:"tools-read" ~provider:script ~seed:(fun project ->
       Project.write project "data.txt"
         "alpha\nbeta\nSECRET_MARKER\ndelta\nepsilon\nzeta\neta\ntheta\n")
   @@ fun t ->
@@ -202,7 +203,7 @@ let%expect_test "a read shows a summary only" =
 let%expect_test "a failed edit renders no diff" =
   let script =
     [
-      Provider.tool_call ~expect:[ "rename" ] ~id:"resp-failed-call"
+      Provider_script.tool_call ~expect:[ "rename" ] ~id:"resp-failed-call"
         ~call_id:"call-failed" ~name:"edit_file"
         ~arguments:
           {|{"path":"src.ml","old_string":"GAMMA_ABSENT","new_string":"REPLACEMENT_TEXT"}|}
@@ -260,11 +261,11 @@ let board_late =
 let%expect_test "todo boards land at their call sites" =
   let script =
     [
-      Provider.tool_call ~expect:[ "plan" ] ~id:"r-t1" ~call_id:"c-t1"
+      Provider_script.tool_call ~expect:[ "plan" ] ~id:"r-t1" ~call_id:"c-t1"
         ~name:"todo_write" ~arguments:board_early ();
-      Provider.tool_call ~expect:[ "function_call_output" ] ~id:"r-tr"
+      Provider_script.tool_call ~expect:[ "function_call_output" ] ~id:"r-tr"
         ~call_id:"c-tr" ~name:"read_file" ~arguments:{|{"path":"data.txt"}|} ();
-      Provider.tool_call ~expect:[ "function_call_output" ] ~id:"r-t2"
+      Provider_script.tool_call ~expect:[ "function_call_output" ] ~id:"r-t2"
         ~call_id:"c-t2" ~name:"todo_write" ~arguments:board_late ();
       final ~id:"r-tf" "Planned and inspected.";
     ]
@@ -320,9 +321,9 @@ let%expect_test "todo boards land at their call sites" =
 let%expect_test "consecutive todo writes fold to one board" =
   let script =
     [
-      Provider.tool_call ~expect:[ "plan" ] ~id:"r-f1" ~call_id:"c-f1"
+      Provider_script.tool_call ~expect:[ "plan" ] ~id:"r-f1" ~call_id:"c-f1"
         ~name:"todo_write" ~arguments:board_early ();
-      Provider.tool_call ~expect:[ "function_call_output" ] ~id:"r-f2"
+      Provider_script.tool_call ~expect:[ "function_call_output" ] ~id:"r-f2"
         ~call_id:"c-f2" ~name:"todo_write" ~arguments:board_late ();
       final ~id:"r-ff" "Re-planned the work.";
     ]
@@ -370,8 +371,9 @@ let%expect_test "consecutive todo writes fold to one board" =
 let%expect_test "a shell permission prompt gates the call and records it" =
   let script =
     [
-      Provider.tool_call ~expect:[ "run it" ] ~id:"r-perm" ~call_id:"c-perm"
-        ~name:"shell" ~arguments:{|{"command":"echo recorded"}|} ();
+      Provider_script.tool_call ~expect:[ "run it" ] ~id:"r-perm"
+        ~call_id:"c-perm" ~name:"shell"
+        ~arguments:{|{"command":"echo recorded"}|} ();
       final ~id:"r-perm-final" "Ran the command.";
     ]
   in
@@ -450,7 +452,7 @@ let%expect_test "a failed shell humanizes the exit and shows the output tail" =
   let cmd = {|for i in 1 2 3 4 5 6 7; do echo OUT$i; done; exit 3|} in
   let script =
     [
-      Provider.tool_call ~expect:[ "fail it" ] ~id:"r-sf" ~call_id:"c-sf"
+      Provider_script.tool_call ~expect:[ "fail it" ] ~id:"r-sf" ~call_id:"c-sf"
         ~name:"shell"
         ~arguments:(Printf.sprintf {|{"command":%S}|} cmd)
         ();
@@ -505,8 +507,8 @@ let%expect_test "a long failure summary wraps instead of truncating" =
   in
   let script =
     [
-      Provider.tool_call ~expect:[ "read it" ] ~id:"r-wrap" ~call_id:"c-wrap"
-        ~name:"read_file"
+      Provider_script.tool_call ~expect:[ "read it" ] ~id:"r-wrap"
+        ~call_id:"c-wrap" ~name:"read_file"
         ~arguments:(Printf.sprintf {|{"path":%S}|} path)
         ();
       final ~id:"r-wrap-final" "The file was missing.";
@@ -548,18 +550,17 @@ let%expect_test "a long failure summary wraps instead of truncating" =
    and read-only — no ocamlmerlin subprocess and no Dune RPC. Two [List.map __ __]
    applications in one seeded file give a deterministic [2 matches across 1
    file]; [__] matches any expression. *)
-let%expect_test "ocaml_search_expressions renders a Search verb with real counts"
-    =
+let%expect_test
+    "ocaml_search_expressions renders a Search verb with real counts" =
   let script =
     [
-      Provider.tool_call ~expect:[ "search it" ] ~id:"r-se" ~call_id:"c-se"
-        ~name:"ocaml_search_expressions"
+      Provider_script.tool_call ~expect:[ "search it" ] ~id:"r-se"
+        ~call_id:"c-se" ~name:"ocaml_search_expressions"
         ~arguments:{|{"pattern":"List.map __ __","paths":["probe.ml"]}|} ();
       final ~id:"r-se-final" "Searched the expressions.";
     ]
   in
-  Tui.run ~name:"tools-searchexpr" ~provider:script
-    ~seed:(fun project ->
+  Tui.run ~name:"tools-searchexpr" ~provider:script ~seed:(fun project ->
       Project.write project "probe.ml"
         "let a = List.map succ [ 1; 2; 3 ]\nlet b = List.map pred [ 4; 5 ]\n")
   @@ fun t ->
@@ -598,10 +599,10 @@ let%expect_test "ocaml_search_expressions renders a Search verb with real counts
 let%expect_test "a host tool after a question settles in the transcript" =
   let script =
     [
-      Provider.tool_call ~expect:[ "help me sequence" ] ~id:"resp-question"
-        ~call_id:"call-question" ~name:"ask_user"
+      Provider_script.tool_call ~expect:[ "help me sequence" ]
+        ~id:"resp-question" ~call_id:"call-question" ~name:"ask_user"
         ~arguments:{|{"question":"What should come first?"}|} ();
-      Provider.tool_call
+      Provider_script.tool_call
         ~expect:[ "function_call_output"; "call-question"; "inspect" ]
         ~id:"resp-question-todo" ~call_id:"call-question-todo"
         ~name:"todo_write" ~arguments:board_early ();
@@ -623,7 +624,8 @@ let%expect_test "a host tool after a question settles in the transcript" =
   Tui.release t "fin";
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+  [%expect
+    {|01 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 02 |        permission: auto edits
 03 |        sandbox: danger-full-access (config)
 04 |

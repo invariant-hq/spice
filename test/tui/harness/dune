@@ -1,5 +1,6 @@
 (library
  (name tui_harness)
+ (private_modules util provider_runtime pty_session)
  (libraries
   unix
   threads.posix
@@ -8,9 +9,12 @@
   eio_main
   jsont
   jsont.bytesrw
+  mtime.clock.os
   mosaic
   matrix
   matrix.test
+  matrix.pty
+  matrix.vte
   spice_tui
   spice_host
   spice_path

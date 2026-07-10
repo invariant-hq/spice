@@ -8,26 +8,23 @@ open Tui_harness
 (* The mid-turn decision dialogs (doc/ui-design): a model turn that calls
    [ask_user] opens a question dialog, and one that calls [shell] under the
    ask-first posture opens a permission dialog. Both are driven through the real
-   turn pipeline on suite-port-3's [Provider.tool_call] wire — the provider emits
-   a [function_call], the app runs the tool (or shows its dialog), and the user's
+   turn pipeline through [Provider_script.tool_call] — the provider emits a
+   [function_call], the app runs the tool (or shows its dialog), and the user's
    decision re-requests with the tool result.
 
    The DIALOG frame is goldened while the turn is SUSPENDED on the tool call — a
    stable held state. The resolution is goldened while the resume completion is
-   HELD on a gate: goldening the post-resume SETTLED frame would race the
-   turn-finished socket completion against settle (a harness limitation — the
-   socket read is not a tracked perform), so each resolution is proved by the
-   resume request (its [~expect] asserts the decision at the wire) plus the stable
-   in-flight frame. *)
+   HELD on a gate. Each resolution is proved by the resume request (its [~expect]
+   asserts the decision at the wire) plus the stable in-flight frame. *)
 
 (* The resume completion after a decision, held on [fin] so its frame is stable. *)
-let resume ~expect ~id answer = Provider.message ~expect ~gate:"fin" ~id answer
+let resume ~expect ~id answer =
+  Provider_script.message ~expect ~gate:"fin" ~id answer
 
 (* Reach a decision dialog: submit the prompt, sync on the tool-call request, then
-   wait for the suspend to reach the screen. The dialog opens only after the
-   tool-call RESPONSE is read on the drain fiber the settle probe cannot see, so
-   {!Tui.await_suspend} waits for that read to dispatch the dialog before settling
-   the stable suspended frame. *)
+   wait for the suspend to reach the screen. The composed runtime probe tracks
+   the Live drain that reads the tool-call response, so {!Tui.await_suspend}
+   settles only after the dialog reaches its stable waiting boundary. *)
 let open_dialog t prompt =
   Tui.settle t;
   Tui.keys t prompt;
@@ -50,7 +47,7 @@ let enter_plan_mode t =
 let%expect_test "the question dialog renders and a pick resumes the turn" =
   let script =
     [
-      Provider.tool_call ~expect:[ "which runner" ] ~id:"resp-q-1"
+      Provider_script.tool_call ~expect:[ "which runner" ] ~id:"resp-q-1"
         ~call_id:"call-q" ~name:"ask_user"
         ~arguments:
           {|{"question":"Which test runner should I wire up?","options":[{"label":"dune runtest","description":"the existing runner"},{"label":"alcotest","description":"add a dependency"}]}|}
@@ -90,9 +87,8 @@ let%expect_test "the question dialog renders and a pick resumes the turn" =
 24 ||}];
   (* Pick the highlighted option. The resume request carries "dune runtest",
      asserted at the wire by the resume item's [~expect] (it fails loudly
-     otherwise). The resume frame is not goldened — the tool-result render + the
-     resume completion race settle (the held frame still transitions through an
-     intermediate); the dialog frame + the wire assertion prove the pick. *)
+     otherwise). The dialog frame and wire assertion are the observable contract;
+     this test does not duplicate the post-resume frame coverage. *)
   Tui.enter t;
   ignore (Tui.await_request t 2 : string);
   Tui.release t "fin";
@@ -104,7 +100,7 @@ let%expect_test "the question dialog renders and a pick resumes the turn" =
 let%expect_test "esc on the question dialog borrows the composer" =
   let script =
     [
-      Provider.tool_call ~expect:[ "which runner" ] ~id:"resp-qe-1"
+      Provider_script.tool_call ~expect:[ "which runner" ] ~id:"resp-qe-1"
         ~call_id:"call-qe" ~name:"ask_user"
         ~arguments:
           {|{"question":"Which test runner should I wire up?","options":[{"label":"dune runtest","description":"the existing runner"},{"label":"alcotest","description":"add a dependency"}]}|}
@@ -113,7 +109,7 @@ let%expect_test "esc on the question dialog borrows the composer" =
   in
   Tui.run ~name:"dialog-question-esc" ~provider:script @@ fun t ->
   open_dialog t "which runner";
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   Tui.settle t;
   Tui.print t;
   [%expect
@@ -151,8 +147,9 @@ let%expect_test "the permission dialog renders and an approve runs the command"
     =
   let script =
     [
-      Provider.tool_call ~expect:[ "run it" ] ~id:"resp-p-1" ~call_id:"call-p"
-        ~name:"shell" ~arguments:{|{"command":"echo recorded"}|} ();
+      Provider_script.tool_call ~expect:[ "run it" ] ~id:"resp-p-1"
+        ~call_id:"call-p" ~name:"shell"
+        ~arguments:{|{"command":"echo recorded"}|} ();
       resume
         ~expect:[ "function_call_output"; "recorded" ]
         ~id:"resp-p-2" "Ran the command.";
@@ -188,8 +185,8 @@ let%expect_test "the permission dialog renders and an approve runs the command"
 24 ||}];
   (* Approve the highlighted first option: the shell runs and the resume request
      carries its output ("recorded"), asserted at the wire — proof the command
-     actually ran (distinct from the deny path below). The resume frame is not
-     goldened (it races settle); the dialog frame + the wire assertion suffice. *)
+     actually ran (distinct from the deny path below). The dialog frame and wire
+     assertion are the observable contract. *)
   Tui.enter t;
   ignore (Tui.await_request t 2 : string);
   Tui.release t "fin";
@@ -201,8 +198,9 @@ let%expect_test "the permission dialog renders and an approve runs the command"
 let%expect_test "the permission dialog denies and resumes without running" =
   let script =
     [
-      Provider.tool_call ~expect:[ "run it" ] ~id:"resp-pd-1" ~call_id:"call-pd"
-        ~name:"shell" ~arguments:{|{"command":"echo recorded"}|} ();
+      Provider_script.tool_call ~expect:[ "run it" ] ~id:"resp-pd-1"
+        ~call_id:"call-pd" ~name:"shell"
+        ~arguments:{|{"command":"echo recorded"}|} ();
       resume
         ~expect:[ "function_call_output"; "use a stub instead" ]
         ~id:"resp-pd-2" "Understood, I will not run it.";
@@ -212,9 +210,9 @@ let%expect_test "the permission dialog denies and resumes without running" =
   open_dialog t "run it";
   (* Move to the third option (deny), settling after each arrow so both register
      (two rapid arrows before one settle can drop one under contention). *)
-  Tui.keys t Keys.down;
+  Tui.keys t Key.down;
   Tui.settle t;
-  Tui.keys t Keys.down;
+  Tui.keys t Key.down;
   Tui.settle t;
   Tui.print t;
   [%expect
@@ -275,8 +273,8 @@ let%expect_test "the permission dialog denies and resumes without running" =
 24 | ────────────────────────────────────────────────────────────────────────────────|}];
   (* Submit the feedback: the turn resumes with the DENIAL as the tool result —
      the resume request carries "use a stub instead" (asserted at the wire), and
-     the command never ran. The resume frame is not goldened (it races settle);
-     the borrow frame + the wire assertion prove the deny. *)
+     the command never ran. The borrow frame and wire assertion prove the deny.
+  *)
   Tui.keys t "use a stub instead";
   Tui.enter t;
   ignore (Tui.await_request t 2 : string);
@@ -294,10 +292,10 @@ let%expect_test "the permission dialog denies and resumes without running" =
 let%expect_test "always allow saves a family rule and silences the family" =
   let script =
     [
-      Provider.tool_call ~expect:[ "always test" ] ~id:"resp-aa-1"
+      Provider_script.tool_call ~expect:[ "always test" ] ~id:"resp-aa-1"
         ~call_id:"call-aa1" ~name:"shell"
         ~arguments:{|{"command":"git commit -m first"}|} ();
-      Provider.tool_call
+      Provider_script.tool_call
         ~expect:[ "function_call_output"; "call-aa1" ]
         ~id:"resp-aa-2" ~call_id:"call-aa2" ~name:"shell"
         ~arguments:{|{"command":"git commit -m second"}|} ();
@@ -348,10 +346,12 @@ let%expect_test "always allow saves a family rule and silences the family" =
     Project.scratch (Tui.project t) "config/spice/config.json"
   in
   let contents =
-    if Sys.file_exists user_config then Util.read_file user_config else ""
+    if Sys.file_exists user_config then Project.read_path user_config else ""
   in
   print_string
-    (if Util.contains contents "argv-prefix" && Util.contains contents "commit"
+    (if
+       Screen.contains contents "argv-prefix"
+       && Screen.contains contents "commit"
      then "rule saved to user config"
      else "MISSING RULE >>>" ^ contents ^ "<<<");
   [%expect {| rule saved to user config |}]
@@ -362,7 +362,7 @@ let%expect_test "always allow saves a family rule and silences the family" =
 let%expect_test "the plan dialog approves and resumes the turn" =
   let script =
     [
-      Provider.tool_call ~expect:[ "draft a plan" ] ~id:"resp-plan-1"
+      Provider_script.tool_call ~expect:[ "draft a plan" ] ~id:"resp-plan-1"
         ~call_id:"call-plan" ~name:"propose_plan"
         ~arguments:
           {|{"id":"plan-1","title":"Refactor the parser","body":"Split the tokenizer out.\nMake parse return a result."}|}
@@ -375,7 +375,8 @@ let%expect_test "the plan dialog approves and resumes the turn" =
   enter_plan_mode t;
   open_dialog t "draft a plan for the refactor";
   Tui.print t;
-  [%expect {|01 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+  [%expect
+    {|01 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 02 |    plan
 03 |
 04 |   Refactor the parser
@@ -409,7 +410,7 @@ let%expect_test "the plan dialog approves and resumes the turn" =
 let%expect_test "escape rejects the plan and keeps planning" =
   let script =
     [
-      Provider.tool_call ~expect:[ "draft a plan" ] ~id:"resp-plan-esc-1"
+      Provider_script.tool_call ~expect:[ "draft a plan" ] ~id:"resp-plan-esc-1"
         ~call_id:"call-plan-esc" ~name:"propose_plan"
         ~arguments:
           {|{"id":"plan-esc","title":"Refactor the parser","body":"Split the tokenizer out.\nMake parse return a result."}|}
@@ -421,12 +422,13 @@ let%expect_test "escape rejects the plan and keeps planning" =
   Tui.run ~name:"dialog-plan-reject" ~provider:script @@ fun t ->
   enter_plan_mode t;
   open_dialog t "draft a plan for the refactor";
-  Tui.keys t Keys.escape;
+  Tui.keys t Key.escape;
   ignore (Tui.await_request t 2 : string);
   Tui.release t "fin";
   Tui.settle t;
   Tui.print t;
-  [%expect {|01 |
+  [%expect
+    {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
