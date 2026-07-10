@@ -87,8 +87,9 @@ let launched_subagent_text ~child spawn =
   in
   "subagent " ^ role ^ " launched (session "
   ^ Spice_session.Id.to_string child
-  ^ "). It runs detached: its result will arrive as a notice. Call \
-     wait_subagents with this session id when your next step needs the result."
+  ^ "). It runs detached. Call wait_subagents with this session id when your \
+     next step needs the result; settlements reached while this host run stays \
+     active also arrive as notices."
 
 let child_interrupt_message ~reason ~cancelled =
   match reason with
@@ -230,7 +231,7 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
   let root = Spice_session_store.root store |> Spice_path.Abs.to_string in
   let mutations = mutations_recorder ~stdenv ~store ~workspace_root in
   let jobs =
-    Jobs.create ~sw ~stdenv ~store
+    Jobs.create ~sw ~stdenv ~store ~parent:session
       ~max_concurrent:
         (Config.Runtime.subagent_max_concurrent (Config.runtime config))
       ~max_depth:(Config.Runtime.subagent_max_depth (Config.runtime config))
@@ -352,9 +353,9 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
                   (Spice_protocol.Subagent_run.child record)
               ^ ")."))
   in
-  let message_run request =
+  let message_run ~runner request =
     match
-      Jobs.message ~origin:`Model jobs
+      Jobs.message ~runner ~origin:`Model jobs
         (Spice_protocol.Subagent.Message.Request.run request)
         (Spice_protocol.Subagent.Message.Request.message request)
     with
@@ -459,7 +460,7 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
     (* Child-run orchestration: the child config derives from the parent env,
        and the {!Jobs} registry owns minting, the run ledger, the child Live
        attachment, settlement, and process-exit draining. A child binds this
-       contract's [client] for its whole run. *)
+       contract's [client] for each live episode. *)
     let child_run_config role =
       let contract = Spice_protocol.Subagent.Role.contract role in
       let parent_policy =
@@ -489,6 +490,21 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
            ~denial_message ~prelude
            ?safety_step_cap:child_max_steps ())
     in
+    let child_runner role ~notices =
+      let* child_config =
+        child_run_config role |> Result.map_error Host.Error.message
+      in
+      Ok
+        (Runner.make ~store ~client ~model:(Spice_provider.Model.llm model)
+           ~mode:None ~run:child_config ~host_tool:Handler.child
+           ~hooks:
+             (Session.with_notices ~before_request:(fun () -> ()) notices
+                Session.no_hooks)
+           ())
+    in
+    let resume_runner run ~notices =
+      child_runner (Spice_protocol.Subagent_run.role run) ~notices
+    in
     let spawn_child spawn ~parent =
       let parent_session = Spice_session_store.Document.session parent in
       let role = Spice_protocol.Subagent.Spawn.role spawn in
@@ -510,18 +526,7 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
             {
               Jobs.runner =
                 (fun (_ : Spice_session.Id.t) ~notices ->
-                  match child_run_config role with
-                  | Error error -> Error (Host.Error.message error)
-                  | Ok child_config ->
-                      Ok
-                        (Runner.make ~store ~client
-                           ~model:(Spice_provider.Model.llm model)
-                           ~mode:None ~run:child_config ~host_tool:Handler.child
-                           ~hooks:
-                             (Session.with_notices
-                                ~before_request:(fun () -> ())
-                                notices Session.no_hooks)
-                           ()));
+                  child_runner role ~notices);
               prompt = child_prompt spawn;
               title = child_session_title spawn;
               cwd =
@@ -541,7 +546,7 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
       Handler.defaults ~fs ~root
         ~now:(fun () -> now stdenv)
         ~mode ~spawn:spawn_child ~wait:wait_runs ~cancel:cancel_run
-        ~message:message_run
+        ~message:(message_run ~runner:resume_runner)
     in
     Ok
       (Runner.make ~store ~client

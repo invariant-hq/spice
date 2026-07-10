@@ -50,12 +50,17 @@ type child = {
   cwd : Spice_path.Abs.t;
 }
 
+type resume_runner =
+  Spice_protocol.Subagent_run.t ->
+  notices:Notice_queue.t ->
+  (Runner.t, string) result
+
 type settlement = (Spice_protocol.Subagent_run.t * outcome, string) result
 
 type entry = {
   mutable record : Spice_protocol.Subagent_run.t;
-  mutable live : Live.t;
-  child_runner : Runner.t; (* kept for terminal-resume re-attach *)
+  mutable document : Spice_session_store.Document.t;
+  mutable live : Live.t option;
   notices : Notice_queue.t; (* parent messages ride it, unique keys *)
   mutable settled : settlement Eio.Promise.t;
   mutable resolve : settlement Eio.Promise.u;
@@ -68,6 +73,7 @@ type t = {
   sw : Eio.Switch.t;
   stdenv : Eio_unix.Stdenv.base;
   store : Spice_session_store.t;
+  parent : Spice_session.Id.t;
   fs : Eio.Fs.dir_ty Eio.Path.t;
   root : string;
   max_concurrent : int;
@@ -77,11 +83,12 @@ type t = {
   mutable subscribers : (event -> unit) list;
 }
 
-let create ~sw ~stdenv ~store ~max_concurrent ~max_depth ~max_exchanges =
+let create ~sw ~stdenv ~store ~parent ~max_concurrent ~max_depth ~max_exchanges =
   {
     sw;
     stdenv;
     store;
+    parent;
     fs = Eio.Stdenv.fs stdenv;
     root = Spice_session_store.root store |> Spice_path.Abs.to_string;
     max_concurrent;
@@ -99,11 +106,6 @@ let emit t event =
   List.iter
     (fun handler -> try handler event with _ -> ())
     (List.rev t.subscribers)
-
-let find t child =
-  List.assoc_opt child t.entries
-  |> Option.to_result
-       ~none:("subagent run not found: " ^ Spice_session.Id.to_string child)
 
 let update_run t ~parent ~child ~f =
   match Artifacts.Subagent_run.load ~fs:t.fs ~root:t.root ~parent ~child with
@@ -173,12 +175,86 @@ let ask_of (waiting : Spice_session.Waiting.t) =
   | Spice_session.Waiting.Permission _ | Spice_session.Waiting.Tool_claim _ ->
       None
 
+let parked_boundary_of_document document =
+  let session = Spice_session_store.Document.session document in
+  match Spice_session.State.waiting (Spice_session.state session) with
+  | Some waiting -> Some (Spice_session.Waiting.turn waiting, waiting)
+  | None -> None
+
+let settlement_of_record record =
+  match Spice_protocol.Subagent_run.status record with
+  | Spice_protocol.Subagent_run.Status.Blocked { blocker; _ } ->
+      Ok (record, Blocked_on { blocker })
+  | Spice_protocol.Subagent_run.Status.Completed { summary; _ } ->
+      Ok (record, Summary summary)
+  | Spice_protocol.Subagent_run.Status.Failed { message; _ } ->
+      Ok (record, Failed_with message)
+  | Spice_protocol.Subagent_run.Status.Cancelled _ ->
+      Ok (record, Interrupted { reason = None; cancelled = true })
+  | Spice_protocol.Subagent_run.Status.Queued
+  | Spice_protocol.Subagent_run.Status.Running _ ->
+      Error
+        ("subagent run has no live owner: "
+        ^ Spice_session.Id.to_string (Spice_protocol.Subagent_run.child record))
+
+let hydrate t child =
+  match
+    Artifacts.Subagent_run.load ~fs:t.fs ~root:t.root ~parent:t.parent ~child
+  with
+  | Error error -> Error (Artifacts.Error.message error)
+  | Ok None ->
+      Error ("subagent run not found: " ^ Spice_session.Id.to_string child)
+  | Ok (Some record) ->
+      let* document =
+        Session.load t.store child
+        |> Result.map_error Spice_protocol.Error.message
+      in
+      let* record =
+        match settlement_of_record record with
+        | Ok _ -> Ok record
+        | Error message ->
+            update_run t ~parent:t.parent ~child ~f:(fun record ->
+                Spice_protocol.Subagent_run.fail ~failed_at:(now t.stdenv)
+                  ~message record)
+      in
+      let settlement = settlement_of_record record in
+      let settled, resolve = Eio.Promise.create () in
+      ignore (Eio.Promise.try_resolve resolve settlement : bool);
+      let asked =
+        match parked_boundary_of_document document with
+        | Some (_, waiting) -> ask_of waiting
+        | None -> None
+      in
+      let entry =
+        {
+          record;
+          document;
+          live = None;
+          notices = Notice_queue.create ();
+          settled;
+          resolve;
+          exchanges = 0;
+          asked;
+          message_seq = 0;
+        }
+      in
+      t.entries <- (child, entry) :: t.entries;
+      Ok entry
+
+let find t child =
+  match List.assoc_opt child t.entries with
+  | Some entry -> Ok entry
+  | None -> hydrate t child
+
 (* Settle [entry]: transition the ledger from the drain result and publish.
    Terminal settlements release the attachment; a Blocked settlement keeps it,
    so an answer or a message can resume the parked turn in place. Runs on the
    child's drain fiber. *)
 let settle t entry ~parent ~child result =
   let settled_at = now t.stdenv in
+  (match result with
+  | Ok (document, _) -> entry.document <- document
+  | Error _ -> ());
   let parked = ref None in
   let transition_and_outcome :
       unit -> (Spice_protocol.Subagent_run.t, string) result * outcome =
@@ -264,18 +340,19 @@ let settle t entry ~parent ~child result =
   | Ok (_, Blocked_on _) -> ()
   | Ok (_, (Summary _ | Interrupted _ | Failed_with _ | Wait_interrupted))
   | Error _ ->
-      Live.detach entry.live);
+      Option.iter Live.detach entry.live;
+      entry.live <- None);
   ignore (Eio.Promise.try_resolve entry.resolve settlement : bool)
 
 (* (Re-)subscribe progress and settlement wiring on [entry]'s current Live.
    The run identity comes from the ledger record, so a Live re-attached over a
    terminal resume rewires with the same tags. *)
-let wire t entry =
+let wire t entry live =
   let child = Spice_protocol.Subagent_run.child entry.record in
   let parent = Spice_protocol.Subagent_run.parent entry.record in
   let role = Spice_protocol.Subagent_run.role entry.record in
   let depth = Spice_protocol.Subagent_run.depth entry.record in
-  Live.events entry.live (fun event ->
+  Live.events live (fun event ->
       emit t
         (Progress
            {
@@ -285,8 +362,7 @@ let wire t entry =
              depth;
              event;
            }));
-  Live.on_settled entry.live (fun result ->
-      settle t entry ~parent ~child result)
+  Live.on_settled live (fun result -> settle t entry ~parent ~child result)
 
 let escaped_id_component text =
   let hex = "0123456789ABCDEF" in
@@ -411,8 +487,8 @@ let spawn t ~parent ~parent_turn ~parent_call_id ~spawn ~depth
   let entry =
     {
       record = run;
-      live;
-      child_runner = runner;
+      document = child_document;
+      live = Some live;
       notices;
       settled;
       resolve;
@@ -422,7 +498,7 @@ let spawn t ~parent ~parent_turn ~parent_call_id ~spawn ~depth
     }
   in
   t.entries <- (child, entry) :: t.entries;
-  wire t entry;
+  wire t entry live;
   emit t (Started run);
   let request =
     Spice_protocol.Command.Start.make
@@ -462,36 +538,41 @@ let resume_ledger t entry ~child =
 
 (* The parked host-tool boundary of a blocked child, from its held document. *)
 let parked_boundary entry =
-  let session =
-    Spice_session_store.Document.session (Live.document entry.live)
-  in
-  match Spice_session.State.waiting (Spice_session.state session) with
-  | Some (Spice_session.Waiting.Host_tool waiting) ->
-      Some
-        ( waiting.Spice_session.Waiting.turn,
-          Spice_llm.Tool.Call.id waiting.Spice_session.Waiting.call )
-  | _ -> None
+  match parked_boundary_of_document entry.document with
+  | Some (turn, Spice_session.Waiting.Host_tool waiting) ->
+      Some (turn, Spice_llm.Tool.Call.id waiting.Spice_session.Waiting.call)
+  | Some
+      ( _,
+        ( Spice_session.Waiting.Permission _
+        | Spice_session.Waiting.Tool_claim _ ) )
+  | None ->
+      None
+
+let attach t entry runner =
+  let live = Live.attach ~sw:t.sw ~runner entry.document in
+  entry.live <- Some live;
+  wire t entry live;
+  live
 
 (* Resume a blocked child in place: its attachment is still live, so the
    continuation command drains the parked turn. *)
-let resume_parked t entry ~child command =
+let resume_parked t entry ~child ~runner command =
   let* record = resume_ledger t entry ~child in
+  let live =
+    match entry.live with Some live -> live | None -> attach t entry runner
+  in
   rearm entry;
   entry.asked <- None;
   emit t (Resumed record);
-  Live.submit entry.live command;
+  Live.submit live command;
   Ok ()
 
 (* Resume a terminal child: the old attachment was released at settlement, so
    rebuild one over the run's document and start a new turn. *)
-let resume_terminal t entry ~child text =
+let resume_terminal t entry ~child ~runner text =
   let* record = resume_ledger t entry ~child in
   rearm entry;
-  let live =
-    Live.attach ~sw:t.sw ~runner:entry.child_runner (Live.document entry.live)
-  in
-  entry.live <- live;
-  wire t entry;
+  let live = attach t entry runner in
   emit t (Resumed record);
   let request =
     Spice_protocol.Command.Start.make
@@ -502,7 +583,7 @@ let resume_terminal t entry ~child text =
   Live.submit live (Spice_protocol.Command.Start request);
   Ok ()
 
-let message ~origin t child text =
+let message ~runner ~origin t child text =
   let* entry = find t child in
   let* () =
     match origin with
@@ -542,8 +623,9 @@ let message ~origin t child text =
           match (entry.asked, parked_boundary entry) with
           | Some _, Some (turn, call_id) ->
               count ();
+              let* runner = runner record ~notices:entry.notices in
               let* () =
-                resume_parked t entry ~child
+                resume_parked t entry ~child ~runner
                   (Spice_protocol.Command.Answer
                      { turn; call_id; answer = text })
               in
@@ -556,7 +638,8 @@ let message ~origin t child text =
       | Spice_protocol.Subagent_run.Status.Failed _
       | Spice_protocol.Subagent_run.Status.Cancelled _ ->
           count ();
-          let* () = resume_terminal t entry ~child text in
+          let* runner = runner record ~notices:entry.notices in
+          let* () = resume_terminal t entry ~child ~runner text in
           Ok `Resumed
       | Spice_protocol.Subagent_run.Status.Queued
       | Spice_protocol.Subagent_run.Status.Running _ ->
@@ -565,16 +648,19 @@ let message ~origin t child text =
             ^ Spice_session.Id.to_string child))
 
 let asked t child =
-  match find t child with Error _ -> None | Ok entry -> entry.asked
+  match List.assoc_opt child t.entries with
+  | None -> None
+  | Some entry -> entry.asked
 
-let answer t child command =
+let answer ~runner t child command =
   let* entry = find t child in
   match Eio.Promise.peek entry.settled with
   | Some (Ok (record, _))
     when match Spice_protocol.Subagent_run.status record with
          | Spice_protocol.Subagent_run.Status.Blocked _ -> true
          | _ -> false ->
-      resume_parked t entry ~child command
+      let* runner = runner record ~notices:entry.notices in
+      resume_parked t entry ~child ~runner command
   | Some _ | None ->
       Error
         ("subagent run is not parked on a boundary: "
@@ -612,9 +698,15 @@ let cancel t child =
   let* entry = find t child in
   match Eio.Promise.peek entry.settled with
   | None ->
-      Live.submit entry.live
-        (Spice_protocol.Command.Interrupt { reason = None });
-      Ok ()
+      (match entry.live with
+      | Some live ->
+          Live.submit live
+            (Spice_protocol.Command.Interrupt { reason = None });
+          Ok ()
+      | None ->
+          Error
+            ("subagent run has no live owner: "
+            ^ Spice_session.Id.to_string child))
   | Some (Ok (record, _)) -> (
       match Spice_protocol.Subagent_run.status record with
       | Spice_protocol.Subagent_run.Status.Blocked _ ->
@@ -628,7 +720,8 @@ let cancel t child =
           in
           entry.record <- record;
           entry.asked <- None;
-          Live.detach entry.live;
+          Option.iter Live.detach entry.live;
+          entry.live <- None;
           rearm entry;
           emit t (Settled record);
           ignore
@@ -644,6 +737,8 @@ let cancel t child =
       Error ("subagent run already settled: " ^ Spice_session.Id.to_string child)
 
 let is_pending t =
-  List.exists (fun (_, entry) -> Live.is_pending entry.live) t.entries
+  List.exists
+    (fun (_, entry) -> Option.fold ~none:false ~some:Live.is_pending entry.live)
+    t.entries
 
 let list t = List.rev_map (fun (_, entry) -> entry.record) t.entries

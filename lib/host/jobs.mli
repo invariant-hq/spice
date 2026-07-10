@@ -11,9 +11,10 @@
     the child settles, and fans identity-tagged progress out to subscribers
     (doc/plans/subagent-tui.md §8.3).
 
-    The registry is the in-memory projection of the run tree; the artifact
-    ledger is the durable record. Registry state lives and dies with the switch
-    passed to {!create} — nothing here is persisted beyond the ledger writes.
+    The registry is the live projection of the run tree; the artifact ledger
+    and child sessions are the durable record. A lifecycle operation on a child
+    not launched by this process hydrates that durable record on demand. Live
+    attachments remain scoped to the switch passed to {!create}.
 
     Spawns are detached from the parent turn: {!spawn} returns once the child is
     launched, and the parent model can continue or explicitly call {!wait}. A
@@ -91,17 +92,29 @@ type child = {
     times, ledger writes, and the Live attachment; the caller owns prompt
     assembly and runner construction. *)
 
+type resume_runner =
+  Spice_protocol.Subagent_run.t ->
+  notices:Notice_queue.t ->
+  (Runner.t, string) result
+(** The type for rebuilding a runner when a persisted blocked or terminal child
+    resumes in a later host process. The caller derives the runner from the
+    current turn's model, credential, mode, and the recorded child role; the
+    registry owns the child document and notice queue. *)
+
 val create :
   sw:Eio.Switch.t ->
   stdenv:Eio_unix.Stdenv.base ->
   store:Spice_session_store.t ->
+  parent:Spice_session.Id.t ->
   max_concurrent:int ->
   max_depth:int ->
   max_exchanges:int ->
   t
-(** [create ~sw ~stdenv ~store ~max_concurrent ~max_depth ~max_exchanges] is an
-    empty registry. Child drain fibers run on [sw]; ledger artifacts live under
-    [store]'s root. Registry lifetime is [sw]'s.
+(** [create ~sw ~stdenv ~store ~parent ~max_concurrent ~max_depth
+    ~max_exchanges] is [parent]'s live registry. Child drain fibers run on [sw];
+    ledger artifacts live under [store]'s root. A child absent from the live
+    registry is loaded from [parent]'s durable run ledger when first addressed.
+    Registry lifetime is [sw]'s.
 
     [max_exchanges] caps parent<->child message exchanges per run — model-origin
     sends over the cap fail, asks over the cap park with the cap named as
@@ -135,10 +148,11 @@ val wait :
   t ->
   Spice_session.Id.t ->
   (Spice_protocol.Subagent_run.t * outcome, string) result
-(** [wait ?cancelled t run] blocks the calling fiber until [run] settles and
+(** [wait ?cancelled t run] loads [run] from durable storage when necessary,
+    blocks the calling fiber until it settles, and
     returns the settled ledger record with its caller-facing outcome. The ledger
     transition and {!Settled} publication happen before [wait] returns. Errors
-    when [run] is not registered in [t].
+    when [run] is neither live nor recorded under the registry's parent.
 
     [cancelled] is sampled while blocked (it defaults to never cancelled); when
     it flips, [wait] returns {!Wait_interrupted} with the latest non-terminal
@@ -165,13 +179,14 @@ val cancel : t -> Spice_session.Id.t -> (unit, string) result
     Errors when [run] is not registered or already settled terminally. *)
 
 val message :
+  runner:resume_runner ->
   origin:[ `Model | `User ] ->
   t ->
   Spice_session.Id.t ->
   string ->
   ([ `Delivered | `Resumed ], string) result
-(** [message ~origin t run text] delivers [text] to [run], resolving to exactly
-    one of:
+(** [message ~runner ~origin t run text] delivers [text] to [run], resolving to
+    exactly one of:
 
     - [`Delivered] — [run] is unsettled, or parked on a non-ask boundary: [text]
       is published to the run's notice queue under a fresh per-message key and
@@ -189,7 +204,9 @@ val message :
     run's settlement state and acting, so a message is never both delivered and
     resumed, and never dropped.
 
-    [origin] is exchange-cap accounting: [`Model] counts against the per-run cap
+    [runner] rebuilds the child's interpreter only when a durable child without
+    a live attachment must resume. [origin] is exchange-cap accounting:
+    [`Model] counts against the per-run cap
     and errors once it is reached; [`User] — the drill-in composer — bypasses
     the exchange cap so a person can always steer or unpark a run. Resuming a
     settled child still errors when the running-child capacity is full. Errors
@@ -202,12 +219,18 @@ val asked : t -> Spice_session.Id.t -> string option
     [None] otherwise or for unknown runs. *)
 
 val answer :
-  t -> Spice_session.Id.t -> Spice_protocol.Command.t -> (unit, string) result
-(** [answer t run command] resumes a run parked on a waiting boundary with the
-    continuation [command] — a permission {!Spice_protocol.Command.Reply} or a
-    host-tool {!Spice_protocol.Command.Answer} the surface built from the
-    boundary it rendered. The ledger transitions back to Running and {!Resumed}
-    is published. Errors when [run] is not parked. *)
+  runner:resume_runner ->
+  t ->
+  Spice_session.Id.t ->
+  Spice_protocol.Command.t ->
+  (unit, string) result
+(** [answer ~runner t run command] resumes a run parked on a waiting boundary
+    with the continuation [command] — a permission
+    {!Spice_protocol.Command.Reply} or a host-tool
+    {!Spice_protocol.Command.Answer} the surface built from the boundary it
+    rendered. [runner] rebuilds a live attachment when [run] was hydrated from
+    durable storage. The ledger transitions back to Running and {!Resumed} is
+    published. Errors when [run] is not parked. *)
 
 val subscribe : t -> (event -> unit) -> unit
 (** [subscribe t handler] subscribes [handler] to [t]'s event feed for the
