@@ -67,6 +67,31 @@ let assistant_tool_call call =
 let tool_result call text =
   Llm.Message.tool_result (Llm.Tool.Result.text call text)
 
+let transcript messages =
+  match Llm.Transcript.of_list messages with
+  | Ok transcript -> transcript
+  | Error error ->
+      failf "transcript construction failed: %a" Llm.Transcript.Error.pp error
+
+let extension_access name = Permission.Access.custom ~kind:`Custom name
+
+let permission_request ?(id = "permission-1") ?(grantable = true) ~turn
+    ~tool_call access =
+  let request = Permission.Request.of_accesses ~grantable [ access ] in
+  let access_set = Permission.Access.Set.singleton access in
+  let ask =
+    match Permission.Policy.Review.restore request access_set with
+    | Ok ask -> ask
+    | Error Permission.Policy.Review.Empty_accesses ->
+        failf "permission review reconstruction failed: empty accesses"
+    | Error (Permission.Policy.Review.Access_not_in_request access) ->
+        failf "permission review reconstruction failed: %a not in request"
+          Permission.Access.pp access
+  in
+  Session.Permission.Requested.of_review
+    ~id:(Session.Permission.Id.of_string id)
+    ~turn ~tool_call ask
+
 let event_equality_ignores_retained_output () =
   let call = tool_call ~id:"equal-call" ~name:"equal_tool" () in
   let value_id : (int -> int) Type.Id.t = Type.Id.make () in
@@ -90,11 +115,99 @@ let event_equality_ignores_retained_output () =
   is_true ~msg:"event equality follows its durable JSON projection"
     (Session.Event.equal event decoded)
 
-let transcript messages =
-  match Llm.Transcript.of_list messages with
-  | Ok transcript -> transcript
-  | Error error ->
-      failf "transcript construction failed: %a" Llm.Transcript.Error.pp error
+let durable_events_and_session_round_trip () =
+  let declarations =
+    List.map
+      (fun name ->
+        Llm.Tool.make ~name ~input_schema:Llm.Tool.no_input_schema ())
+      [ "review_tool"; "read_file"; "host_tool" ]
+  in
+  let turn =
+    Session.Turn.make ~id:(turn_id "turn-roundtrip")
+      ~input:(Session.Turn.Input.user_text "Handle the calls.") ~model
+      ~declarations ~host_tools:[ "host_tool" ] ~max_steps:8 ()
+  in
+  let reviewed = tool_call ~id:"call-reviewed" ~name:"review_tool" () in
+  let claimed = tool_call ~id:"call-claimed" ~name:"read_file" () in
+  let host = tool_call ~id:"call-host" ~name:"host_tool" () in
+  let permission =
+    permission_request ~id:"permission-roundtrip"
+      ~turn:(Session.Turn.id turn) ~tool_call:reviewed
+      (extension_access "tool.roundtrip")
+  in
+  let claim =
+    Session.Tool_claim.Started.make
+      ~id:(Session.Tool_claim.Id.of_string "claim-roundtrip")
+      ~turn:(Session.Turn.id turn) ~call:claimed
+  in
+  let replacement = transcript [ Llm.Message.user_text "Compacted history." ] in
+  let compaction =
+    Session.Compaction.make ~reason:Session.Compaction.Reason.User_requested
+      ~summary:"Compacted history." ~transcript:replacement ()
+  in
+  let events =
+    [
+      Session.Event.turn_started turn;
+      Session.Event.response_appended
+        (response
+           (Llm.Message.Assistant.make
+              (List.map Llm.Message.Assistant.tool_call
+                 [ reviewed; claimed; host ])));
+      Session.Event.permission_requested permission;
+      Session.Event.permission_resolved
+        (Session.Permission.Resolved.deny
+           ~id:(Session.Permission.Requested.id permission)
+           (Llm.Tool.Result.text ~error:true reviewed "denied"));
+      Session.Event.tool_claim_started claim;
+      Session.Event.tool_claim_finished
+        (Session.Tool_claim.Finished.make
+           ~id:(Session.Tool_claim.Started.id claim) ~output:None
+           (Llm.Tool.Result.text claimed "contents"));
+      Session.Event.message_appended
+        (Llm.Message.tool_result (Llm.Tool.Result.text host "answered"));
+      Session.Event.turn_finished ~turn:(Session.Turn.id turn)
+        Session.Turn.Outcome.completed;
+      Session.Event.compaction_installed compaction;
+    ]
+  in
+  List.iter
+    (fun event ->
+      let decoded = decode Session.Event.jsont (encode Session.Event.jsont event) in
+      is_true ~msg:"event constructor round-trips durably"
+        (Session.Event.equal event decoded))
+    events;
+  let metadata =
+    Session.Metadata.make ~title:"Round trip" ~cwd ~created_at:(time 1)
+      ~updated_at:(time 2) ()
+  in
+  let session =
+    match
+      Session.make ~id:(Session.Id.of_string "session-roundtrip") ~metadata
+        ~events
+    with
+    | Ok session -> session
+    | Error error -> failf "session construction failed: %a" Session.Error.pp error
+  in
+  let decoded = decode Session.jsont (encode Session.jsont session) in
+  is_true ~msg:"session id round-trips"
+    (Session.Id.equal (Session.id session) (Session.id decoded));
+  is_true ~msg:"session metadata round-trips"
+    (Session.Metadata.equal (Session.metadata session) (Session.metadata decoded));
+  is_true ~msg:"session events round-trip in order"
+    (List.equal Session.Event.equal (Session.events session)
+       (Session.events decoded));
+  let state = Session.state decoded in
+  equal int ~msg:"round-trip rebuilds the turn" 1
+    (List.length (State.turns state));
+  equal int ~msg:"round-trip retains permission history" 1
+    (List.length (State.permissions state));
+  equal int ~msg:"round-trip retains claim history" 1
+    (List.length (State.tool_claims state));
+  is_true ~msg:"round-trip transcript is request-ready"
+    (Llm.Transcript.is_ready (State.transcript state));
+  equal message_list_value ~msg:"compaction replacement is reconstructed"
+    (Llm.Transcript.messages replacement)
+    (Llm.Transcript.messages (State.transcript state))
 
 let state events =
   match State.of_events events with
@@ -105,25 +218,6 @@ let apply event state =
   match State.apply event state with
   | Ok state -> state
   | Error error -> failf "state apply failed: %a" State.Error.pp error
-
-let extension_access name = Permission.Access.custom ~kind:`Custom name
-
-let permission_request ?(id = "permission-1") ?(grantable = true) ~turn
-    ~tool_call access =
-  let request = Permission.Request.of_accesses ~grantable [ access ] in
-  let access_set = Permission.Access.Set.singleton access in
-  let ask =
-    match Permission.Policy.Review.restore request access_set with
-    | Ok ask -> ask
-    | Error Permission.Policy.Review.Empty_accesses ->
-        failf "permission review reconstruction failed: empty accesses"
-    | Error (Permission.Policy.Review.Access_not_in_request access) ->
-        failf "permission review reconstruction failed: %a not in request"
-          Permission.Access.pp access
-  in
-  Session.Permission.Requested.of_review
-    ~id:(Session.Permission.Id.of_string id)
-    ~turn ~tool_call ask
 
 let turn_starts_and_finishes () =
   let turn = turn () in
@@ -1462,6 +1556,8 @@ let () =
       test "turn starts and finishes" turn_starts_and_finishes;
       test "event equality ignores retained output"
         event_equality_ignores_retained_output;
+      test "durable events and session round trip"
+        durable_events_and_session_round_trip;
       test "compaction replaces transcript" compaction_replaces_transcript;
       test "compaction reason to_string is the stable tag"
         reason_to_string_is_the_stable_tag;
