@@ -29,12 +29,6 @@ type t =
   | Host_tool of host_tool
       (** The active turn is waiting for a host-handled tool answer. *)
 
-val permission : Permission.Requested.t -> t
-(** [permission request] is a permission waiting. *)
-
-val tool_claim : Tool_claim.Started.t -> t
-(** [tool_claim execution] is an unfinished tool claim waiting. *)
-
 val host_tool : turn:Turn.Id.t -> Spice_llm.Tool.Call.t -> t
 (** [host_tool ~turn call] is a host-handled tool waiting.
 

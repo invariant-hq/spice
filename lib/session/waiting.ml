@@ -10,8 +10,6 @@ type t =
 
 and host_tool = { turn : Turn.Id.t; call : Spice_llm.Tool.Call.t }
 
-let permission request = Permission request
-let tool_claim execution = Tool_claim execution
 let host_tool ~turn call = Host_tool { turn; call }
 
 let turn = function

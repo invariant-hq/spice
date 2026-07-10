@@ -355,10 +355,10 @@ let tool_claims t =
 
 let waiting t =
   match pending_permissions t with
-  | request :: _ -> Some (Waiting.permission request)
+  | request :: _ -> Some (Waiting.Permission request)
   | [] -> (
       match pending_tool_claims t with
-      | claim :: _ -> Some (Waiting.tool_claim claim)
+      | claim :: _ -> Some (Waiting.Tool_claim claim)
       | [] -> (
           match (active_turn t, Transcript.state t.transcript) with
           | ( Some turn,
