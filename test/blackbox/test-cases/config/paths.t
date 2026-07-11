@@ -36,17 +36,17 @@ the current repository.
 
   $ SPICE_CONFIG_HOME=relative spice config path
   spice: SPICE_CONFIG_HOME must be an absolute path: relative
-  [124]
+  [1]
 
   $ env -u SPICE_CONFIG_HOME -u XDG_CONFIG_HOME -u HOME spice config path
   spice: cannot determine Spice config home; set SPICE_CONFIG_HOME or an absolute HOME
-  [124]
+  [1]
 
   $ mkdir -p .config/spice
   $ printf '{"version":2,"workspaces":{"%s":"trusted"}}\n' "$PWD" > .config/spice/trust.json
   $ env -u SPICE_CONFIG_HOME -u XDG_CONFIG_HOME -u HOME spice trust .
   spice: cannot determine Spice config home; set SPICE_CONFIG_HOME or an absolute HOME
-  [124]
+  [1]
   $ test -f .config/spice/trust.json && echo repository-store-ignored
   repository-store-ignored
 
