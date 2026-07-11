@@ -273,7 +273,11 @@ cmd_start() {
   fi
   [ -d "$project" ] || die "project dir not found: $project"
 
-  rm -rf "$(state)"; mkdir -p "$(state)"
+  # Preserve prior artifacts: a finding's evidence must survive a restart.
+  if [ -d "$(state)" ]; then
+    mv "$(state)" "$(state).$(date +%Y%m%d-%H%M%S)"
+  fi
+  mkdir -p "$(state)"
   local conf="$STATE_ROOT/tmux.conf"
   cat >"$conf" <<'EOF'
 set -g history-limit 10000
@@ -294,6 +298,14 @@ EOF
   echo "watch live:  tmux -L $SOCKET attach -t $NAME -r"
   # boot: first frame painted and stable for half a second
   "$0" wait --name "$NAME" --stable 500 --timeout 20
+  # A fresh workspace hits the interactive trust dialog on the primary screen
+  # before the TUI starts; answer "trust and enable" so the session behaves
+  # like a user's own project, and wait for the real home frame.
+  if capture | grep -q "Spice workspace trust"; then
+    log_input trust "auto-selected 2 (trust and enable)"
+    tm send-keys -t "$(target)" -l -- "2"
+    "$0" wait --name "$NAME" --contains "message spice" --timeout 20
+  fi
 }
 
 cmd_stop() {
