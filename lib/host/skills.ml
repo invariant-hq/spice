@@ -278,7 +278,12 @@ module Catalog = struct
         finish ~trimmed:(List.rev !trimmed) text
 end
 
-type t = { enabled : bool; skills : Skill.t list; catalog : Catalog.t }
+type t = {
+  enabled : bool;
+  trust_restricted : bool;
+  skills : Skill.t list;
+  catalog : Catalog.t;
+}
 
 let enabled t = t.enabled
 let skills t = t.skills
@@ -520,13 +525,33 @@ let apply_shadowing candidates =
       | _ -> skill)
     candidates
 
+let canonical_path path =
+  match Unix.realpath (Spice_path.Abs.to_string path) with
+  | canonical -> (
+      match Spice_path.Abs.of_string canonical with
+      | Ok canonical -> canonical
+      | Error _ -> path)
+  | exception Unix.Unix_error _ -> path
+
+let contained_in ~root path =
+  Option.is_some
+    (Spice_path.Abs.relativize ~root:(canonical_path root) (canonical_path path))
+
 let load ~stdenv ~builtins ?(builtin_origin = "builtin") config =
   let skills_config = Config.skills config in
   if not (Config.Skills.enabled skills_config) then
-    { enabled = false; skills = []; catalog = Catalog.render ~budget:0 [] }
+    {
+      enabled = false;
+      trust_restricted = false;
+      skills = [];
+      catalog = Catalog.render ~budget:0 [];
+    }
   else
     let cwd = Config.cwd config in
     let root = Config.project_root config in
+    let trust = Config.workspace_trust config in
+    let trusted = Trust.is_trusted trust in
+    let canonical_root = Trust.root trust in
     let under base segments =
       List.fold_left
         (fun abs segment ->
@@ -562,17 +587,21 @@ let load ~stdenv ~builtins ?(builtin_origin = "builtin") config =
             else text
           in
           Spice_path.Abs.of_string absolute |> Result.to_option)
+      |> List.filter (fun path ->
+          trusted || not (contained_in ~root:canonical_root path))
     in
     let builtin_gate =
       if Config.Skills.builtin skills_config then None else Some `Builtin
     in
     let candidates =
-      filesystem_root ~stdenv ~kind:Skill.Project ~gate:project_gate
-        (under root [ ".spice"; "skills" ])
-      @ filesystem_root ~stdenv ~kind:Skill.Compat_agents ~gate:compat_gate
-          (under root [ ".agents"; "skills" ])
-      @ filesystem_root ~stdenv ~kind:Skill.Compat_claude ~gate:compat_gate
-          (under root [ ".claude"; "skills" ])
+      (if trusted then
+         filesystem_root ~stdenv ~kind:Skill.Project ~gate:project_gate
+           (under root [ ".spice"; "skills" ])
+         @ filesystem_root ~stdenv ~kind:Skill.Compat_agents ~gate:compat_gate
+             (under root [ ".agents"; "skills" ])
+         @ filesystem_root ~stdenv ~kind:Skill.Compat_claude ~gate:compat_gate
+             (under root [ ".claude"; "skills" ])
+       else [])
       @ (match Spice_path.Abs.of_string user_dir with
         | Error _ -> []
         | Ok user_abs ->
@@ -614,7 +643,7 @@ let load ~stdenv ~builtins ?(builtin_origin = "builtin") config =
     Log.debug (fun m ->
         m "skills loaded discovered=%d active=%d catalog_bytes=%d"
           (List.length skills) (List.length entries) (Catalog.bytes catalog));
-    { enabled = true; skills; catalog }
+    { enabled = true; trust_restricted = not trusted; skills; catalog }
 
 (* The skill tool. A view of the snapshot: the description carries the
    catalog, the handler serves snapshot text and call-time resource reads. *)
@@ -793,6 +822,11 @@ let injections t ~names =
   |> Result.map List.rev
 
 let warnings t =
+  let trust_warnings =
+    if t.trust_restricted then
+      [ "project skills disabled: workspace is not trusted" ]
+    else []
+  in
   let skill_warnings =
     List.filter_map
       (fun (skill : Skill.t) ->
@@ -829,4 +863,4 @@ let warnings t =
               (String.concat ", " (List.map Skill.Name.to_string trimmed));
           ]
   in
-  skill_warnings @ catalog_warnings
+  trust_warnings @ skill_warnings @ catalog_warnings

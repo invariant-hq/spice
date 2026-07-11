@@ -3,30 +3,30 @@ Workspace config is scoped to preferences.
 Capability-shaped keys are rejected when writing either workspace file.
 
   $ spice config set --project shell /bin/bash
-  spice: shell is not allowed in workspace config; allowed keys: model, small_model, reasoning, run.max_steps, permission.unattended, workspace.tooling, tools.editor, ocaml.merlin_program, web.search_backend, web.fetch_max_bytes, web.output_max_chars, web.timeout_ms, web.max_timeout_ms
+  spice: shell is not allowed in workspace config; allowed keys: model, small_model, reasoning, run.max_steps, permission.unattended, workspace.tooling, tools.editor, web.search_backend, web.fetch_max_bytes, web.output_max_chars, web.timeout_ms, web.max_timeout_ms
   [2]
 
   $ spice config set --project permission.mode bypass
-  spice: permission.mode is not allowed in workspace config; allowed keys: model, small_model, reasoning, run.max_steps, permission.unattended, workspace.tooling, tools.editor, ocaml.merlin_program, web.search_backend, web.fetch_max_bytes, web.output_max_chars, web.timeout_ms, web.max_timeout_ms
+  spice: permission.mode is not allowed in workspace config; allowed keys: model, small_model, reasoning, run.max_steps, permission.unattended, workspace.tooling, tools.editor, web.search_backend, web.fetch_max_bytes, web.output_max_chars, web.timeout_ms, web.max_timeout_ms
   [2]
 
   $ spice config set --project providers.openai.base_url https://repo.example/v1
-  spice: providers.openai.base_url is not allowed in workspace config; allowed keys: model, small_model, reasoning, run.max_steps, permission.unattended, workspace.tooling, tools.editor, ocaml.merlin_program, web.search_backend, web.fetch_max_bytes, web.output_max_chars, web.timeout_ms, web.max_timeout_ms
+  spice: providers.openai.base_url is not allowed in workspace config; allowed keys: model, small_model, reasoning, run.max_steps, permission.unattended, workspace.tooling, tools.editor, web.search_backend, web.fetch_max_bytes, web.output_max_chars, web.timeout_ms, web.max_timeout_ms
   [2]
 
 Project-local config is workspace content a repository can commit, so it
 shares the same allowlist.
 
   $ spice config set --project-local shell /bin/bash
-  spice: shell is not allowed in workspace config; allowed keys: model, small_model, reasoning, run.max_steps, permission.unattended, workspace.tooling, tools.editor, ocaml.merlin_program, web.search_backend, web.fetch_max_bytes, web.output_max_chars, web.timeout_ms, web.max_timeout_ms
+  spice: shell is not allowed in workspace config; allowed keys: model, small_model, reasoning, run.max_steps, permission.unattended, workspace.tooling, tools.editor, web.search_backend, web.fetch_max_bytes, web.output_max_chars, web.timeout_ms, web.max_timeout_ms
   [2]
 
-Hand-written workspace config applies only allowlisted keys; disallowed keys
-are ignored with structured diagnostics, no trust decision required.
+Hand-written config in the trusted fixture applies only allowlisted keys;
+disallowed keys are ignored with structured diagnostics.
 
   $ mkdir -p .spice
   $ cat > .spice/config.json <<EOF
-  > {"model":"openai/gpt-5.4","small_model":"openai/gpt-5.4-mini","reasoning":"medium","run":{"max_steps":5},"shell":"/bin/bash","providers":{"openai":{"base_url":"https://repo.example/v1"}}}
+  > {"model":"openai/gpt-5.4","small_model":"openai/gpt-5.4-mini","reasoning":"medium","run":{"max_steps":5},"shell":"/bin/bash","ocaml":{"merlin_program":["evil-merlin"]},"providers":{"openai":{"base_url":"https://repo.example/v1"}}}
   > EOF
 
   $ spice config show --origins | grep -E '^(model|small_model|reasoning|run.max_steps)='
@@ -40,9 +40,10 @@ are ignored with structured diagnostics, no trust decision required.
   $ spice config show --origins | grep 'ignored in workspace config'
   diagnostic: project config key ignored in workspace config: providers.openai.base_url ($TESTCASE_ROOT/.spice/config.json)
   diagnostic: project config key ignored in workspace config: shell ($TESTCASE_ROOT/.spice/config.json)
+  diagnostic: project config key ignored in workspace config: ocaml.merlin_program ($TESTCASE_ROOT/.spice/config.json)
 
   $ spice config show --json --origins | grep -o '"kind":"ignored_project_key"' | awk 'END { print NR }'
-  2
+  3
 
 A workspace file that names the bypass preset is rejected whole: bypass is
 per-invocation, never durable, so the file degrades to an empty layer with a

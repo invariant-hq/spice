@@ -102,11 +102,18 @@ let sandbox_label ?flag config =
   Option.map sandbox_string (sandbox_mode ?flag config)
 
 let config_warning ?flag config =
-  match sandbox_mode ?flag config with
-  | Some ((Spice_host.Sandbox.Mode.Danger_full_access, _) as sandbox) ->
-      Some ("sandbox: " ^ sandbox_string sandbox)
-  | Some _ | None ->
-      if permission_bypassed config then Some "permission: never ask" else None
+  let trust = Spice_host.Config.workspace_trust config in
+  if not (Spice_host.Trust.is_trusted trust) then
+    Some
+      ("project customization disabled: workspace trust is "
+      ^ Spice_host.Trust.status_to_string (Spice_host.Trust.status trust))
+  else
+    match sandbox_mode ?flag config with
+    | Some ((Spice_host.Sandbox.Mode.Danger_full_access, _) as sandbox) ->
+        Some ("sandbox: " ^ sandbox_string sandbox)
+    | Some _ | None ->
+        if permission_bypassed config then Some "permission: never ask"
+        else None
 
 (* Whether no provider is connected (09-auth.md §9): at least one provider
    requires auth yet no provider — optional-auth ones included — has a
@@ -180,7 +187,8 @@ let discover_repo ~stdenv ~cwd =
 (* The brief loader: cheap host probes assembled into a {!Home.Brief.t}. The worktree
    glance short-circuits on an unchanged fingerprint so an idle worktree costs
    one probe per tick; the derived lines are cached against it. *)
-let make_brief_loader ?sandbox_flag ~engaged ~stdenv ~clock ~host ~cwd () =
+let make_brief_loader ?sandbox_flag ~trusted ~engaged ~stdenv ~clock ~host ~cwd
+    () =
   let config = Spice_host.Host.config host in
   let warning = config_warning ?flag:sandbox_flag config in
   let workspace = Spice_workspace.single (Spice_workspace.Root.make cwd) in
@@ -200,7 +208,7 @@ let make_brief_loader ?sandbox_flag ~engaged ~stdenv ~clock ~host ~cwd () =
   in
   (* Lazy: the git spawn belongs to the first (asynchronous) brief load, not
      the boot critical path before the first frame. *)
-  let repo = lazy (discover_repo ~stdenv ~cwd) in
+  let repo = lazy (if trusted then discover_repo ~stdenv ~cwd else None) in
   let store = Spice_host.Session.store ~stdenv host in
   let known = ref None in
   let cached_worktree = ref None in
@@ -1166,19 +1174,24 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
           | None -> Eio.Stdenv.clock stdenv
         in
         let cwd = Spice_host.Config.cwd (Spice_host.Host.config host) in
+        let trusted =
+          Spice_host.Config.workspace_trust (Spice_host.Host.config host)
+          |> Spice_host.Trust.is_trusted
+        in
         (* Whether the workspace's Dune tooling engages for this run; the brief
            and health probes read a live watch that only [build_run] spawns, so
            they skip the probe and report a degraded footer when it will not. *)
         let tooling_engaged =
-          Spice_host.Config.Workspace.tooling_engaged
+          trusted
+          && Spice_host.Config.Workspace.tooling_engaged
             (Spice_host.Config.workspace (Spice_host.Host.config host))
             ~root:(Spice_path.Abs.to_string cwd)
         in
         let sandbox_flag = startup.App.sandbox in
         let snapshot = build_snapshot ?sandbox_flag ~stdenv host in
         let load_brief =
-          make_brief_loader ?sandbox_flag ~engaged:tooling_engaged ~stdenv
-            ~clock ~host ~cwd ()
+          make_brief_loader ?sandbox_flag ~trusted ~engaged:tooling_engaged
+            ~stdenv ~clock ~host ~cwd ()
         in
         let load_health =
           make_health_loader ~engaged:tooling_engaged ~stdenv ~clock ~cwd

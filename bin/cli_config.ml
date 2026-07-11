@@ -140,6 +140,10 @@ let show_json config =
       ( "project_root",
         Jsont.Json.string
           (Spice_path.Abs.to_string (Config.project_root config)) );
+      ( "workspace_trust",
+        Jsont.Json.string
+          (Config.workspace_trust config |> Spice_host.Trust.status
+         |> Spice_host.Trust.status_to_string) );
       ( "data_home",
         Jsont.Json.string (Spice_path.Abs.to_string (Config.data_home config))
       );
@@ -302,6 +306,15 @@ let show_text ?(origins = false) config =
         stdout_printf "%s=%s\n" (Config.Field.name field) value;
         if origins then show_origin config field
   in
+  let trust = Config.workspace_trust config in
+  stdout_printf "workspace_trust=%s\n"
+    (Spice_host.Trust.status_to_string (Spice_host.Trust.status trust));
+  if origins then
+    stdout_printf "  source: %s\n"
+      (match Spice_host.Trust.status trust with
+      | Spice_host.Trust.Unknown -> "no stored decision"
+      | Spice_host.Trust.Untrusted | Spice_host.Trust.Trusted ->
+          "user workspace trust store");
   List.iter
     (fun (Config.Field.Any field) -> print_opt field (Config.get field config))
     (text_fields config)

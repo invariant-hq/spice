@@ -17,7 +17,8 @@ let%expect_test "raw OSC output tracks idle and working titles" =
     ]
   in
   Provider_process.with_script ~delay_ms:500 project script @@ fun provider ->
-  Pty.run project ~provider ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
+  Pty.run project ~trust:true ~provider ~env:reduced_motion ~rows:24 ~cols:80
+  @@ fun t ->
   let leaf = Filename.basename (Project.root project) in
   let idle = "\027]0;✳ " ^ leaf ^ "\027\\" in
   Pty.wait_raw t (fun raw -> Screen.contains raw idle);
@@ -41,7 +42,8 @@ let%expect_test "a PTY resize delivers SIGWINCH and reflows review" =
   Project.with_git_fixture "terminal-resize" @@ fun project ->
   Project.write project "lib/code.ml"
     "let alpha = 1\nlet beta = 2\nlet gamma = 33\nlet delta = 4\n";
-  Pty.run project ~env:reduced_motion ~rows:24 ~cols:100 ~command:[ "review" ]
+  Pty.run project ~trust:true ~env:reduced_motion ~rows:24 ~cols:100
+    ~command:[ "review" ]
     ~ready:(Screen.has "0/1 reviewed")
   @@ fun t ->
   print_fact "wide review is split" (Screen.has "│" (Pty.screen t));
@@ -71,7 +73,7 @@ printf '%s\n' "$after" > "$SPICE_STTY_AFTER"
 exit "$status"
 |}
   in
-  Pty.run_shell project ~script
+  Pty.run_shell project ~trust:true ~script
     ~env:
       (reduced_motion
       @ [

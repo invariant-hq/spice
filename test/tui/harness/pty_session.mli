@@ -45,6 +45,7 @@ val run :
   ?args:string list ->
   ?unset:string list ->
   ?env:(string * string) list ->
+  ?trust:bool ->
   ?rows:int ->
   ?cols:int ->
   ?ready:(string -> bool) ->
@@ -53,12 +54,14 @@ val run :
   'a
 (** [run project f] launches Spice in a real PTY, waits until [ready] holds,
     calls [f], and always closes the PTY. [command] precedes Spice's [--cwd]
-    option; [args] follows it. *)
+    option; [args] follows it. [trust] defaults to [true]; trust-prompt cases
+    pass [false] to exercise an unknown workspace. *)
 
 val run_shell :
   ?provider:Provider_process.t ->
   ?unset:string list ->
   ?env:(string * string) list ->
+  ?trust:bool ->
   ?rows:int ->
   ?cols:int ->
   ?ready:(string -> bool) ->

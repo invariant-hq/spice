@@ -1102,7 +1102,7 @@ let field_spec : type a. a Field.t -> a spec =
   | Field.Tools_editor ->
       make_spec tools_editor_codec ~shared:true ~default:(builtin field "auto")
   | Field.Ocaml_merlin_program ->
-      make_spec merlin_codec ~shared:true
+      make_spec merlin_codec
         ~default:(builtin field Spice_tools.Ocaml_merlin.default_program)
   | Field.Web_enabled -> make_spec bool_codec ~default:(builtin field false)
   | Field.Web_allow_private_network ->
@@ -1337,6 +1337,14 @@ let project_local_config_path project_root =
   Filename.concat (spice_dir project_root) "config.local.json"
 
 let file_exists env path = Eio.Path.is_file (fs_path env path)
+
+let path_exists env path =
+  match Eio.Path.kind ~follow:false (fs_path env path) with
+  | `Not_found -> false
+  | `Regular_file | `Directory | `Symbolic_link | `Socket | `Fifo
+  | `Character_special | `Block_device | `Unknown ->
+      true
+  | exception _ -> true
 
 let decode_json_file env path =
   match Eio.Path.load (fs_path env path) with
@@ -2052,6 +2060,7 @@ type t = {
   process_env : Env.t;
   cwd : Spice_path.Abs.t;
   project_root : Spice_path.Abs.t;
+  workspace_trust : Trust.t;
   data_home : Spice_path.Abs.t;
   state_home : Spice_path.Abs.t;
   auth_store_path : Spice_path.Abs.t;
@@ -2064,11 +2073,13 @@ type t = {
   ignored_project_rules : (Source.t * int) list;
   ignored_project_budgets : (Field.any * Source.t * int) list;
   invalid_project_files : (Source.t * string) list;
+  disabled_project_files : Source.t list;
   files : Files.t;
 }
 
 let cwd t = t.cwd
 let project_root t = t.project_root
+let workspace_trust t = t.workspace_trust
 let data_home t = t.data_home
 let state_home t = t.state_home
 let auth_store_path t = t.auth_store_path
@@ -2272,6 +2283,7 @@ module Warning = struct
     | Ignored_project_rules
     | Ignored_project_budget
     | Invalid_project_config
+    | Project_config_disabled
 
   type t = {
     kind : kind;
@@ -2285,12 +2297,14 @@ module Warning = struct
     | Ignored_project_rules -> "ignored_project_rules"
     | Ignored_project_budget -> "ignored_project_budget"
     | Invalid_project_config -> "invalid_project_config"
+    | Project_config_disabled -> "project_config_disabled"
 
   let kind_of_string = function
     | "ignored_project_key" -> Some Ignored_project_key
     | "ignored_project_rules" -> Some Ignored_project_rules
     | "ignored_project_budget" -> Some Ignored_project_budget
     | "invalid_project_config" -> Some Invalid_project_config
+    | "project_config_disabled" -> Some Project_config_disabled
     | _ -> None
 
   let source_kind_and_path = function
@@ -2355,6 +2369,16 @@ module Warning = struct
       source;
       key = None;
       message = "workspace config file ignored: " ^ reason;
+    }
+
+  let project_config_disabled status source =
+    {
+      kind = Project_config_disabled;
+      source;
+      key = None;
+      message =
+        "workspace config file disabled: workspace trust is "
+        ^ Trust.status_to_string status;
     }
 
   let ignored_project_key key source =
@@ -2440,7 +2464,8 @@ module Warning = struct
     | Ignored_project_key, Some key ->
         Format.fprintf ppf "%s config key ignored in workspace config: %s (%s)"
           source_kind (key_name key) path
-    | ( (Ignored_project_rules | Ignored_project_budget | Invalid_project_config),
+    | ( ( Ignored_project_rules | Ignored_project_budget
+        | Invalid_project_config | Project_config_disabled ),
         _ ) ->
         Format.fprintf ppf "%s (%s: %s)" t.message source_kind path
     | Ignored_project_key, None -> Format.pp_print_string ppf t.message
@@ -2448,6 +2473,9 @@ end
 
 let warnings t =
   List.map
+    (Warning.project_config_disabled (Trust.status t.workspace_trust))
+    t.disabled_project_files
+  @ List.map
     (fun (source, reason) -> Warning.invalid_project_config ~reason source)
     t.invalid_project_files
   @ List.map
@@ -2491,6 +2519,16 @@ let sanitize_workspace_layer ~run_max_steps_cap source layer =
   in
   (layer, ignored_keys, ignored_rules, ignored_budgets)
 
+type workspace_layers = {
+  project : Layer.t;
+  project_local : Layer.t;
+  ignored_keys : (Field.any * Source.t) list;
+  ignored_rules : (Source.t * int) list;
+  ignored_budgets : (Field.any * Source.t * int) list;
+  invalid_files : (Source.t * string) list;
+  disabled_files : Source.t list;
+}
+
 let validate_merged_layer layer =
   let timeout_ms =
     Option.value
@@ -2527,6 +2565,11 @@ let load ~stdenv ?process_env ?cwd ?extra_config_file ?data_home
   let cwd = Option.value cwd ~default:(cwd_default stdenv) in
   let* files = Files.discover ~stdenv ~process_env ~cwd () in
   let project_root = Files.project_root files in
+  let* workspace_trust =
+    Trust.find ~stdenv ~process_env ~root:project_root ()
+    |> Result.map_error (fun error ->
+        error_t (Trust.Error.message error))
+  in
   let* cwd = canonical_cwd stdenv cwd in
   let* base = host_cwd stdenv in
   let* data_home =
@@ -2590,10 +2633,10 @@ let load ~stdenv ?process_env ?cwd ?extra_config_file ?data_home
     match extra_source with None -> [] | Some source -> [ (source, extra) ]
   in
   let* env_layers = env_named_layers getenv in
-  (* Workspace layers load unconditionally: safety comes from construction
-     (allowlist filter, rule stripping, budget clamp, byte cap), not from a trust
-     gate. Budgets clamp against the layers the user authored outside the
-     workspace, so a repository may tighten but never widen them. *)
+  (* Trusted workspace layers still pass through the shared-key filter, rule
+     stripping, budget clamp, and byte cap. Unknown and untrusted workspaces do
+     not open the files at all; their paths remain available to explicit config
+     inspection and editing commands. *)
   let run_max_steps_cap =
     Layer.get_field Field.run_max_steps
       (Layer.merge_all
@@ -2605,31 +2648,55 @@ let load ~stdenv ?process_env ?cwd ?extra_config_file ?data_home
     | Ok layer -> (layer, [])
     | Error err -> (Layer.empty, [ (source, Error.message err) ])
   in
-  let project_raw, project_invalid =
-    load_workspace project_source project_config_file
+  let workspace =
+    if Trust.is_trusted workspace_trust then
+      let project_raw, project_invalid =
+        load_workspace project_source project_config_file
+      in
+      let project_local_raw, project_local_invalid =
+        load_workspace project_local_source project_local_config_file
+      in
+      let project, project_keys, project_rules, project_budgets =
+        sanitize_workspace_layer ~run_max_steps_cap project_source project_raw
+      in
+      let ( project_local,
+            project_local_keys,
+            project_local_rules,
+            project_local_budgets ) =
+        sanitize_workspace_layer ~run_max_steps_cap project_local_source
+          project_local_raw
+      in
+      {
+        project;
+        project_local;
+        ignored_keys = project_keys @ project_local_keys;
+        ignored_rules = project_rules @ project_local_rules;
+        ignored_budgets = project_budgets @ project_local_budgets;
+        invalid_files = project_invalid @ project_local_invalid;
+        disabled_files = [];
+      }
+    else
+      let disabled_files =
+        [ (project_source, project_config_file);
+          (project_local_source, project_local_config_file) ]
+        |> List.filter_map (fun (source, path) ->
+            if path_exists stdenv path then Some source else None)
+      in
+      {
+        project = Layer.empty;
+        project_local = Layer.empty;
+        ignored_keys = [];
+        ignored_rules = [];
+        ignored_budgets = [];
+        invalid_files = [];
+        disabled_files;
+      }
   in
-  let project_local_raw, project_local_invalid =
-    load_workspace project_local_source project_local_config_file
-  in
-  let project, project_keys, project_rules, project_budgets =
-    sanitize_workspace_layer ~run_max_steps_cap project_source project_raw
-  in
-  let ( project_local,
-        project_local_keys,
-        project_local_rules,
-        project_local_budgets ) =
-    sanitize_workspace_layer ~run_max_steps_cap project_local_source
-      project_local_raw
-  in
-  let ignored_project_keys = project_keys @ project_local_keys in
-  let ignored_project_rules = project_rules @ project_local_rules in
-  let ignored_project_budgets = project_budgets @ project_local_budgets in
-  let invalid_project_files = project_invalid @ project_local_invalid in
   let layers =
     [
       (user_source, user);
-      (project_source, project);
-      (project_local_source, project_local);
+      (project_source, workspace.project);
+      (project_local_source, workspace.project_local);
     ]
     @ extra_layers @ env_layers
     @ List.map (fun layer -> (Source.Override, layer)) overrides
@@ -2664,15 +2731,17 @@ let load ~stdenv ?process_env ?cwd ?extra_config_file ?data_home
       process_env;
       cwd;
       project_root;
+      workspace_trust;
       data_home;
       state_home;
       auth_store_path;
       layer;
       origins;
       permission_rules;
-      ignored_project_keys;
-      ignored_project_rules;
-      ignored_project_budgets;
-      invalid_project_files;
+      ignored_project_keys = workspace.ignored_keys;
+      ignored_project_rules = workspace.ignored_rules;
+      ignored_project_budgets = workspace.ignored_budgets;
+      invalid_project_files = workspace.invalid_files;
+      disabled_project_files = workspace.disabled_files;
       files;
     }

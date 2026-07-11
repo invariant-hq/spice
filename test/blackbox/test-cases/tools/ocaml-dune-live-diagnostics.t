@@ -23,6 +23,7 @@ blocking the turn.
   $ cat > "$fixture/test/fixture_test.ml" <<'EOF'
   > let () = assert (Fixture_lib.answer = 42)
   > EOF
+  $ spice trust "$fixture" > /dev/null
 
 Only the Dune diagnostics notice stream is enabled. This keeps the request body
 focused on compiler diagnostics while still using the real host watcher and the

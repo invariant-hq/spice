@@ -21,7 +21,7 @@ let reduced_motion = [ ("SPICE_REDUCED_MOTION", "1") ]
 let print_fact label value = Printf.printf "%s: %b\n" label value
 
 let run ?env ?rows ?cols ?provider project f =
-  Pty.run ?env ?rows ?cols ?provider project f
+  Pty.run ?env ?rows ?cols ?provider ~trust:true project f
 
 (* The static lockup's second row — the frozen mark the goodbye reprints
    (Theme.lockup). Its wordmark and resting heap are stable across runs. *)

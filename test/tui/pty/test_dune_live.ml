@@ -18,7 +18,7 @@ let%expect_test "a real dune watch connects while home is open" =
   Project.with_git_fixture "dune-home" @@ fun project ->
   Project.write project "lib/code.ml" "let alpha = 1\nlet beta = 20\n";
   disable_internal_dune_watch project;
-  Pty.run project ~env:dune_environment ~rows:24 @@ fun t ->
+  Pty.run project ~trust:true ~env:dune_environment ~rows:24 @@ fun t ->
   Pty.wait t (Screen.has "diagnostics unavailable");
   print_fact "starts disconnected" (Screen.has "dune: ✗" (Pty.screen t));
   Project.with_external_dune_watch project @@ fun () ->
@@ -39,7 +39,8 @@ let%expect_test
   Provider_process.with_openai project ~answer:"Watching the build now."
     ~expect:[ "watch" ]
   @@ fun provider ->
-  Pty.run project ~provider ~env:dune_environment ~rows:24 ~cols:80 @@ fun t ->
+  Pty.run project ~trust:true ~provider ~env:dune_environment ~rows:24 ~cols:80
+  @@ fun t ->
   Pty.send t "watch the build";
   Pty.wait t (Screen.has "❯ watch the build");
   Pty.send t Key.enter;

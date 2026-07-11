@@ -55,22 +55,26 @@ let prepare sandbox ~argv ~env =
 let start ~sw ~stdenv host ~inbox ~workspace ~sandbox ~cwd ~root () =
   let config = Host.config host in
   let notices = Config.notices config in
+  let trusted = Trust.is_trusted (Config.workspace_trust config) in
+  let mutating = Sandbox.mutating_tools sandbox in
+  let process_sandbox = Sandbox.Effective.sandbox sandbox in
   (* [workspace.tooling] gates the OCaml/Dune integration: when it does not
      engage — [off], or [auto] outside a Dune workspace — the boot [dune
      describe] capture, the Merlin resolution, and the [dune build --watch]
      instance are skipped. Filesystem and CR-comment notices are general host
      streams and remain governed by their own config flags. *)
   let engaged =
-    Config.Workspace.tooling_engaged (Config.workspace config) ~root
+    trusted
+    && Config.Workspace.tooling_engaged (Config.workspace config) ~root
   in
   let dune_diagnostics = engaged && Config.Notices.dune_diagnostics notices in
   let dune_build = engaged && Config.Notices.dune_build notices in
   let dune =
     let start =
-      if dune_diagnostics || dune_build then
+      if mutating && (dune_diagnostics || dune_build) then
         Some
           (Spice_ocaml_dune.Rpc.Instance.Start.dune_build_watch ~sw
-             ~prepare:(prepare sandbox)
+             ~prepare:(prepare process_sandbox)
              ~process_mgr:(Eio.Stdenv.process_mgr stdenv)
              ~cwd ())
       else None
@@ -99,7 +103,7 @@ let start ~sw ~stdenv host ~inbox ~workspace ~sandbox ~cwd ~root () =
             Spice_ocaml_dune.Project_source.No_watch)
       ~describe:(fun ~cancelled ->
         Spice_ocaml_dune.Describe.describe_project
-          ~prepare:(prepare sandbox)
+          ~prepare:(prepare process_sandbox)
           ~process_mgr:(Eio.Stdenv.process_mgr stdenv)
           ~clock:(Eio.Stdenv.clock stdenv) ~cwd ~workspace ~cancelled ())
       ()
@@ -120,7 +124,7 @@ let start ~sw ~stdenv host ~inbox ~workspace ~sandbox ~cwd ~root () =
     else
       let configured = Config.Ocaml.merlin_program (Config.ocaml config) in
       match
-        Spice_tools.Ocaml_merlin.resolve_program ~sandbox
+        Spice_tools.Ocaml_merlin.resolve_program ~sandbox:process_sandbox
           ~cwd:(Eio.Path.native_exn cwd) ~configured ()
       with
       | Ok argv -> argv
@@ -138,8 +142,8 @@ let start ~sw ~stdenv host ~inbox ~workspace ~sandbox ~cwd ~root () =
                 (String.concat " " Spice_tools.Ocaml_merlin.default_program));
           Spice_tools.Ocaml_merlin.default_program
   in
-  let fswatch_notice = Config.Notices.fswatch notices in
-  let cr_notice = Config.Notices.cr_comments notices in
+  let fswatch_notice = trusted && Config.Notices.fswatch notices in
+  let cr_notice = trusted && Config.Notices.cr_comments notices in
   let stop_fswatch =
     if fswatch_notice || cr_notice then begin
       (* The drift consumer runs on every fswatch batch, alongside the CR-comment

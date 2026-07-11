@@ -12,6 +12,7 @@ Give the config real values so every output path has content to leak through.
 Text output reports paths, selectors, and endpoints only.
 
   $ spice config show
+  workspace_trust=trusted
   model=openai/gpt-5.5
   tui.thinking=true
   providers.openai.base_url=https://api.openai.example/v1

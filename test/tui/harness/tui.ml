@@ -527,6 +527,12 @@ let run ?(size = (80, 24)) ?(env = []) ?(unordered = false) ?(review = false)
   in
   Project.apply overrides;
   let process_env = Project.env_snapshot ~unset overrides in
+  let root = Spice_path.Abs.of_string_exn (Project.root project) in
+  (match Spice_host.Trust.trust ~stdenv ~process_env ~root () with
+  | Ok _ -> ()
+  | Error error ->
+      Util.failf "tui harness trust seed: %s"
+        (Spice_host.Trust.Error.message error));
   let clock = Eio_mock.Clock.make () in
   Eio_mock.Clock.set_time clock epoch;
   let width, height = size in

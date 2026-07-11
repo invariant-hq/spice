@@ -4,6 +4,7 @@ store (under the test HOME) stays outside the snapshots. Exec stderr is
 captured separately so stdout assertions cannot race the saved hint.
 
   $ mkdir repo && git init --quiet repo
+  $ spice trust repo > /dev/null
   $ printf 'hello world\n' > repo/note.txt
 
 The file-mutation editor is model-conditional (a GPT model receives the

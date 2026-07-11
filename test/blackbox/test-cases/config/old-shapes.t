@@ -16,6 +16,7 @@ permission mode, reasoning effort, or small model is derived from them.
   openai/gpt-5.5
 
   $ spice config show
+  workspace_trust=trusted
   model=openai/gpt-5.5
   tui.thinking=true
   permission.mode=default

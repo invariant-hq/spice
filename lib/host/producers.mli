@@ -25,7 +25,7 @@ val start :
   Host.t ->
   inbox:Notice_queue.t ->
   workspace:Spice_workspace.t ->
-  sandbox:Spice_sandbox.t ->
+  sandbox:Sandbox.Effective.t ->
   cwd:Eio.Fs.dir_ty Eio.Path.t ->
   root:string ->
   unit ->
@@ -38,7 +38,9 @@ val start :
     watchers share the created Dune RPC instance, whose optional build-watch
     starter runs in [cwd] (the run directory Eio path, see {!Context.eio_cwd}).
     [workspace] backs Dune RPC endpoint discovery. [sandbox] confines every
-    automatic Dune or Merlin process. All producers run until [sw]
+    automatic Dune or Merlin process and prevents a read-only run from starting
+    the mutating build watcher. Unknown and untrusted workspaces start no
+    project producer. All producers run until [sw]
     is released or {!stop} is called; startup failures degrade to warning
     notices rather than failing the run. *)
 

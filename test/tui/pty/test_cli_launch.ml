@@ -18,7 +18,7 @@ let seed_prompt_session ?(updated_at = 2) project id ~title ~prompt =
 
 let%expect_test "default launch enters the home stage" =
   Project.with_temp "cli-default" @@ fun project ->
-  Pty.run project ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
+  Pty.run project ~trust:true ~env:reduced_motion ~rows:24 ~cols:80 @@ fun t ->
   let screen = Pty.screen t in
   print_fact "home composer rendered" (Screen.has "message spice" screen);
   print_fact "process remains interactive" (not (Pty.exited t));
@@ -33,7 +33,7 @@ let run_resume_case name command expected unexpected =
     ~prompt:"the older prompt";
   seed_prompt_session project "ses_newer" ~updated_at:9 ~title:"newer session"
     ~prompt:"the newer prompt";
-  Pty.run project ~env:reduced_motion ~rows:24 ~cols:80 ~command
+  Pty.run project ~trust:true ~env:reduced_motion ~rows:24 ~cols:80 ~command
     ~ready:(Screen.has expected)
   @@ fun t ->
   let screen = Pty.screen t in
@@ -60,7 +60,8 @@ let%expect_test "review launch opens directly and closes the process" =
   Project.with_git_fixture "cli-review" @@ fun project ->
   Project.write project "lib/code.ml"
     "let alpha = 1\nlet beta = 2\nlet gamma = 33\nlet delta = 4\n";
-  Pty.run project ~rows:24 ~cols:80 ~env:reduced_motion ~command:[ "review" ]
+  Pty.run project ~trust:true ~rows:24 ~cols:80 ~env:reduced_motion
+    ~command:[ "review" ]
     ~ready:(Screen.has "0/1 reviewed")
   @@ fun t ->
   let screen = Pty.screen t in

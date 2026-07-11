@@ -110,15 +110,17 @@ val load :
     [.git]; without one, only the cwd is considered. Each directory from the
     root down to the cwd contributes at most one active instruction file, chosen
     from [AGENTS.override.md], then [AGENTS.md], then [CLAUDE.md], by {!Config}
-    enablement. Candidates are observed through workspace-contained filesystem
-    checks: a symlinked candidate is followed and must resolve inside the root.
-    Project instruction text is read only for active candidates and only when
-    project instructions are enabled, against the configured byte budget. Global
-    instructions come from [AGENTS.md] in the user config directory and are not
-    budgeted.
+    enablement. Project candidates are discovered only when
+    [Config.workspace_trust config] is trusted; otherwise their paths are not
+    statted, walked, or read. Trusted candidates are observed through
+    workspace-contained filesystem checks: a symlinked candidate is followed
+    and must resolve inside the root. Project instruction text is read only for
+    active candidates against the configured byte budget. Global instructions
+    come from [AGENTS.md] in the user config directory and are not budgeted.
 
     [nested_scan] (default [false]) additionally records [AGENTS.md] files in
-    directories strictly below the cwd as {!Source.Not_activated} audit sources.
+    directories strictly below the cwd as {!Source.Not_activated} audit sources
+    when the workspace is trusted.
     The scan never reads file contents and never affects the projection; it
     skips VCS metadata directories, does not follow directory symlinks, and
     stops at a fixed visited-directory cap, recording

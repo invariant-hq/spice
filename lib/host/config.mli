@@ -30,11 +30,10 @@
 
     {2 Safety}
 
-    Project-owned config loads unconditionally and is safe by construction:
-    {!load} reduces the workspace layers to the shared-key allowlist, strips
-    their [permission.rules], and clamps budget keys, reporting every drop via
-    {!warnings}. Unknown config-file fields are preserved by edits but are not
-    part of the runtime API. *)
+    Project-owned config activates only for a trusted workspace and still
+    passes through the shared-key allowlist, permission-rule stripping, and
+    budget clamping. Unknown config-file fields are preserved by edits but are
+    not part of the runtime API. *)
 
 (** {1:errors Errors} *)
 
@@ -42,9 +41,10 @@ module Error : sig
   type t
   (** The type for recoverable configuration errors.
 
-      Errors cover path discovery, filesystem I/O, JSON decoding, invalid JSON
-      shapes for supported fields, invalid typed values, and invalid config
-      keys. Error messages never contain credential material. *)
+      Errors cover path discovery, trust-store access, filesystem I/O, JSON
+      decoding, invalid JSON shapes for supported fields, invalid typed values,
+      and invalid config keys. Error messages never contain credential
+      material. *)
 
   val message : t -> string
   (** [message e] is a human-readable diagnostic.
@@ -545,9 +545,9 @@ module Warning : sig
   (** A non-fatal configuration warning.
 
       Warnings explain host-visible config inputs that did not take effect, such
-      as workspace config keys outside the shared allowlist, stripped workspace
-      [permission.rules], clamped budget keys, and invalid workspace config
-      files. *)
+      as workspace config disabled by trust, keys outside the shared allowlist,
+      stripped workspace [permission.rules], clamped budget keys, and invalid
+      workspace config files. *)
 
   val message : t -> string
   (** [message t] is a concise human-readable message. *)
@@ -587,14 +587,16 @@ val load :
     - process-environment settings;
     - [overrides].
 
-    The two workspace layers (project and project-local config) are repository
-    content and load unconditionally, made safe by construction rather than
-    gated on consent: both are reduced to the shared-key allowlist,
-    [permission.rules] never load from the workspace, budget keys such as
-    [run.max_steps] may tighten but not widen the value the non-workspace layers
-    resolve to, files are byte-capped before parsing, and an unreadable or
-    invalid workspace file degrades to an empty layer. Every dropped or degraded
-    workspace input is reported by {!warnings}; none of them fail the load.
+    The two workspace layers (project and project-local config) activate only
+    when the workspace trust decision is [Trusted]. They are not opened for an
+    [Unknown] or [Untrusted] workspace. Trusted layers are reduced to the
+    shared-key allowlist, [permission.rules] never load from the workspace,
+    budget keys such as [run.max_steps] may tighten but not widen the value the
+    non-workspace layers resolve to, files are byte-capped before parsing, and
+    an unreadable or invalid workspace file degrades to an empty layer. Every
+    disabled, dropped, or degraded workspace input is reported by {!warnings};
+    none of them fail the load. A trust-store read or decode error fails the
+    load before project input can activate.
 
     The recognized environment settings are [SPICE_MODEL], [SPICE_SMALL_MODEL],
     [SPICE_REASONING], [SPICE_MAX_STEPS], [SPICE_PERMISSION_MODE] (which rejects
@@ -619,6 +621,11 @@ val project_root : t -> Spice_path.Abs.t
 (** [project_root t] is the nearest ancestor of {!cwd} containing a [.git]
     marker, or {!cwd} when no marker exists. Project config and skills resolve
     from this root. *)
+
+val workspace_trust : t -> Trust.t
+(** [workspace_trust t] is the launch-time trust resolution for
+    {!project_root}. Every ambient project consumer uses this same immutable
+    value. *)
 
 val data_home : t -> Spice_path.Abs.t
 (** [data_home t] is [t]'s durable global data root.

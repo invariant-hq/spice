@@ -161,11 +161,17 @@ let show json name =
                     Some (Skill.Name.to_string (Skill.name skill))
                 | _ -> None)
           in
+          let warning =
+            match Skills.warnings skills with
+            | [] -> ""
+            | warnings -> "; " ^ String.concat "; " warnings
+          in
           Runtime_error
-            (Printf.sprintf "unknown skill %S; available skills: %s" name
+            (Printf.sprintf "unknown skill %S; available skills: %s%s" name
                (match known with
                | [] -> "(none)"
-               | known -> String.concat ", " known))
+               | known -> String.concat ", " known)
+               warning)
       | Some (skill, content) ->
           if json then
             stdout_printf "%s\n"
@@ -176,6 +182,11 @@ let show json name =
                       ("type", Jsont.Json.string "skills_show");
                       ("skill", Skill.to_json skill);
                       ("text", Jsont.Json.string content.Skill.text);
+                      ( "warnings",
+                        Jsont.Json.list
+                          (List.map
+                             (fun value -> Jsont.Json.string value)
+                             (Skills.warnings skills)) );
                     ]))
           else begin
             stdout_printf "name: %s\n" (Skill.Name.to_string (Skill.name skill));
@@ -198,7 +209,10 @@ let show json name =
                 List.iter
                   (fun resource -> stdout_printf "  %s\n" resource)
                   resources);
-            stdout_printf "\n%s\n" content.Skill.text
+            stdout_printf "\n%s\n" content.Skill.text;
+            (match Skills.warnings skills with
+            | [] -> ()
+            | warnings -> print_warnings warnings)
           end;
           Success)
 

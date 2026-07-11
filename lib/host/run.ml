@@ -119,7 +119,7 @@ let workspace_root_string workspace =
 
 (* The ledger lives beside the session documents; the checkpoint backend is
    present only for git workspaces. *)
-let mutations_recorder ~stdenv ~store ~sandbox ~workspace_root =
+let mutations_recorder ~stdenv ~store ~sandbox ~trusted ~workspace_root =
   let fs = Eio.Stdenv.fs stdenv in
   let store_root = Spice_session_store.root store |> Spice_path.Abs.to_string in
   let run_git argv =
@@ -157,18 +157,25 @@ let mutations_recorder ~stdenv ~store ~sandbox ~workspace_root =
             | output -> Ok output
             | exception exn -> Error (Printexc.to_string exn)))
   in
-  let workspace_root =
-    match
-      run_git [ "git"; "-C"; workspace_root; "rev-parse"; "--show-toplevel" ]
-    with
-    | Ok root when not (String.is_empty (String.trim root)) -> String.trim root
-    | Ok _ | Error _ -> workspace_root
+  let workspace_root, checkpoint =
+    if not trusted then (workspace_root, None)
+    else
+      let workspace_root =
+        match
+          run_git
+            [ "git"; "-C"; workspace_root; "rev-parse"; "--show-toplevel" ]
+        with
+        | Ok root when not (String.is_empty (String.trim root)) ->
+            String.trim root
+        | Ok _ | Error _ -> workspace_root
+      in
+      ( workspace_root,
+        Mutations.Backend.git_tree ~fs ~run:run_git ~data_root:store_root
+          ~workspace_root () )
   in
   Mutations.recorder
     ~log:(Mutations.Log.make ~fs ~root:store_root)
-    ?checkpoint:
-      (Mutations.Backend.git_tree ~fs ~run:run_git ~data_root:store_root
-         ~workspace_root ())
+    ?checkpoint
     ~workspace_root ()
 
 (* Planning *)
@@ -246,7 +253,7 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
   let workspace_root = workspace_root_string workspace in
   let producers =
     Producers.start ~sw ~stdenv host ~inbox:notices ~workspace ~cwd:cwd_eio
-      ~sandbox:(Sandbox.Effective.sandbox sandbox) ~root:workspace_root ()
+      ~sandbox ~root:workspace_root ()
   in
   let denial_message =
     Permission.Run.denial_message ~source:Config.Source.kind_string permission
@@ -268,7 +275,9 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
   let root = Spice_session_store.root store |> Spice_path.Abs.to_string in
   let mutations =
     mutations_recorder ~stdenv ~store
-      ~sandbox:(Sandbox.Effective.sandbox sandbox) ~workspace_root
+      ~sandbox:(Sandbox.Effective.sandbox sandbox)
+      ~trusted:(Trust.is_trusted (Config.workspace_trust config))
+      ~workspace_root
   in
   let jobs =
     Jobs.create ~sw ~stdenv ~store ~parent:session

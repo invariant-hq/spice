@@ -138,6 +138,7 @@ considers only the working directory.
 
   $ work=$(mktemp -d)
   $ printf 'Tmp instruction.\n' > "$work/AGENTS.md"
+  $ spice trust "$work" > /dev/null
   $ spice debug context --cwd "$work" | sed "s#$work#WORK#g" | sed -n '2,4p'
     cwd: WORK
     root: WORK

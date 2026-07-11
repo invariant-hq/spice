@@ -692,16 +692,19 @@ let load ~stdenv ?(nested_scan = false) config =
   let global_sources, global_blocks =
     global_candidate ~stdenv ~fs ~enabled config
   in
-  let pendings =
-    List.concat_map
-      (resolve_dir ~fs ~workspace ~enabled)
-      (project_dirs ~root_path cwd_rel)
-  in
+  let trusted = Trust.is_trusted (Config.workspace_trust config) in
   let project_sources, project_blocks, remaining =
-    read_project ~stdenv ~budget pendings
+    if trusted then
+      let pendings =
+        List.concat_map
+          (resolve_dir ~fs ~workspace ~enabled)
+          (project_dirs ~root_path cwd_rel)
+      in
+      read_project ~stdenv ~budget pendings
+    else ([], [], budget)
   in
   let nested_sources, scan_state =
-    if nested_scan then nested_scan_sources ~fs ~workspace cwd_path
+    if trusted && nested_scan then nested_scan_sources ~fs ~workspace cwd_path
     else ([], `Off)
   in
   let fragments = render_fragments ~cwd_text (global_blocks @ project_blocks) in

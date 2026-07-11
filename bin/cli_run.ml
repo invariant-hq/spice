@@ -602,6 +602,20 @@ let run_started ~json ~preset effective =
         ()
   end
 
+let workspace_trust_warning host =
+  let config = Spice_host.Host.config host in
+  let trust = Spice_host.Config.workspace_trust config in
+  if not (Spice_host.Trust.is_trusted trust) then
+    let root =
+      Spice_host.Trust.root trust |> Spice_path.Abs.to_string
+    in
+    Cli_common.stderr_printf
+      "warning: project customization disabled for %s (workspace trust: %s); \
+       run `spice trust %s` and restart to enable it\n"
+      root
+      (Spice_host.Trust.status_to_string (Spice_host.Trust.status trust))
+      (Filename.quote root)
+
 let assemble ?cwd_override_abs ?skills:preloaded_skills ~sw ~stdenv ~json ~store
     ~session_id host ~mode ~model ~reasoning_request ~permission_mode ~sandbox
     ~max_steps =
@@ -626,6 +640,7 @@ let assemble ?cwd_override_abs ?skills:preloaded_skills ~sw ~stdenv ~json ~store
   let permission_of =
     Cli_block.permission_context permission ~workflow_mode:mode
   in
+  workspace_trust_warning host;
   run_started ~json
     ~preset:(Spice_host.Permission.Run.preset permission)
     effective;

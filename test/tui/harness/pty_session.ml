@@ -181,15 +181,31 @@ let spice_bin () = Project.resolve_env_path "SPICE_BIN"
    its presence is the boot marker. *)
 let booted = Screen.has "dune:"
 
-let run_pty ?provider ?unset ?(env = []) ?(rows = default_rows)
-    ?(cols = default_cols) ?(ready = booted) ~prog ~argv project f =
+let seed_trust ~env project =
+  let prog = Project.resolve_env_path "SPICE_BIN" in
+  let dev_null = Unix.openfile "/dev/null" [ Unix.O_RDWR ] 0 in
+  let argv = [| prog; "trust"; Project.root project |] in
+  let pid =
+    Unix.create_process_env prog argv env dev_null dev_null dev_null
+  in
+  Unix.close dev_null;
+  match snd (Unix.waitpid [] pid) with
+  | Unix.WEXITED 0 -> ()
+  | Unix.WEXITED code ->
+      Util.failf "workspace trust seed exited with %d" code
+  | Unix.WSIGNALED signal | Unix.WSTOPPED signal ->
+      Util.failf "workspace trust seed stopped by signal %d" signal
+
+let run_pty ?provider ?unset ?(env = []) ?(trust = true)
+    ?(rows = default_rows) ?(cols = default_cols) ?(ready = booted) ~prog ~argv
+    project f =
   let root = Project.root project in
   let openai_base_url = Option.map Provider_process.base_url provider in
+  let env = Project.env_array ?openai_base_url ?unset ~extra:env project in
+  if trust then seed_trust ~env project;
   let winsize = Pty.{ rows; cols; xpixel = 0; ypixel = 0 } in
   let pty =
-    Pty.spawn ~cwd:root
-      ~env:(Project.env_array ?openai_base_url ?unset ~extra:env project)
-      ~winsize ~prog ~args:argv ()
+    Pty.spawn ~cwd:root ~env ~winsize ~prog ~args:argv ()
   in
   Pty.set_nonblock pty;
   let t =
@@ -211,16 +227,16 @@ let run_pty ?provider ?unset ?(env = []) ?(rows = default_rows)
       wait t ready;
       f t)
 
-let run ?provider ?(command = []) ?(args = []) ?unset ?env ?rows ?cols ?ready
-    project f =
+let run ?provider ?(command = []) ?(args = []) ?unset ?env ?trust ?rows ?cols
+    ?ready project f =
   let root = Project.root project in
   (* Cmdliner resolves subcommands from the first positional argument, so a
      subcommand under test must precede the [--cwd] option. *)
-  run_pty ?provider ?unset ?env ?rows ?cols ?ready ~prog:(spice_bin ())
+  run_pty ?provider ?unset ?env ?trust ?rows ?cols ?ready ~prog:(spice_bin ())
     ~argv:(command @ ("--cwd" :: root :: args))
     project f
 
-let run_shell ?provider ?unset ?env ?rows ?cols ?ready project ~script f =
-  run_pty ?provider ?unset ?env ?rows ?cols ?ready ~prog:"/bin/sh"
+let run_shell ?provider ?unset ?env ?trust ?rows ?cols ?ready project ~script f =
+  run_pty ?provider ?unset ?env ?trust ?rows ?cols ?ready ~prog:"/bin/sh"
     ~argv:[ "-c"; script; "spice-terminal-wrapper" ]
     project f

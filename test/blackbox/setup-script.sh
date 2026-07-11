@@ -47,6 +47,12 @@ mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME"
 # directory explicitly.
 mkdir -p .git
 
+# Most black-box cases exercise an already accepted workspace. Seed that
+# posture through the public mutation path so they use the production root
+# identity, schema, locking, and file permissions. Trust-specific cases switch
+# to an isolated config home and nested repository before making assertions.
+spice trust . >/dev/null
+
 find_up () {
   local path="$1"
   local dir="$PWD"

@@ -11,7 +11,7 @@ recovery paths -- so the model does not retry a blocked request blindly.
   > {"expect":{"body_contains":["function_call_output","call-n1"]},"response":{"id":"resp-net-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"net final"}]}]}}
   > JSONL
   $ SPICE_FAKE_PROVIDER_ACCEPT_TIMEOUT=15 start_fake_openai net.jsonl net-capture net-port
-  $ spice run --cwd "$PWD" --json --id net-run "net prompt" | grep -o '"outcome":"completed"'
+  $ spice run --cwd "$PWD" --json --permission-mode bypass --id net-run "net prompt" | grep -o '"outcome":"completed"'
   spice: session saved; resume with: spice resume 'net-run'
   "outcome":"completed"
   $ wait_fake_server

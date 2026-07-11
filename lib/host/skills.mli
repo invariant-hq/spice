@@ -198,16 +198,19 @@ val load :
 (** [load ~stdenv ~builtins config] reads every skill root once.
 
     Roots in precedence and catalog order: [.spice/skills], [.agents/skills],
-    and [.claude/skills] under the workspace root (the nearest ancestor of
+    and [.claude/skills] under a trusted workspace root (the nearest ancestor of
     [Config.cwd] containing [.git], else the cwd), [skills] in the user config
     directory, each [skills.paths] entry (a relative entry resolves against
     [Config.cwd], not the process working directory), then [builtins] —
     [(name, raw contents)] pairs, typically [Spice_prompts.Skills.all], labeled
     with [builtin_origin] (default ["builtin"]). Filesystem roots contribute
     their immediate subdirectories containing [SKILL.md]; other entries are
-    ignored. Candidates are observed with the same follow-and-contain symlink
-    policy as tools; content problems are statuses, never errors. The first
-    active candidate per name wins; invalid or disabled candidates never shadow.
+    ignored. Unknown and untrusted workspaces are not scanned for project
+    skills, and [skills.paths] roots whose resolved location is inside the
+    project are omitted. Candidates are observed with the same
+    follow-and-contain symlink policy as tools; content problems are statuses,
+    never errors. The first active candidate per name wins; invalid or disabled
+    candidates never shadow.
 
     Loading is total: every filesystem problem becomes a candidate status or an
     ignored entry, so discovery never fails. When
@@ -257,5 +260,5 @@ val injections : t -> names:string list -> (string list, string) result
 
 val warnings : t -> string list
 (** [warnings t] are human-readable diagnostics derived from {!skills} and
-    {!catalog}: invalid candidates, ignored frontmatter keys, and catalog
-    trimming. Warnings never change exit codes. *)
+    {!catalog}: workspace-trust restrictions, invalid candidates, ignored
+    frontmatter keys, and catalog trimming. Warnings never change exit codes. *)
