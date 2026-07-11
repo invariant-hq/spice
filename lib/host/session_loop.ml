@@ -54,9 +54,7 @@ let of_store (error : Spice_session_store.Error.t) : Spice_protocol.Error.t =
   | Spice_session_store.Error.Not_found id -> Spice_protocol.Error.Not_found id
   | Spice_session_store.Error.Conflict { id; expected; actual } ->
       Spice_protocol.Error.Conflict { id; expected; actual }
-  | Spice_session_store.Error.Corrupt { path; reason } ->
-      Spice_protocol.Error.Storage
-        { path; message = Spice_session_store.Corruption.message reason }
+  | Spice_session_store.Error.Corrupt { path; message }
   | Spice_session_store.Error.Io { path; message } ->
       Spice_protocol.Error.Storage { path; message }
   | Spice_session_store.Error.Already_exists _ ->
