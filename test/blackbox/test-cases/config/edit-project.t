@@ -1,7 +1,7 @@
 Spice config edits project and project-local files separately.
 
-Shared project config is writable and applies immediately: workspace layers
-load unconditionally, reduced to the workspace-safe allowlist.
+Shared project config is writable and, in this trusted test workspace, applies
+immediately after being reduced to the project allowlist.
 
   $ spice config init --project
   $ cat .spice/config.json
