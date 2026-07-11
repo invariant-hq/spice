@@ -34,7 +34,7 @@ module Workspace_state = Workspace_state
 (** Global checkpoint and review state keyed by canonical workspace root. *)
 
 module Trust = Trust
-(** Workspace trust store: a dormant seam recording granted workspace roots. *)
+(** Persistent consent for ambient project customization. *)
 
 module Host = Host
 (** Loaded host values: the error taxonomy, the provider adapter and registry,

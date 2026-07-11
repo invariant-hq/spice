@@ -167,7 +167,11 @@ Command working-directory scopes use one of:
 - `workspace-exact` or `workspace-under`, with `root_key` and `relative`;
 - `workspace`, `outside-workspace`, or `unknown`, with no other fields.
 
-The two broad built-in command patterns are:
+The built-in route and broad command patterns are:
+
+```json
+{ "type": "command", "pattern": { "type": "sandboxed" } }
+```
 
 ```json
 { "type": "command", "pattern": { "type": "destructive" } }
@@ -176,6 +180,12 @@ The two broad built-in command patterns are:
 ```json
 { "type": "command", "pattern": { "type": "any" } }
 ```
+
+`sandboxed` matches only a host-produced command fact that proves ordinary
+execution uses the run's sealed sandbox. It never infers confinement from the
+program or source tool. The enforcing workspace-write posture uses this matcher
+after its destructive-command review rule; direct routes and non-enforcing
+postures get no such credit.
 
 `destructive` is the conservative built-in classifier for recursive or forced
 `rm`, force push, hard reset, forced clean, `dd`, `shred`, `mkfs`, `sudo`, and
@@ -194,14 +204,18 @@ useful for generated policy and is less portable than an argv prefix:
       "type": "command",
       "kind": "argv",
       "program": "git",
-      "args": ["status"]
+      "args": ["status"],
+      "execution": "direct"
     }
   }
 }
 ```
 
 An exact shell access instead uses `"kind": "shell"` and a required `text`
-field. Either command access may also carry a `cwd` scope.
+field. Either command access requires `execution:"direct"` or
+`execution:"sandboxed"` and may also carry a `cwd` scope. Execution route is
+part of exact permission identity, so a grant for a sealed operation cannot be
+reused by a direct one.
 
 ## Network matchers
 
@@ -258,7 +272,8 @@ Access objects have these forms:
 
 - path: `type`, `op`, `scope`, and either `root_key` plus `relative` for
   `scope:"workspace"`, or `path` for `scope:"outside"` or `"unknown"`;
-- command: `type`, `kind`, argv fields or shell `text`, and optional `cwd`;
+- command: `type`, `kind`, argv fields or shell `text`, required `execution`,
+  and optional `cwd`;
 - network: `type`, `protocol`, `host`, and optional `port`;
 - custom: `type`, `kind`, `name`, and optional `subject`.
 

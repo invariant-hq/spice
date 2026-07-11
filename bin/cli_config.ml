@@ -72,8 +72,9 @@ let precedence_man =
        file, the project config file, the project-local config file, the \
        $(b,SPICE_CONFIG) extra config file, $(b,SPICE_*) environment \
        overrides, then runtime overrides such as run flags. The two workspace \
-       files always load but are reduced to the workspace-safe allowlist; \
-       dropped inputs are reported as diagnostics by $(b,--origins).";
+       files activate only after $(b,spice trust); even then they are reduced \
+       to the project allowlist, and dropped inputs are reported as \
+       diagnostics by $(b,--origins).";
   ]
 
 let json_string json =

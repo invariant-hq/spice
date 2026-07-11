@@ -98,8 +98,9 @@ agent spends its context on your problem, not on re-reading files.
 Spice ships with opinionated skills for OCaml work — testing, documentation,
 module and library design, FFI, performance, benchmarking, debugging, project
 setup, and code tidying — so the agent follows good ecosystem practice with
-zero configuration. Project-local skills in `.spice/skills` (and existing
-`.claude/skills` or `.agents/skills`) are picked up automatically.
+zero configuration. In a trusted workspace, project-local skills in
+`.spice/skills` (and existing `.claude/skills` or `.agents/skills`) are picked
+up automatically.
 
 ### Safe by default
 
@@ -108,8 +109,9 @@ zero configuration. Project-local skills in `.spice/skills` (and existing
 - Sandboxed execution modes (`read-only`, `workspace-write`,
   `danger-full-access`) that fail closed when the platform cannot enforce
   them (`spice sandbox status`).
-- Workspace trust: project configuration only applies after an explicit
-  `spice trust`.
+- Workspace trust gates ambient project configuration, instructions, skills,
+  notices, and built-in tooling. Unknown workspaces ask before activation in
+  the TUI; headless runs continue with project customization disabled.
 - Every session records what changed: `spice session diff` and
   `spice session revert` undo agent work turn by turn.
 

@@ -43,22 +43,36 @@ let untrust workspace =
 
 let trust_command =
   CCmd.v
-    (CCmd.info "trust" ~doc:"Trust project config for a workspace."
+    (CCmd.info "trust" ~doc:"Enable project customization for a workspace."
        ~docs:s_config_commands
        ~man:
          [
            `S CManpage.s_description;
            `P
              "Records a workspace trust decision user-side, never in the \
-              workspace; $(b,untrust) records an explicit refusal. The nearest \
-              enclosing project root is used, so invoking the command from a \
-              project subdirectory updates the same decision.";
+              workspace. Trust enables ambient project configuration, \
+              instructions, skills, notices, and built-in tooling without \
+              changing permission or sandbox posture. $(b,untrust) records an \
+              explicit refusal. The nearest enclosing project root is used, \
+              so invoking the command from a project subdirectory updates the \
+              same decision.";
          ]
        ~exits)
     (exit_term CTerm.(const trust $ workspace))
 
 let untrust_command =
   CCmd.v
-    (CCmd.info "untrust" ~doc:"Stop trusting project config for a workspace."
-       ~docs:s_config_commands ~exits)
+    (CCmd.info "untrust" ~doc:"Disable project customization for a workspace."
+       ~docs:s_config_commands
+       ~man:
+         [
+           `S CManpage.s_description;
+           `P
+             "Records an explicit untrusted decision for the nearest enclosing \
+              canonical project root. Later TUI launches continue without a \
+              prompt, and ambient project configuration, instructions, skills, \
+              notices, and built-in tooling remain disabled. Permission and \
+              sandbox posture do not change.";
+         ]
+       ~exits)
     (exit_term CTerm.(const untrust $ workspace))

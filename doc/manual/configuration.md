@@ -33,12 +33,13 @@ by project files:
 On Unix, data and state fall back through `XDG_DATA_HOME`/`XDG_STATE_HOME` to
 `~/.local/share/spice`/`~/.local/state/spice`.
 
-Project layers load without a trust decision. They are reduced to a
-workspace-safe allowlist; permission rules and authority-bearing keys are
-ignored, and budget values may tighten but not widen values selected outside
-the workspace. `spice config show --origins` reports every dropped or clamped
-input. See [Security](security.md#workspace-config-and-trust) for the complete
-allowlist and the current, dormant role of `spice trust`.
+Project layers activate only when the canonical project root is trusted. In an
+unknown or explicitly untrusted workspace, Spice does not open either file and
+`spice config show --origins` reports that project configuration is disabled.
+Once trusted, the files are still reduced to a narrow allowlist: permission
+rules and authority-bearing keys are ignored, and budget values may tighten but
+not widen values selected outside the workspace. See
+[Security](security.md#workspace-config-and-trust) for the complete boundary.
 
 ## Commands
 
@@ -54,6 +55,8 @@ spice config init                 # scaffold a config file
 
 Editing commands write the user config by default; `--project` targets
 `.spice/config.json` and `--project-local` targets `.spice/config.local.json`.
+These explicit file operations remain available before trust, but the values
+activate only after `spice trust` records the workspace root.
 
 ## Keys
 
@@ -104,10 +107,11 @@ and evaluation order.
 
 ## Workspace tooling
 
-`workspace.tooling` gates Spice's OCaml/Dune integration for a session: the
-boot-time `dune describe` project-shape capture, the `dune build --watch`
-instance behind the footer's `dune:` build-health glyph and the Dune
-diagnostics notices, the filesystem watcher, and Merlin program resolution.
+In a trusted workspace, `workspace.tooling` gates Spice's OCaml/Dune
+integration for a session: the boot-time `dune describe` project-shape capture,
+the `dune build --watch` instance behind the footer's `dune:` build-health glyph
+and the Dune diagnostics notices, the filesystem watcher, and Merlin program
+resolution.
 
 | Value | Behavior |
 | --- | --- |
@@ -115,13 +119,19 @@ diagnostics notices, the filesystem watcher, and Merlin program resolution.
 | `on` | Always engage the tooling. |
 | `off` | Never engage it. |
 
-When the tooling does not engage, Spice starts no background workspace
-processes and the footer's `dune:` glyph shows the degraded state; the OCaml and
-Dune tools stay in the catalog and fall back to their on-demand behavior. `off`
-is the setting for CI, headless, and non-interactive runs that want a
+Unknown and untrusted workspaces behave as if the integration did not engage,
+regardless of the configured value. When the tooling does not engage, Spice
+starts no background workspace processes and the footer's `dune:` glyph shows
+the degraded state; the OCaml and Dune tools stay in the catalog and can still
+run on demand through ordinary permission and sandbox checks. `off` is the
+setting for trusted CI, headless, and non-interactive runs that want a
 deterministic, process-free session. The `SPICE_WORKSPACE_TOOLING` environment
 variable overrides the configured value with the same `auto`, `on`, and `off`
-spellings.
+spellings; it cannot override workspace trust.
+
+Trust does not override run mode. A trusted read-only run may perform
+read-only Dune/Merlin inspection through the sealed sandbox, but never starts
+the mutating `dune build --watch` producer.
 
 ## OCaml toolchain resolution
 

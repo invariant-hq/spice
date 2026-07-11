@@ -6,22 +6,23 @@ overview when changing how the libraries compose.
 
 ## User manual
 
-- [Interactive TUI](manual/interactive.md) — starting and resuming, composer
-  workflows, modes, decisions, and worktree review.
+- [Interactive TUI](manual/interactive.md) — workspace trust preflight,
+  starting and resuming, composer workflows, modes, decisions, and worktree
+  review.
 - [Providers and accounts](manual/providers.md) — authentication, credential
   precedence, readiness, model selection, and compatible local servers.
 - [Instructions and skills](manual/instructions-and-skills.md) — `AGENTS.md`,
   project guidance, skill authoring and discovery, budgets, and inspection.
 - [Configuration](manual/configuration.md) — config files, precedence,
-  workspace-safe project config, and the `spice config` commands.
+  trust-gated project config, and the `spice config` commands.
 - [Security](manual/security.md) — permissions, command sandboxing, workspace
   trust, escalation, and the effective default posture.
 - [Permission rules](manual/permission-rules.md) — durable policy matcher JSON,
   evaluation order, and safe authoring guidance.
 - [Sessions](manual/sessions.md) — storage, lifecycle commands, diffs, and
   reverts.
-- [Headless runs](manual/headless.md) — scripting, JSONL events, exit codes,
-  and blocked-session continuation.
+- [Headless runs](manual/headless.md) — restricted unknown workspaces,
+  scripting, JSONL events, exit codes, and blocked-session continuation.
 - [Shell completions](manual/completions.md) — zsh, bash, and PowerShell setup.
 
 ## Maintainer documentation

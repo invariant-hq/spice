@@ -79,6 +79,54 @@ let storage_check config =
       ];
   }
 
+let trust_check ~stdenv ~process_env ?cwd () =
+  let store =
+    Spice_host.User_dirs.trust_store_path (Spice_host.Env.get process_env)
+  in
+  let base details = ("store=" ^ store) :: details in
+  match
+    Spice_host.Config.Config_file.discover ~stdenv ~process_env ?cwd ()
+  with
+  | Error error ->
+      {
+        name = "workspace trust";
+        verdict = Fail;
+        details =
+          base
+            [ "valid=not checked"; Spice_host.Config.Error.message error ];
+      }
+  | Ok files ->
+      let root = Spice_host.Config.Config_file.project_root files in
+      let root_string = Spice_path.Abs.to_string root in
+      match Spice_host.Trust.find ~stdenv ~process_env ~root () with
+      | Error error ->
+          {
+            name = "workspace trust";
+            verdict = Fail;
+            details =
+              base
+                [
+                  "valid=false";
+                  "root=" ^ root_string;
+                  Spice_host.Trust.Error.message error;
+                ];
+          }
+      | Ok trust ->
+          {
+            name = "workspace trust";
+            verdict = Pass;
+            details =
+              base
+                [
+                  "valid=true";
+                  ("root="
+                  ^ Spice_path.Abs.to_string (Spice_host.Trust.root trust));
+                  ("status="
+                  ^ Spice_host.Trust.status_to_string
+                      (Spice_host.Trust.status trust));
+                ];
+          }
+
 (* Passive readiness only: no provider request. The run-blocking case is a
    missing or blocked credential for the provider of the selected main
    model; other providers are informational. *)
@@ -255,33 +303,48 @@ let toolchain_check host =
 
 let project_config_check host =
   let config = Spice_host.Host.config host in
-  match Spice_host.Config.warnings config with
-  | [] ->
-      {
-        name = "project config";
-        verdict = Pass;
-        details = [ "workspace config applied" ];
-      }
-  | diagnostics ->
-      {
-        name = "project config";
-        verdict = Warn;
-        details =
-          List.map
-            (fun diagnostic ->
-              Format.asprintf "%a" Spice_host.Config.Warning.pp diagnostic)
-            diagnostics;
-      }
+  let trust = Spice_host.Config.workspace_trust config in
+  if not (Spice_host.Trust.is_trusted trust) then
+    {
+      name = "project config";
+      verdict = Pass;
+      details =
+        [
+          "disabled: workspace trust is "
+          ^ Spice_host.Trust.status_to_string (Spice_host.Trust.status trust);
+        ];
+    }
+  else
+    match Spice_host.Config.warnings config with
+    | [] ->
+        {
+          name = "project config";
+          verdict = Pass;
+          details = [ "workspace config applied" ];
+        }
+    | diagnostics ->
+        {
+          name = "project config";
+          verdict = Warn;
+          details =
+            List.map
+              (fun diagnostic ->
+                Format.asprintf "%a" Spice_host.Config.Warning.pp diagnostic)
+              diagnostics;
+        }
 
 let doctor json cwd =
   Eio_main.run @@ fun stdenv ->
   Eio.Switch.run @@ fun sw ->
+  let process_env = Spice_host.Env.current () in
+  let trust = trust_check ~stdenv ~process_env ?cwd () in
   let checks =
     match load_host ?cwd ~overrides:[] stdenv with
     | Error error ->
         (* A host that cannot assemble is itself the diagnosis; report the
            config failure rather than erroring out of doctor. *)
         [
+          trust;
           {
             name = "config";
             verdict = Fail;
@@ -296,6 +359,7 @@ let doctor json cwd =
         [
           config_check ~stdenv (Spice_host.Host.config host);
           storage_check (Spice_host.Host.config host);
+          trust;
           auth_check ~sw ~stdenv host;
           local_engine_check ();
           toolchain_check host;

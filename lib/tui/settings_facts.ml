@@ -213,6 +213,11 @@ let status_facts ~stdenv host config ~session ~model =
   in
   let path abs = Path_display.home_relative abs in
   let files = Spice_host.Config.files config in
+  let trust = Spice_host.Config.workspace_trust config in
+  let trust_status =
+    Spice_host.Trust.status trust |> Spice_host.Trust.status_to_string
+  in
+  let trust_root = Spice_host.Trust.root trust |> path in
   let fact label value = { Settings_screen.Status.label; value } in
   {
     Settings_screen.Status.session_id =
@@ -228,7 +233,7 @@ let status_facts ~stdenv host config ~session ~model =
         fact "model" model_row;
         fact "permission" permission;
         fact "sandbox" sandbox;
-        fact "trust" "not enforced";
+        fact "trust" (trust_status ^ " · " ^ trust_root);
         fact "user config" (path (Spice_host.Config.Config_file.user files));
         fact "project config"
           (path (Spice_host.Config.Config_file.project files));

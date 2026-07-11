@@ -45,6 +45,26 @@ with `PROMPT` it starts a new turn on the saved session, without it it
 advances a blocked or interrupted turn. To reopen a session interactively,
 use `spice resume` instead.
 
+## Workspace trust
+
+Headless runs never prompt for or infer workspace trust. An unknown or
+explicitly untrusted workspace remains useful, but ambient project config,
+instructions, skills, notices, and automatic Dune/Merlin/Git integration stay
+disabled. Spice prints one diagnostic with the canonical root and current
+state, then continues with user-owned inputs and ordinary tools.
+
+Automation that wants project customization must establish the durable decision
+explicitly before the run:
+
+```sh
+spice trust /path/to/project
+spice run --cwd /path/to/project "PROMPT"
+```
+
+`--permission-mode bypass` does not activate project customization, and there
+is no per-run trust shortcut. `spice untrust` records a persistent restricted
+choice rather than returning the workspace to the interactive unknown state.
+
 ## Exit codes
 
 | Code | Meaning |

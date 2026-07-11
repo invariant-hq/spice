@@ -10,12 +10,15 @@ from 2026-07-09 on an M-class laptop (render-loop figures: 40×120 terminal,
 
 ## The launch budget
 
-The TUI's first frame must never wait on network, TLS, subprocesses, or
-directory scans. The launch path is budgeted:
+The normal TUI's first frame must never wait on network, TLS, subprocesses, or
+directory scans. An unknown workspace first shows the plain-terminal trust
+preflight; no normal app, session, brief, or project process exists until that
+choice is persisted and the host reloads. After trust is resolved, the launch
+path is budgeted:
 
 | Phase | Cost | What it is |
 | --- | --- | --- |
-| Host boot | ~2 ms | Config layers, host load, session store, snapshot. |
+| Host boot | ~2 ms | Trust store, permitted config layers, host load, session store, snapshot. |
 | Loop bring-up | ~7 ms | Mosaic renderer/reconciler, first frame render. |
 | Launch background | tens of ms, off-path | Brief load, prewarm, tooling. |
 
@@ -33,8 +36,8 @@ against by name:
   spawn, ~18 ms) ran at brief-loader *construction*; it is now lazy, paid by
   the first asynchronous brief load. The workspace Dune tooling
   (`dune describe`, `dune build --watch`, fswatch, Merlin) is gated by
-  `workspace.tooling` and engages only in Dune workspaces — and never on the
-  first-frame path.
+  workspace trust plus `workspace.tooling`, engages only in trusted Dune
+  workspaces, and never runs on the first-frame path.
 
 The rule behind both: **construction is free; first use pays.** Anything
 observable in the first frame must come from data already on the boot path;

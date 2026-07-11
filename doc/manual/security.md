@@ -1,8 +1,9 @@
 # Security
 
-Spice has separate controls for permission decisions, shell-command
-confinement, workspace filesystem access, and workspace trust. They reinforce
-one another, but none is a synonym for another.
+Spice keeps three policy questions separate: whether ambient project
+customization may activate, whether a described operation is approved, and
+what operating-system authority the operation receives. They reinforce one
+another, but none substitutes for another.
 
 The default posture is:
 
@@ -14,26 +15,28 @@ The default posture is:
 - curated toolchain cache writes enabled.
 
 On a supported host, and absent an earlier durable rule, this lets ordinary
-workspace edits and non-destructive commands run without review because the
-command sandbox bounds their writes. Destructive commands and requests to
-escape the sandbox still require review. If the platform cannot enforce the
-default sandbox, the run fails before provider credentials are loaded or a
-session is created.
+native workspace edits run without review because their filesystem capability
+is bounded. It also lets non-destructive commands run without review when the
+host proves their executor uses the sealed sandbox. Destructive commands,
+escalation, direct routes, and non-enforcing postures remain reviewable. If the
+platform cannot enforce the default sandbox, the run fails before provider
+credentials are loaded or a session is created.
 
-## The four boundaries
+## The three boundaries
 
 | Boundary | What it decides | What it does not do |
 | --- | --- | --- |
+| Workspace trust | Whether ambient project configuration, instructions, skills, notices, and built-in tooling may activate. | It does not approve tools or grant file, command, or network authority. |
 | Permission policy | Whether a host-described operation is allowed, denied, or requires review. | It does not confine a process or grant an OS capability. |
-| Command sandbox | What a spawned `shell` command may write and whether it has network access. | It does not approve the command and is not a confidentiality boundary. |
-| Workspace filesystem guard | Whether native file tools resolve and mutate paths inside the workspace without escaping through symlinks. | It does not govern arbitrary shell commands. |
-| Workspace trust | Records a user decision in a user-side store. | It currently gates nothing. |
+| Runtime confinement | What an approved native tool or spawned process may access. | It does not approve the operation or activate project inputs. |
 
-Provider API calls, web tools, the Dune watcher, Merlin, Git-backed review, and
-other host-owned processes do not run inside the `shell` command sandbox.
-Their capabilities are controlled by their own host APIs, configuration, and
-permission requests. In particular, `sandbox.network` is not a process-wide
-firewall and does not disable provider or web-tool networking.
+Runtime confinement has two implementations. Native file tools resolve typed
+workspace paths, check realpath containment, and protect metadata. Standard
+command-bearing tools and trusted automatic Dune/Merlin/Git integrations spawn
+through the sealed command sandbox. Explicit frontend operations such as a
+login browser remain outside the model-tool boundary. Provider calls and web
+tools use their own host APIs; `sandbox.network` is not a process-wide firewall
+and does not disable those services.
 
 ## Permission policy
 
@@ -65,8 +68,8 @@ confinement does not depend on the parse succeeding.
 
 | Preset | Base behavior | Additional behavior under an enforcing `workspace-write` sandbox |
 | --- | --- | --- |
-| `default` | Allows workspace reads. Other accesses require review. | Also allows workspace creates, modifications, deletions, and non-destructive commands. Destructive commands still require review. |
-| `accept-edits` | Allows workspace reads, creates, modifications, and deletions. Commands and other accesses require review. | Also allows non-destructive commands. Destructive commands still require review. |
+| `default` | Allows workspace reads. Other accesses require review. | Also allows native workspace creates, modifications, deletions, and non-destructive commands proven to use the sealed sandbox. |
+| `accept-edits` | Allows workspace reads, creates, modifications, and deletions. Commands and other accesses require review. | Also allows non-destructive commands proven to use the sealed sandbox. |
 | `plan` | Allows workspace reads and denies workspace writes and commands. | No additional rules; the deny posture is preserved. |
 | `bypass` | Allows every access not decided by an earlier durable rule. | No additional rules are needed. |
 
@@ -179,11 +182,21 @@ directly.
 
 ## Command sandbox
 
-The sandbox applies to commands run through the `shell` tool. The host resolves
-one posture, gates it before credential or session effects, seals it against a
-platform backend, and hands the sealed spawn capability to the tool. Every
-shell result carries evidence saying whether confinement was enforced,
-refused, not requested, or declared external.
+The sandbox applies to the `shell` tool, fixed-command search helpers, OCaml
+tools that spawn Dune, Merlin, ocamlfind, or a toplevel, and automatic trusted
+project integrations. The host resolves one posture, gates it before credential
+or session effects, seals it against a platform backend, and hands command
+executors the sealed spawn capability. Shell results additionally carry
+evidence saying whether confinement was enforced, refused, not requested, or
+declared external.
+
+Command permission facts distinguish a proven `sandboxed` execution route from
+a fail-safe `direct` route. Under enforcing `workspace-write`, the default and
+accept-edits presets review destructive commands first and then allow only the
+proven route. The fact is produced by the executor-owning host code; policy
+never infers it from a tool name or command string. Shell escalation is a
+separate custom access, so allowing the ordinary command does not approve
+dropping confinement.
 
 ### Modes
 
@@ -227,7 +240,7 @@ macOS `/tmp`.
 The following remain read-only even when nested under a writable root:
 
 - `.git` and `.spice` entries;
-- the user config and credential directory;
+- the user config, credential, and trust-store directory;
 - the project config directory;
 - the session store root;
 - the same protected metadata names beneath configured and toolchain-cache
@@ -303,18 +316,43 @@ requested lack of Spice confinement is already the current posture.
 
 ## Workspace config and trust
 
-Project config (`.spice/config.json`) and project-local config
-(`.spice/config.local.json`) load without a trust decision. Both are repository
-content and are reduced to this shared allowlist:
+Workspace trust is persistent consent for ambient project customization. The
+decision is stored user-side for the canonical project root and has three
+states:
+
+- `unknown`: no decision has been stored;
+- `untrusted`: the user explicitly chose restricted operation;
+- `trusted`: project customization may activate.
+
+Unknown and untrusted workspaces have identical runtime capabilities. Spice
+does not open project config, scan project instructions or skills, start
+project notices, or run automatic Dune/Merlin/Git discovery. Ordinary source
+inspection and user-owned config, instructions, and skills remain available.
+Directly reading or editing `.spice/config.json` is also allowed; its values do
+not become effective until the workspace is trusted.
+
+In an interactive TUI, an unknown workspace gets a preflight before the normal
+app, session creation, or project process startup. Continuing without
+customization is selected by default and remembers `untrusted`; trusting
+remembers `trusted`; exiting stores nothing. Headless commands never prompt or
+infer consent: they continue restricted and explain how to run `spice trust`.
+Permission bypass does not bypass workspace trust.
+
+Once trusted, project config (`.spice/config.json`) and project-local config
+(`.spice/config.local.json`) are reduced to this shared allowlist:
 
 - `model`, `small_model`, and `reasoning`;
 - `run.max_steps`;
 - `permission.unattended`;
 - `workspace.tooling`;
 - `tools.editor`;
-- `ocaml.merlin_program`;
 - `web.search_backend`, `web.fetch_max_bytes`, `web.output_max_chars`,
   `web.timeout_ms`, and `web.max_timeout_ms`.
+
+Trusted automatic Dune, Merlin, notice, and mutation integrations are
+product-owned startup behavior, not model tool calls, so they do not create
+permission prompts. Their subprocesses still use the run's sealed sandbox and
+degrade rather than retrying unsandboxed.
 
 Workspace `run.max_steps` may tighten a value selected outside the workspace
 but cannot widen it. Workspace `permission.rules` are always stripped. Every
@@ -325,17 +363,23 @@ or oversized workspace config degrades to an empty layer rather than failing
 host startup. `spice config show --origins` reports every ignored, clamped, or
 degraded input.
 
-The allowlist limits host authority; it does not make repository content
-trusted prose. Project source, instruction files, and project skills can still
-influence the model when their user-controlled feature switches are enabled.
-Operations proposed as a result remain subject to the tool, permission,
-filesystem, and sandbox boundaries described above.
+The allowlist still applies after trust. Trust is consent to consume named
+project inputs, not a grant of arbitrary authority: permission mode, sandbox
+posture, shell and Merlin programs, provider endpoints, web enablement,
+private-network access, and instruction/skill switches remain user-owned.
+Project prose and skills may influence the model once enabled, but operations
+proposed as a result still pass through permission and confinement.
 
 `spice trust DIR` and `spice untrust DIR` record canonical workspace paths in
-the user-side `trust.json` store. The store is created with mode `0600`, but no
-runtime feature consults it today. Granting or revoking trust does not change
-config loading, permissions, sandboxing, instructions, skills, or tool
-availability. The CLI prints this limitation after every trust change.
+the user-side `trust.json` store. `DIR` may be a project subdirectory or symlink;
+Spice records the real enclosing project root. `untrust` stores an explicit
+refusal instead of deleting the entry. Config and state directories use mode
+`0700`, and the trust and lock files use mode `0600`.
+
+The trust grant is deliberately narrow. It does not silently enable future
+hooks, plugins, MCP servers, credential helpers, environment mutation, or
+project-selected executables. Those capabilities require their own explicit,
+content-bound approval design.
 
 ## Inspection and audit
 
@@ -343,13 +387,18 @@ Use these commands before a run to inspect the effective posture:
 
 ```sh
 spice config show --origins
+spice doctor
 spice permission list
 spice sandbox status --verbose
 spice sandbox explain
 ```
 
-`sandbox status` reports platform, selected backend, mode, requirement, and
-availability without loading provider credentials or creating a session.
+`config show` reports the effective `workspace_trust` state and omits disabled
+project values. `doctor` reports the trust-store path and validity plus the
+canonical root and resolved state without contacting a provider or starting
+project tooling. `sandbox status` reports platform, selected backend, mode,
+requirement, and availability without loading provider credentials or creating
+a session.
 `sandbox explain` additionally reports readable and writable posture,
 protected entries, network state, environment-filter counts, toolchain
 resolution, and config origin. Both commands support `--json`.

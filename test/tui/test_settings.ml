@@ -81,7 +81,7 @@ let%expect_test "tab switches to the status fact sheet" =
 09 |   model           openai/gpt-5.5 · stable
 10 |   permission      default
 11 |   sandbox         danger-full-access
-12 |   trust           not enforced
+12 |   trust           trusted · $PROJECT
 13 |   user config     $PROJECT.xdg/config/spice/con…
 14 |   project config  $PROJECT/.spice/config.json
 15 |

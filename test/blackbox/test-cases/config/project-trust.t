@@ -155,6 +155,12 @@ Unsupported store versions fail closed and leave the original bytes intact.
   $ spice config show
   spice: could not decode workspace trust store $TESTCASE_ROOT/workspace/trust-config/spice/trust.json: unsupported version 1; expected version 2
   [1]
+  $ spice doctor --json > doctor.json
+  [1]
+  $ grep -o '"name":"workspace trust","status":"fail"' doctor.json
+  "name":"workspace trust","status":"fail"
+  $ grep -o '"valid=false"' doctor.json
+  "valid=false"
   $ spice config get --project model
   openai/gpt-5.4
   $ cat "$XDG_CONFIG_HOME/spice/trust.json"

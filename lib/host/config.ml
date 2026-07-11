@@ -2496,11 +2496,10 @@ let filter_shared_project_layer source layer =
     (layer, []) (Layer.keys layer)
   |> fun (layer, ignored) -> (layer, List.rev ignored)
 
-(* Workspace layers are attacker-controlled repository content, reduced to
-   inputs that are safe by construction: scalar keys outside the shared
-   allowlist drop, [permission.rules] never load from the workspace (the one
-   structured field that carries authority), and budget keys may tighten but not
-   widen the non-workspace effective value. Every drop surfaces as a
+(* Trust permits workspace layers to participate but does not make repository
+   content authoritative. Scalar keys outside the shared allowlist drop,
+   [permission.rules] never load from the workspace, and budget keys may tighten
+   but not widen the non-workspace effective value. Every drop surfaces as a
    diagnostic. *)
 let sanitize_workspace_layer ~run_max_steps_cap source layer =
   let layer, ignored_keys = filter_shared_project_layer source layer in

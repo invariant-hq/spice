@@ -30,6 +30,12 @@ The workspace root is the nearest ancestor containing `.git`; without one,
 Spice considers only the run directory. A nested `AGENTS.md` below that
 directory is not activated until a run starts from within its subtree.
 
+Project instruction discovery runs only in a trusted workspace. While trust is
+unknown or explicitly untrusted, Spice does not stat, walk, or read project
+instruction candidates; global instructions remain available. The TUI asks
+before activating an unknown workspace, while headless runs continue with
+project guidance disabled.
+
 Global instructions are not charged against the project budget. Active project
 files share `instructions.project_max_bytes` (default `32768` bytes), consumed
 from root toward the run directory. When the budget runs out, later content is
@@ -74,7 +80,8 @@ For one headless invocation:
 
 - `--no-instructions` disables global and project instructions;
 - `--no-project-instructions` disables only project instructions;
-- `--project-instructions` force-enables project instructions over config.
+- `--project-instructions` force-enables project instructions over config, but
+  cannot override workspace trust.
 
 These flags are accepted by `spice run` and the relevant `spice debug`
 commands.
@@ -111,7 +118,7 @@ them after loading the skill. Built-in skills have no sibling resources.
 
 ## Discovery and precedence
 
-Skill roots are searched in this order:
+In a trusted workspace, skill roots are searched in this order:
 
 1. `.spice/skills` in the workspace;
 2. `.agents/skills` in the workspace;
@@ -125,6 +132,13 @@ active candidate for a name wins. Invalid or disabled candidates do not shadow
 a valid lower-precedence candidate; `spice skills list` reports every candidate
 and the winning origin.
 
+Unknown and untrusted workspaces are not scanned for the first three project
+roots. A user-configured `skills.paths` entry is also disabled when its resolved
+path lies inside the canonical project root, including relative entries; an
+absolute user skill root outside the project remains active. This prevents a
+repository from turning a user-owned search setting into ambient project
+guidance.
+
 ## Activation and context cost
 
 At request assembly, Spice gives the model a budgeted catalog of active skill
@@ -135,8 +149,8 @@ does not put its full guidance into every request.
 `--skill NAME` is the explicit alternative for a headless start: it injects the
 named active skill ahead of the prompt and fails before the model call when the
 name is unknown, inactive, or invalid. Repeat the flag to inject multiple
-skills in order. `--no-skills` removes both discovery and the skill tool for
-that invocation.
+skills in order. It cannot force a trust-disabled project skill. `--no-skills`
+removes both discovery and the skill tool for that invocation.
 
 `skills.catalog_max_bytes` (default `8192`) bounds the always-present catalog,
 not skill bodies. When necessary, non-builtin descriptions are visibly trimmed;

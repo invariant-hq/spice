@@ -145,17 +145,27 @@ These are three different controls:
 - `Spice_permission` decides whether a trusted description of an operation is
   allowed, denied, or requires review. It is pure policy and grants no runtime
   capability.
-- `Spice_sandbox` confines spawned shell commands and records enforcement
-  evidence. It does not decide whether an operation should be attempted.
-- `Spice_host.Trust` records user-side workspace decisions, but is currently a
-  dormant seam. Project config is safe by construction and does not consult the
-  trust store.
+- `Spice_sandbox` confines command-bearing tool and integration processes and
+  records enforcement evidence. It does not decide whether an operation should
+  be attempted or whether project customization should activate.
+- `Spice_host.Trust` decides whether ambient project configuration,
+  instructions, skills, notices, and built-in tooling may activate. It grants
+  no tool permission and does not weaken sandbox confinement.
 
 An enforcing workspace-write sandbox may be credited into the permission
-posture: it bounds ordinary workspace edits and commands to the writable set,
-so the default preset can allow those without a redundant prompt. Destructive
-commands and explicit requests to escape confinement remain reviewable.
-Danger-full-access and declared external boundaries receive no such credit.
+posture for native creates, modifications, and deletions because those
+operations use the same bounded workspace capability. A non-destructive command
+receives the same credit only when its permission fact proves that its executor
+uses the sealed sandbox. Direct routes, destructive commands, escalation,
+danger-full-access, and declared external boundaries receive no such automatic
+allowance.
+
+Trust resolves once while configuration loads. Every ambient consumer reads
+that immutable value, so an unknown or explicitly untrusted workspace can
+still use ordinary file and model tools while project-owned inputs remain
+unopened and automatic project processes remain stopped. Interactive startup
+may persist a decision and reload once before constructing the normal app;
+headless startup never infers trust.
 
 The complete user-visible behavior is documented in
 [`manual/security.md`](manual/security.md).

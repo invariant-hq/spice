@@ -13,6 +13,28 @@ Press `?` on an empty composer to see the shortcuts available in the current
 surface. That sheet is authoritative for individual keys; this guide explains
 the workflows behind them.
 
+## Workspace trust preflight
+
+Before opening the normal TUI in an unknown workspace, Spice names the
+canonical project root and asks whether to activate ambient project config,
+instructions, skills, notices, and built-in tooling. This preflight runs before
+session creation, alternate-screen ownership, home-brief construction, or any
+project process.
+
+The choices are:
+
+1. continue without project customization and remember `untrusted`;
+2. trust the workspace and enable project customization;
+3. exit without saving a decision.
+
+The restricted choice is selected by default. Use `1`–`3` or arrows and Enter;
+Escape, Ctrl+C, and EOF exit without writing. A persistence error remains in the
+preflight for retry. Trust does not grant file, command, or network permission
+and does not weaken the selected sandbox.
+
+A workspace already recorded as trusted or untrusted skips the preflight. Run
+`spice trust DIR` or `spice untrust DIR` and restart to change the decision.
+
 ## Starting and resuming
 
 | Command | Result |
@@ -26,9 +48,10 @@ the workflows behind them.
 | `spice review [BASE]` | Open the worktree review screen directly. |
 
 The home stage shows the effective model, workspace health, account state,
-sandbox posture, and recent work. Type a prompt to start a new session. With an
-empty composer, `enter` resumes the newest session when one is available;
-`/sessions` opens the session browser.
+sandbox posture, workspace trust, and recent work. A concise warning replaces
+project customization details while restricted. Type a prompt to start a new
+session. With an empty composer, `enter` resumes the newest session when one is
+available; `/sessions` opens the session browser.
 
 `--mode build|plan|review`, `--sandbox MODE`, and `--cwd DIR` override the
 corresponding startup choices. A resumed transcript is rebuilt from durable

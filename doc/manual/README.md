@@ -3,14 +3,14 @@
 User-facing documentation for the `spice` binary. For design documents and
 internal notes, see the rest of [`doc/`](../).
 
-- [Interactive TUI](interactive.md) — starting and resuming, composer
-  workflows, modes, decisions, and worktree review.
+- [Interactive TUI](interactive.md) — workspace trust preflight, starting and
+  resuming, composer workflows, modes, decisions, and worktree review.
 - [Providers and accounts](providers.md) — authentication, credential
   precedence, readiness, model selection, and compatible local servers.
 - [Instructions and skills](instructions-and-skills.md) — `AGENTS.md`, project
   guidance, skill authoring and discovery, budgets, and inspection.
-- [Configuration](configuration.md) — config files, precedence, workspace
-  filtering, and the `spice config` commands.
+- [Configuration](configuration.md) — config files, precedence, trust-gated
+  workspace filtering, and the `spice config` commands.
 - [Security](security.md) — permissions, command sandboxing, workspace trust,
   escalation, and audit surfaces.
 - [Permission rules](permission-rules.md) — durable rule precedence, matcher

@@ -10,6 +10,11 @@ says so; everything else is healthy in a fresh workspace.
     project=$TESTCASE_ROOT
     data=$TESTCASE_ROOT/xdg-data/spice
     state=$TESTCASE_ROOT/xdg-state/spice
+  workspace trust: ok
+    store=$TESTCASE_ROOT/xdg-config/spice/trust.json
+    valid=true
+    root=$TESTCASE_ROOT
+    status=trusted
   auth: fail
     openai: missing (selected model provider); run `spice auth login openai`
     anthropic: missing; run `spice auth login anthropic`
@@ -38,6 +43,11 @@ With a credential present, doctor is clean and exits zero.
     project=$TESTCASE_ROOT
     data=$TESTCASE_ROOT/xdg-data/spice
     state=$TESTCASE_ROOT/xdg-state/spice
+  workspace trust: ok
+    store=$TESTCASE_ROOT/xdg-config/spice/trust.json
+    valid=true
+    root=$TESTCASE_ROOT
+    status=trusted
   auth: ok
     openai: unchecked (selected model provider); run `spice auth status openai --refresh`
     anthropic: missing; run `spice auth login anthropic`
@@ -82,8 +92,23 @@ The JSON envelope carries the same checks.
   "type":"doctor"
   $ OPENAI_API_KEY=test-key SPICE_MODEL=openai/gpt-5.5 spice doctor --json | grep -o '"name":"sessions","status":"warn"'
   "name":"sessions","status":"warn"
+  $ OPENAI_API_KEY=test-key SPICE_MODEL=openai/gpt-5.5 spice doctor --json | grep -o '"name":"workspace trust","status":"ok"'
+  "name":"workspace trust","status":"ok"
   $ OPENAI_API_KEY=test-key SPICE_MODEL=openai/gpt-5.5 spice doctor --json | grep -o '"ok":true'
   "ok":true
+
+Doctor distinguishes an unknown nested project from an explicit untrusted
+decision without starting a run.
+
+  $ mkdir -p nested/.git
+  $ OPENAI_API_KEY=test-key SPICE_MODEL=openai/gpt-5.5 spice doctor -C nested --json > nested-unknown.json
+  $ grep -o '"status=unknown"' nested-unknown.json
+  "status=unknown"
+  $ spice untrust nested
+  untrusted $TESTCASE_ROOT/nested
+  $ OPENAI_API_KEY=test-key SPICE_MODEL=openai/gpt-5.5 spice doctor -C nested --json > nested-untrusted.json
+  $ grep -o '"status=untrusted"' nested-untrusted.json
+  "status=untrusted"
 
 Unknown config fields are a warning, not a failure.
 
