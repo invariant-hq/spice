@@ -181,14 +181,20 @@ val permissions :
     {!Spice_permission.Access.Command.Argv} accesses for better review evidence.
     When parsing is ambiguous, it requests one conservative
     {!Spice_permission.Access.Command.Shell} access for the whole command.
-    Both forms carry [Sandboxed] execution evidence because ordinary execution
-    uses [config]'s sealed sandbox. Security must not depend on the parser.
+    Both forms carry the exact route derived from [config]'s sealed evidence and
+    [input]'s escalation stance: [Sandboxed] only for enforced confinement, and
+    [Direct] for unconfined, externally declared, or escalated execution.
+    Security must not depend on the parser.
 
     An escalating input under workspace-write shaped confinement additionally
     requests one extension access named ["shell.escalate"] whose subject is the
     command text, so policies and reviewers decide escalation separately from
     ordinary shell execution and session grants never broaden beyond the exact
     command.
+
+    A requested escalation that [config]'s read-only sandbox denies returns no
+    permission request; {!run} reports the invalid input without opening a
+    review that could not authorize execution.
 
     If [workdir] cannot be resolved inside [workspace], the returned list is
     empty; {!run} reports the resolution failure as an invalid-input tool

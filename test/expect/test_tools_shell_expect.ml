@@ -274,6 +274,22 @@ let print_permissions ?root ?outside ?config workspace input =
               Printf.printf "access: %s\n" (access ?root ?outside item)))
         requests
 
+let execution = function
+  | Access.Command.Direct -> "direct"
+  | Access.Command.Sandboxed -> "sandboxed"
+
+let print_permission_routes label ~config workspace input =
+  Printf.printf "-- %s --\n" label;
+  Shell.permissions ~workspace ~config input
+  |> List.iter (fun request ->
+         Request.accesses request
+         |> List.iter (function
+              | Access.Command command ->
+                  Printf.printf "command: %s\n"
+                    (execution (Access.Command.execution command))
+              | Access.Custom { name; _ } -> Printf.printf "custom: %s\n" name
+              | Access.Path _ | Access.Network _ -> ()))
+
 let line_with prefix text =
   String.split_on_char '\n' text
   |> List.find_opt (String.starts_with ~prefix)
@@ -398,6 +414,38 @@ let read_only_config =
          (Spice_sandbox.Spec.Confined Spice_sandbox.Confinement.read_only))
     ()
 
+let%expect_test "permission command routes match exact shell execution" =
+  with_fixture @@ fun ~root ~outside:_ ~fs:_ ~workspace ->
+  let workspace_write = workspace_write_config ~root in
+  let external_config =
+    Shell.Config.make
+      ~sandbox:(Spice_sandbox.seal Spice_sandbox.Spec.Declared_external)
+      ()
+  in
+  print_permission_routes "workspace-write ordinary" ~config:workspace_write
+    workspace (input "dune build");
+  print_permission_routes "workspace-write escalation" ~config:workspace_write
+    workspace (input ~escalate:true "dune build");
+  print_permission_routes "danger-full-access" ~config:(unconfined ()) workspace
+    (input "dune build");
+  print_permission_routes "external" ~config:external_config workspace
+    (input "dune build");
+  print_permission_routes "read-only" ~config:read_only_config workspace
+    (input "dune build");
+  [%expect
+    {|
+    -- workspace-write ordinary --
+    command: sandboxed
+    -- workspace-write escalation --
+    command: direct
+    custom: shell.escalate
+    -- danger-full-access --
+    command: direct
+    -- external --
+    command: direct
+    -- read-only --
+    command: sandboxed |}]
+
 let%expect_test "escalation raises a distinct reviewable access" =
   with_fixture @@ fun ~root ~outside:_ ~fs:_ ~workspace ->
   let escalating = input ~escalate:true "git commit -m fix" in
@@ -413,11 +461,7 @@ let%expect_test "escalation raises a distinct reviewable access" =
   (* Read-only confinement raises no escalation access: the run path refuses
      the input before any permission flow. *)
   print_permissions ~root ~config:read_only_config workspace escalating;
-  [%expect
-    {|
-    requests: 1
-    source: shell
-    access: exec cwd=. argv="git" "commit" "-m" "fix" |}];
+  [%expect {| requests: none |}];
   (* Unconfined decisions ignore the flag: it requests what is already
      true. *)
   print_permissions ~root workspace escalating;

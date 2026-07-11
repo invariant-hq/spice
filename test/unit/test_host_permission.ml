@@ -64,7 +64,7 @@ let unproven_and_sensitive_commands_still_review () =
   |> expect_review "destructive sealed command";
   decide ~sandbox_backed:true Permission.Preset.Default
     [
-      Access.shell ~execution:sandboxed "dune build";
+      Access.shell ~execution:Access.Command.Direct "dune build";
       Access.custom ~kind:`Custom ~subject:"dune build" "shell.escalate";
     ]
   |> expect_review "shell escalation"

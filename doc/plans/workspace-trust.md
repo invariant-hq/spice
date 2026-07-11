@@ -472,8 +472,9 @@ backends contribute no workspace-write command credit.
 The existing order remains authoritative: installed session rules keep their
 highest precedence, explicit durable rules precede the preset and
 sandbox-backed rules, and Plan contributes no sandbox-backed allowance after
-its command denial. Shell escalation stays a separate custom access and
-therefore remains reviewable even when the ordinary command fact is sandboxed.
+its command denial. Shell escalation makes the ordinary command fact `Direct`
+and adds a separate custom access, so the exact route and the authority to drop
+confinement are both reviewable.
 
 ### Confine every command-bearing standard tool
 

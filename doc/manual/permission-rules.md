@@ -185,7 +185,8 @@ The built-in route and broad command patterns are:
 execution uses the run's sealed sandbox. It never infers confinement from the
 program or source tool. The enforcing workspace-write posture uses this matcher
 after its destructive-command review rule; direct routes and non-enforcing
-postures get no such credit.
+postures get no such credit. An escalation request carries a direct ordinary
+command fact plus the distinct `shell.escalate` custom access.
 
 `destructive` is the conservative built-in classifier for recursive or forced
 `rm`, force push, hard reset, forced clean, `dd`, `shred`, `mkfs`, `sudo`, and

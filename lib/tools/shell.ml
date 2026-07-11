@@ -366,26 +366,46 @@ let parse_shell script =
     in
     { segments; confidence = (if confident then `Confident else `Fallback) }
 
-let access_of_argv ~cwd argv =
+type command_route =
+  | Sandboxed
+  | Direct
+  | Escalated
+  | Refused of Spice_sandbox.Error.t
+
+let sandbox_route sandbox =
+  match Spice_sandbox.evidence sandbox with
+  | Spice_sandbox.Evidence.Enforced _ -> Sandboxed
+  | Spice_sandbox.Evidence.Not_requested
+  | Spice_sandbox.Evidence.Refused _
+  | Spice_sandbox.Evidence.Declared_external ->
+      Direct
+
+let command_route ~config input =
+  let sandbox = Config.sandbox config in
+  if not (Input.escalate input) then sandbox_route sandbox
+  else
+    match Spice_sandbox.escalation sandbox with
+    | Spice_sandbox.Available -> Escalated
+    | Spice_sandbox.Denied error -> Refused error
+    | Spice_sandbox.Ignored -> sandbox_route sandbox
+
+let access_of_argv ~cwd ~execution argv =
   match argv with
   | [] -> None
   | program :: args ->
       Some
-        (Permission.Access.argv ?cwd
-           ~execution:Permission.Access.Command.Sandboxed ~program args)
+        (Permission.Access.argv ?cwd ~execution ~program args)
 
-let command_accesses ~cwd command =
+let command_accesses ~cwd ~execution command =
   let cwd = Some (Permission.Access.Path_scope.workspace cwd) in
   match parse_shell command with
   | { confidence = `Confident; segments; _ } ->
       List.filter_map
-        (fun segment -> Option.bind segment.argv (access_of_argv ~cwd))
+        (fun segment ->
+          Option.bind segment.argv (access_of_argv ~cwd ~execution))
         segments
   | { confidence = `Fallback; _ } ->
-      [
-        Permission.Access.shell ?cwd
-          ~execution:Permission.Access.Command.Sandboxed command;
-      ]
+      [ Permission.Access.shell ?cwd ~execution command ]
 
 let escalation_access_name = "shell.escalate"
 
@@ -393,16 +413,13 @@ let escalation_access_name = "shell.escalate"
    sealed decision is confined with writable roots. Under read-only the run
    path refuses the input before any permission flow; under unconfined or
    declared-external requests the flag asks for what is already true. *)
-let escalation_access ~config input =
-  if not (Input.escalate input) then []
-  else
-    match Spice_sandbox.escalation (Config.sandbox config) with
-    | Spice_sandbox.Available ->
-        [
-          Permission.Access.custom ~kind:`Custom ~subject:(Input.command input)
-            escalation_access_name;
-        ]
-    | Spice_sandbox.Denied _ | Spice_sandbox.Ignored -> []
+let escalation_access input = function
+  | Escalated ->
+      [
+        Permission.Access.custom ~kind:`Custom ~subject:(Input.command input)
+          escalation_access_name;
+      ]
+  | Sandboxed | Direct | Refused _ -> []
 
 let permissions ~workspace ~config input =
   let resolved =
@@ -413,11 +430,19 @@ let permissions ~workspace ~config input =
   match resolved with
   | Error _ -> []
   | Ok cwd ->
-      [
-        Permission.Request.of_accesses ~source:name
-          (command_accesses ~cwd (Input.command input)
-          @ escalation_access ~config input);
-      ]
+      let route = command_route ~config input in
+      let request execution =
+        [
+          Permission.Request.of_accesses ~source:name
+            (command_accesses ~cwd ~execution (Input.command input)
+            @ escalation_access input route);
+        ]
+      in
+      begin match route with
+      | Refused _ -> []
+      | Sandboxed -> request Permission.Access.Command.Sandboxed
+      | Direct | Escalated -> request Permission.Access.Command.Direct
+      end
 
 module Output = struct
   type stream =
@@ -894,14 +919,13 @@ let run ~fs ~workspace ~config ?(cancelled = default_cancelled) input =
                 ~network_restricted:(Config.network_restricted config)
                 ~toolchain ~command:(Input.command input) output
             in
-            let escalation = Spice_sandbox.escalation (Config.sandbox config) in
-            match (Input.escalate input, escalation) with
-            | true, Spice_sandbox.Denied reason ->
+            match command_route ~config input with
+            | Refused reason ->
                 (* No spawn and no permission flow: the mode's promise admits
                    no approval-shaped exception. *)
                 Tool.Result.failed `Invalid_input
                   (Spice_sandbox.Error.message reason)
-            | true, Spice_sandbox.Available ->
+            | Escalated ->
                 (* Reaching execution means the escalation access was
                    approved by policy or reviewer. Escalation drops the
                    filesystem confinement, not the credential strip: a command
@@ -911,7 +935,7 @@ let run ~fs ~workspace ~config ?(cancelled = default_cancelled) input =
                 let env, _stripped = Spice_sandbox.Env.partition base_env in
                 run_spawn ~argv ~env
                   ~enforcement:Spice_sandbox.Evidence.not_requested
-            | true, Spice_sandbox.Ignored | false, _ -> (
+            | Sandboxed | Direct -> (
                 match
                   Spice_sandbox.spawn (Config.sandbox config) ~argv
                     ~env:base_env

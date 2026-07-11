@@ -195,8 +195,8 @@ a fail-safe `direct` route. Under enforcing `workspace-write`, the default and
 accept-edits presets review destructive commands first and then allow only the
 proven route. The fact is produced by the executor-owning host code; policy
 never infers it from a tool name or command string. Shell escalation is a
-separate custom access, so allowing the ordinary command does not approve
-dropping confinement.
+`direct` command fact plus a separate custom access, so a sealed command grant
+cannot be reused to approve dropping confinement.
 
 ### Modes
 
