@@ -863,25 +863,38 @@ let close t =
         let add_error child message =
           errors := { Close_error.child; message } :: !errors
         in
+        let close_state entry =
+          match Eio.Promise.peek entry.settled with
+          | Some (Ok (record, _)) -> (
+              match Spice_protocol.Subagent_run.status record with
+              | Spice_protocol.Subagent_run.Status.Blocked _
+              | Spice_protocol.Subagent_run.Status.Completed _
+              | Spice_protocol.Subagent_run.Status.Failed _
+              | Spice_protocol.Subagent_run.Status.Cancelled _ ->
+                  `Settled
+              | Spice_protocol.Subagent_run.Status.Queued
+              | Spice_protocol.Subagent_run.Status.Running _ ->
+                  `Invalid "settled promise has a non-terminal ledger status")
+          | Some (Error message) -> `Invalid message
+          | None -> `Running
+        in
         List.iter
           (fun (child, entry) ->
-            (match Eio.Promise.peek entry.settled with
-            | Some (Ok (record, _)) -> (
-                match Spice_protocol.Subagent_run.status record with
-                | Spice_protocol.Subagent_run.Status.Blocked _ -> ()
-                | Spice_protocol.Subagent_run.Status.Queued
-                | Spice_protocol.Subagent_run.Status.Running _ ->
-                    add_error child
-                      "settled promise has a non-terminal ledger status"
-                | Spice_protocol.Subagent_run.Status.Completed _
-                | Spice_protocol.Subagent_run.Status.Failed _
-                | Spice_protocol.Subagent_run.Status.Cancelled _ ->
-                    ())
-            | Some (Error message) -> add_error child message
-            | None -> (
+            (match close_state entry with
+            | `Settled -> ()
+            | `Invalid message -> add_error child message
+            | `Running -> (
                 match cancel t ~caller:t.parent child with
                 | Ok _ -> ()
-                | Error message -> add_error child message));
+                | Error message -> (
+                    (* The child may publish its ordinary settlement between
+                       the observation above and [cancel]'s own observation.
+                       That is a successful close outcome, not a cancellation
+                       failure. Re-observe before reporting the race. *)
+                    match close_state entry with
+                    | `Settled -> ()
+                    | `Invalid message -> add_error child message
+                    | `Running -> add_error child message)));
             close_live entry)
           (List.rev t.entries);
         let result =
