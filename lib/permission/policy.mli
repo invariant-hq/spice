@@ -113,18 +113,19 @@ module Match : sig
     (** [destructive] matches command accesses that can irreversibly delete or
         overwrite data the model never named, or escalate out of confinement —
         currently recursive or forced [rm], [git push --force],
-        [git reset --hard], [git clean --force], [dd], [shred], [mkfs], and
-        [sudo]/[doas].
+        [git reset --hard], [git clean --force], [dd], [shred], [mkfs],
+        [sudo]/[doas], and opaque dynamic shell evaluation.
 
         Placed as a {!Rule.review} rule before a broad command {!Rule.allow},
         this keeps such commands reviewable even under a posture that otherwise
         allows commands, because a sandbox bounds where a command writes but not
         whether the loss is recoverable. The classifier reads the already-parsed
-        argv structurally and falls back to a lenient token scan for shell text,
-        deliberately over-flagging rather than missing a form a redirect or
-        substitution hid. It is host command-safety policy, not a proof: a
-        matching command is worth review, and a non-match is not a guarantee of
-        safety. *)
+        argv structurally, recursively inspects standard shell and pass-through
+        wrappers, and falls back to a lenient token scan for shell text.
+        Command substitutions and dynamic evaluation review conservatively;
+        the classifier deliberately over-flags rather than miss a form hidden
+        by shell syntax. It is host command-safety policy, not a proof: a match
+        is worth review, and a non-match is not a guarantee of safety. *)
 
     val sandboxed : t
     (** [sandboxed] matches command accesses whose host-produced execution fact

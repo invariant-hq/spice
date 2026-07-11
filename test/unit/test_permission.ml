@@ -1223,8 +1223,19 @@ let destructive_command_matcher () =
   yes "a piped destructive command is flagged" (shell "echo x | rm -rf y");
   yes "a wrapped destructive command is flagged"
     (shell "find . -type f | xargs rm -rf");
+  yes "command pass-through cannot hide destruction"
+    (shell "command rm -rf build");
+  yes "exec pass-through cannot hide destruction"
+    (shell "exec rm -rf build");
+  yes "shell -c argv is inspected recursively"
+    (exec "bash" [ "-lc"; "rm -rf build" ]);
+  yes "shell -c text is inspected recursively"
+    (shell "sh -c 'git reset --hard'");
   yes "destruction hidden by a substitution is flagged"
     (shell "rm -rf $(cat targets)");
+  yes "an opaque command substitution is conservative"
+    (shell "echo $(pick-command)");
+  yes "dynamic eval is conservative" (shell "eval \"$ACTION\"");
   no "a benign command with a redirect is not flagged"
     (shell "dune build 2> log.txt");
   no "a read-only shell command is not flagged" (shell "git status");

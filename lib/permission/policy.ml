@@ -155,13 +155,21 @@ module Command_match = struct
      argv structurally; for the shell-text form it applies the same rules to a
      lenient token scan that ignores quoting and expansion — over-flagging
      rather than missing a destructive form a redirect or substitution hid. *)
+  let shell_syntax = function
+    | '\'' | '"' | '`' | '$' | '(' | ')' -> true
+    | _ -> false
+
   let unquote token =
     let len = String.length token in
-    if len >= 2 then
-      match (token.[0], token.[len - 1]) with
-      | '\'', '\'' | '"', '"' -> String.sub token 1 (len - 2)
-      | _ -> token
-    else token
+    let rec left i =
+      if i < len && shell_syntax token.[i] then left (i + 1) else i
+    in
+    let rec right i =
+      if i >= 0 && shell_syntax token.[i] then right (i - 1) else i
+    in
+    let first = left 0 in
+    let last = right (len - 1) in
+    if last < first then "" else String.sub token first (last - first + 1)
 
   let scan_words sub =
     String.map (function '\t' | '\n' | '\r' -> ' ' | c -> c) sub
@@ -199,7 +207,7 @@ module Command_match = struct
         !ok
 
   let pass_through_wrapper = function
-    | "env" | "xargs" | "nohup" | "stdbuf" -> true
+    | "command" | "env" | "exec" | "xargs" | "nohup" | "stdbuf" -> true
     | _ -> false
 
   let rec program_and_args = function
@@ -228,30 +236,67 @@ module Command_match = struct
     | Some "clean" -> has_flag ~long:[ "--force" ] ~short:'f' args
     | _ -> false
 
-  let program_is_destructive program args =
+  let shell_program = function
+    | "sh" | "bash" | "dash" | "zsh" | "ksh" -> true
+    | _ -> false
+
+  let command_string args =
+    let rec loop = function
+      | option :: command :: _
+        when String.length option > 1 && option.[0] = '-'
+             && String.contains option 'c' ->
+          Some command
+      | _ :: rest -> loop rest
+      | [] -> None
+    in
+    loop args
+
+  let opaque_substitution text =
+    let rec has_dollar_paren i =
+      i + 1 < String.length text
+      &&
+      if Char.equal text.[i] '$' && Char.equal text.[i + 1] '(' then true
+      else has_dollar_paren (i + 1)
+    in
+    String.contains text '`' || has_dollar_paren 0
+
+  let rec program_is_destructive program args =
     match program with
-    | "sudo" | "doas" -> true
+    | "sudo" | "doas" | "eval" | "source" | "." -> true
     | "dd" | "shred" | "mkfs" -> true
     | "rm" ->
         has_flag ~long:[ "--force"; "--recursive" ] ~short:'f' args
         || List.exists (short_flag 'r') args
         || List.exists (short_flag 'R') args
     | "git" -> git_is_destructive args
+    | shell when shell_program shell -> (
+        match command_string args with
+        | None -> false
+        | Some command ->
+            opaque_substitution command || shell_text_is_destructive command)
     | _ ->
         String.length program > 5 && String.equal (String.sub program 0 5) "mkfs."
 
-  let tokens_are_destructive tokens =
+  and tokens_are_destructive tokens =
     match program_and_args tokens with
     | Some (program, args) -> program_is_destructive program args
     | None -> false
 
+  and tokens_contain_destructive = function
+    | [] -> false
+    | (_ :: rest as tokens) ->
+        tokens_are_destructive tokens || tokens_contain_destructive rest
+
+  and shell_text_is_destructive text =
+    opaque_substitution text
+    || List.exists
+         (fun sub -> tokens_contain_destructive (scan_words sub))
+         (scan_subcommands text)
+
   let command_is_destructive = function
     | Access.Command.Argv { program; args; _ } ->
-        tokens_are_destructive (program :: args)
-    | Access.Command.Shell { text; _ } ->
-        List.exists
-          (fun sub -> tokens_are_destructive (scan_words sub))
-          (scan_subcommands text)
+        tokens_contain_destructive (program :: args)
+    | Access.Command.Shell { text; _ } -> shell_text_is_destructive text
 
   let list_has_prefix ~prefix values =
     let rec loop prefix values =
