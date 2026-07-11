@@ -88,6 +88,13 @@ module Secret : sig
   val kind : t -> Kind.t
   (** [kind t] is [t]'s credential kind without secret material. *)
 
+  val equal : t -> t -> bool
+  (** [equal a b] is [true] iff [a] and [b] contain exactly the same credential
+      material and metadata.
+
+      This is state equality for conditional credential-store updates. It is not
+      constant-time and must not be used to authenticate untrusted input. *)
+
   val fingerprint : t -> string option
   (** [fingerprint t] is a short redacted identifier for [t], if one can be
       derived safely.

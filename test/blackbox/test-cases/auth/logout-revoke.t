@@ -23,6 +23,32 @@ Successful revocation prefers the refresh token and removes locally.
   "store_names":[]
   [1]
 
+A credential saved while revocation is in flight is a replacement, not the
+credential the user asked to revoke. The provider request finishes, but the
+conditional local delete preserves the replacement.
+
+  $ oauth_credential
+  $ cat > script-revoke-replaced.jsonl <<'JSONL'
+  > {"expect":{"request_line":"POST /oauth/revoke HTTP/1.1"},"delay_ms":2000,"http":{"status":200,"json":{}}}
+  > JSONL
+  $ start_fake_server script-revoke-replaced.jsonl capture-revoke-replaced port-revoke-replaced
+  $ export SPICE_OPENAI_AUTH_BASE_URL="http://127.0.0.1:$(cat port-revoke-replaced)"
+  $ spice auth logout openai --revoke > revoke-replaced.out 2> revoke-replaced.err & revoker=$!
+  $ wait_for_file capture-revoke-replaced/request-1.json
+  $ printf replacement-key | spice auth save openai --api-key-stdin
+  Saved openai credential default
+  $ kill -0 "$revoker" && echo revoke-still-pending
+  revoke-still-pending
+  $ wait "$revoker"
+  $ cat revoke-replaced.out
+  Revoked openai credential
+  Kept replacement openai credential default written during revocation
+  $ wait_fake_server
+  $ spice auth status openai --json | grep -o '"route":"openai/api-key"'
+  "route":"openai/api-key"
+  $ grep -c "replacement-key" "$XDG_CONFIG_HOME/spice/auth.json"
+  1
+
 Transient revocation failure still removes the local credential and says so.
 The endpoint here is a closed port.
 

@@ -304,15 +304,19 @@
 (test
  (name test_host_account)
  (modules test_host_account)
+ (deps bin/account_lock_holder.exe)
  (libraries
   windtrap
   test_support
   spice_account
+  spice_digest
   spice_host
   spice_llm
+  spice_path
   spice_provider
   eio
-  eio_main))
+  eio_main
+  unix))
 
 (test
  (name test_user_dirs)

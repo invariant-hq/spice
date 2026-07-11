@@ -474,77 +474,76 @@ let login provider name method_ api_key_stdin =
               Option.iter (stdout_printf "%s") instructions;
               Success))
 
-let revoke_stored ~stdenv host ~provider ~name =
-  let stored () =
-    match Account.load ~stdenv host with
-    | Error error -> Error (Account.Error.message error)
-    | Ok accounts -> (
-        let name = stored_name name in
-        match Account.credential accounts ~name provider with
-        | Error error -> Error (Account.Error.message error)
-        | Ok credential ->
-            Ok
-              (Option.bind credential (fun credential ->
-                   match Spice_account.Credential.source credential with
-                   | Spice_account.Credential.Source.Store _ ->
-                       Some (Spice_account.Credential.secret credential)
-                   | Spice_account.Credential.Source.Process
-                   | Spice_account.Credential.Source.Env _ ->
-                       None)))
-  in
-  match
-    Option.bind
-      (Spice_host.Host.adapter host provider)
-      Spice_host.Host.Adapter.revoke
-  with
-  | None -> `Unsupported
-  | Some revoke_route -> (
-      match stored () with
-      | Error message -> `Failed message
-      | Ok None -> `Not_stored
-      | Ok (Some secret) -> (
-          let auth_base_url =
-            Spice_host.Account.provider_auth_base_url host ~provider
-          in
-          Eio.Switch.run @@ fun sw ->
-          match revoke_route ~sw ~stdenv ?auth_base_url secret with
-          | Ok () -> `Revoked
-          | Error Spice_account.Problem.Unsupported -> `Unsupported
-          | Error problem -> `Failed (Spice_account.Problem.to_string problem)))
-
 let logout provider name revoke =
   with_host @@ fun ~stdenv host ->
   match find_provider_decl host provider with
   | Error message -> Usage_error message
   | Ok provider_decl -> (
       let provider = Provider.id provider_decl in
-      let revocation =
-        if not revoke then `Skipped
-        else revoke_stored ~stdenv host ~provider ~name
+      let print_env_still_active = function
+        | None -> ()
+        | Some env_name ->
+            stdout_printf
+              "Environment credential %s is still active and cannot be removed \
+               by Spice.\n"
+              env_name
       in
-      (match revocation with
-      | `Skipped | `Not_stored -> ()
-      | `Revoked ->
-          stdout_printf "Revoked %s credential\n" (Llm_provider.id provider)
-      | `Unsupported ->
-          stdout_printf
-            "The stored credential does not support provider revocation.\n"
-      | `Failed message ->
-          stderr_printf
-            "spice: warning: revocation failed (%s); removing the local \
-             credential anyway\n"
-            message);
-      match Spice_host_builtin.Login.logout ~stdenv host ~provider ?name () with
-      | Error message -> Runtime_error message
-      | Ok { Spice_host_builtin.Login.env_still_active } ->
-          stdout_printf "Removed %s credential %s\n" (Llm_provider.id provider)
-            (stored_name_string name);
-          Option.iter
-            (stdout_printf
-               "Environment credential %s is still active and cannot be \
-                removed by Spice.\n")
-            env_still_active;
-          Success)
+      if not revoke then (
+        match
+          Spice_host_builtin.Login.logout ~stdenv host ~provider ?name ()
+        with
+        | Error message -> Runtime_error message
+        | Ok { Spice_host_builtin.Login.env_still_active } ->
+            stdout_printf "Removed %s credential %s\n"
+              (Llm_provider.id provider) (stored_name_string name);
+            print_env_still_active env_still_active;
+            Success)
+      else
+        match
+          Spice_host_builtin.Login.logout_revoke ~stdenv host ~provider ?name ()
+        with
+        | Error message -> Runtime_error message
+        | Ok { Spice_host_builtin.Login.logout; revocation } ->
+            let env_still_active =
+              logout.Spice_host_builtin.Login.env_still_active
+            in
+            let local =
+              match revocation with
+              | Account.Revoke.Not_stored -> Account.Revoke.Removed
+              | Account.Revoke.Settled { remote; local } ->
+                  (match remote with
+                  | Account.Revoke.Revoked ->
+                      stdout_printf "Revoked %s credential\n"
+                        (Llm_provider.id provider)
+                  | Account.Revoke.Unsupported ->
+                      stdout_printf
+                        "The stored credential does not support provider \
+                         revocation.\n"
+                  | Account.Revoke.Failed problem -> (
+                      let problem = Spice_account.Problem.to_string problem in
+                      match local with
+                      | Account.Revoke.Removed ->
+                          stderr_printf
+                            "spice: warning: revocation failed (%s); removing \
+                             the local credential anyway\n"
+                            problem
+                      | Account.Revoke.Superseded ->
+                          stderr_printf
+                            "spice: warning: revocation failed (%s); keeping \
+                             the replacement credential\n"
+                            problem));
+                  local
+            in
+            (match local with
+            | Account.Revoke.Removed ->
+                stdout_printf "Removed %s credential %s\n"
+                  (Llm_provider.id provider) (stored_name_string name)
+            | Account.Revoke.Superseded ->
+                stdout_printf
+                  "Kept replacement %s credential %s written during revocation\n"
+                  (Llm_provider.id provider) (stored_name_string name));
+            print_env_still_active env_still_active;
+            Success)
 
 let row_env_string row =
   match Provider.auth row.provider |> Provider.Auth.env with

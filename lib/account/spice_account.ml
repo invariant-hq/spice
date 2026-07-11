@@ -108,6 +108,19 @@ module Secret = struct
     | Bearer _ -> Kind.Bearer
     | OAuth _ -> Kind.OAuth
 
+  let equal a b =
+    match (a, b) with
+    | Api_key a, Api_key b | Bearer a, Bearer b -> String.equal a b
+    | OAuth a, OAuth b ->
+        String.equal a.access_token b.access_token
+        && equal_option String.equal a.refresh_token b.refresh_token
+        && equal_option Int64.equal a.expires_at b.expires_at
+        && equal_option String.equal a.account_id b.account_id
+    | Api_key _, (Bearer _ | OAuth _)
+    | Bearer _, (Api_key _ | OAuth _)
+    | OAuth _, (Api_key _ | Bearer _) ->
+        false
+
   let material_fingerprint material =
     let len = String.length material in
     if len < 8 then None else Some (String.sub material (len - 4) 4)

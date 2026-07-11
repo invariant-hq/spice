@@ -1,7 +1,8 @@
-Stored OAuth credentials refresh before expiry under the credential store
-lock: reload first, refresh once, persist atomically. Rotated refresh tokens
-are never spent twice, and permanent rejections block later runs until the
-user logs in again.
+Stored OAuth credentials refresh before expiry under their credential-slot
+lock: snapshot briefly under the store lock, refresh once without holding it,
+then commit only if the secret is unchanged. Rotated refresh tokens are never
+spent twice, and permanent rejections block later runs until the user logs in
+again.
 
   $ export SPICE_MODEL=openai/gpt-5.5
   $ mkdir -p "$XDG_CONFIG_HOME/spice"
@@ -55,12 +56,12 @@ the credential's identity across rotation.
   "fingerprint":"acct-42"
 
 Two concurrent runs against an expired credential spend exactly one refresh:
-the store lock serializes them and the loser reloads the winner's fresh
-credential instead of re-sending the rotated token.
+the credential-slot lock serializes them and the loser reloads the winner's
+fresh credential instead of re-sending the rotated token.
 
   $ expired_credential
   $ cat > script-par.jsonl <<'JSONL'
-  > {"expect":{"request_line":"POST /oauth/token HTTP/1.1"},"http":{"status":200,"json":{"access_token":"oauth-access-par","refresh_token":"refresh-r3","expires_in":3600}}}
+  > {"expect":{"request_line":"POST /oauth/token HTTP/1.1"},"delay_ms":500,"http":{"status":200,"json":{"access_token":"oauth-access-par","refresh_token":"refresh-r3","expires_in":3600}}}
   > JSONL
   $ sse_item par-1 >> script-par.jsonl
   $ sse_item par-2 >> script-par.jsonl
@@ -90,6 +91,60 @@ credential instead of re-sending the rotated token.
   1
   $ grep -h "authorization: Bearer oauth-access-par" capture-par/request-*.headers | wc -l | tr -d ' '
   2
+
+A slow refresh owns only its credential slot. Unrelated store writes commit
+while the token endpoint is still pending, and the later refresh commit
+preserves them.
+
+  $ expired_credential
+  $ cat > script-unrelated.jsonl <<'JSONL'
+  > {"expect":{"request_line":"POST /oauth/token HTTP/1.1"},"delay_ms":2000,"http":{"status":200,"json":{"access_token":"oauth-access-unrelated","refresh_token":"refresh-r4","expires_in":3600}}}
+  > JSONL
+  $ sse_item unrelated >> script-unrelated.jsonl
+  $ start_fake_server script-unrelated.jsonl capture-unrelated port-unrelated
+  $ export SPICE_OPENAI_BASE_URL="http://127.0.0.1:$(cat port-unrelated)/v1"
+  $ export SPICE_OPENAI_AUTH_BASE_URL="http://127.0.0.1:$(cat port-unrelated)"
+  $ spice run --cwd "$PWD" --id unrelated-run "slow refresh" > unrelated.out 2> unrelated.err & refresher=$!
+  $ wait_for_file capture-unrelated/request-1.json
+  $ printf other-provider-key | spice auth save anthropic --api-key-stdin > unrelated-save.out & saver=$!
+  $ wait_for_output "Saved anthropic credential default" unrelated-save.out 20
+  $ kill -0 "$refresher" && echo refresh-still-pending
+  refresh-still-pending
+  $ wait "$saver" && wait "$refresher"
+  $ cat unrelated.out
+  refreshed answer
+  $ wait_fake_server
+  $ spice auth status anthropic --json | grep -o '"fingerprint":"-key"'
+  "fingerprint":"-key"
+
+A replacement written into the refreshing slot wins. The stale token response
+is neither persisted nor used for the model request.
+
+  $ expired_credential
+  $ cat > script-replaced.jsonl <<'JSONL'
+  > {"expect":{"request_line":"POST /oauth/token HTTP/1.1"},"delay_ms":2000,"http":{"status":200,"json":{"access_token":"oauth-access-stale","refresh_token":"refresh-stale","expires_in":3600}}}
+  > JSONL
+  $ sse_item replaced >> script-replaced.jsonl
+  $ start_fake_server script-replaced.jsonl capture-replaced port-replaced
+  $ export SPICE_OPENAI_BASE_URL="http://127.0.0.1:$(cat port-replaced)/v1"
+  $ export SPICE_OPENAI_AUTH_BASE_URL="http://127.0.0.1:$(cat port-replaced)"
+  $ spice run --cwd "$PWD" --id replaced-run "replace during refresh" > replaced.out 2> replaced.err & refresher=$!
+  $ wait_for_file capture-replaced/request-1.json
+  $ printf replacement-api-key | spice auth save openai --api-key-stdin
+  Saved openai credential default
+  $ kill -0 "$refresher" && echo refresh-still-pending
+  refresh-still-pending
+  $ wait "$refresher"
+  $ cat replaced.out
+  refreshed answer
+  $ wait_fake_server
+  $ grep -c "authorization: Bearer replacement-api-key" capture-replaced/request-2.headers
+  1
+  $ grep -c "replacement-api-key" "$XDG_CONFIG_HOME/spice/auth.json"
+  1
+  $ grep -Ec "oauth-access-stale|refresh-stale" "$XDG_CONFIG_HOME/spice/auth.json"
+  0
+  [1]
 
 A provider 401 during a run forces one refresh and one retry, even when the
 local expiry looked fine — the provider is the authority on token validity.
@@ -160,7 +215,7 @@ document is not created, and a later run learns the same truth the same way.
   spice: blocked credential for provider openai: refresh_failed
   Hint: run `spice auth status openai` and the repair command it names
   [1]
-  $ test -e $SPICE_TEST_DATA_HOME/sessions/fail-run-1/session.json || echo not-created
+  $ test -e $SPICE_TEST_DATA_HOME/sessions/fail-run-1/session.log || echo not-created
   not-created
   $ spice run --cwd "$PWD" --id fail-run-2 "doomed prompt"
   permission: default

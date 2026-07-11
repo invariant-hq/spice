@@ -2,3 +2,8 @@
  (name fake_llama_server)
  (modules fake_llama_server)
  (libraries unix))
+
+(executable
+ (name account_lock_holder)
+ (modules account_lock_holder)
+ (libraries unix))

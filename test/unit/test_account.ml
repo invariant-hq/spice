@@ -188,6 +188,18 @@ let secret_contracts () =
   equal kind_value ~msg:"api key kind" Kind.Api_key (Secret.kind key);
   equal kind_value ~msg:"bearer kind" Kind.Bearer (Secret.kind token);
   equal kind_value ~msg:"oauth kind" Kind.OAuth (Secret.kind oauth);
+  is_true ~msg:"API-key state equality"
+    (Secret.equal key (Secret.api_key "sk-test"));
+  is_true ~msg:"OAuth state equality"
+    (Secret.equal oauth
+       (Secret.oauth ~access_token:"access" ~refresh_token:"refresh"
+          ~expires_at:123L ~account_id:"acct" ()));
+  is_false ~msg:"OAuth rotation changes state equality"
+    (Secret.equal oauth
+       (Secret.oauth ~access_token:"access-new" ~refresh_token:"refresh-new"
+          ~expires_at:42L ~account_id:"acct-1" ()));
+  is_false ~msg:"different credential kinds are unequal"
+    (Secret.equal key token);
   equal secret_view_value ~msg:"api key expose" (Api_key_secret "sk-test")
     (secret_view key);
   equal secret_view_value ~msg:"bearer expose" (Bearer_secret "bearer-test")

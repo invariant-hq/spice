@@ -47,19 +47,20 @@ let provider_error_of_host ~provider error =
   Spice_llm.Error.make ~kind:Spice_llm.Error.Auth ~provider
     (Spice_diagnostic.to_string (Host.Error.diagnostic error))
 
-let with_refresh_retry ~rebuild ~refresh client =
+let with_refresh_retry ~rebuild ~refresh credential client =
   let provider = Spice_llm.Client.provider client in
-  let current = ref client in
+  let current = ref (client, credential) in
   let run ~cancelled ~on_event request =
-    match Spice_llm.Client.response ~cancelled ~on_event !current request with
+    let client, credential = !current in
+    match Spice_llm.Client.response ~cancelled ~on_event client request with
     | Error error as result -> (
         match (Spice_llm.Error.kind error, Spice_llm.Error.phase error) with
         | Spice_llm.Error.Auth, Spice_llm.Error.Startup -> (
-            match refresh () with
+            match refresh credential with
             | Ok (Some credential) -> (
                 match rebuild credential with
                 | Ok client ->
-                    current := client;
+                    current := (client, credential);
                     Spice_llm.Client.response ~cancelled ~on_event client
                       request
                 | Error error -> Error (provider_error_of_host ~provider error))
@@ -134,33 +135,41 @@ let client ~sw ~stdenv ?observe_model_artifact ?name ?process host model =
               (Config.models (Host.config host))
               ~provider
           in
-          let* refreshed =
-            Account.refresh ~sw ~stdenv ~now:(timestamp_now stdenv) ?name
-              account provider
-          in
-          let credential = Option.value refreshed ~default:credential in
           let build credential =
             Host.Adapter.build adapter ~sw ~stdenv ?base_url (Some credential)
             |> Result.map
                  (with_model_artifact_prepare ~sw ~stdenv
                     ?observe_model_artifact adapter model)
           in
-          let* client = build credential in
-          match
-            ( Host.Adapter.refresh adapter,
-              Spice_account.Credential.kind credential )
-          with
-          | Some _, Spice_account.Secret.Kind.OAuth ->
-              let refresh () =
-                Account.refresh ~sw ~stdenv ~now:(timestamp_now stdenv)
-                  ~force:true ?name account provider
-              in
-              Ok (with_refresh_retry ~rebuild:build ~refresh client)
-          | ( Some _,
-              ( Spice_account.Secret.Kind.Api_key
-              | Spice_account.Secret.Kind.Bearer ) )
-          | None, _ ->
-              Ok client))
+          let* refreshed =
+            Account.refresh ~sw ~stdenv ~now:(timestamp_now stdenv) account
+              credential
+          in
+          match refreshed with
+          | None ->
+              Host.Adapter.build adapter ~sw ~stdenv ?base_url None
+              |> Result.map
+                   (with_model_artifact_prepare ~sw ~stdenv
+                      ?observe_model_artifact adapter model)
+          | Some credential -> (
+              let* client = build credential in
+              match
+                ( Host.Adapter.refresh adapter,
+                  Spice_account.Credential.kind credential )
+              with
+              | Some _, Spice_account.Secret.Kind.OAuth ->
+                  let refresh credential =
+                    Account.refresh ~sw ~stdenv ~now:(timestamp_now stdenv)
+                      ~force:true account credential
+                  in
+                  Ok
+                    (with_refresh_retry ~rebuild:build ~refresh credential
+                       client)
+              | ( Some _,
+                  ( Spice_account.Secret.Kind.Api_key
+                  | Spice_account.Secret.Kind.Bearer ) )
+              | None, _ ->
+                  Ok client)))
 
 let model_artifact_status host model =
   let provider = Spice_provider.Model.provider model in

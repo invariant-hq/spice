@@ -21,6 +21,7 @@ type settled =
   | Cancelled
 
 type logout = { env_still_active : string option }
+type revoked_logout = { logout : logout; revocation : Account.Revoke.t }
 
 let timestamp stdenv =
   Eio.Stdenv.clock stdenv |> Eio.Time.now |> Float.floor |> Int64.of_float
@@ -257,24 +258,43 @@ let device ~stdenv host ~provider ~method_id ?name ?cancel events =
               drive_device ~stdenv host ~provider ?name ?cancel ~events ~http
                 ~sw started))
 
+let env_still_active ~stdenv host ~provider ?name () =
+  match Account.load ~stdenv host with
+  | Error _ -> None
+  | Ok accounts -> (
+      match Account.credential accounts ?name provider with
+      | Ok (Some credential) -> (
+          match Spice_account.Credential.source credential with
+          | Spice_account.Credential.Source.Env env_name -> Some env_name
+          | Spice_account.Credential.Source.Process
+          | Spice_account.Credential.Source.Store _ ->
+              None)
+      | Ok None | Error _ -> None)
+
 let logout ~stdenv host ~provider ?name () =
   match Account.Store.remove ~stdenv ~host ~provider ?name () with
   | Error error -> Error (Account.Error.message error)
   | Ok () ->
-      let env_still_active =
-        match Account.load ~stdenv host with
-        | Error _ -> None
-        | Ok accounts -> (
-            match Account.credential accounts ?name provider with
-            | Ok (Some credential) -> (
-                match Spice_account.Credential.source credential with
-                | Spice_account.Credential.Source.Env env_name -> Some env_name
-                | Spice_account.Credential.Source.Process
-                | Spice_account.Credential.Source.Store _ ->
-                    None)
-            | Ok None | Error _ -> None)
-      in
-      Ok { env_still_active }
+      Ok { env_still_active = env_still_active ~stdenv host ~provider ?name () }
+
+let logout_revoke ~stdenv host ~provider ?name () =
+  let revocation =
+    Eio.Switch.run @@ fun sw ->
+    Account.revoke ~sw ~stdenv ~host ~provider ?name ()
+  in
+  match revocation with
+  | Error error -> Error (Account.Error.message error)
+  | Ok revocation ->
+      Ok
+        ({
+           logout =
+             {
+               env_still_active =
+                 env_still_active ~stdenv host ~provider ?name ();
+             };
+           revocation;
+         }
+          : revoked_logout)
 
 let open_browser uri =
   let uri = Uri.to_string uri in

@@ -113,6 +113,12 @@ type logout = {
           after removal, which logout cannot clear. *)
 }
 
+type revoked_logout = {
+  logout : logout;  (** The ordinary post-logout environment observation. *)
+  revocation : Spice_host.Account.Revoke.t;
+      (** The structured provider and local revocation outcome. *)
+}
+
 val logout :
   stdenv:Eio_unix.Stdenv.base ->
   Spice_host.Host.t ->
@@ -122,8 +128,20 @@ val logout :
   (logout, string) result
 (** [logout ~stdenv host ~provider ?name ()] removes the stored credential for
     [provider] under [name] (a missing credential is left missing) and reports
-    whether an environment credential remains active. Provider-side revocation
-    is not part of logout; it is a separate frontend concern. *)
+    whether an environment credential remains active. This ordinary logout
+    performs no provider I/O; use {!logout_revoke} for revocation. *)
+
+val logout_revoke :
+  stdenv:Eio_unix.Stdenv.base ->
+  Spice_host.Host.t ->
+  provider:Spice_llm.Provider.t ->
+  ?name:Spice_account.Credential.Name.t ->
+  unit ->
+  (revoked_logout, string) result
+(** [logout_revoke ~stdenv host ~provider ?name ()] attempts provider-side
+    revocation and conditionally removes the exact stored credential that was
+    revoked. A concurrent replacement is preserved. The result also reports an
+    environment credential that remains active. *)
 
 (** {1:browser Browser launching} *)
 

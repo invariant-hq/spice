@@ -68,6 +68,31 @@ module Error : sig
       host errors. *)
 end
 
+module Revoke : sig
+  (** Structured outcome of provider revocation and conditional local removal.
+  *)
+
+  type remote =
+    | Revoked
+    | Unsupported
+    | Failed of Spice_account.Problem.t
+        (** The provider-side outcome. Provider failure remains data because
+            logout still attempts the independent local removal. *)
+
+  type local =
+    | Removed
+    | Superseded
+        (** The local outcome. [Superseded] means another writer replaced the
+            credential while provider I/O was in flight, so the replacement was
+            preserved. *)
+
+  type t =
+    | Not_stored
+    | Settled of { remote : remote; local : local }
+        (** The complete revoke outcome. [Not_stored] performs no provider
+            request. *)
+end
+
 (** {1:stored-credentials Stored credentials} *)
 
 module Store : sig
@@ -226,28 +251,51 @@ val refresh :
   stdenv:Eio_unix.Stdenv.base ->
   now:Spice_account.timestamp ->
   ?force:bool ->
-  ?name:Spice_account.Credential.Name.t ->
   t ->
-  Spice_llm.Provider.t ->
+  Spice_account.Credential.t ->
   (Spice_account.Credential.t option, Host.Error.t) result
-(** [refresh ~sw ~stdenv ~now t provider] is the concurrency-safe OAuth refresh
-    transaction for [provider]'s stored credential.
+(** [refresh ~sw ~stdenv ~now t credential] returns a credential suitable for
+    the pending provider request, refreshing the stored slot represented by
+    [credential] when required.
 
-    Under the credential store lock it reloads the stored credential — another
-    process may have refreshed it already — and returns [Ok None] without a
-    provider request when there is no stored credential, the credential has no
-    refresh token, the registered adapter has no refresh capability, or the
-    credential is not within 300 seconds of expiry. [force] skips the expiry
-    test; the reload-first rule still applies, so concurrent processes cannot
-    spend the same rotated refresh token.
+    A non-stored credential, a provider without refresh support, or a fresh
+    credential returns the supplied snapshot unchanged without reading or
+    locking the store. When a refresh transaction is required, operations for
+    that provider/name slot are serialized across fibers and processes and the
+    current stored value is resolved under the lock. The store lock protects
+    only the snapshot and conditional commit; provider I/O runs without holding
+    it, so unrelated credential mutations remain responsive. If another writer
+    changes or removes the slot, its value wins and a stale provider response is
+    never persisted.
 
-    A successful provider refresh persists the rotated secret atomically and
-    returns the replacement credential. A permanent refresh rejection errors
-    with {!Host.Error.Blocked_credential} carrying
-    {!Spice_account.Problem.Refresh_failed}: the run that discovered the dead
-    refresh token fails immediately with the repair guidance, and nothing is
-    cached — the next run learns the same truth live. Transient failures change
-    nothing and return [Ok None].
+    [force] requests refresh even before local expiry, but only when the stored
+    secret still exactly matches [credential]. This lets concurrent recovery
+    from the same rejected access token spend a rotating refresh token once.
+    [Ok None] means the stored slot was removed. A transient provider failure
+    returns the unchanged current credential. A permanent refresh rejection
+    errors with {!Host.Error.Blocked_credential} only if the rejected secret is
+    still current. Once a successful provider response consumes the refresh
+    token, conditional settlement is protected from cancellation so the store
+    cannot retain that consumed token.
 
     The provider token endpoint honors the auth endpoint override reported by
     {!provider_auth_base_url}. *)
+
+val revoke :
+  sw:Eio.Switch.t ->
+  stdenv:Eio_unix.Stdenv.base ->
+  host:Host.t ->
+  provider:Spice_llm.Provider.t ->
+  ?name:Spice_account.Credential.Name.t ->
+  unit ->
+  (Revoke.t, Error.t) result
+(** [revoke ~sw ~stdenv ~host ~provider ?name ()] attempts provider revocation
+    for the stored credential and removes that exact credential locally even
+    when provider revocation is unsupported or fails.
+
+    Provider I/O holds only the provider/name credential lock, not the shared
+    store lock. The final removal is conditional: if another writer replaces the
+    credential while revocation is in flight, the replacement is preserved and
+    the local outcome is [Superseded]. Once the provider request completes,
+    conditional local removal is protected from cancellation. Concurrent
+    refresh and revoke of the same rotating token are serialized. *)
