@@ -124,9 +124,10 @@ module Artifact : sig
 
       Cancellation returns a {!Spice_llm.Error.Cancelled} error. HTTP, download,
       verification, and missing explicit-path failures return provider-boundary
-      errors with diagnostic messages. Interrupted or failed downloads may leave
-      a [.part] file next to the target path; only the verified final artifact
-      path is reported as installed. *)
+      errors with diagnostic messages. Interrupted and failed downloads remove
+      their private candidates; only a complete verified artifact is atomically
+      published at the final path. Abrupt process termination may leave an inert
+      private candidate that later installers never reuse. *)
 end
 
 val client :

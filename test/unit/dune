@@ -168,6 +168,20 @@
   unix))
 
 (test
+ (name test_llm_artifact)
+ (modules test_llm_artifact)
+ (libraries
+  windtrap
+  cohttp-eio
+  digestif
+  eio
+  eio.unix
+  eio_main
+  spice_llm
+  spice_llm_artifact
+  unix))
+
+(test
  (name test_patch)
  (modules test_patch)
  (libraries windtrap spice_patch spice_path))

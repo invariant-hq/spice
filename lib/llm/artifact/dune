@@ -1,0 +1,13 @@
+(library
+ (name spice_llm_artifact)
+ (libraries
+  cohttp
+  cohttp-eio
+  cstruct
+  digestif
+  eio
+  eio.unix
+  logs
+  spice_llm
+  unix
+  uri))

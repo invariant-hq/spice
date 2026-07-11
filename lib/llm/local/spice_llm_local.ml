@@ -211,8 +211,6 @@ let model_dir = function
         (fun dir -> dir / "spice" / "models")
         (default_xdg_dir "XDG_DATA_HOME" ~home_suffix:(".local" / "share"))
 
-let fs_path env path = Eio.Path.( / ) (Eio.Stdenv.fs env) path
-
 module Download = struct
   type phase = Checking | Downloading | Verifying | Installed
 
@@ -380,129 +378,32 @@ let download_progress ~observe_download ~model ~label ~path ~received ~total
   emit_download ~observe_download
     { Download.model; label; path; received; total; phase }
 
-let status_code response =
-  Cohttp.Code.code_of_status (Cohttp.Response.status response)
-
-let header response name =
-  Cohttp.Header.get (Cohttp.Response.headers response) name
-
-let rec download_response ~sw ~http ~remaining uri =
-  let response, body = Cohttp_eio.Client.call http ~sw `GET uri in
-  let code = status_code response in
-  if code >= 300 && code < 400 then
-    match header response "location" with
-    | Some location when remaining > 0 ->
-        download_response ~sw ~http ~remaining:(remaining - 1)
-          (Uri.of_string location)
-    | Some _ -> Error "too many redirects while downloading local model"
-    | None -> Error "local model download redirect did not include Location"
-  else if code >= 200 && code < 300 then Ok (response, body)
-  else Error (Printf.sprintf "local model download returned HTTP %d" code)
-
-let verify_file_size path expected =
-  match Unix.stat path with
-  | { Unix.st_size; _ } when Int64.equal (Int64.of_int st_size) expected ->
-      Ok ()
-  | { Unix.st_size; _ } ->
-      Error (Printf.sprintf "expected %Ld bytes, got %d bytes" expected st_size)
-  | exception Unix.Unix_error (code, _, _) -> Error (Unix.error_message code)
-
-let write_body_to_file ~cancelled ?observe_download ~model ~label ~path ~total
-    body =
-  let part_path = path ^ ".part" in
-  let output = open_out_bin part_path in
-  Fun.protect
-    ~finally:(fun () -> close_out_noerr output)
-    (fun () ->
-      let chunk = Cstruct.create 1_048_576 in
-      let last_emit = ref 0L in
-      let rec loop received ctx =
-        if cancelled () then Error `Cancelled
-        else
-          match Eio.Flow.single_read body chunk with
-          | exception End_of_file ->
-              let digest = Digestif.SHA256.(to_hex (get ctx)) in
-              Ok (received, digest)
-          | count ->
-              let data = Cstruct.to_string (Cstruct.sub chunk 0 count) in
-              output_string output data;
-              let received = Int64.add received (Int64.of_int count) in
-              let ctx = Digestif.SHA256.feed_string ctx data in
-              let should_emit =
-                Int64.sub received !last_emit >= 64_000_000L
-                || Option.exists (Int64.equal received) total
-              in
-              if should_emit then begin
-                last_emit := received;
-                download_progress ~observe_download ~model ~label ~path
-                  ~received ~total ~phase:Download.Downloading
-              end;
-              loop received ctx
-      in
-      loop 0L Digestif.SHA256.empty)
-
-let download_artifact ~sw ~env ~http ~cancelled ?observe_download ~dir entry
-    ~path =
+let download_artifact ~env ~http ~cancelled ?observe_download entry ~path =
   let id = entry.Manifest.id in
   let label = entry.Manifest.file in
   let size = entry.Manifest.size in
   Log.info (fun m -> m "downloading model=%s size=%Ld" id size);
-  let* () = if cancelled () then Error (cancelled_error ()) else Ok () in
-  try
-    Eio.Path.mkdirs ~exists_ok:true ~perm:0o700 (fs_path env dir);
-    download_progress ~observe_download ~model:id ~label ~path ~received:0L
-      ~total:(Some size) ~phase:Download.Checking;
-    let* response, body =
-      match
-        download_response ~sw ~http ~remaining:8
-          (Uri.of_string (Manifest.url entry))
-      with
-      | Ok _ as result -> result
-      | Error message -> startup_provider_error message
+  let observe phase ~received ~total =
+    let phase =
+      match phase with
+      | Spice_llm_artifact.Checking -> Download.Checking
+      | Spice_llm_artifact.Downloading -> Download.Downloading
+      | Spice_llm_artifact.Verifying -> Download.Verifying
+      | Spice_llm_artifact.Installed -> Download.Installed
     in
-    let total =
-      match header response "content-length" with
-      | Some value -> Int64.of_string_opt value
-      | None -> None
-    in
-    download_progress ~observe_download ~model:id ~label ~path ~received:0L
-      ~total ~phase:Download.Downloading;
-    let* received, digest =
-      match
-        write_body_to_file ~cancelled ?observe_download ~model:id ~label ~path
-          ~total body
-      with
-      | Ok _ as result -> result
-      | Error `Cancelled -> Error (cancelled_error ())
-    in
-    let part_path = path ^ ".part" in
-    download_progress ~observe_download ~model:id ~label ~path ~received
-      ~total:(Some size) ~phase:Download.Verifying;
-    let* () =
-      match verify_file_size part_path size with
-      | Ok () -> Ok ()
-      | Error message -> startup_provider_error message
-    in
-    let* () =
-      if String.equal digest entry.Manifest.sha256 then Ok ()
-      else
-        startup_provider_error
-          (Printf.sprintf "expected SHA-256 %s, got %s" entry.Manifest.sha256
-             digest)
-    in
-    Eio.Path.rename (fs_path env part_path) (fs_path env path);
-    download_progress ~observe_download ~model:id ~label ~path ~received:size
-      ~total:(Some size) ~phase:Download.Installed;
-    Log.info (fun m -> m "model installed model=%s path=%s" id path);
-    Ok path
-  with
-  | Unix.Unix_error (code, _, _) ->
-      startup_provider_error (Unix.error_message code)
-  | Failure message -> startup_provider_error message
-  | Invalid_argument message -> startup_provider_error message
+    download_progress ~observe_download ~model:id ~label ~path ~received ~total
+      ~phase
+  in
+  let* () =
+    Spice_llm_artifact.install ~env ~http ~provider ~cancelled ~observe
+      ~url:(Manifest.url entry) ~path ~size ~sha256:entry.Manifest.sha256
+  in
+  Log.info (fun m -> m "model installed model=%s path=%s" id path);
+  Ok path
 
 let ensure_model_path ?http ?observe_download ?(force = false) ~sw ~env
     ~cancelled config id =
+  Eio.Switch.check sw;
   let* () = if cancelled () then Error (cancelled_error ()) else Ok () in
   match model_dir config.Config.model_dir with
   | Error message -> startup_provider_error message
@@ -521,8 +422,8 @@ let ensure_model_path ?http ?observe_download ?(force = false) ~sw ~env
                      id path)
             | Some http ->
                 let* () = guard_download ~config ~force entry in
-                download_artifact ~sw ~env ~http ~cancelled ?observe_download
-                  ~dir entry ~path)
+                download_artifact ~env ~http ~cancelled ?observe_download entry
+                  ~path)
       | None ->
           if Sys.file_exists id then Ok id
           else
