@@ -26,6 +26,23 @@
 module Error : sig
   (** Recoverable watcher errors. *)
 
+  type scan_limit =
+    | Directory_entries of { path : string; max_entries : int }
+        (** One directory contains more entries than a scan can retain before
+            sorting. *)
+    | Entries of { max_entries : int }
+        (** The complete tree contains more entries than a snapshot can
+            retain. *)
+    | Path_bytes of { max_bytes : int }
+        (** Retained relative paths and directory-entry names exceed the
+            cumulative byte budget. *)
+    | Depth of { max_depth : int }
+        (** The tree is nested beyond the supported scan depth. *)
+    | Duration of { max_seconds : float }
+        (** Monotonic elapsed scan work exceeds the time budget. *)
+  (** The type for finite snapshot-scan limits. Limit errors identify the
+      rejected dimension and its configured maximum. *)
+
   type t =
     | Invalid_root of { root : string; reason : string }
         (** [root] is not an absolute existing directory root accepted by
@@ -43,6 +60,9 @@ module Error : sig
 
             [backend] is a stable diagnostic class such as ["native"], not a
             platform-specific backend name. *)
+    | Scan_limit of { root : string; limit : scan_limit }
+        (** Capturing a complete snapshot would exceed a finite work or memory
+            limit. No partial snapshot is installed. *)
 
   val message : t -> string
   (** [message e] is a human-readable diagnostic for [e].
@@ -158,6 +178,12 @@ val make :
     values raise [Invalid_argument]. Invalid roots, initial scan failures, or an
     unavailable required native backend are returned as {!Error.t}.
 
+    Every snapshot is complete or rejected. Scans retain at most 100,000 tree
+    entries, 16,384 entries in one directory, and 32 MiB of cumulative path
+    data; they traverse at most 64 levels and perform at most five seconds of
+    monotonic elapsed work. Exceeding a limit returns {!Error.Scan_limit}; no
+    partial baseline or native watch set is installed.
+
     The watcher is closed automatically when [sw] is released. *)
 
 val root : t -> string
@@ -200,8 +226,10 @@ val watch :
     own fiber; exceptions raised by these callbacks are not caught.
 
     Calling the returned function, or releasing [sw], stops the watcher; both
-    are idempotent. The watcher's arguments are those of {!make}; invalid timing
-    values raise [Invalid_argument] before [watch] returns. *)
+    are idempotent. Stop also cancels a snapshot under construction at its next
+    filesystem-operation boundary. Cancellation invokes none of [on_ready],
+    [on_error], or [f]. The watcher's arguments are those of {!make}; invalid
+    timing values raise [Invalid_argument] before [watch] returns. *)
 
 val poll : t -> (Event.t list, Error.t) result
 (** [poll t] rescans immediately and advances [t]'s baseline to the current
@@ -211,7 +239,8 @@ val poll : t -> (Event.t list, Error.t) result
     to the current snapshot. [events] may be empty. If the root has been
     deleted, the current snapshot is empty and includes deletion events for the
     root and all previously observed descendants. [Ok []] is returned if [t] is
-    already closed. *)
+    already closed. A scan that exceeds a limit returns {!Error.Scan_limit} and
+    leaves the previous complete baseline unchanged. *)
 
 val next : t -> (Event.t list option, Error.t) result
 (** [next t] waits for the next non-empty change list.
@@ -224,7 +253,9 @@ val next : t -> (Event.t list option, Error.t) result
 val reset : t -> (unit, Error.t) result
 (** [reset t] replaces [t]'s baseline with the current snapshot without
     reporting the diff. Pending native wakeups are discarded before the new
-    baseline is captured. [Ok ()] is returned if [t] is already closed. *)
+    baseline is captured. [Ok ()] is returned if [t] is already closed. A scan
+    that exceeds a limit returns {!Error.Scan_limit} and leaves the previous
+    complete baseline unchanged. *)
 
 val iter : t -> f:(Event.t list -> unit) -> (unit, Error.t) result
 (** [iter t ~f] calls [f events] for each non-empty change list until [t] is

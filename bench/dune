@@ -19,10 +19,16 @@
   spice_session
   spice_session_run))
 
+(executable
+ (name bench_fswatch)
+ (modules bench_fswatch)
+ (libraries eio eio_main spice_fswatch unix))
+
 (rule
  (alias bench)
  (action
   (progn
    (run ./bench_path.exe)
    (run ./bench_diff.exe)
-   (run ./bench_session.exe))))
+   (run ./bench_session.exe)
+   (run ./bench_fswatch.exe))))

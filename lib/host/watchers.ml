@@ -95,8 +95,7 @@ module Fswatch = struct
         if notice then publish inbox ~root events;
         on_events events)
       ~on_error:(fun error ->
-        if notice then
-          publish_failure inbox ~title:"Filesystem watcher stopped" error)
+        publish_failure inbox ~title:"Filesystem watcher stopped" error)
       ()
 end
 

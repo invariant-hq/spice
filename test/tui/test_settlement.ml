@@ -171,6 +171,82 @@ let%expect_test "run construction does not read a workspace-sized review source"
     (major_words < 4_000_000.);
   [%expect {| construction allocation bounded: true |}]
 
+let%expect_test "an oversized watcher snapshot warns and run close stays bounded"
+    =
+  Project.with_temp "bounded-fswatch-start" @@ fun project ->
+  Project.write_scratch project "config/spice/config.json"
+    {|{"notices":{"fswatch":false,"cr_comments":true,"dune_diagnostics":false,"dune_build":false},"workspace":{"tooling":"off"}}|};
+  let rec make_deep_tree parent remaining =
+    if remaining > 0 then begin
+      let child = Filename.concat parent "nested" in
+      Unix.mkdir child 0o755;
+      make_deep_tree child (remaining - 1)
+    end
+  in
+  let dependencies = Project.path project "node_modules" in
+  Unix.mkdir dependencies 0o755;
+  make_deep_tree dependencies 80;
+  let bindings = Project.bindings project in
+  Project.apply bindings;
+  let process_env = Project.env_snapshot bindings in
+  Eio_main.run @@ fun stdenv ->
+  Eio.Switch.run @@ fun sw ->
+  let config =
+    Host.Config.load ~stdenv ~process_env ~cwd:(Project.root project) ()
+    |> get_or_fail Host.Config.Error.pp
+  in
+  let host =
+    Host.Host.load ~stdenv ~registry:Spice_host_builtin.registry ~config ()
+    |> get_or_fail Host.Host.Error.pp
+  in
+  let workspace =
+    Spice_workspace.single (Spice_workspace.Root.make (Host.Config.cwd config))
+  in
+  let sandbox =
+    Host.Sandbox.resolve ~flag:Host.Sandbox.Mode.Danger_full_access ~stdenv
+      ~env:(Host.Env.get process_env) ~workspace ()
+  in
+  let plan =
+    Host.Run.plan ~workspace ~sandbox
+      ~permission:(Host.Config.permission_posture config)
+      ()
+    |> get_or_fail Host.Sandbox.Gate_error.pp
+  in
+  let store = Host.Session.store ~stdenv host in
+  let run =
+    Host.Run.start ~sw ~stdenv host plan ~store
+      ~session:(Session.Id.of_string "session-bounded-fswatch-start")
+      ~http:(Spice_host_builtin.web_http_client stdenv)
+      ~fetch_https:(Spice_host_builtin.web_fetch_https ())
+      ()
+    |> get_or_fail Host.Host.Error.pp
+  in
+  let clock = Eio.Stdenv.clock stdenv in
+  let warning =
+    Eio.Time.with_timeout_exn clock 3.0 (fun () ->
+        while Host.Notice_queue.is_empty (Host.Run.notices run) do
+          Eio.Time.sleep clock 0.01
+        done;
+        let batch = Host.Notice_queue.take (Host.Run.notices run) in
+        let notices = Host.Notice_queue.notices batch in
+        Host.Notice_queue.commit batch;
+        List.hd notices)
+  in
+  Printf.printf "watcher limit visible: %b\n"
+    (String.equal (Protocol.Notice.title warning) "Filesystem watcher stopped"
+    &&
+    match Protocol.Notice.body warning with
+    | Some body -> String.includes ~affix:"depth" body
+    | None -> false);
+  Eio.Time.with_timeout_exn clock 2.0 (fun () -> Host.Run.close run)
+  |> Result.get_ok;
+  print_endline "run close completed";
+  [%expect
+    {|
+    watcher limit visible: true
+    run close completed
+    |}]
+
 let%expect_test
     "a durable root settlement is published before unrelated child teardown" =
   Project.with_temp "settlement-owner" @@ fun project ->

@@ -8,11 +8,19 @@ let log_src = Logs.Src.create "spice.fswatch" ~doc:"Filesystem watcher"
 module Log = (val Logs.src_log log_src : Logs.LOG)
 
 module Error = struct
+  type scan_limit =
+    | Directory_entries of { path : string; max_entries : int }
+    | Entries of { max_entries : int }
+    | Path_bytes of { max_bytes : int }
+    | Depth of { max_depth : int }
+    | Duration of { max_seconds : float }
+
   type t =
     | Invalid_root of { root : string; reason : string }
     | Invalid_path of { path : string; reason : string }
     | Io of { path : string; reason : string }
     | Backend_unavailable of { backend : string; reason : string }
+    | Scan_limit of { root : string; limit : scan_limit }
 
   let message = function
     | Invalid_root { root; reason } ->
@@ -23,6 +31,31 @@ module Error = struct
         Printf.sprintf "filesystem error at %S: %s" path reason
     | Backend_unavailable { backend; reason } ->
         Printf.sprintf "%s backend is unavailable: %s" backend reason
+    | Scan_limit { root; limit } -> (
+        match limit with
+        | Directory_entries { path; max_entries } ->
+            Printf.sprintf
+              "filesystem watcher scan for %S exceeded the limit of %d entries \
+               in directory %S"
+              root max_entries path
+        | Entries { max_entries } ->
+            Printf.sprintf
+              "filesystem watcher scan for %S exceeded the limit of %d entries"
+              root max_entries
+        | Path_bytes { max_bytes } ->
+            Printf.sprintf
+              "filesystem watcher scan for %S exceeded the limit of %d path \
+               bytes"
+              root max_bytes
+        | Depth { max_depth } ->
+            Printf.sprintf
+              "filesystem watcher scan for %S exceeded the depth limit of %d"
+              root max_depth
+        | Duration { max_seconds } ->
+            Printf.sprintf
+              "filesystem watcher scan for %S exceeded the %.1f second work \
+               limit"
+              root max_seconds)
 
   let pp ppf error = Format.pp_print_string ppf (message error)
 end
@@ -126,18 +159,84 @@ let same_file a b =
       && Float.equal a.ctime b.ctime
   | (Directory | Regular_file | Symlink | Other), _ -> false
 
-let read_dir path =
+let max_scan_entries = 100_000
+let max_directory_entries = 16_384
+let max_scan_path_bytes = 32 * 1024 * 1024
+let max_scan_depth = 64
+let max_scan_seconds = 5.0
+
+(* Every directory read and [lstat] crosses this boundary. The native result is
+   unboxed and the stub is noalloc so deadline enforcement does not add one
+   boxed float per filesystem entry; bytecode uses the allocating wrapper. *)
+external monotonic_seconds : unit -> (float[@unboxed])
+  = "spice_fswatch_monotonic_seconds_bytecode"
+    "spice_fswatch_monotonic_seconds"
+  [@@noalloc]
+
+exception Cancel_scan
+
+type scan_budget = {
+  root : string;
+  cancelled : bool Atomic.t;
+  deadline : float;
+  mutable entries : int;
+  mutable path_bytes : int;
+}
+
+let scan_limit budget limit =
+  error (Error.Scan_limit { root = budget.root; limit })
+
+let check_scan budget =
+  if Atomic.get budget.cancelled then raise_notrace Cancel_scan
+  else if monotonic_seconds () > budget.deadline then
+    scan_limit budget (Error.Duration { max_seconds = max_scan_seconds })
+  else Ok ()
+
+let add_path_work budget bytes =
+  budget.path_bytes <- budget.path_bytes + bytes;
+  if budget.path_bytes > max_scan_path_bytes then
+    scan_limit budget (Error.Path_bytes { max_bytes = max_scan_path_bytes })
+  else Ok ()
+
+let add_entry_work budget ~absolute ~depth =
+  if depth > max_scan_depth then
+    scan_limit budget (Error.Depth { max_depth = max_scan_depth })
+  else begin
+    budget.entries <- budget.entries + 1;
+    if budget.entries > max_scan_entries then
+      scan_limit budget (Error.Entries { max_entries = max_scan_entries })
+    else
+      let relative_bytes =
+        max 0 (String.length absolute - String.length budget.root)
+      in
+      add_path_work budget relative_bytes
+  end
+
+let read_dir budget path =
   let dir = Unix.opendir path in
   Fun.protect
     ~finally:(fun () -> Unix.closedir dir)
     (fun () ->
-      let rec loop acc =
-        match Unix.readdir dir with
-        | "." | ".." -> loop acc
-        | name -> loop (name :: acc)
-        | exception End_of_file -> List.sort String.compare acc
+      let rec loop count acc =
+        match check_scan budget with
+        | Error _ as error -> error
+        | Ok () -> (
+            match Unix.readdir dir with
+            | "." | ".." -> loop count acc
+            | name ->
+                let count = count + 1 in
+                if count > max_directory_entries then
+                  scan_limit budget
+                    (Error.Directory_entries
+                       { path; max_entries = max_directory_entries })
+                else begin
+                  match add_path_work budget (String.length name) with
+                  | Error _ as error -> error
+                  | Ok () -> loop count (name :: acc)
+                end
+            | exception End_of_file -> Ok (List.sort String.compare acc))
       in
-      loop [])
+      loop 0 [])
 
 let relative_child parent name =
   match Spice_path.Rel.add_component parent name with
@@ -150,24 +249,31 @@ let add_file relative file snapshot =
 let add_dir absolute snapshot =
   { snapshot with dirs = absolute :: snapshot.dirs }
 
-let rec scan_entry ~ignore absolute relative snapshot =
+let rec scan_entry ~budget ~ignore ~depth absolute relative snapshot =
   if ignore relative then Ok snapshot
   else
-    match Unix.lstat absolute with
-    | exception Unix.Unix_error (Unix.ENOENT, _, _) -> Ok snapshot
-    | exception ex -> unix_error absolute ex
-    | stats -> (
-        let file = file_of_stats stats in
-        let snapshot = add_file relative file snapshot in
-        match file.kind with
-        | Directory ->
-            scan_dir ~ignore absolute relative (add_dir absolute snapshot)
-        | Regular_file | Symlink | Other -> Ok snapshot)
+    match check_scan budget with
+    | Error _ as error -> error
+    | Ok () -> (
+        match add_entry_work budget ~absolute ~depth with
+        | Error _ as error -> error
+        | Ok () -> (
+            match Unix.lstat absolute with
+            | exception Unix.Unix_error (Unix.ENOENT, _, _) -> Ok snapshot
+            | exception ex -> unix_error absolute ex
+            | stats ->
+                let file = file_of_stats stats in
+                let snapshot = add_file relative file snapshot in
+                match file.kind with
+                | Directory ->
+                    scan_dir ~budget ~ignore ~depth absolute relative
+                      (add_dir absolute snapshot)
+                | Regular_file | Symlink | Other -> Ok snapshot))
 
-and scan_dir ~ignore absolute relative snapshot =
+and scan_dir ~budget ~ignore ~depth absolute relative snapshot =
   let names =
-    match read_dir absolute with
-    | names -> Ok names
+    match read_dir budget absolute with
+    | result -> result
     | exception Unix.Unix_error ((Unix.ENOENT | Unix.ENOTDIR), _, _) -> Ok []
     | exception ex -> unix_error absolute ex
   in
@@ -182,19 +288,37 @@ and scan_dir ~ignore absolute relative snapshot =
             | Ok child_relative -> (
                 let child_absolute = Filename.concat absolute name in
                 match
-                  scan_entry ~ignore child_absolute child_relative snapshot
+                  scan_entry ~budget ~ignore ~depth:(depth + 1) child_absolute
+                    child_relative snapshot
                 with
                 | Error _ as error -> error
                 | Ok snapshot -> loop snapshot names))
       in
       loop snapshot names
 
-let scan ~root ~ignore =
-  scan_entry ~ignore root Spice_path.Rel.root empty_snapshot
+let scan ~root ~ignore ~cancelled =
+  let started = monotonic_seconds () in
+  if not (Float.is_finite started) then
+    io_error root "the system monotonic clock is unavailable"
+  else
+    let budget =
+      {
+        root;
+        cancelled;
+        deadline = started +. max_scan_seconds;
+        entries = 0;
+        path_bytes = 0;
+      }
+    in
+    scan_entry ~budget ~ignore ~depth:0 root Spice_path.Rel.root empty_snapshot
 
-let scan_in_systhread ~root ~ignore =
+type 'a scan_result = Finished of ('a, Error.t) result | Cancelled
+
+let scan_in_systhread ~root ~ignore ~cancelled =
   Eio_unix.run_in_systhread ~label:"spice-file-watcher-scan" (fun () ->
-      scan ~root ~ignore)
+      match scan ~root ~ignore ~cancelled with
+      | result -> Finished result
+      | exception Cancel_scan -> Cancelled)
 
 let diff before after =
   let add_event path kind acc = { Event.path; kind } :: acc in
@@ -507,6 +631,7 @@ type t = {
   settle_delay : float;
   ignore : Spice_path.Rel.t -> bool;
   backend_preference : backend_preference;
+  scan_cancelled : bool Atomic.t;
   close_mutex : Mutex.t;
   wakeups : wakeup Eio.Stream.t;
   mutable snapshot : snapshot;
@@ -524,12 +649,13 @@ let mark_closed t =
         true
       end)
 
-let root t = t.root
+let root (t : t) = t.root
 
 let backend t =
   match t.selected_backend with Polling -> `Polling | Native _ -> `Native
 
 let close t =
+  Atomic.set t.scan_cancelled true;
   if mark_closed t then begin
     Log.info (fun m -> m "watcher stopped root=%s" t.root);
     Eio.Stream.add t.wakeups Closed;
@@ -570,22 +696,28 @@ let check_timing ~caller name value =
       (Printf.sprintf "Spice_fswatch.%s: %s=%g must be positive and finite"
          caller name value)
 
-let make ~sw ~clock ?(backend = `Best) ?(poll_interval = 0.25)
-    ?(settle_delay = 0.05) ?(ignore = fun _ -> false) ~root () =
+let make_with_cancel ~scan_cancelled ~sw ~clock ?(backend = `Best)
+    ?(poll_interval = 0.25) ?(settle_delay = 0.05)
+    ?(ignore = fun _ -> false) ~root () =
   check_timing ~caller:"make" "poll_interval" poll_interval;
   check_timing ~caller:"make" "settle_delay" settle_delay;
   let initialized =
     Eio_unix.run_in_systhread ~label:"spice-file-watcher-init" (fun () ->
         match validate_root root with
-        | Error _ as error -> error
+        | Error _ as error -> Finished error
         | Ok root -> (
-            match scan ~root ~ignore with
-            | Error _ as error -> error
-            | Ok snapshot -> Ok (root, snapshot)))
+            match scan ~root ~ignore ~cancelled:scan_cancelled with
+            | result ->
+                Finished
+                  (match result with
+                  | Error _ as error -> error
+                  | Ok snapshot -> Ok (root, snapshot))
+            | exception Cancel_scan -> Cancelled))
   in
   match initialized with
-  | Error _ as error -> error
-  | Ok (root, snapshot) -> (
+  | Cancelled -> Cancelled
+  | Finished (Error _ as error) -> Finished error
+  | Finished (Ok (root, snapshot)) -> (
       let selected_backend =
         match backend with
         | `Polling -> Ok Polling
@@ -603,7 +735,7 @@ let make ~sw ~clock ?(backend = `Best) ?(poll_interval = 0.25)
             | Some native -> Ok (Native native))
       in
       match selected_backend with
-      | Error _ as error -> error
+      | Error _ as error -> Finished error
       | Ok selected_backend ->
           let t =
             {
@@ -613,6 +745,7 @@ let make ~sw ~clock ?(backend = `Best) ?(poll_interval = 0.25)
               settle_delay;
               ignore;
               backend_preference = backend;
+              scan_cancelled;
               close_mutex = Mutex.create ();
               wakeups = Eio.Stream.create max_int;
               snapshot;
@@ -659,7 +792,15 @@ let make ~sw ~clock ?(backend = `Best) ?(poll_interval = 0.25)
                 (match selected_backend with
                 | Polling -> "polling"
                 | Native _ -> "native"));
-          Ok t)
+          Finished (Ok t))
+
+let make ~sw ~clock ?backend ?poll_interval ?settle_delay ?ignore ~root () =
+  match
+    make_with_cancel ~scan_cancelled:(Atomic.make false) ~sw ~clock ?backend
+      ?poll_interval ?settle_delay ?ignore ~root ()
+  with
+  | Finished result -> result
+  | Cancelled -> assert false
 
 let handle_native_rebuild_result t native = function
   | Ok () -> Ok ()
@@ -702,9 +843,13 @@ let set_snapshot t snapshot =
 let poll t =
   if is_closed t then Ok []
   else
-    match scan_in_systhread ~root:t.root ~ignore:t.ignore with
-    | Error _ as error -> error
-    | Ok snapshot -> (
+    match
+      scan_in_systhread ~root:t.root ~ignore:t.ignore
+        ~cancelled:t.scan_cancelled
+    with
+    | Cancelled -> Ok []
+    | Finished (Error _ as error) -> error
+    | Finished (Ok snapshot) -> (
         match set_snapshot t snapshot with
         | Error _ as error -> error
         | Ok events ->
@@ -722,9 +867,13 @@ let reset t =
     | Polling -> ()
     | Native native -> Native.drain native
     end;
-    match scan_in_systhread ~root:t.root ~ignore:t.ignore with
-    | Error _ as error -> error
-    | Ok snapshot -> (
+    match
+      scan_in_systhread ~root:t.root ~ignore:t.ignore
+        ~cancelled:t.scan_cancelled
+    with
+    | Cancelled -> Ok ()
+    | Finished (Error _ as error) -> error
+    | Finished (Ok snapshot) -> (
         t.snapshot <- snapshot;
         match t.selected_backend with
         | Polling -> Ok ()
@@ -805,20 +954,28 @@ let watch ~sw ~clock ?backend ?(poll_interval = 0.25) ?(settle_delay = 0.05)
      the mutex if a stop arrived while [make] was scanning. This is the same
      start/close-race guard [next]'s [close] contract relies on. *)
   let watcher = ref None and stopped = ref false in
+  let scan_cancelled = Atomic.make false in
   let mutex = Eio.Mutex.create () in
   let stop () =
+    Atomic.set scan_cancelled true;
     Eio.Mutex.use_rw ~protect:true mutex (fun () ->
         stopped := true;
         Option.iter close !watcher)
   in
   Eio.Fiber.fork_daemon ~sw (fun () ->
       Eio.Switch.run ~name:"spice-fswatch" (fun watch_sw ->
+          Eio.Fiber.fork_daemon ~sw:watch_sw (fun () ->
+              (try Eio.Fiber.await_cancel ()
+               with Eio.Cancel.Cancelled _ -> ());
+              Atomic.set scan_cancelled true;
+              `Stop_daemon);
           match
-            make ~sw:watch_sw ~clock ?backend ~poll_interval ~settle_delay
-              ?ignore ~root ()
+            make_with_cancel ~scan_cancelled ~sw:watch_sw ~clock ?backend
+              ~poll_interval ~settle_delay ?ignore ~root ()
           with
-          | Error e -> on_error e
-          | Ok w -> (
+          | Cancelled -> ()
+          | Finished (Error e) -> on_error e
+          | Finished (Ok w) -> (
               let ready =
                 Eio.Mutex.use_rw ~protect:true mutex (fun () ->
                     watcher := Some w;

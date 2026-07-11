@@ -171,6 +171,22 @@ let construction_rejects_invalid_timing_values () =
   expect_invalid_argument "invalid settle delay" (fun () ->
       Fswatch.make ~sw ~clock ~backend:`Polling ~settle_delay:0.0 ~root ())
 
+let construction_rejects_overdeep_snapshot () =
+  with_temp_dir @@ fun root ->
+  let rec make_deep_tree parent remaining =
+    if remaining > 0 then begin
+      let child = path parent "nested" in
+      Unix.mkdir child 0o755;
+      make_deep_tree child (remaining - 1)
+    end
+  in
+  make_deep_tree root 65;
+  with_eio @@ fun ~sw ~clock ->
+  expect_error "overdeep snapshot"
+    (Fswatch.make ~sw ~clock ~backend:`Polling ~root ()) (function
+      | Error.Scan_limit { limit = Error.Depth { max_depth = 64 }; _ } -> ()
+      | error -> failf "unexpected error: %a" Error.pp error)
+
 let watch_rejects_invalid_timing_values () =
   with_temp_dir @@ fun root ->
   with_eio @@ fun ~sw ~clock ->
@@ -563,6 +579,57 @@ let watch_stop_is_idempotent () =
   equal int ~msg:"repeated stop stays stopped and delivers nothing" 0
     (Eio.Stream.length events)
 
+let watch_stop_cancels_snapshot_construction () =
+  with_temp_dir @@ fun root ->
+  for i = 1 to 200 do
+    write_file (path root (Printf.sprintf "%03d" i)) "x"
+  done;
+  with_eio @@ fun ~sw:_ ~clock ->
+  let entered = Atomic.make false in
+  let gate_mutex = Mutex.create () in
+  let gate_condition = Condition.create () in
+  let release = ref false in
+  let scanned = Atomic.make 0 in
+  let callbacks = Atomic.make 0 in
+  let ignore _path =
+    Atomic.set scanned (Atomic.get scanned + 1);
+    Atomic.set entered true;
+    Mutex.lock gate_mutex;
+    while not !release do
+      Condition.wait gate_condition gate_mutex
+    done;
+    Mutex.unlock gate_mutex;
+    false
+  in
+  let release_scan () =
+    Mutex.protect gate_mutex (fun () ->
+        release := true;
+        Condition.broadcast gate_condition)
+  in
+  Eio.Time.with_timeout_exn clock 2.0 (fun () ->
+      Eio.Switch.run @@ fun child ->
+      let stop =
+        Fswatch.watch ~sw:child ~clock ~backend:`Polling ~ignore ~root
+          ~on_ready:(fun _ -> Atomic.set callbacks (Atomic.get callbacks + 1))
+          ~on_error:(fun _ -> Atomic.set callbacks (Atomic.get callbacks + 1))
+          ~f:(fun _ -> Atomic.set callbacks (Atomic.get callbacks + 1))
+          ()
+      in
+      Fun.protect
+        ~finally:(fun () ->
+          stop ();
+          release_scan ())
+        (fun () ->
+          while not (Atomic.get entered) do
+            Eio.Time.sleep clock 0.001
+          done;
+          stop ();
+          release_scan ()));
+  equal int ~msg:"cancellation stops after the in-flight entry" 1
+    (Atomic.get scanned);
+  equal int ~msg:"cancelled construction invokes no callbacks" 0
+    (Atomic.get callbacks)
+
 let watch_stop_during_callback () =
   with_temp_dir @@ fun root ->
   with_eio @@ fun ~sw ~clock ->
@@ -680,6 +747,8 @@ let () =
           test "rejects invalid roots" construction_rejects_invalid_roots;
           test "rejects invalid timing values"
             construction_rejects_invalid_timing_values;
+          test "rejects overdeep snapshots"
+            construction_rejects_overdeep_snapshot;
           test "watch rejects invalid timing values"
             watch_rejects_invalid_timing_values;
         ];
@@ -724,6 +793,8 @@ let () =
           test ~timeout:3.0 "delivers batches until stopped"
             watch_delivers_batches_until_stopped;
           test ~timeout:3.0 "stop is idempotent" watch_stop_is_idempotent;
+          test ~timeout:3.0 "stop cancels snapshot construction"
+            watch_stop_cancels_snapshot_construction;
           test ~timeout:3.0 "stop during callback" watch_stop_during_callback;
           test ~timeout:3.0 "reports construction failure to on_error"
             watch_reports_construction_failure;

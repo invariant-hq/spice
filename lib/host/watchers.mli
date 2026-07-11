@@ -39,7 +39,9 @@ module Fswatch : sig
       failure enqueues a warning notice instead of failing the run. A later
       watcher failure enqueues one warning notice and stops that watcher daemon.
       [notice] defaults to [true]; when [false], the watcher still invokes
-      [on_events] but publishes no filesystem notices.
+      [on_events] but publishes no file-change notices. Operational failure
+      warnings remain enabled because a failed shared watcher also makes every
+      [on_events] observer unavailable.
 
       [on_events], when supplied, is called with each non-empty batch after
       {!default_ignore} has been applied and before the notice body truncates

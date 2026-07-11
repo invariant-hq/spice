@@ -3,7 +3,10 @@
  (libraries eio eio.unix logs spice_path unix threads.posix)
  (foreign_stubs
   (language c)
-  (names spice_fswatch_inotify_stubs spice_fswatch_fsevents_stubs))
+  (names
+   spice_fswatch_clock_stubs
+   spice_fswatch_inotify_stubs
+   spice_fswatch_fsevents_stubs))
  (c_library_flags
   (:include fsevents_c_library_flags.sexp)))
 
