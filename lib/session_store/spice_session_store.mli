@@ -15,14 +15,19 @@
     with {!append} or {!save}. A returned {!Document.t} carries the revision
     that must be supplied to the next write.
 
-    {b Concurrency.} Writers serialize {e across processes} on a single
-    [sessions/.lock] advisory lock, and {e across fibers of one process} on a
-    process-global mutex keyed by the canonical store root (POSIX advisory locks
-    are per-process and so provide no intra-process exclusion on their own). The
-    compare-and-set revision re-check in {!save} therefore runs without a
-    concurrent same-process writer: two writers that race a write from the same
-    revision produce exactly one commit and one {!Error.Conflict}, never a lost
-    update. Handles minted separately over the same root share the mutex. *)
+    {b Concurrency.} Writers for one session serialize {e across processes} on
+    a sibling [sessions/<id>.lock] advisory lock, and {e across fibers of one
+    process} on a shared mutex keyed by that canonical lock path (POSIX advisory
+    locks are per-process and so provide no intra-process exclusion on their
+    own). The compare-and-set revision re-check in {!save} therefore runs
+    without a concurrent same-session writer: two writers that race a write
+    from the same revision produce exactly one commit and one
+    {!Error.Conflict}, never a lost update. Handles minted separately over the
+    same root share the mutex, while unrelated sessions remain independent.
+
+    Regular-file and directory durability syncs run outside the calling Eio
+    domain. The calling fiber retains ownership until each sync completes, so
+    cancellation cannot detach a write that continues using store resources. *)
 
 (** {1:stores Stores} *)
 

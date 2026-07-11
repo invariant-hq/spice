@@ -18,6 +18,8 @@ type t = {
   now : unit -> float;
   sleep : float -> unit;
   root : Spice_path.Abs.t;
+  sessions_dir : string;
+  canonical_sessions_dir : string option Atomic.t;
 }
 
 let make ~fs ~clock ~root =
@@ -27,10 +29,11 @@ let make ~fs ~clock ~root =
     now = (fun () -> Eio.Time.now clock);
     sleep = (fun seconds -> Eio.Time.sleep clock seconds);
     root;
+    sessions_dir = Filename.concat (Spice_path.Abs.to_string root) "sessions";
+    canonical_sessions_dir = Atomic.make None;
   }
 
 let root t = t.root
-let root_string t = Spice_path.Abs.to_string t.root
 
 (* A revision is the canonical content identity of the exact encoded document
    bytes. The store is the source of truth for real documents: it mints the
@@ -109,7 +112,7 @@ let io path f =
 
 let fs_path t path = Eio.Path.( / ) t.fs path
 let native_path t path = Eio.Path.native_exn (fs_path t path)
-let sessions_dir t = Filename.concat (root_string t) "sessions"
+let sessions_dir t = t.sessions_dir
 let document_filename = "session.json"
 let hex = "0123456789ABCDEF"
 
@@ -137,7 +140,10 @@ let session_dir store id =
 let session_path store id =
   Filename.concat (session_dir store id) document_filename
 
-let lock_path store = Filename.concat (sessions_dir store) ".lock"
+let lock_path store id =
+  Filename.concat (sessions_dir store)
+    (escaped_component (Spice_session.Id.to_string id) ^ ".lock")
+
 let dir_exists store path = Eio.Path.is_directory (fs_path store path)
 
 let path_kind store path =
@@ -185,65 +191,119 @@ let with_lock_path sleep path f =
       acquire 0.001;
       Fun.protect ~finally:(fun () -> lockf fd Unix.F_ULOCK) f)
 
-(* Intra-process serialization for the compare-and-set write path. The advisory
-   lock in [with_lock_path] excludes other processes but never excludes a
-   process from itself: POSIX record locks are per-process, so two fibers on
-   distinct handles over one root each acquire the lock and interleave their
-   re-read-check-write across the Eio suspension points inside [load_path] and
-   [write_document], losing an update. This table maps a root's canonical path
-   to the single mutex every same-process writer on that root contends for.
-   Handles are minted per call, so the mutex cannot live on [t]; it is
-   process-global and keyed by canonical path so handles opened on the same
-   directory through different spellings or symlinks share one mutex.
-   [Stdlib.Mutex] guards the table so lookups stay safe even if writes ever
-   arrive from more than one domain. *)
-let write_mutexes : (string, Eio.Mutex.t) Hashtbl.t = Hashtbl.create 8
-let write_mutexes_guard = Mutex.create ()
+(* POSIX record locks exclude other processes but not other fibers in this
+   process. Store handles are minted independently, so same-session writers
+   share a process registry keyed by the canonical lock path. [users] counts
+   owners and waiters before either can block; the last one removes the entry,
+   keeping the registry proportional to live transactions rather than every
+   session or root the process has ever touched. *)
+type session_mutex = { mutex : Eio.Mutex.t; mutable users : int }
 
-let write_mutex_for key =
-  Mutex.protect write_mutexes_guard (fun () ->
-      match Hashtbl.find_opt write_mutexes key with
-      | Some mutex -> mutex
+let session_mutexes : (string, session_mutex) Hashtbl.t = Hashtbl.create 8
+let session_mutexes_guard = Mutex.create ()
+
+type canonical_session_dir = { source : string; canonical : string }
+
+(* Store handles cache their own identity. This small process memo lets newly
+   minted handles over a recent root reuse it without another realpath
+   round-trip, while path churn can retain at most eight entries. *)
+let canonical_session_dirs : canonical_session_dir option array =
+  Array.make 8 None
+
+let canonical_session_dirs_guard = Mutex.create ()
+let next_canonical_session_dir = ref 0
+
+let find_canonical_session_dir source =
+  let rec loop index =
+    if index = Array.length canonical_session_dirs then None
+    else
+      match canonical_session_dirs.(index) with
+      | Some entry when String.equal source entry.source -> Some entry.canonical
+      | Some _ | None -> loop (index + 1)
+  in
+  loop 0
+
+let remember_canonical_session_dir source candidate =
+  match find_canonical_session_dir source with
+  | Some canonical -> canonical
+  | None ->
+      let index = !next_canonical_session_dir in
+      canonical_session_dirs.(index) <- Some { source; canonical = candidate };
+      next_canonical_session_dir :=
+        (index + 1) mod Array.length canonical_session_dirs;
+      candidate
+
+let acquire_session_mutex key =
+  Mutex.protect session_mutexes_guard (fun () ->
+      match Hashtbl.find_opt session_mutexes key with
+      | Some entry ->
+          entry.users <- entry.users + 1;
+          entry
       | None ->
-          let mutex = Eio.Mutex.create () in
-          Hashtbl.replace write_mutexes key mutex;
-          mutex)
+          let entry = { mutex = Eio.Mutex.create (); users = 1 } in
+          Hashtbl.add session_mutexes key entry;
+          entry)
 
-let with_sessions_lock store f =
+let release_session_mutex key entry =
+  Mutex.protect session_mutexes_guard (fun () ->
+      match Hashtbl.find_opt session_mutexes key with
+      | Some current when current == entry ->
+          assert (entry.users > 0);
+          entry.users <- entry.users - 1;
+          if entry.users = 0 then Hashtbl.remove session_mutexes key
+      | Some _ | None -> assert false)
+
+let canonical_sessions_dir store native =
+  match Atomic.get store.canonical_sessions_dir with
+  | Some canonical -> canonical
+  | None -> (
+      match
+        Mutex.protect canonical_session_dirs_guard (fun () ->
+            find_canonical_session_dir store.sessions_dir)
+      with
+      | Some canonical ->
+          Atomic.set store.canonical_sessions_dir (Some canonical);
+          canonical
+      | None ->
+          let candidate =
+            Eio_unix.run_in_systhread ~label:"session store realpath" (fun () ->
+                Unix.realpath native)
+          in
+          let canonical =
+            Mutex.protect canonical_session_dirs_guard (fun () ->
+                remember_canonical_session_dir store.sessions_dir candidate)
+          in
+          Atomic.set store.canonical_sessions_dir (Some canonical);
+          canonical)
+
+let with_session_lock store id f =
   let dir = sessions_dir store in
   let* () = mkdir_p store dir in
-  let path = lock_path store in
-  match native_path store path with
+  let path = lock_path store id in
+  match (native_path store dir, native_path store path) with
   | exception exn -> io_exception path exn
-  | native -> (
-      (* [dir] exists after [mkdir_p], so canonicalizing it cannot fail under
-         normal operation; fall back to the raw path so a same-spelling handle
-         still serializes if it somehow does. [use_ro] unlocks rather than
-         poisons on exception, keeping the cached mutex usable across calls. *)
-      let key =
-        try Unix.realpath (Filename.dirname native) with _ -> native
-      in
-      let mutex = write_mutex_for key in
+  | native_dir, native -> (
       match
-        Eio.Mutex.use_ro mutex (fun () -> with_lock_path store.sleep native f)
+        let canonical_dir = canonical_sessions_dir store native_dir in
+        let key = Filename.concat canonical_dir (Filename.basename native) in
+        let entry = acquire_session_mutex key in
+        Fun.protect
+          ~finally:(fun () -> release_session_mutex key entry)
+          (fun () ->
+            Eio.Mutex.use_ro entry.mutex (fun () ->
+                with_lock_path store.sleep native f))
       with
       | result -> result
       | exception exn -> io_exception path exn)
 
-let tmp_counter = ref 0
+let tmp_counter = Atomic.make 0
 
 let tmp_path store path =
-  incr tmp_counter;
+  let counter = Atomic.fetch_and_add tmp_counter 1 + 1 in
   let stamp = store.now () |> Int64.bits_of_float |> Int64.to_string in
   path ^ ".tmp."
   ^ string_of_int (Unix.getpid ())
-  ^ "." ^ stamp ^ "." ^ string_of_int !tmp_counter
-
-let cleanup_tmp store tmp =
-  try Eio.Path.unlink (fs_path store tmp)
-  with exn ->
-    Log.debug (fun m ->
-        m "tmp cleanup failed path=%s exn=%s" tmp (Printexc.to_string exn))
+  ^ "." ^ stamp ^ "." ^ string_of_int counter
 
 let now store = store.now () |> Spice_session.Time.of_unix_seconds_float
 
@@ -297,45 +357,76 @@ let load store id =
                    Spice_session.Id.pp actual Spice_session.Id.pp id;
              })
 
-let fsync_path store path =
-  match native_path store path with
-  | exception exn -> io_exception path exn
-  | native -> (
-      match Unix.openfile native [ Unix.O_RDONLY; Unix.O_CLOEXEC ] 0 with
-      | exception Unix.Unix_error (error, _, _) ->
-          Error (Error.Io { path; message = Unix.error_message error })
-      | fd ->
-          Fun.protect
-            ~finally:(fun () -> Unix.close fd)
-            (fun () ->
-              match Unix.fsync fd with
-              | () -> Ok ()
-              | exception Unix.Unix_error (Unix.EINVAL, _, _) -> Ok ()
-              | exception Unix.Unix_error (error, _, _) ->
-                  Error (Error.Io { path; message = Unix.error_message error }))
-      )
+let rec fsync fd =
+  match Unix.fsync fd with
+  | () -> ()
+  | exception Unix.Unix_error (Unix.EINTR, _, _) -> fsync fd
+  | exception Unix.Unix_error (Unix.EINVAL, _, _) -> ()
+
+let rec write_all fd text offset =
+  if offset < String.length text then
+    match Unix.write_substring fd text offset (String.length text - offset) with
+    | 0 -> raise (Unix.Unix_error (Unix.EIO, "write", ""))
+    | written -> write_all fd text (offset + written)
+    | exception Unix.Unix_error (Unix.EINTR, _, _) -> write_all fd text offset
+
+let sync_directory native =
+  let fd = Unix.openfile native [ Unix.O_RDONLY; Unix.O_CLOEXEC ] 0 in
+  Fun.protect ~finally:(fun () -> Unix.close fd) (fun () -> fsync fd)
 
 let write_document store path text =
   let dir = Filename.dirname path in
   let* () = mkdir_p store dir in
   let tmp = tmp_path store path in
-  match Eio.Path.save ~create:(`Exclusive 0o600) (fs_path store tmp) text with
+  match
+    (native_path store path, native_path store tmp, native_path store dir)
+  with
   | exception exn -> io_exception path exn
-  | () -> (
-      match fsync_path store tmp with
-      | Error _ as error ->
-          cleanup_tmp store tmp;
-          error
-      | Ok () -> (
-          match Eio.Path.rename (fs_path store tmp) (fs_path store path) with
-          | () -> fsync_path store dir
-          | exception exn ->
-              cleanup_tmp store tmp;
-              io_exception path exn))
+  | native, native_tmp, native_dir -> (
+      match
+        Eio_unix.run_in_systhread ~label:"session store durable replace"
+          (fun () ->
+            let renamed = ref false in
+            Fun.protect
+              ~finally:(fun () ->
+                if not !renamed then
+                  try Unix.unlink native_tmp
+                  with Unix.Unix_error _ -> ())
+              (fun () ->
+                let fd =
+                  Unix.openfile native_tmp
+                    [ Unix.O_CREAT; Unix.O_EXCL; Unix.O_WRONLY; Unix.O_CLOEXEC ]
+                    0o600
+                in
+                Fun.protect
+                  ~finally:(fun () -> Unix.close fd)
+                  (fun () ->
+                    write_all fd text 0;
+                    fsync fd);
+                Unix.rename native_tmp native;
+                renamed := true;
+                sync_directory native_dir))
+      with
+      | () -> Ok ()
+      | exception exn -> io_exception path exn)
+
+let remove_document store path =
+  let dir = Filename.dirname path in
+  match (native_path store path, native_path store dir) with
+  | exception exn -> io_exception path exn
+  | native, native_dir -> (
+      match
+        Eio_unix.run_in_systhread ~label:"session store durable remove"
+          (fun () ->
+            Unix.unlink native;
+            sync_directory native_dir)
+      with
+      | () -> Ok ()
+      | exception exn -> io_exception path exn)
 
 let create store session =
-  with_sessions_lock store (fun () ->
-      let id = Spice_session.id session in
+  let id = Spice_session.id session in
+  with_session_lock store id (fun () ->
       let path = session_path store id in
       match path_kind store path with
       | Error _ as error -> error
@@ -365,8 +456,8 @@ let check_document_session ~path document session =
          })
 
 let save store document session =
-  with_sessions_lock store (fun () ->
-      let id = Spice_session.id session in
+  let id = Spice_session.id session in
+  with_session_lock store id (fun () ->
       let path = session_path store id in
       let* () = check_document_session ~path document session in
       match path_kind store path with
@@ -390,8 +481,8 @@ let save store document session =
             Ok (Document.make ~session ~revision:(revision_of_bytes text)))
 
 let remove store document =
-  with_sessions_lock store (fun () ->
-      let id = Document.id document in
+  let id = Document.id document in
+  with_session_lock store id (fun () ->
       let path = session_path store id in
       match path_kind store path with
       | Error _ as error -> error
@@ -403,10 +494,7 @@ let remove store document =
           if not (Spice_session.Revision.equal expected actual) then
             Error (Error.Conflict { id; expected; actual })
           else
-            let* () =
-              io path (fun () -> Eio.Path.unlink (fs_path store path))
-            in
-            let* () = fsync_path store (Filename.dirname path) in
+            let* () = remove_document store path in
             Log.debug (fun m ->
                 m "session removed id=%a" Spice_session.Id.pp id);
             Ok ())

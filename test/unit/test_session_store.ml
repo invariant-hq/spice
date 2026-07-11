@@ -8,6 +8,35 @@ module Session = Spice_session
 module Store = Spice_session_store
 module Llm = Spice_llm
 
+let lock_holder_mode = "--session-store-lock-holder"
+
+(* A separate process is required here: POSIX record locks are per-process, so
+   a descriptor locked by this test process would not exclude a store handle in
+   another fiber. The helper locks every path before announcing readiness and
+   retains ownership until its standard input is closed. *)
+let () =
+  if Array.length Sys.argv > 2 && String.equal Sys.argv.(1) lock_holder_mode then
+    let paths = Array.to_list (Array.sub Sys.argv 2 (Array.length Sys.argv - 2)) in
+    let descriptors =
+      List.map
+        (fun path ->
+          let fd =
+            Unix.openfile path [ Unix.O_CREAT; Unix.O_RDWR; Unix.O_CLOEXEC ]
+              0o600
+          in
+          Unix.lockf fd Unix.F_LOCK 0;
+          fd)
+        paths
+    in
+    print_endline "ready";
+    (match input_char stdin with _ -> () | exception End_of_file -> ());
+    List.iter
+      (fun fd ->
+        Unix.lockf fd Unix.F_ULOCK 0;
+        Unix.close fd)
+      descriptors;
+    exit 0
+
 (* The compare-and-set backstop. CLI commands load and save inside one process
    under the store lock, so a concurrent-writer conflict cannot be produced
    deterministically through the binary; the store is the layer that owns the
@@ -63,6 +92,33 @@ let with_store_env name f =
   let root_native = Filename.temp_dir ("spice_session_store_" ^ name) "" in
   let root = Spice_path.Abs.of_string_exn root_native in
   f ~fs ~clock ~root
+
+type lock_holder = {
+  input : in_channel;
+  output : out_channel;
+  mutable released : bool;
+}
+
+let release_lock_holder holder =
+  if not holder.released then begin
+    holder.released <- true;
+    close_out_noerr holder.output;
+    match Unix.close_process (holder.input, holder.output) with
+    | Unix.WEXITED 0 -> ()
+    | Unix.WEXITED code -> failf "lock holder exited with status %d" code
+    | Unix.WSIGNALED signal -> failf "lock holder got signal %d" signal
+    | Unix.WSTOPPED signal -> failf "lock holder stopped on signal %d" signal
+  end
+
+let with_lock_holder paths f =
+  let argv = Array.of_list (Sys.executable_name :: lock_holder_mode :: paths) in
+  let input, output = Unix.open_process_args Sys.executable_name argv in
+  let holder = { input; output; released = false } in
+  Fun.protect
+    ~finally:(fun () -> release_lock_holder holder)
+    (fun () ->
+      equal string ~msg:"lock holder readiness" "ready" (input_line input);
+      f holder)
 
 let session_document_path ~root_path id =
   let sessions = Eio.Path.( / ) root_path "sessions" in
@@ -338,13 +394,19 @@ let concurrent_saves_preserve_the_cas () =
   with_store_env "race" @@ fun ~fs ~clock ~root ->
   let base_store = Store.make ~fs ~clock ~root in
   let base = ok_or_fail (Store.create base_store (make_session "race")) in
+  let root_native = Spice_path.Abs.to_string root in
+  let alias_native = Filename.concat root_native "alias" in
+  Unix.symlink "." alias_native;
+  let alias = Spice_path.Abs.of_string_exn alias_native in
   let writers = 8 in
   let results = Array.make writers (Ok base) in
   Eio.Fiber.all
     (List.init writers (fun i () ->
          (* A fresh handle per fiber: exclusion must hold across handles, not
-            just within one. *)
-         let store = Store.make ~fs ~clock ~root in
+            just within one. Alternate writers address the same root through a
+            symlink so lock identity must be canonical rather than textual. *)
+         let writer_root = if i mod 2 = 0 then root else alias in
+         let store = Store.make ~fs ~clock ~root:writer_root in
          let session =
            Session.set_title
              (Some (Printf.sprintf "writer-%d" i))
@@ -375,6 +437,79 @@ let concurrent_saves_preserve_the_cas () =
     (match title with
     | Some title -> String.starts_with ~prefix:"writer-" title
     | None -> false)
+
+(* A durability stall belongs to the session being committed. The helper holds
+   both the former root-wide lock and the new session lock so the same test is a
+   failing-first reproduction on the old implementation: old code blocks both
+   writers on [.lock], while per-session locking blocks only [locked]. *)
+let a_stalled_session_does_not_block_another () =
+  with_store_env "lock-scope" @@ fun ~fs ~clock ~root ->
+  let store = Store.make ~fs ~clock ~root in
+  let locked = ok_or_fail (Store.create store (make_session "locked")) in
+  let independent =
+    ok_or_fail (Store.create store (make_session "independent"))
+  in
+  let sessions = Filename.concat (Spice_path.Abs.to_string root) "sessions" in
+  with_lock_holder
+    [ Filename.concat sessions ".lock"; Filename.concat sessions "locked.lock" ]
+  @@ fun holder ->
+  Eio.Switch.run @@ fun sw ->
+  let locked_save =
+    Eio.Fiber.fork_promise ~sw (fun () ->
+        Store.save store locked
+          (Session.set_title (Some "locked") (Store.Document.session locked)))
+  in
+  Eio.Time.sleep clock 0.02;
+  let independent_save =
+    Eio.Time.with_timeout clock 0.2 (fun () ->
+        Ok
+          (Store.save store independent
+             (Session.set_title (Some "independent")
+                (Store.Document.session independent))))
+  in
+  release_lock_holder holder;
+  let locked_result =
+    match Eio.Promise.await locked_save with
+    | Ok result -> result
+    | Error exn -> failf "locked save failed: %s" (Printexc.to_string exn)
+  in
+  ignore (ok_or_fail locked_result);
+  match independent_save with
+  | Ok result -> ignore (ok_or_fail result)
+  | Error `Timeout ->
+      failf "an unrelated session waited behind the stalled commit"
+
+let cancelling_a_lock_wait_releases_process_ownership () =
+  with_store_env "lock-cancel" @@ fun ~fs ~clock ~root ->
+  let store = Store.make ~fs ~clock ~root in
+  let document = ok_or_fail (Store.create store (make_session "locked")) in
+  let sessions = Filename.concat (Spice_path.Abs.to_string root) "sessions" in
+  with_lock_holder
+    [ Filename.concat sessions ".lock"; Filename.concat sessions "locked.lock" ]
+  @@ fun holder ->
+  let started = Unix.gettimeofday () in
+  let cancelled =
+    Eio.Time.with_timeout clock 0.03 (fun () ->
+        Ok
+          (Store.save store document
+             (Session.set_title (Some "cancelled")
+                (Store.Document.session document))))
+  in
+  let elapsed = Unix.gettimeofday () -. started in
+  (match cancelled with
+  | Error `Timeout -> ()
+  | Ok _ -> failf "the lock wait completed while another process owned it");
+  is_true ~msg:"lock cancellation is bounded by the polling cadence"
+    (elapsed < 0.2);
+  release_lock_holder holder;
+  let loaded = ok_or_fail (Store.load store (Session.Id.of_string "locked")) in
+  equal string ~msg:"a cancelled waiter did not modify the document"
+    (revision_string document) (revision_string loaded);
+  ignore
+    (ok_or_fail
+       (Store.save store document
+          (Session.set_title (Some "after-cancel")
+             (Store.Document.session document))))
 
 let corrupt_decode_error_is_intentional () =
   with_store "corrupt" @@ fun ~root_path store ->
@@ -426,6 +561,10 @@ let () =
         remove_is_revision_checked_and_allows_recreate;
       test "concurrent saves preserve the compare-and-set"
         concurrent_saves_preserve_the_cas;
+      test "a stalled session does not block an unrelated session"
+        a_stalled_session_does_not_block_another;
+      test "cancelling a lock wait releases process ownership"
+        cancelling_a_lock_wait_releases_process_ownership;
       test "corrupt decode error is intentional"
         corrupt_decode_error_is_intentional;
     ]

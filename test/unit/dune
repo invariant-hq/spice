@@ -273,7 +273,8 @@
   spice_llm
   spice_path
   eio
-  eio_main))
+  eio_main
+  unix))
 
 (test
  (name test_account)
