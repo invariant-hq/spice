@@ -258,14 +258,17 @@ let%expect_test "a resize mid-turn reflows the in-flight frame" =
   Tui.release t "turn-1";
   Tui.settle t
 
-(* A shrink/grow cycle restores the composer rules at full width. The rules
-   are max-content text; a measurement clamped at the shrunken width never
-   recovered on growth before the mosaic text_surface fix — this frame then
-   showed the 40-column rules inside the 80-column window. KNOWN RESIDUAL,
-   pinned as-is: the restored stage sits one row lower than the steady 80x24
-   idle frame and the account line stays shed (the cycle retains one row of
-   shed state). When that heals, this golden collapses onto the steady frame
-   at the top of this file. *)
+(* A shrink/grow cycle restores the stage exactly: the frame below is the
+   steady 80x24 idle frame this file opens with, byte for byte. The rules are
+   max-content text, and a measurement clamped at the shrunken width never
+   recovered on growth before the mosaic text_surface fix — the cycle then
+   left the 40-column rules inside the 80-column window.
+
+   This test also guards the harness: it is the only provider-less run in this
+   executable that follows provider-backed ones, so a credential leaking out
+   of those runs would reach it, connect its account, and render the
+   logged-in stage (one row lower, no account line, no login nudge) — a frame
+   that looks exactly like a resize bug and is not one. *)
 let%expect_test "a shrink and grow cycle restores the composer rules" =
   Tui.run ~name:"geometry-rules-cycle" @@ fun t ->
   Tui.settle t;
@@ -278,24 +281,24 @@ let%expect_test "a shrink and grow cycle restores the composer rules" =
     {|01 |
 02 |
 03 |
-04 |
-05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-07 |
-08 |                            dev · openai/gpt-5.5 medium
-09 |
-10 |      ▎ welcome — and thanks for trying spice this early.
-11 |      ▎ it's experimental: sessions and config may change without migration.
-12 |
-13 |           ────────────────────────────────────────────────────────────
-14 |           ❯ message spice
-15 |           ────────────────────────────────────────────────────────────
-16 |
-17 |                      dune       ✗ · diagnostics unavailable
+04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+06 |
+07 |                            dev · openai/gpt-5.5 medium
+08 |
+09 |      ▎ welcome — and thanks for trying spice this early.
+10 |      ▎ it's experimental: sessions and config may change without migration.
+11 |
+12 |           ────────────────────────────────────────────────────────────
+13 |           ❯ message spice
+14 |           ────────────────────────────────────────────────────────────
+15 |
+16 |                      dune       ✗ · diagnostics unavailable
+17 |                      account    none — /login to connect
 18 |
 19 |                       sandbox: danger-full-access (config)
 20 |
 21 |
 22 |
 23 |
-24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
+24 |   ! not logged in · /login · $PROJECT · gpt-5.5 medium · dune: ✗|}]

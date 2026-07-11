@@ -9,8 +9,17 @@
    configuration reads the [Spice_host.Env.t] snapshot injected through
    [Spice_tui.run ?process_env], and the few direct [Sys.getenv] reads (HOME
    tilde-folding, SPICE_REDUCED_MOTION) see the process environment, which
-   {!apply} pins with [Unix.putenv]. Tests within one executable run
-   sequentially, so process-global env mutation is safe. *)
+   {!apply} pins with [Unix.putenv].
+
+   Runs within one executable are sequential, but they share that process
+   environment and {!apply} never restores it — so a name one run pins is
+   still set for the next. That is harmless for the names EVERY run pins, and
+   a determinism bug for the conditional ones: a run with a provider script
+   pins [OPENAI_API_KEY], and the next run without one inherited it, saw a
+   connected account, and rendered the logged-in stage (one row lower, no
+   account line, no login nudge). {!pinned} records what any run has pinned so
+   the snapshot can subtract exactly the names THIS run does not — which also
+   keeps a developer's own exported keys out of every frame. *)
 
 type t = { root : string }
 
@@ -96,6 +105,16 @@ let bindings ?openai_base_url ?(unset = []) ?(extra = []) t =
 let leaks_dune name =
   String.starts_with ~prefix:"DUNE_" name || String.equal name "INSIDE_DUNE"
 
+(* Every name {!apply} has pinned in this process, from any run. A name in here
+   that THIS run does not override is a carryover: the run did not ask for it,
+   so the app must not see it. Recording the union costs nothing and needs no
+   list of which bindings are conditional — the next one added is covered. *)
+let pinned : (string, unit) Hashtbl.t = Hashtbl.create 16
+
+let carried_over ~overrides name =
+  Hashtbl.mem pinned name
+  && not (List.exists (fun (key, _) -> String.equal key name) overrides)
+
 let env_snapshot ?(unset = []) overrides =
   let overridden name =
     List.exists (fun (key, _) -> String.equal key name) overrides
@@ -111,7 +130,10 @@ let env_snapshot ?(unset = []) overrides =
             let value =
               String.sub item (eq + 1) (String.length item - eq - 1)
             in
-            if overridden name || leaks_dune name then None
+            if
+              overridden name || leaks_dune name
+              || carried_over ~overrides name
+            then None
             else Some (name, value))
   in
   (* [Spice_host.Env.of_list]: later bindings replace earlier ones. *)
@@ -126,13 +148,21 @@ let env_array ?openai_base_url ?(unset = []) ?(extra = []) t =
   let keep item =
     match String.split_first ~sep:"=" item with
     | None -> true
-    | Some (name, _) -> (not (overridden name)) && not (leaks_dune name)
+    | Some (name, _) ->
+        (not (overridden name))
+        && (not (leaks_dune name))
+        && not (carried_over ~overrides name)
   in
   let inherited = Unix.environment () |> Array.to_list |> List.filter keep in
   let overrides = List.map (fun (key, value) -> key ^ "=" ^ value) overrides in
   Array.of_list (overrides @ inherited)
 
-let apply overrides = List.iter (fun (k, v) -> Unix.putenv k v) overrides
+let apply overrides =
+  List.iter
+    (fun (k, v) ->
+      Hashtbl.replace pinned k ();
+      Unix.putenv k v)
+    overrides
 
 (* Run a git command in the project root, for review fixtures. Called from a
    [~seed] callback, which runs before the Eio loop starts, so a blocking

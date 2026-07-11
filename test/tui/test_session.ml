@@ -249,14 +249,14 @@ let%expect_test "empty workspace shows the one-sentence empty state" =
     {|01 |
 02 |
 03 |
-04 |
-05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-07 |
-08 |                            dev · openai/gpt-5.5 medium
-09 |
-10 |      ▎ welcome — and thanks for trying spice this early.
-11 |      ▎ it's experimental: sessions and config may change without migration.
+04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+06 |
+07 |                            dev · openai/gpt-5.5 medium
+08 |
+09 |      ▎ welcome — and thanks for trying spice this early.
+10 |      ▎ it's experimental: sessions and config may change without migration.
+11 |
 12 |
 13 |
 14 |
@@ -309,7 +309,7 @@ let%expect_test "enter resumes the selected session into chat" =
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ message spice
 23 | ────────────────────────────────────────────────────────────────────────────────
-24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
+24 |   ! not logged in · /login · $PROJECT · gpt-5.5 medium · dune: ✗|}]
 
 (* tab promotes the quick-switch panel to the browse screen: its keymap hint
    ([f fork], [r rename]) — which the panel never shows — confirms the screen. *)
@@ -401,20 +401,20 @@ let%expect_test "fork on the home stage flashes the no-session guard" =
     {|01 |
 02 |
 03 |
-04 |
-05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-07 |
-08 |                            dev · openai/gpt-5.5 medium
-09 |
-10 |      ▎ welcome — and thanks for trying spice this early.
-11 |      ▎ it's experimental: sessions and config may change without migration.
-12 |
-13 |           ────────────────────────────────────────────────────────────
-14 |           ❯ /fork
-15 |           ────────────────────────────────────────────────────────────
-16 |
-17 |                      dune       ✗ · diagnostics unavailable
+04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+06 |
+07 |                            dev · openai/gpt-5.5 medium
+08 |
+09 |      ▎ welcome — and thanks for trying spice this early.
+10 |      ▎ it's experimental: sessions and config may change without migration.
+11 |
+12 |           ────────────────────────────────────────────────────────────
+13 |           ❯ /fork
+14 |           ────────────────────────────────────────────────────────────
+15 |
+16 |                      dune       ✗ · diagnostics unavailable
+17 |                      account    none — /login to connect
 18 |
 19 |                       sandbox: danger-full-access (config)
 20 |
@@ -491,27 +491,27 @@ let%expect_test "draft seeds the composer on the home stage" =
     {|01 |
 02 |
 03 |
-04 |
-05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-07 |
-08 |                            dev · openai/gpt-5.5 medium
-09 |
-10 |      ▎ welcome — and thanks for trying spice this early.
-11 |      ▎ it's experimental: sessions and config may change without migration.
-12 |
-13 |           ────────────────────────────────────────────────────────────
-14 |           ❯ fix the parser first
-15 |           ────────────────────────────────────────────────────────────
-16 |
-17 |                      dune       ✗ · diagnostics unavailable
+04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+06 |
+07 |                            dev · openai/gpt-5.5 medium
+08 |
+09 |      ▎ welcome — and thanks for trying spice this early.
+10 |      ▎ it's experimental: sessions and config may change without migration.
+11 |
+12 |           ────────────────────────────────────────────────────────────
+13 |           ❯ fix the parser first
+14 |           ────────────────────────────────────────────────────────────
+15 |
+16 |                      dune       ✗ · diagnostics unavailable
+17 |                      account    none — /login to connect
 18 |
 19 |                       sandbox: danger-full-access (config)
 20 |
 21 |
 22 |
 23 |
-24 |   $PROJECT · gpt-5.5 medium · dune: ✗     ? for shortcuts|}]
+24 |   ! not logged in · /login · $PROJECT · gpt-5.5 medium · dune: ✗|}]
 
 (* [-p]/[--prompt] submits the text as the first turn: the TUI opens on the chat
    layout with the prompt echoed and the reply settled — the home stage never
@@ -930,20 +930,20 @@ let%expect_test "compact result and no-session command guards render" =
     {|01 |
 02 |
 03 |
-04 |
-05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-07 |
-08 |                            dev · openai/gpt-5.5 medium
-09 |
-10 |      ▎ welcome — and thanks for trying spice this early.
-11 |      ▎ it's experimental: sessions and config may change without migration.
-12 |
-13 |           ────────────────────────────────────────────────────────────
-14 |           ❯ message spice
-15 |           ────────────────────────────────────────────────────────────
-16 |
-17 |                      dune       ✗ · diagnostics unavailable
+04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+06 |
+07 |                            dev · openai/gpt-5.5 medium
+08 |
+09 |      ▎ welcome — and thanks for trying spice this early.
+10 |      ▎ it's experimental: sessions and config may change without migration.
+11 |
+12 |           ────────────────────────────────────────────────────────────
+13 |           ❯ message spice
+14 |           ────────────────────────────────────────────────────────────
+15 |
+16 |                      dune       ✗ · diagnostics unavailable
+17 |                      account    none — /login to connect
 18 |
 19 |                       sandbox: danger-full-access (config)
 20 |
@@ -963,20 +963,20 @@ let%expect_test "compact result and no-session command guards render" =
     {|01 |
 02 |
 03 |
-04 |
-05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-07 |
-08 |                            dev · openai/gpt-5.5 medium
-09 |
-10 |      ▎ welcome — and thanks for trying spice this early.
-11 |      ▎ it's experimental: sessions and config may change without migration.
-12 |
-13 |           ────────────────────────────────────────────────────────────
-14 |           ❯ message spice
-15 |           ────────────────────────────────────────────────────────────
-16 |
-17 |                      dune       ✗ · diagnostics unavailable
+04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+06 |
+07 |                            dev · openai/gpt-5.5 medium
+08 |
+09 |      ▎ welcome — and thanks for trying spice this early.
+10 |      ▎ it's experimental: sessions and config may change without migration.
+11 |
+12 |           ────────────────────────────────────────────────────────────
+13 |           ❯ message spice
+14 |           ────────────────────────────────────────────────────────────
+15 |
+16 |                      dune       ✗ · diagnostics unavailable
+17 |                      account    none — /login to connect
 18 |
 19 |                       sandbox: danger-full-access (config)
 20 |

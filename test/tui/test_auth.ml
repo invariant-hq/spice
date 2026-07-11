@@ -280,21 +280,21 @@ let%expect_test "logging out a stored credential records the removal" =
 07 |
 08 |                            dev · openai/gpt-5.5 medium
 09 |
-10 |              ▎ Log out of OpenAI · ! env OPENAI_API_KEY still active
+10 |                           ▎ Log out of OpenAI · removed
 11 |
 12 |           ────────────────────────────────────────────────────────────
 13 |           ❯ message spice
 14 |           ────────────────────────────────────────────────────────────
 15 |
 16 |                      dune       ✗ · diagnostics unavailable
-17 |
-18 |                       sandbox: danger-full-access (config)
-19 |
+17 |                      account    none — /login to connect
+18 |
+19 |                       sandbox: danger-full-access (config)
 20 |
 21 |
 22 |
 23 |
-24 |   $PROJECT · gpt-5.5 medium · dune: ✗   ? for shortcuts|}]
+24 |   ! not logged in · /login · $PROJECT · gpt-5.5 medium · dune: ✗|}]
 
 (* In chat, a settled login lands as a transcript event notice. One scripted
    turn enters chat; the anthropic api-key login then saves and checks against
@@ -591,14 +591,14 @@ let%expect_test "api-key entry masks the secret and escape walks back" =
     {|01 |
 02 |
 03 |
-04 |
-05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-07 |
-08 |                            dev · openai/gpt-5.5 medium
-09 |
-10 |      ▎ welcome — and thanks for trying spice this early.
-11 |      ▎ it's experimental: sessions and config may change without migration.
+04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+06 |
+07 |                            dev · openai/gpt-5.5 medium
+08 |
+09 |      ▎ welcome — and thanks for trying spice this early.
+10 |      ▎ it's experimental: sessions and config may change without migration.
+11 |
 12 |
 13 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 14 |    log in
@@ -619,20 +619,20 @@ let%expect_test "api-key entry masks the secret and escape walks back" =
     {|01 |
 02 |
 03 |
-04 |
-05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-07 |
-08 |                            dev · openai/gpt-5.5 medium
-09 |
-10 |      ▎ welcome — and thanks for trying spice this early.
-11 |      ▎ it's experimental: sessions and config may change without migration.
+04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+06 |
+07 |                            dev · openai/gpt-5.5 medium
+08 |
+09 |      ▎ welcome — and thanks for trying spice this early.
+10 |      ▎ it's experimental: sessions and config may change without migration.
+11 |
 12 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 13 |    log in
 14 |
 15 |   Choose a provider to authenticate.
 16 |
-17 |   ❯ OpenAI                                                  env OPENAI_API_KEY
+17 |   ❯ OpenAI                                                       not connected
 18 |     Anthropic                                                    not connected
 19 |     Google                                                       not connected
 20 |     Ollama                                                       not connected
@@ -655,27 +655,27 @@ let%expect_test "browser authorization renders, copies, and cancels" =
     {|01 |
 02 |
 03 |
-04 |
-05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-07 |
-08 |                            dev · openai/gpt-5.5 medium
-09 |
-10 |      ▎ welcome — and thanks for trying spice this early.
-11 |      ▎ it's experimental: sessions and config may change without migration.
-12 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
-13 |    log in
-14 |
-15 |   Log in to OpenAI · browser
-16 |
-17 |   Press enter to open your browser and authorize Spice.
-18 |   Or open this link yourself:
-19 |
-20 |      https://auth.openai.com/oauth/authorize?response_type=code&cl…  c  copy
-21 |
-22 |   ⠋ Waiting for authorization… (0s · esc to cancel)
-23 |
-24 |   On a remote or headless machine? Press esc and choose device code.|}];
+04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+06 |
+07 |                            dev · openai/gpt-5.5 medium
+08 |
+09 |      ▎ welcome — and thanks for trying spice this early.
+10 |      ▎ it's experimental: sessions and config may change without migration.
+11 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+12 |    log in
+13 |
+14 |   Log in to OpenAI · browser
+15 |
+16 |   Press enter to open your browser and authorize Spice.
+17 |   Or open this link yourself:
+18 |
+19 |      https://auth.openai.com/oauth/authorize?response_type=code&cl…  c  copy
+20 |
+21 |   ⠋ Waiting for authorization… (0s · esc to cancel)
+22 |
+23 |   On a remote or headless machine? Press esc and choose device code.
+24 ||}];
   Tui.keys t "c";
   Tui.settle_pending_perform t;
   Tui.print t;
@@ -683,27 +683,27 @@ let%expect_test "browser authorization renders, copies, and cancels" =
     {|01 |
 02 |
 03 |
-04 |
-05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
-06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
-07 |
-08 |                            dev · openai/gpt-5.5 medium
-09 |
-10 |      ▎ welcome — and thanks for trying spice this early.
-11 |      ▎ it's experimental: sessions and config may change without migration.
-12 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
-13 |    log in
-14 |
-15 |   Log in to OpenAI · browser
-16 |
-17 |   Press enter to open your browser and authorize Spice.
-18 |   Or open this link yourself:
-19 |
-20 |      https://auth.openai.com/oauth/authorize?response_type=code&cli…  copied
-21 |
-22 |   ⠋ Waiting for authorization… (0s · esc to cancel)
-23 |
-24 |   On a remote or headless machine? Press esc and choose device code.|}];
+04 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+05 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+06 |
+07 |                            dev · openai/gpt-5.5 medium
+08 |
+09 |      ▎ welcome — and thanks for trying spice this early.
+10 |      ▎ it's experimental: sessions and config may change without migration.
+11 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+12 |    log in
+13 |
+14 |   Log in to OpenAI · browser
+15 |
+16 |   Press enter to open your browser and authorize Spice.
+17 |   Or open this link yourself:
+18 |
+19 |      https://auth.openai.com/oauth/authorize?response_type=code&cli…  copied
+20 |
+21 |   ⠋ Waiting for authorization… (0s · esc to cancel)
+22 |
+23 |   On a remote or headless machine? Press esc and choose device code.
+24 ||}];
   Tui.keys t Key.escape;
   Tui.settle t
 
@@ -790,7 +790,7 @@ let%expect_test "api-key login updates the derived model facts" =
 05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
 06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
 07 |
-08 |                            dev · openai/gpt-5.5 medium
+08 |                          dev · anthropic/claude-sonnet-5
 09 |
 10 |                ▎ Log in to Anthropic · ✓ signed in · …1234 (store)
 11 |
