@@ -138,3 +138,35 @@ session. Current containment boundaries are:
 When adding background work, route failure into one of these seams—or an
 equivalent explicit degradation—rather than letting an exception escape a fiber
 into a shared switch. Preserve cancellation as cancellation at every seam.
+
+### The turn terminal invariant
+
+**A turn that becomes durably active within a `Session_loop.execute` call
+reaches a terminal `Turn_finished` event before that call returns — on the
+error and exception paths as much as on the ordinary one.**
+
+An error that merely propagates leaves the turn active in the saved session,
+and an active turn is not inert: `require_no_active_turn` guards a new turn,
+`fork`, `rewind`, `archive`, and `delete` alike, so every later command is
+refused against it. The frontend, whose own turn ended with the error, offers
+no interrupt — it offers one only while *its* turn is in flight — so nothing
+can close it and the session is dead while looking idle. One provider error
+was enough.
+
+The invariant lives at the one place turns are driven: `execute` wraps the
+model/tool loop and closes an open turn with `Spice_session_run.fail` on the
+way out. Two boundaries it must not cross:
+
+- **A cancellation is not a failure.** It surfaces as an ordinary provider
+  error *value* (`Spice_llm.Error.Cancelled`), not an exception — the client
+  polls the cancel flag mid-stream — and Live keeps that turn active on purpose
+  so the queued `Command.Interrupt` finishes it as `Interrupted`. Closing it as
+  failed both mislabels the outcome and strands that interrupt, which no-ops
+  against a turn that is already closed: the frontend then waits forever on a
+  turn that can never settle. The wrapper skips the repair while
+  `hooks.cancelled ()` holds.
+- **A refused command is not a failed turn.** The command preambles stay
+  outside the wrapper, so a stale answer or a start against a waiting turn is
+  rejected without destroying the healthy turn it was rejected against.
+
+A new terminal path for turns belongs inside that wrapper, not beside it.

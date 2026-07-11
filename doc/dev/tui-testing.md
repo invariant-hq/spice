@@ -126,6 +126,37 @@ lands exactly on a timer deadline (a strict `>=` on accumulated-float deltas
 skips the fire and busy-loops). `mosaic/test/loop/test_loop.ml` guards the
 timer case directly.
 
+## The environment contract
+
+**The environment a run's app sees is a function of that run's own parameters —
+never of the runs before it in the same executable.**
+
+Time is not the only thing that leaks between runs. `Project.apply` pins names
+with `Unix.putenv` and never restores them, so a name one run sets is still set
+for the next. That is harmless for the names *every* run pins, and a
+determinism bug for the conditional ones: `OPENAI_API_KEY` is added only for a
+run with a provider script, and `SPICE_PERMISSION_MODE` only where a test asks
+for it.
+
+The failure is quiet, and it does not look like an environment bug. A
+provider-less run that inherits a credential sees a connected account and
+renders the *logged-in* stage — no account line, no login nudge, and the whole
+stage one row lower, because a shorter workspace block re-centers. That frame
+reads exactly like a layout bug, and it was investigated as one. The same leak
+had rewritten goldens across the suite: auth frames asserting `env
+OPENAI_API_KEY still active` in tests that set no key, and tool frames showing
+`permission: auto edits` under the default posture.
+
+`Project` therefore records every name `apply` pins, and `env_snapshot` and
+`env_array` subtract the pinned names this run does not override. This needs no
+list of which bindings are conditional, so the next one added is covered, and
+it keeps a developer's own exported keys out of the frames too.
+
+The rule for reading a suspicious golden follows from this: **before chasing a
+layout bug, check whether the frame is rendering a state the test never asked
+for.** A run's frame should be explicable from its own `~env`, `~provider`, and
+`~seed` alone.
+
 ## Settle and advance
 
 - `settle` blocks until the backend is parked, the one probe reports no pending
