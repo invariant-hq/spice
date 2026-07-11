@@ -66,12 +66,6 @@ type shell_result = {
 }
 (** Completed shell-style process result. *)
 
-val command_execution :
-  Spice_sandbox.t -> Spice_permission.Access.Command.execution
-(** [command_execution sandbox] is the permission identity of commands prepared
-    by [sandbox]. Only sealed, enforced confinement is [Sandboxed]; unconfined,
-    externally declared, and refused routes are [Direct]. *)
-
 val run :
   ?stdout_limit:int ->
   ?stderr_limit:int ->
@@ -114,6 +108,22 @@ val run_shell :
 
     Raises [Invalid_argument] if [cwd] is empty, [timeout_ms <= 0], or
     [max_output_bytes < 0]. *)
+
+val run_shell_fd :
+  cwd:Unix.file_descr ->
+  env:string array ->
+  timeout_ms:int ->
+  max_output_bytes:int ->
+  ?stdin:string ->
+  cancelled:(unit -> bool) ->
+  string list ->
+  shell_result
+(** [run_shell_fd ~cwd] has {!run_shell}'s execution semantics but changes the
+    child into the already-open directory [cwd] with [fchdir] before [exec].
+
+    The caller retains ownership of [cwd] and must keep it open until this call
+    returns. Binding execution to a directory descriptor prevents replacement
+    of its pathname between validation and child startup. *)
 
 val prepare :
   sandbox:Spice_sandbox.t ->

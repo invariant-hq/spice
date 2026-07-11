@@ -90,6 +90,15 @@ let input ?workdir ?timeout_ms ?description ?escalate command =
   | Ok input -> input
   | Error error -> failf "invalid shell fixture: %a" Shell.Input.pp_error error
 
+let call ~fs ~workspace ~config input =
+  let tool = Shell.tool ~fs ~workspace ~config () in
+  match
+    Tool.Call.decode [ tool ] ~name:Shell.name ~input:(Shell.Input.encode input)
+      ()
+  with
+  | Ok call -> call
+  | Error error -> failf "failed to decode shell call: %a" Tool.Error.pp error
+
 let unconfined ?default_timeout_ms ?max_timeout_ms ?max_output_bytes
     ?(environment = []) () =
   Shell.Config.make ?default_timeout_ms ?max_timeout_ms ?max_output_bytes
@@ -182,12 +191,14 @@ let print_result ?root ?outside result =
   | Tool.Result.Interrupted { reason; cancelled } ->
       Printf.printf "interrupted cancelled=%b: %s\n" cancelled reason
   end;
-  match Tool.Result.output result with
+  match
+    Option.bind (Tool.Result.output result) Shell.Output.of_tool_output
+  with
   | None -> Printf.printf "output: none\n"
   | Some output -> print_output ?root ?outside output
 
 let run ?root ?outside ~fs ~workspace ~config ?cancelled input =
-  Shell.run ~fs ~workspace ~config ?cancelled input
+  Tool.Call.run (call ~fs ~workspace ~config input) ?cancelled ()
   |> print_result ?root ?outside
 
 let print_decode label json =
@@ -281,11 +292,11 @@ let access ?root ?outside = function
       "extension " ^ name
       ^ Option.fold ~none:"" ~some:(fun subject -> " " ^ subject) subject
 
-let print_permissions ?root ?outside ?config workspace input =
+let print_permissions ?root ?outside ?config ~fs workspace input =
   let config =
     match config with Some config -> config | None -> unconfined ()
   in
-  match Shell.permissions ~workspace ~config input with
+  match Tool.Call.permissions (call ~fs ~workspace ~config input) with
   | [] -> Printf.printf "requests: none\n"
   | requests ->
       Printf.printf "requests: %d\n" (List.length requests);
@@ -302,9 +313,9 @@ let execution = function
   | Access.Command.Direct -> "direct"
   | Access.Command.Sandboxed -> "sandboxed"
 
-let print_permission_routes label ~config workspace input =
+let print_permission_routes label ~config ~fs workspace input =
   Printf.printf "-- %s --\n" label;
-  Shell.permissions ~workspace ~config input
+  Tool.Call.permissions (call ~fs ~workspace ~config input)
   |> List.iter (fun request ->
          Request.accesses request
          |> List.iter (function
@@ -385,10 +396,13 @@ let%expect_test "input and config validation" =
 let%expect_test "default restricted sandbox refuses instead of spawning" =
   with_fixture @@ fun ~root ~outside ~fs ~workspace ->
   let config = Shell.Config.make ~default_timeout_ms:100 () in
+  print_permissions ~root ~outside ~fs ~config workspace
+    (input "printf 'unexpected\\n'");
   run ~root ~outside ~fs ~workspace ~config
     (input ~description:"should not spawn" "printf 'unexpected\\n'");
   [%expect
     {|
+    requests: none
     failed unavailable: no sandbox backend configured
     output status: failed_to_start "no sandbox backend configured"
     workdir: .
@@ -443,7 +457,7 @@ let read_only_config =
     ()
 
 let%expect_test "permission command routes match exact shell execution" =
-  with_fixture @@ fun ~root ~outside:_ ~fs:_ ~workspace ->
+  with_fixture @@ fun ~root ~outside:_ ~fs ~workspace ->
   let workspace_write = workspace_write_config ~root in
   let external_config =
     Shell.Config.make
@@ -451,14 +465,14 @@ let%expect_test "permission command routes match exact shell execution" =
       ()
   in
   print_permission_routes "workspace-write ordinary" ~config:workspace_write
-    workspace (input "dune build");
+    ~fs workspace (input "dune build");
   print_permission_routes "workspace-write escalation" ~config:workspace_write
-    workspace (input ~escalate:true "dune build");
-  print_permission_routes "danger-full-access" ~config:(unconfined ()) workspace
+    ~fs workspace (input ~escalate:true "dune build");
+  print_permission_routes "danger-full-access" ~config:(unconfined ()) ~fs
+    workspace (input "dune build");
+  print_permission_routes "external" ~config:external_config ~fs workspace
     (input "dune build");
-  print_permission_routes "external" ~config:external_config workspace
-    (input "dune build");
-  print_permission_routes "read-only" ~config:read_only_config workspace
+  print_permission_routes "read-only" ~config:read_only_config ~fs workspace
     (input "dune build");
   [%expect
     {|
@@ -475,9 +489,9 @@ let%expect_test "permission command routes match exact shell execution" =
     command: sandboxed |}]
 
 let%expect_test "escalation raises a distinct reviewable access" =
-  with_fixture @@ fun ~root ~outside:_ ~fs:_ ~workspace ->
+  with_fixture @@ fun ~root ~outside:_ ~fs ~workspace ->
   let escalating = input ~escalate:true "git commit -m fix" in
-  print_permissions ~root
+  print_permissions ~root ~fs
     ~config:(workspace_write_config ~root)
     workspace escalating;
   [%expect
@@ -488,11 +502,11 @@ let%expect_test "escalation raises a distinct reviewable access" =
     access: extension shell.escalate git commit -m fix |}];
   (* Read-only confinement raises no escalation access: the run path refuses
      the input before any permission flow. *)
-  print_permissions ~root ~config:read_only_config workspace escalating;
+  print_permissions ~root ~fs ~config:read_only_config workspace escalating;
   [%expect {| requests: none |}];
   (* Unconfined decisions ignore the flag: it requests what is already
      true. *)
-  print_permissions ~root workspace escalating;
+  print_permissions ~root ~fs workspace escalating;
   [%expect
     {|
     requests: 1
@@ -500,16 +514,16 @@ let%expect_test "escalation raises a distinct reviewable access" =
     access: exec cwd=. argv="git" "commit" "-m" "fix" |}]
 
 let%expect_test "spoofable command syntax degrades to a coarse shell match" =
-  with_fixture @@ fun ~root ~outside:_ ~fs:_ ~workspace ->
+  with_fixture @@ fun ~root ~outside:_ ~fs ~workspace ->
   (* A plain command classifies confidently as an argv access the policy can
      key on by program and prefix. *)
-  print_permissions ~root workspace (input "rm data.txt");
+  print_permissions ~root ~fs workspace (input "rm data.txt");
   (* A leading assignment, a glob, or a tilde-expanded program each make the
      shell exec something other than the parsed words, so they degrade to the
      whole-string shell match rather than a spoofable argv. *)
-  print_permissions ~root workspace (input "FOO=1 rm data.txt");
-  print_permissions ~root workspace (input "rm *.log");
-  print_permissions ~root workspace (input "~/bin/tool run");
+  print_permissions ~root ~fs workspace (input "FOO=1 rm data.txt");
+  print_permissions ~root ~fs workspace (input "rm *.log");
+  print_permissions ~root ~fs workspace (input "~/bin/tool run");
   [%expect
     {|
     requests: 1
@@ -674,18 +688,18 @@ let%expect_test "workdir failures are invalid input before spawn" =
 let%expect_test "permission parser uses exec evidence only when shell is simple"
     =
   with_fixture @@ fun ~root ~outside ~fs ~workspace ->
-  ignore fs;
   print_case "simple sequence";
-  print_permissions ~root ~outside workspace
+  print_permissions ~root ~outside ~fs workspace
     (input ~workdir:"subject" "git status --short && dune build");
   print_case "quoted argument";
-  print_permissions ~root ~outside workspace (input "printf 'hello world'");
+  print_permissions ~root ~outside ~fs workspace (input "printf 'hello world'");
   print_case "redirect fallback";
-  print_permissions ~root ~outside workspace (input "printf hi > out.txt");
+  print_permissions ~root ~outside ~fs workspace (input "printf hi > out.txt");
   print_case "substitution fallback";
-  print_permissions ~root ~outside workspace (input "echo $(pwd)");
+  print_permissions ~root ~outside ~fs workspace (input "echo $(pwd)");
   print_case "bad workdir";
-  print_permissions ~root ~outside workspace (input ~workdir:"../outside" "pwd");
+  print_permissions ~root ~outside ~fs workspace
+    (input ~workdir:"../outside" "pwd");
   [%expect
     {|
     -- simple sequence --

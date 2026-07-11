@@ -930,9 +930,15 @@ let run_user_shell ?sandbox_flag ~stdenv ~host ~cancelled input =
           ~sandbox:(Spice_host.Sandbox.Effective.sandbox sandbox)
           ()
       in
-      Ok
-        (Spice_tools.Shell.run ~fs:(Eio.Stdenv.fs stdenv) ~workspace
-           ~config:shell ~cancelled input)
+      let tool =
+        Spice_tools.Shell.tool ~fs:(Eio.Stdenv.fs stdenv) ~workspace
+          ~config:shell ()
+      in
+      let encoded = Spice_tools.Shell.Input.encode input in
+      Spice_tool.Call.decode [ tool ] ~name:Spice_tools.Shell.name
+        ~input:encoded ()
+      |> Result.map_error (Format.asprintf "%a" Spice_tool.Error.pp)
+      |> Result.map (fun call -> Spice_tool.Call.run call ~cancelled ())
 
 (* Distill a shell result into the settled transcript block: the first output
    line as the [⎿] summary, the exit shape and remaining line count as facts.
@@ -962,7 +968,10 @@ let shell_block input result =
         detail = Tool_block.Summary;
       }
   | Ok result ->
-      let output = Spice_tool.Result.output result in
+      let output =
+        Option.bind (Spice_tool.Result.output result)
+          Spice_tools.Shell.Output.of_tool_output
+      in
       let lines =
         match output with
         | Some output -> (
@@ -1201,7 +1210,7 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
           Spice_workspace.single (Spice_workspace.Root.make cwd)
         in
         let effective_sandbox =
-          resolve_sandbox ?flag:sandbox_flag host ~workspace
+          resolve_sandbox ?flag:sandbox_flag ~stdenv host ~workspace
         in
         let git_run =
           git_runner ~stdenv

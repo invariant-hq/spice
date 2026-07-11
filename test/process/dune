@@ -7,9 +7,18 @@
  (action
   (copy %{deps} %{targets})))
 
+(rule
+ (targets process_stubs.c)
+ (deps ../../lib/tools/process_stubs.c)
+ (action
+  (copy %{deps} %{targets})))
+
 (test
  (name test_process)
  (modules test_process process_under_test)
+ (foreign_stubs
+  (language c)
+  (names process_stubs))
  (libraries
   eio
   eio.unix

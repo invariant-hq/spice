@@ -11,18 +11,13 @@
     should use the dedicated host tools because they produce tighter typed
     evidence.
 
-    The typed surface is the primary API for host/session code:
-
-    - build or decode an {!Input.t};
-    - inspect {!permissions};
-    - execute with {!run};
-    - update session state from typed {!Output.t};
-    - project with {!Output.encode} for model-visible transcripts.
-
-    {!tool} is the erased {!Spice_tool.t} adapter for generic provider dispatch.
-    Process execution and sandbox preparation are private implementation details
-    of [spice_tools]. Restricted sandbox requests fail closed when the host
-    cannot enforce them; unconfined configuration is the explicit escape hatch.
+    Hosts construct one {!tool} with an immutable {!Config.t}, decode a
+    {!Spice_tool.Call.t}, inspect that call's permissions, and execute that same
+    call. The decoded input and sealed sandbox therefore cannot diverge between
+    planning and execution. Process execution and sandbox preparation are
+    private implementation details of [spice_tools]. Restricted sandbox
+    requests fail closed when the host cannot enforce them; unconfined
+    configuration is the explicit escape hatch.
 *)
 
 val name : string
@@ -68,7 +63,7 @@ module Input : sig
       [escalate] (default [false]) requests running this one command outside the
       sandbox. It is a request, never a grant: under workspace-write shaped
       confinement it raises a reviewable permission access; under read-only
-      confinement {!run} refuses the input; under unconfined or
+      confinement tool execution refuses the input; under unconfined or
       declared-external decisions it changes nothing.
 
       Errors if [command], [workdir], or [description] is empty when supplied,
@@ -111,6 +106,10 @@ module Input : sig
 
       Errors with the input decoder diagnostic when [json] does not satisfy the
       input contract. *)
+
+  val encode : t -> Jsont.json
+  (** [encode t] is the canonical provider input for [t]. It is intended for
+      host-authored calls that still pass through {!Spice_tool.Call.decode}. *)
 end
 
 (** {1 Configuration} *)
@@ -189,37 +188,6 @@ module Config : sig
       [None] resolves to {!default_timeout_ms}[ t]. [Some timeout_ms] errors if
       it is non-positive or greater than {!max_timeout_ms}[ t]. *)
 end
-
-val permissions :
-  workspace:Spice_workspace.t ->
-  config:Config.t ->
-  Input.t ->
-  Spice_permission.Request.t list
-(** [permissions ~workspace ~config input] are the command permission requests
-    for [input].
-
-    The tool may parse simple shell command sequences into structured
-    {!Spice_permission.Access.Command.Argv} accesses for better review evidence.
-    When parsing is ambiguous, it requests one conservative
-    {!Spice_permission.Access.Command.Shell} access for the whole command.
-    Both forms carry the exact route derived from [config]'s sealed evidence and
-    [input]'s escalation stance: [Sandboxed] only for enforced confinement, and
-    [Direct] for unconfined, externally declared, or escalated execution.
-    Security must not depend on the parser.
-
-    An escalating input under workspace-write shaped confinement additionally
-    requests one extension access named ["shell.escalate"] whose subject is the
-    command text, so policies and reviewers decide escalation separately from
-    ordinary shell execution and session grants never broaden beyond the exact
-    command.
-
-    A requested escalation that [config]'s read-only sandbox denies returns no
-    permission request; {!run} reports the invalid input without opening a
-    review that could not authorize execution.
-
-    If [workdir] cannot be resolved inside [workspace], the returned list is
-    empty; {!run} reports the resolution failure as an invalid-input tool
-    result. Directory existence and kind checks happen during {!run}. *)
 
 (** {1 Output} *)
 
@@ -314,36 +282,6 @@ module Output : sig
   (** [of_tool_output output] is the typed output retained in [output] iff
       [output] was produced by this tool's {!encode}. *)
 end
-
-(** {1 Execution} *)
-
-val run :
-  fs:_ Eio.Path.t ->
-  workspace:Spice_workspace.t ->
-  config:Config.t ->
-  ?cancelled:(unit -> bool) ->
-  Input.t ->
-  Output.t Spice_tool.Result.t
-(** [run ~fs ~workspace ~config input] executes a typed shell command and
-    returns typed output.
-
-    [workdir] is resolved through [workspace] and checked through [fs]. The
-    command is spawned as one non-interactive shell invocation using
-    {!Config.shell}[ config]. Standard input is closed or connected to an empty
-    input stream. The implementation applies deterministic non-interactive
-    environment defaults, drains stdout and stderr concurrently, enforces
-    {!Config.resolve_timeout_ms}, and retains head/tail output evidence bounded
-    by {!Config.max_output_bytes}.
-
-    A restricted sandbox request that cannot be enforced returns a failed tool
-    result with {!Spice_sandbox.Evidence.refused} evidence and does not spawn
-    the command. Non-zero exits, signals, timeouts, and failed starts return
-    failed or interrupted tool results that still carry typed output evidence
-    when the command reached the execution phase.
-
-    On timeout or cancellation, the implementation attempts to terminate the
-    command's process group, not only the direct shell process. [cancelled]
-    defaults to a function returning [false]. *)
 
 (** {1 Adapter} *)
 

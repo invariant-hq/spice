@@ -36,6 +36,9 @@
   web_fetch
   web_search
   write_file)
+ (foreign_stubs
+  (language c)
+  (names process_stubs))
  (private_modules
   ocaml_position
   pagination

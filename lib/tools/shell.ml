@@ -147,6 +147,12 @@ module Input = struct
 
   let contract = Tool.Input.make codec ~schema
   let decode json = Tool.Input.decode contract json
+
+  let encode input =
+    match Jsont.Json.encode codec input with
+    | Ok json -> json
+    | Error message ->
+        invalid_arg ("Spice_tools.Shell.Input.encode: " ^ message)
 end
 
 module Config = struct
@@ -237,6 +243,73 @@ let resolve_workdir ~fs ~workspace input =
       match Fs.directory ~fs ~workspace ~follow_symlink:true path with
       | Ok _ -> Ok path
       | Error error -> Error (Fs.Error.message error))
+
+let close_noerr fd = try Unix.close fd with Unix.Unix_error _ -> ()
+
+let same_file left right =
+  left.Unix.st_dev = right.Unix.st_dev
+  && left.Unix.st_ino = right.Unix.st_ino
+
+let open_workdir path =
+  let logical = Spice_path.Abs.to_string (Workspace.Path.abs path) in
+  let root =
+    Workspace.Path.root path |> Workspace.Root.dir |> Spice_path.Abs.to_string
+  in
+  match
+    Unix.openfile logical
+      [ Unix.O_RDONLY; Unix.O_NONBLOCK; Unix.O_CLOEXEC ]
+      0
+  with
+  | exception Unix.Unix_error (error, _, _) ->
+      Error
+        (Printf.sprintf "%s: %s" (Workspace.Path.display path)
+           (Unix.error_message error))
+  | fd ->
+      let fail message =
+        close_noerr fd;
+        Error message
+      in
+      let result =
+        try
+          let opened = Unix.fstat fd in
+          if opened.Unix.st_kind <> Unix.S_DIR then
+            Error
+              (Printf.sprintf "%s: expected a directory"
+                 (Workspace.Path.display path))
+          else
+            let canonical_root = Unix.realpath root in
+            let canonical_path = Unix.realpath logical in
+            match
+              ( Spice_path.Abs.of_string canonical_root,
+                Spice_path.Abs.of_string canonical_path )
+            with
+            | Error error, _ | _, Error error ->
+                Error (Spice_path.Error.message error)
+            | Ok canonical_root, Ok canonical_path -> (
+                  match
+                    Spice_path.Abs.relativize ~root:canonical_root canonical_path
+                  with
+                  | None ->
+                      Error
+                        (Printf.sprintf "%s: path resolves outside workspace"
+                           (Workspace.Path.display path))
+                  | Some _ ->
+                      let current =
+                        Unix.stat (Spice_path.Abs.to_string canonical_path)
+                      in
+                      if same_file opened current then Ok fd
+                      else
+                        Error
+                          (Printf.sprintf
+                             "%s: path changed while it was being opened"
+                             (Workspace.Path.display path)))
+        with
+        | Unix.Unix_error (error, _, _) -> Error (Unix.error_message error)
+      in
+      begin match result with
+      | Ok fd -> Ok fd
+      | Error message -> fail message
+      end
 
 type segment = { argv : string list option }
 
@@ -404,12 +477,16 @@ type command_route =
   | Sandboxed
   | Direct
   | Escalated
-  | Refused of Spice_sandbox.Error.t
+  | Sandbox_refused of Spice_sandbox.Error.t
+  | Escalation_refused of Spice_sandbox.Error.t
 
 let sandbox_route sandbox =
-  match Process.command_execution sandbox with
-  | Permission.Access.Command.Sandboxed -> Sandboxed
-  | Permission.Access.Command.Direct -> Direct
+  match Spice_sandbox.evidence sandbox with
+  | Spice_sandbox.Evidence.Enforced _ -> Sandboxed
+  | Spice_sandbox.Evidence.Not_requested
+  | Spice_sandbox.Evidence.Declared_external ->
+      Direct
+  | Spice_sandbox.Evidence.Refused error -> Sandbox_refused error
 
 let command_route ~config input =
   let sandbox = Config.sandbox config in
@@ -417,7 +494,7 @@ let command_route ~config input =
   else
     match Spice_sandbox.escalation sandbox with
     | Spice_sandbox.Available -> Escalated
-    | Spice_sandbox.Denied error -> Refused error
+    | Spice_sandbox.Denied error -> Escalation_refused error
     | Spice_sandbox.Ignored -> sandbox_route sandbox
 
 let access_of_argv ~cwd ~execution argv =
@@ -450,7 +527,7 @@ let escalation_access input = function
         Permission.Access.custom ~kind:`Custom ~subject:(Input.command input)
           escalation_access_name;
       ]
-  | Sandboxed | Direct | Refused _ -> []
+  | Sandboxed | Direct | Sandbox_refused _ | Escalation_refused _ -> []
 
 let permissions ~workspace ~config input =
   let resolved =
@@ -470,7 +547,7 @@ let permissions ~workspace ~config input =
         ]
       in
       begin match route with
-      | Refused _ -> []
+      | Sandbox_refused _ | Escalation_refused _ -> []
       | Sandboxed -> request Permission.Access.Command.Sandboxed
       | Direct | Escalated -> request Permission.Access.Command.Direct
       end
@@ -921,10 +998,22 @@ let run ~fs ~workspace ~config ?(cancelled = default_cancelled) input =
     match Config.resolve_timeout_ms config (Input.timeout_ms input) with
     | Error message -> Tool.Result.failed `Invalid_input message
     | Ok timeout_ms -> (
+        let max_output_bytes = Config.max_output_bytes config in
         match resolve_workdir ~fs ~workspace input with
         | Error message -> Tool.Result.failed `Invalid_input message
         | Ok workdir -> (
-            let max_output_bytes = Config.max_output_bytes config in
+            match open_workdir workdir with
+            | Error message ->
+                let output =
+                  failed_output ~input ~workdir ~timeout_ms ~max_output_bytes
+                    ~enforcement:(Spice_sandbox.evidence (Config.sandbox config))
+                    message
+                in
+                Tool.Result.failed ~output `Unavailable message
+            | Ok workdir_fd ->
+                Fun.protect
+                  ~finally:(fun () -> close_noerr workdir_fd)
+                  (fun () ->
             let argv =
               shell_command (Config.shell config) (Input.command input)
             in
@@ -934,8 +1023,7 @@ let run ~fs ~workspace ~config ?(cancelled = default_cancelled) input =
             in
             let run_spawn ~argv ~env ~enforcement =
               let result =
-                Process.run_shell
-                  ~cwd:(Spice_path.Abs.to_string (Workspace.Path.abs workdir))
+                Process.run_shell_fd ~cwd:workdir_fd
                   ~env:(environment_array env) ~timeout_ms ~max_output_bytes
                   ~cancelled
                   (Spice_sandbox.Argv.to_list argv)
@@ -949,11 +1037,19 @@ let run ~fs ~workspace ~config ?(cancelled = default_cancelled) input =
                 ~toolchain ~command:(Input.command input) output
             in
             match command_route ~config input with
-            | Refused reason ->
+            | Escalation_refused reason ->
                 (* No spawn and no permission flow: the mode's promise admits
                    no approval-shaped exception. *)
                 Tool.Result.failed `Invalid_input
                   (Spice_sandbox.Error.message reason)
+            | Sandbox_refused reason ->
+                let message = Spice_sandbox.Error.message reason in
+                let output =
+                  failed_output ~input ~workdir ~timeout_ms ~max_output_bytes
+                    ~enforcement:(Spice_sandbox.evidence (Config.sandbox config))
+                    message
+                in
+                Tool.Result.failed ~output `Unavailable message
             | Escalated ->
                 (* Reaching execution means the escalation access was
                    approved by policy or reviewer. Escalation drops the
@@ -983,7 +1079,7 @@ let run ~fs ~workspace ~config ?(cancelled = default_cancelled) input =
                     run_spawn
                       ~argv:(Spice_sandbox.Spawn.argv spawn)
                       ~env:(Spice_sandbox.Spawn.env spawn)
-                      ~enforcement:(Spice_sandbox.Spawn.evidence spawn))))
+                      ~enforcement:(Spice_sandbox.Spawn.evidence spawn)))))
 
 let tool ~fs ~workspace ~config ?(render = Output.compact) () =
   Tool.make ~name ~description ~input:Input.contract

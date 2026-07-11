@@ -37,15 +37,6 @@ type shell_result = {
   shell_duration_ms : int;
 }
 
-let command_execution sandbox =
-  match Spice_sandbox.evidence sandbox with
-  | Spice_sandbox.Evidence.Enforced _ ->
-      Spice_permission.Access.Command.Sandboxed
-  | Spice_sandbox.Evidence.Not_requested
-  | Spice_sandbox.Evidence.Declared_external
-  | Spice_sandbox.Evidence.Refused _ ->
-      Spice_permission.Access.Command.Direct
-
 let split_env binding =
   match String.index_opt binding '=' with
   | None -> (binding, "")
@@ -274,7 +265,17 @@ let write_all fd text =
 
 let child_exec_error error fn arg = unix_error_message error fn arg
 
-let fork_exec ?cwd ~env ~stdin ~stdout ~stderr ~exec_error argv =
+external fchdir : Unix.file_descr -> unit = "caml_spice_tools_fchdir"
+
+type working_directory =
+  | Path of string
+  | Open_directory of Unix.file_descr
+
+let change_working_directory = function
+  | Path path -> Unix.chdir path
+  | Open_directory fd -> fchdir fd
+
+let fork_exec ~working_directory ~env ~stdin ~stdout ~stderr ~exec_error argv =
   match argv with
   | [] -> Error "empty argv"
   | prog :: _ -> (
@@ -284,7 +285,7 @@ let fork_exec ?cwd ~env ~stdin ~stdout ~stderr ~exec_error argv =
       | 0 ->
           begin try
             ignore (Unix.setsid ());
-            Option.iter Unix.chdir cwd;
+            change_working_directory working_directory;
             Unix.dup2 stdin Unix.stdin;
             Unix.dup2 stdout Unix.stdout;
             Unix.dup2 stderr Unix.stderr;
@@ -299,9 +300,8 @@ let fork_exec ?cwd ~env ~stdin ~stdout ~stderr ~exec_error argv =
           end
       | pid -> Ok pid)
 
-let run_shell_blocking ~cwd ~env ~timeout_ms ~max_output_bytes ?stdin ~cancelled
-    argv =
-  if String.equal cwd "" then invalid_arg "cwd must not be empty";
+let run_shell_blocking ~working_directory ~env ~timeout_ms ~max_output_bytes
+    ?stdin ~cancelled argv =
   if timeout_ms <= 0 then invalid_arg "timeout_ms must be positive";
   validate_limit "max_output_bytes" max_output_bytes;
   let start = Unix.gettimeofday () in
@@ -394,8 +394,8 @@ let run_shell_blocking ~cwd ~env ~timeout_ms ~max_output_bytes ?stdin ~cancelled
         exec_r,
         exec_w ) -> (
       let child =
-        fork_exec ~cwd ~env ~stdin:child_stdin ~stdout:stdout_w ~stderr:stderr_w
-          ~exec_error:exec_w argv
+        fork_exec ~working_directory ~env ~stdin:child_stdin ~stdout:stdout_w
+          ~stderr:stderr_w ~exec_error:exec_w argv
       in
       close_tracked child_stdin;
       close_tracked stdout_w;
@@ -707,9 +707,15 @@ let run_blocking ?(stdout_limit = default_stdout_limit)
    [cancelled] is polled from that systhread; it must be a plain flag read. *)
 
 let run_shell ~cwd ~env ~timeout_ms ~max_output_bytes ?stdin ~cancelled argv =
+  if String.equal cwd "" then invalid_arg "cwd must not be empty";
   Eio_unix.run_in_systhread ~label:"spice-shell" (fun () ->
-      run_shell_blocking ~cwd ~env ~timeout_ms ~max_output_bytes ?stdin
-        ~cancelled argv)
+      run_shell_blocking ~working_directory:(Path cwd) ~env ~timeout_ms
+        ~max_output_bytes ?stdin ~cancelled argv)
+
+let run_shell_fd ~cwd ~env ~timeout_ms ~max_output_bytes ?stdin ~cancelled argv =
+  Eio_unix.run_in_systhread ~label:"spice-shell" (fun () ->
+      run_shell_blocking ~working_directory:(Open_directory cwd) ~env
+        ~timeout_ms ~max_output_bytes ?stdin ~cancelled argv)
 
 let run_sandboxed_shell ~sandbox ~cwd ~env ~timeout_ms ~max_output_bytes ?stdin
     ~cancelled argv =
