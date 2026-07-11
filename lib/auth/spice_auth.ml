@@ -106,10 +106,57 @@ module Secret = struct
 end
 
 module Http = struct
+  type t = {
+    client : Cohttp_eio.Client.t;
+    clock : float Eio.Time.clock_ty Eio.Std.r;
+    timeout_s : float;
+  }
+
+  let make ~(clock : _ Eio.Time.clock) ~timeout_s client =
+    if Float.compare timeout_s 0.0 <= 0 then
+      invalid_arg "OAuth HTTP timeout_s must be positive";
+    { client; clock :> float Eio.Time.clock_ty Eio.Std.r; timeout_s }
+
+  let default_timeout_s = 30.0
+
   let tls_client ~stdenv =
     match Oauth2_eio.make_tls_client (Eio.Stdenv.net stdenv) with
-    | Ok http -> Ok http
+    | Ok client ->
+        Ok
+          (make ~clock:(Eio.Stdenv.clock stdenv) ~timeout_s:default_timeout_s
+             client)
     | Error (`Tls_error message) -> Error (Error.Network message)
+
+  type timeout = Timed_out
+
+  let with_deadline t f =
+    match Eio.Time.with_timeout t.clock t.timeout_s (fun () -> Ok (f ())) with
+    | Ok result -> Ok result
+    | Error `Timeout -> Error Timed_out
+
+  let timeout_error timeout_s =
+    Error.Timeout (Printf.sprintf "OAuth request timed out after %gs" timeout_s)
+
+  let post t ~sw ~uri ?(headers = []) ~body () =
+    match
+      with_deadline t (fun () ->
+          Oauth2_eio.post t.client ~sw ~uri ~headers ~body ())
+    with
+    | Ok (Ok response) -> Ok response
+    | Ok (Error error) -> Error (Error.Network (Error.http_error_message error))
+    | Error Timed_out -> Error (timeout_error t.timeout_s)
+
+  type send_error = Timeout of float | OAuth of Oauth2_eio.Error.t
+
+  let send t ~sw request =
+    match with_deadline t (fun () -> Oauth2_eio.send t.client ~sw request) with
+    | Ok (Ok response) -> Ok response
+    | Ok (Error error) -> Error (OAuth error)
+    | Error Timed_out -> Error (Timeout t.timeout_s)
+
+  let send_error = function
+    | Timeout timeout_s -> timeout_error timeout_s
+    | OAuth error -> Error.of_oauth2 error
 end
 
 module Local_callback = struct
@@ -393,9 +440,7 @@ module Openai_chatgpt = struct
     else decode_oauth_or_http response
 
   let post http ~sw ~uri ?(headers = []) ~body () =
-    match Oauth2_eio.post http ~sw ~uri ~headers ~body () with
-    | Error error -> Error (Error.Network (Error.http_error_message error))
-    | Ok response -> Ok response
+    Http.post http ~sw ~uri ~headers ~body ()
 
   let post_json http ~sw ~uri json =
     match Json.encode json with
@@ -760,7 +805,7 @@ module OAuth2_authorization_code = struct
         match
           Oauth2.Grant.request ~client:t.spec.Protocol.authorization_client
             ~endpoint:t.spec.Protocol.authorization_token_endpoint grant
-          |> Oauth2_eio.send http ~sw
+          |> Http.send http ~sw
         with
         | Ok token ->
             Log.info (fun m ->
@@ -768,7 +813,7 @@ module OAuth2_authorization_code = struct
                   (Option.value ~default:"<none>"
                      (Uri.host t.spec.Protocol.authorization_token_endpoint)));
             Ok token
-        | Error error -> Error (Error.of_oauth2 error))
+        | Error error -> Error (Http.send_error error))
 
   let complete_secret ~http ~sw t ~callback ~now ~profile =
     let* token = complete ~http ~sw t ~callback in
@@ -851,7 +896,7 @@ module Device_code = struct
     | Error (`Reserved name) ->
         Error (Error.Invalid_request ("reserved OAuth parameter: " ^ name))
     | Ok request -> (
-        match Oauth2_eio.send http ~sw request with
+        match Http.send http ~sw request with
         | Ok device ->
             let interval = Oauth2.Device.interval device in
             let expires_in = Oauth2.Device.expires_in device in
@@ -877,7 +922,7 @@ module Device_code = struct
                   };
                 transport = Oauth2 { device; spec };
               }
-        | Error error -> Error (Error.of_oauth2 error))
+        | Error error -> Error (Http.send_error error))
 
   let expired_code code =
     String.equal code "expired_token"
@@ -889,13 +934,13 @@ module Device_code = struct
     match
       Oauth2.Grant.request ~client:spec.Protocol.device_client
         ~endpoint:spec.Protocol.device_token_endpoint grant
-      |> Oauth2_eio.send http ~sw
+      |> Http.send http ~sw
     with
     | Ok token ->
         Log.info (fun m -> m "device authorization completed");
         let* secret = Secret.oauth_token ~now token in
         Ok (Authorized secret)
-    | Error (`Oauth error) -> (
+    | Error (Http.OAuth (`Oauth error)) -> (
         match Oauth2.Device.classify_poll_error error with
         | `Authorization_pending ->
             Log.debug (fun m -> m "device poll pending");
@@ -908,7 +953,7 @@ module Device_code = struct
             Ok (Expired t)
         | `Other error ->
             Ok (Rejected (Error.Rejected (Oauth2.Error.to_string error))))
-    | Error error -> Error (Error.of_oauth2 error)
+    | Error error -> Error (Http.send_error error)
 
   (* --- OpenAI ChatGPT device authorization --- *)
 

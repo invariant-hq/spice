@@ -14,6 +14,13 @@ let read_body body = Eio.Buf_read.(of_flow ~max_size:4096 body |> take_all)
 let respond_string ~status ~body () =
   Cohttp_eio.Server.respond_string ~status ~body ()
 
+let auth_http ?(timeout_s = 1.0) env =
+  Auth.Http.make ~clock:env#clock ~timeout_s (Oauth2_eio.make_client env#net)
+
+let rejects_non_positive_http_timeout env () =
+  raises_invalid_arg "OAuth HTTP timeout_s must be positive" (fun () ->
+      ignore (auth_http ~timeout_s:0.0 env : Auth.Http.t))
+
 let with_server env callback f =
   Eio.Switch.run @@ fun sw ->
   let stop, stop_resolver = Eio.Promise.create () in
@@ -47,6 +54,33 @@ let with_server env callback f =
       Eio.Promise.resolve stop_resolver ();
       match !server_error with None -> () | Some exn -> raise exn)
     (fun () -> f ~sw ~base_uri)
+
+let with_stalling_response_body env f =
+  Eio.Switch.run @@ fun sw ->
+  let socket =
+    Eio.Net.listen env#net ~sw ~backlog:1 ~reuse_addr:true
+      (`Tcp (Eio.Net.Ipaddr.V4.loopback, 0))
+  in
+  let port =
+    match Eio.Net.listening_addr socket with
+    | `Tcp (address, port) ->
+        ignore address;
+        port
+    | `Unix path -> failf "expected TCP listening socket, got Unix path %S" path
+  in
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+      Eio.Switch.run @@ fun connection_sw ->
+      let flow, _address = Eio.Net.accept ~sw:connection_sw socket in
+      Eio.Flow.copy_string
+        "HTTP/1.1 200 OK\r\n\
+         Content-Type: application/json\r\n\
+         Content-Length: 128\r\n\
+         \r\n\
+         {"
+        flow;
+      Eio.Fiber.await_cancel ());
+  let base_uri = Uri.of_string (Printf.sprintf "http://127.0.0.1:%d" port) in
+  f ~sw ~base_uri
 
 let query_one name uri =
   match List.assoc_opt name (Uri.query uri) with
@@ -93,9 +127,8 @@ let complete_secret_response env ~profile ~response_body =
       let token_endpoint = Uri.with_path base_uri "/token" in
       let started, callback = authorization_setup ~token_endpoint in
       let result =
-        Auth.OAuth2_authorization_code.complete_secret
-          ~http:(Oauth2_eio.make_client env#net)
-          ~sw started ~callback ~now:10L ~profile
+        Auth.OAuth2_authorization_code.complete_secret ~http:(auth_http env) ~sw
+          started ~callback ~now:10L ~profile
       in
       (match !observed_body with
       | Some body ->
@@ -110,6 +143,41 @@ let complete_secret env ~profile ~token_type =
       (Printf.sprintf
          {|{"access_token":"access-secret","token_type":%S,"refresh_token":"refresh-secret"}|}
          token_type)
+
+let token_exchange_times_out_while_waiting_for_response_headers env () =
+  with_server env
+    (fun request body ->
+      equal string ~msg:"token path" "/token" (Http.Request.resource request);
+      ignore (read_body body);
+      Eio.Time.sleep env#clock 5.0;
+      respond_string ~status:`OK
+        ~body:{|{"access_token":"late","token_type":"Bearer"}|} ())
+    (fun ~sw ~base_uri ->
+      let token_endpoint = Uri.with_path base_uri "/token" in
+      let started, callback = authorization_setup ~token_endpoint in
+      match
+        Browser.complete_secret
+          ~http:(auth_http ~timeout_s:0.05 env)
+          ~sw started ~callback ~now:10L ~profile:Browser.Generic
+      with
+      | Error (Auth.Error.Timeout _) -> ()
+      | Error error ->
+          failf "expected request timeout, got %a" Auth.Error.pp error
+      | Ok _ -> failf "expected request timeout")
+
+let token_exchange_times_out_while_reading_response_body env () =
+  with_stalling_response_body env (fun ~sw ~base_uri ->
+      let token_endpoint = Uri.with_path base_uri "/token" in
+      let started, callback = authorization_setup ~token_endpoint in
+      match
+        Browser.complete_secret
+          ~http:(auth_http ~timeout_s:0.05 env)
+          ~sw started ~callback ~now:10L ~profile:Browser.Generic
+      with
+      | Error (Auth.Error.Timeout _) -> ()
+      | Error error ->
+          failf "expected request timeout, got %a" Auth.Error.pp error
+      | Ok _ -> failf "expected request timeout")
 
 let rejects_non_bearer_token_type env () =
   match
@@ -301,16 +369,14 @@ let with_oauth_device_server env token_responses f =
 
 let start_oauth_device ~sw ~base_uri env =
   match
-    Device.start_oauth2
-      ~http:(Oauth2_eio.make_client env#net)
-      ~sw ~now:10L
+    Device.start_oauth2 ~http:(auth_http env) ~sw ~now:10L
       (oauth_device_spec ~base_uri)
   with
   | Ok device -> device
   | Error error -> failf "expected device start, got %a" Auth.Error.pp error
 
 let poll_oauth_device ~sw env ~now device =
-  match Device.poll ~http:(Oauth2_eio.make_client env#net) ~sw ~now device with
+  match Device.poll ~http:(auth_http env) ~sw ~now device with
   | Ok poll -> poll
   | Error error -> failf "expected device poll, got %a" Auth.Error.pp error
 
@@ -385,9 +451,7 @@ let openai_device_start_uses_config_fallbacks env () =
         | Error error -> failf "config: %a" Auth.Error.pp error
       in
       match
-        Device.start_openai_chatgpt
-          ~http:(Oauth2_eio.make_client env#net)
-          ~sw ~now:100L config
+        Device.start_openai_chatgpt ~http:(auth_http env) ~sw ~now:100L config
       with
       | Error error -> failf "expected device start, got %a" Auth.Error.pp error
       | Ok device ->
@@ -411,6 +475,11 @@ let () =
           test "rejects invalid OpenAI auth issuers"
             rejects_invalid_openai_auth_issuer;
         ];
+      group "http"
+        [
+          test "rejects non-positive request timeouts"
+            (with_eio rejects_non_positive_http_timeout);
+        ];
       group "oauth"
         [
           test ~timeout:3.0 "rejects non-Bearer generic token responses"
@@ -423,6 +492,13 @@ let () =
             (with_eio rejects_empty_generic_access_token);
           test ~timeout:3.0 "rejects empty generic refresh tokens"
             (with_eio rejects_empty_generic_refresh_token);
+          test ~timeout:0.3
+            "token exchange times out while waiting for response headers"
+            (with_eio
+               token_exchange_times_out_while_waiting_for_response_headers);
+          test ~timeout:0.3
+            "token exchange times out while reading the response body"
+            (with_eio token_exchange_times_out_while_reading_response_body);
         ];
       group "browser"
         [

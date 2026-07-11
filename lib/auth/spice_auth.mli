@@ -47,7 +47,7 @@ module Error : sig
         (** OAuth or provider rejection, including denied authorization and
             non-pending OAuth error responses. *)
     | Timeout of string
-        (** Local wait timeout, such as waiting for a browser callback. *)
+        (** A local wait or provider HTTP request exceeded its deadline. *)
     | Not_refreshable
         (** Refresh requested for non-OAuth material or OAuth material without a
             refresh token. *)
@@ -81,12 +81,25 @@ end
 (** {1:http HTTP} *)
 
 module Http : sig
-  (** HTTP client construction for authentication runtimes. *)
+  (** Deadline-bound HTTP for authentication runtimes. *)
 
-  val tls_client :
-    stdenv:Eio_unix.Stdenv.base -> (Cohttp_eio.Client.t, Error.t) result
-  (** [tls_client ~stdenv] is a TLS-capable HTTP client using [stdenv]'s network
-      capability.
+  type t
+  (** An HTTP client whose requests share one timeout policy.
+
+      Every request is cancelled if its complete lifecycle — connection,
+      response headers, and response body — exceeds the configured timeout. *)
+
+  val make :
+    clock:_ Eio.Time.clock -> timeout_s:float -> Cohttp_eio.Client.t -> t
+  (** [make ~clock ~timeout_s client] binds [client] to [clock] and a
+      per-request [timeout_s].
+
+      Raises [Invalid_argument] if [timeout_s] is not positive. *)
+
+  val tls_client : stdenv:Eio_unix.Stdenv.base -> (t, Error.t) result
+  (** [tls_client ~stdenv] is a deadline-bound TLS HTTP client using [stdenv]'s
+      network capability and clock. Each complete request has a 30-second
+      timeout.
 
       Errors with [Network] if TLS client construction fails. *)
 end
@@ -191,7 +204,7 @@ module OAuth2_authorization_code : sig
       validation before the token exchange. *)
 
   val complete :
-    http:Cohttp_eio.Client.t ->
+    http:Http.t ->
     sw:Eio.Switch.t ->
     t ->
     callback:Uri.t ->
@@ -204,13 +217,13 @@ module OAuth2_authorization_code : sig
       denial in the checked callback errors with [Rejected]. Missing,
       duplicated, state-mismatched, or redirect-mismatched callback fields error
       with [Invalid_request]. Token exchange failures use [Network], [Protocol],
-      [Rejected], or [Invalid_request].
+      [Rejected], [Timeout], or [Invalid_request].
 
       Prefer {!complete_secret}, which folds in token normalization and returns
       a {!Spice_account.Secret.t} directly. *)
 
   val complete_secret :
-    http:Cohttp_eio.Client.t ->
+    http:Http.t ->
     sw:Eio.Switch.t ->
     t ->
     callback:Uri.t ->
@@ -281,7 +294,7 @@ module Openai_chatgpt : sig
   end
 
   val refresh :
-    http:Cohttp_eio.Client.t ->
+    http:Http.t ->
     sw:Eio.Switch.t ->
     now:Spice_account.timestamp ->
     Config.t ->
@@ -302,10 +315,10 @@ module Openai_chatgpt : sig
       The function performs one JSON POST and does not persist the returned
       secret. Errors with [Not_refreshable] if [secret] has no refresh token or
       is not an OAuth secret. Provider and transport failures use [Network],
-      [Protocol], or [Rejected]. *)
+      [Protocol], [Rejected], or [Timeout]. *)
 
   val revoke :
-    http:Cohttp_eio.Client.t ->
+    http:Http.t ->
     sw:Eio.Switch.t ->
     Config.t ->
     Spice_account.Secret.t ->
@@ -318,7 +331,8 @@ module Openai_chatgpt : sig
       and does not remove stored credentials; callers own local removal.
 
       Errors with [Not_refreshable] if [secret] is not an OAuth secret. Provider
-      and transport failures use [Network], [Protocol], or [Rejected]. *)
+      and transport failures use [Network], [Protocol], [Rejected], or
+      [Timeout]. *)
 end
 
 (** {1:device-code Device Code} *)
@@ -367,7 +381,7 @@ module Device_code : sig
         *)
 
   val start_oauth2 :
-    http:Cohttp_eio.Client.t ->
+    http:Http.t ->
     sw:Eio.Switch.t ->
     now:Spice_account.timestamp ->
     Spice_provider.Auth.Login.Protocol.oauth2_device_code ->
@@ -378,11 +392,11 @@ module Device_code : sig
       The returned value contains the challenge, expiry, and first polling time.
       The function performs one HTTP request and does not display UI, open a
       browser, sleep, or store credentials. Errors use [Network], [Protocol],
-      [Rejected], or [Invalid_request] according to the OAuth transport result.
-  *)
+      [Rejected], [Timeout], or [Invalid_request] according to the OAuth
+      transport result. *)
 
   val start_openai_chatgpt :
-    http:Cohttp_eio.Client.t ->
+    http:Http.t ->
     sw:Eio.Switch.t ->
     now:Spice_account.timestamp ->
     Openai_chatgpt.Config.t ->
@@ -395,10 +409,10 @@ module Device_code : sig
       function performs one HTTP request and does not display UI, open a
       browser, sleep, or store credentials. The response may spell the user code
       as either [user_code] or [usercode]. Missing [expires_in] and [interval]
-      fields fall back to [config]. *)
+      fields fall back to [config]. Request deadlines error with [Timeout]. *)
 
   val poll :
-    http:Cohttp_eio.Client.t ->
+    http:Http.t ->
     sw:Eio.Switch.t ->
     now:Spice_account.timestamp ->
     t ->
@@ -411,7 +425,8 @@ module Device_code : sig
       authorization returns [Pending] with an advanced polling schedule; the
       standard OAuth [slow_down] response also increases the interval. Other
       non-pending rejections return [Ok (Rejected _)]. Transport and malformed
-      responses return [Error _]. Successful authorization returns [Authorized].
+      responses return [Error _], as does [Timeout] when a complete request
+      exceeds [http]'s deadline. Successful authorization returns [Authorized].
 
       For the OpenAI transport, [poll] may perform a second HTTP request to
       exchange the returned authorization code at the OAuth token endpoint. *)
