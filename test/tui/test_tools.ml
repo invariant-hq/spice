@@ -28,8 +28,9 @@ let configure_edits project =
 
 (* Auto-allow the write so it runs for real: a project config cannot escalate
    permission (self-grant protection), but SPICE_PERMISSION_MODE — the one
-   escalation-trusted channel — can. Shell still prompts under accept-edits,
-   which the permission test relies on. *)
+   escalation-trusted channel — can. Only the tests whose write must run
+   unprompted set it. Shell prompts under every posture, so the permission test
+   below needs nothing: it runs under the default one. *)
 let edit_env = [ ("SPICE_PERMISSION_MODE", "accept-edits") ]
 
 (* The follow-up completion: the model's request now carries the tool result, so
@@ -174,15 +175,15 @@ let%expect_test "a read shows a summary only" =
     {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
-04 |        permission: auto edits
-05 |        sandbox: danger-full-access (config)
-06 |
-07 | ❯ inspect the data
-08 |
-09 | ⏺ Read(data.txt)
-10 |   ⎿  Read 8 lines
-11 |
-12 | ⏺ Read the data file.
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ inspect the data
+07 |
+08 | ⏺ Read(data.txt)
+09 |   ⎿  Read 8 lines
+10 |
+11 | ⏺ Read the data file.
+12 |
 13 |
 14 |
 15 |
@@ -287,23 +288,23 @@ let%expect_test "todo boards land at their call sites" =
     {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
-04 |        permission: auto edits
-05 |        sandbox: danger-full-access (config)
-06 |
-07 | ❯ plan the work
-08 |
-09 | ⏺ Todo(2 tasks · 0 done · 1 running)
-10 |       ◼ scaffold the module
-11 |       ◻ write the tests
-12 |
-13 | ⏺ Read(data.txt)
-14 |   ⎿  Read 1 line
-15 |
-16 | ⏺ Todo(2 tasks · 1 done · 1 running)
-17 |       ◼ write the tests
-18 |       ⎿ … 1 done
-19 |
-20 | ⏺ Planned and inspected.
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ plan the work
+07 |
+08 | ⏺ Todo(2 tasks · 0 done · 1 running)
+09 |       ◼ scaffold the module
+10 |       ◻ write the tests
+11 |
+12 | ⏺ Read(data.txt)
+13 |   ⎿  Read 1 line
+14 |
+15 | ⏺ Todo(2 tasks · 1 done · 1 running)
+16 |       ◼ write the tests
+17 |       ⎿ … 1 done
+18 |
+19 | ⏺ Planned and inspected.
+20 |
 21 |
 22 |
 23 | ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
@@ -342,16 +343,16 @@ let%expect_test "consecutive todo writes fold to one board" =
     {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
-04 |        permission: auto edits
-05 |        sandbox: danger-full-access (config)
-06 |
-07 | ❯ plan the work
-08 |
-09 | ⏺ Todo(2 tasks · 1 done · 1 running)
-10 |       ◼ write the tests
-11 |       ⎿ … 1 done
-12 |
-13 | ⏺ Re-planned the work.
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ plan the work
+07 |
+08 | ⏺ Todo(2 tasks · 1 done · 1 running)
+09 |       ◼ write the tests
+10 |       ⎿ … 1 done
+11 |
+12 | ⏺ Re-planned the work.
+13 |
 14 |
 15 |
 16 |
@@ -421,17 +422,17 @@ let%expect_test "a shell permission prompt gates the call and records it" =
     {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
-04 |        permission: auto edits
-05 |        sandbox: danger-full-access (config)
-06 |
-07 | ❯ run it
-08 |
-09 |   allowed once
-10 |
-11 | ⏺ Shell(echo recorded)
-12 |   ⎿  done · 0s
-13 |
-14 | ⏺ Ran the command.
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ run it
+07 |
+08 |   allowed once
+09 |
+10 | ⏺ Shell(echo recorded)
+11 |   ⎿  done · 0s
+12 |
+13 | ⏺ Ran the command.
+14 |
 15 |
 16 |
 17 |
@@ -520,9 +521,9 @@ let%expect_test "a failed shell humanizes the exit and shows the output tail" =
   Tui.settle t;
   Tui.print t;
   [%expect
-    {|01 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
-02 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
-03 |        permission: auto edits
+    {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
 05 |
 06 | ❯ fail it
@@ -570,16 +571,16 @@ let%expect_test "a long failure summary wraps instead of truncating" =
     {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
-04 |        permission: auto edits
-05 |        sandbox: danger-full-access (config)
-06 |
-07 | ❯ read it
-08 |
-09 | ⏺ Read(a/very/deeply/nested/directory/path/that/surely/does/not/exist/UNIQUE…)
-10 |   ⎿  a/very/deeply/nested/directory/path/that/surely/does/not/exist/
-11 |      UNIQUEENDTOKEN.txt: path does not exist
-12 |
-13 | ⏺ The file was missing.
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ read it
+07 |
+08 | ⏺ Read(a/very/deeply/nested/directory/path/that/surely/does/not/exist/UNIQUE…)
+09 |   ⎿  a/very/deeply/nested/directory/path/that/surely/does/not/exist/
+10 |      UNIQUEENDTOKEN.txt: path does not exist
+11 |
+12 | ⏺ The file was missing.
+13 |
 14 |
 15 |
 16 |
@@ -619,15 +620,15 @@ let%expect_test
     {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
-04 |        permission: auto edits
-05 |        sandbox: danger-full-access (config)
-06 |
-07 | ❯ search it
-08 |
-09 | ⏺ Search(List.map __ __)
-10 |   ⎿  Found 2 matches across 1 file
-11 |
-12 | ⏺ Searched the expressions.
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ search it
+07 |
+08 | ⏺ Search(List.map __ __)
+09 |   ⎿  Found 2 matches across 1 file
+10 |
+11 | ⏺ Searched the expressions.
+12 |
 13 |
 14 |
 15 |
@@ -673,8 +674,8 @@ let%expect_test "a host tool after a question settles in the transcript" =
   Tui.settle t;
   Tui.print t;
   [%expect
-    {|01 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
-02 |        permission: auto edits
+    {|01 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+02 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 03 |        sandbox: danger-full-access (config)
 04 |
 05 | ❯ help me sequence the work
