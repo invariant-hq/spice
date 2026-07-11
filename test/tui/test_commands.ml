@@ -299,4 +299,53 @@ let%expect_test "the sandbox flag overrides the configured mode" =
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   ! not logged in · /login · $PROJECT · gpt-5.5 medium · dune: ✗|}]
 
+let seed_invalid_shell project =
+  Project.write_scratch project "config/spice/config.json"
+    {|{"shell":"bad\u0000shell"}|}
+
+let%expect_test "a shell runtime exception settles busy state" =
+  Tui.run ~name:"cmd-shell-runtime-exception" ~seed:seed_invalid_shell
+  @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "!printf never-runs";
+  Tui.enter t;
+  Tui.settle t;
+  Printf.printf "runtime failure visible: %b\n"
+    (String.includes ~affix:"shell must not contain NUL" (Tui.screen t));
+  Tui.keys t "!printf admitted-again";
+  Tui.enter t;
+  Tui.settle t;
+  Printf.printf "second shell admitted: %b\n"
+    (String.includes ~affix:"printf admitted-again" (Tui.screen t));
+  [%expect
+    {|
+    runtime failure visible: true
+    second shell admitted: true|}]
+
+let shell_recovery_script =
+  [
+    Provider_script.message ~expect:[ "continue after shell" ]
+      ~id:"shell-recovery" "interaction recovered";
+  ]
+
+let%expect_test "invalid pasted shell input never acquires busy state" =
+  Tui.run ~name:"cmd-shell-invalid-paste" ~provider:shell_recovery_script
+  @@ fun t ->
+  Tui.settle t;
+  Tui.paste t "!\000";
+  Tui.settle t;
+  Tui.enter t;
+  Tui.settle t;
+  Printf.printf "validation visible: %b\n"
+    (String.includes ~affix:"shell command must not contain NUL" (Tui.screen t));
+  Tui.keys t "continue after shell";
+  Tui.enter t;
+  Tui.settle t;
+  Printf.printf "subsequent prompt completed: %b\n"
+    (String.includes ~affix:"interaction recovered" (Tui.screen t));
+  [%expect
+    {|
+    validation visible: true
+    subsequent prompt completed: true|}]
+
 [%%run_tests "spice.tui.commands"]

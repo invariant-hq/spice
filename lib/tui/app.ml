@@ -181,7 +181,7 @@ type t = {
   (* The one in-flight user shell command ([Some] while running): its header
      renders pinned above the composer, its result settles as a transcript
      block, and further shell submits are refused meanwhile. *)
-  shell : string option;
+  shell : Spice_tools.Shell.Input.t option;
   cols : int;
   rows : int;
   (* Whether the wide-terminal side panel region is open
@@ -427,7 +427,7 @@ type command =
       call_id : string;
       decision : Spice_protocol.Plan.Decision.t;
     }
-  | Run_shell of string
+  | Run_shell of Spice_tools.Shell.Input.t
   | Interrupt_shell
   (* Run one review-screen effect. The review sub-library owns its whole async
      protocol (snapshot load, persistence, worktree watch, debounced reload,
@@ -506,7 +506,6 @@ let esc_clear_notice = "Esc again to clear"
 let interrupt_notice = "Press Esc again to interrupt"
 let shell_wait_flash = "shell commands wait for the turn to finish"
 let shell_busy_flash = "a shell command is already running"
-let shell_empty_flash = "shell command must not be empty"
 
 (* The subscription clock carries no absolute time (Mosaic.Sub), so the turn tick
    advances the modeled [now] by a fixed step at its own cadence; runtime-stamped
@@ -792,11 +791,12 @@ let start_subagent_wake t =
    as a durable user block, pin the running header above the composer, and hand
    the command to the executor. From the prelude this is the drop's layout jump
    without a turn — the banner heads the document and the shell block follows. *)
-let start_shell command t =
+let start_shell input t =
+  let command = Spice_tools.Shell.Input.command input in
   let echo transcript =
     Transcript.append transcript (Transcript.User ("!" ^ command))
   in
-  let t = { t with shell = Some command } in
+  let t = { t with shell = Some input } in
   match t.phase with
   | Prelude ->
       let transcript =
@@ -808,10 +808,10 @@ let start_shell command t =
             Chat (seed_health ~brief:t.brief { empty_chat with transcript });
           motion = Home.Motion.freeze t.motion;
         },
-        [ Run_shell command ] )
+        [ Run_shell input ] )
   | Chat chat ->
       ( { t with phase = Chat { chat with transcript = echo chat.transcript } },
-        [ Run_shell command ] )
+        [ Run_shell input ] )
 
 (* Enter a session's chat by resume or fork (12-home.md §The drop, "resumes skip
    the home"): swap to a banner-headed empty transcript, close any surface, and
@@ -1204,9 +1204,10 @@ let submit_text value t =
       let command =
         String.trim (String.sub trimmed 1 (String.length trimmed - 1))
       in
-      if String.equal command "" then
-        ({ t with flash = Some shell_empty_flash }, [])
-      else start_shell command t
+      match Spice_tools.Shell.Input.make command with
+      | Error error ->
+          ({ t with flash = Some (Spice_tools.Shell.Input.message error) }, [])
+      | Ok input -> start_shell input t
   else
     match Command.parse trimmed with
     | Some (Command.Exact command) -> dispatch_command command t
@@ -3109,9 +3110,10 @@ let chat_above t chat ~right =
 let shell_running_row t =
   match t.shell with
   | None -> []
-  | Some command ->
+  | Some input ->
       [
-        Tool_block.header Tool_block.Shell ~argument:command
+        Tool_block.header Tool_block.Shell
+          ~argument:(Spice_tools.Shell.Input.command input)
           ~dot:Tool_block.Running;
       ]
 

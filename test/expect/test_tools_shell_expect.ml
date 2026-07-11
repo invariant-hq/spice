@@ -84,7 +84,11 @@ let with_fixture f =
       f ~root ~outside ~fs:(Eio.Stdenv.fs env) ~workspace)
 
 let input ?workdir ?timeout_ms ?description ?escalate command =
-  Shell.Input.make ?workdir ?timeout_ms ?description ?escalate command
+  match
+    Shell.Input.make ?workdir ?timeout_ms ?description ?escalate command
+  with
+  | Ok input -> input
+  | Error error -> failf "invalid shell fixture: %a" Shell.Input.pp_error error
 
 let unconfined ?default_timeout_ms ?max_timeout_ms ?max_output_bytes
     ?(environment = []) () =
@@ -207,6 +211,26 @@ let print_invalid label make =
   | exception Invalid_argument message ->
       Printf.printf "%s: invalid %s\n" label message
 
+let print_input_error label result =
+  match result with
+  | Ok _ -> Printf.printf "%s: accepted\n" label
+  | Error error ->
+      let shape =
+        match error with
+        | Shell.Input.Empty Shell.Input.Command -> "empty(command)"
+        | Shell.Input.Empty Shell.Input.Workdir -> "empty(workdir)"
+        | Shell.Input.Empty Shell.Input.Description -> "empty(description)"
+        | Shell.Input.Contains_nul Shell.Input.Command ->
+            "contains_nul(command)"
+        | Shell.Input.Contains_nul Shell.Input.Workdir ->
+            "contains_nul(workdir)"
+        | Shell.Input.Contains_nul Shell.Input.Description ->
+            "contains_nul(description)"
+        | Shell.Input.Non_positive_timeout timeout_ms ->
+            Printf.sprintf "non_positive_timeout(%d)" timeout_ms
+      in
+      Printf.printf "%s: %s: %s\n" label shape (Shell.Input.message error)
+
 let print_resolved_timeout label config timeout_ms =
   match Shell.Config.resolve_timeout_ms config timeout_ms with
   | Ok timeout_ms -> Printf.printf "%s: ok %d\n" label timeout_ms
@@ -320,11 +344,13 @@ let%expect_test "input and config validation" =
   print_decode "unknown field"
     (json_obj [ ("command", Json.string "pwd"); ("extra", Json.bool true) ]);
   print_decode "empty command" (json_obj [ ("command", Json.string "") ]);
-  print_invalid "nul workdir" (fun () ->
-      Shell.Input.make ~workdir:"bad\000path" "pwd");
-  print_invalid "zero timeout" (fun () -> Shell.Input.make ~timeout_ms:0 "pwd");
-  print_invalid "empty description" (fun () ->
-      Shell.Input.make ~description:"" "pwd");
+  print_input_error "empty command" (Shell.Input.make "");
+  print_input_error "nul command" (Shell.Input.make "bad\000command");
+  print_input_error "nul workdir"
+    (Shell.Input.make ~workdir:"bad\000path" "pwd");
+  print_input_error "zero timeout" (Shell.Input.make ~timeout_ms:0 "pwd");
+  print_input_error "empty description"
+    (Shell.Input.make ~description:"" "pwd");
   print_invalid "empty shell" (fun () -> Shell.Config.make ~shell:"" ());
   print_invalid "bad env name" (fun () ->
       Shell.Config.make ~environment:[ ("BAD=NAME", Some "1") ] ());
@@ -343,9 +369,11 @@ let%expect_test "input and config validation" =
     full: ok command="pwd" workdir=subject timeout=250 description=show directory
     unknown field: error
     empty command: error
-    nul workdir: invalid workdir must not contain NUL
-    zero timeout: invalid timeout_ms must be positive
-    empty description: invalid description must not be empty
+    empty command: empty(command): shell command must not be empty
+    nul command: contains_nul(command): shell command must not contain NUL
+    nul workdir: contains_nul(workdir): workdir must not contain NUL
+    zero timeout: non_positive_timeout(0): timeout_ms must be positive, got 0
+    empty description: empty(description): description must not be empty
     empty shell: invalid shell must not be empty
     bad env name: invalid environment name must not contain =
     bad env value: invalid environment value must not contain NUL

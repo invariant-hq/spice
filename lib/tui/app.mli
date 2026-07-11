@@ -221,11 +221,12 @@ type command =
       (** Resolve a blocked plan dialog: the runtime submits
           {!Spice_protocol.Command.Resolve_plan}, which applies the durable plan
           transition and answers the parked call host-side. *)
-  | Run_shell of string
+  | Run_shell of Spice_tools.Shell.Input.t
       (** Execute one user shell command ([!] — 03-composer.md §Shell mode)
           through {!Spice_tools.Shell} under the run's effective sandbox, off
           the session drain, and dispatch the settled block back with
-          {!shell_finished}. The shell surface admits one command at a time. *)
+          {!shell_finished}. The input is validated before the shell acquires
+          its one-command-at-a-time busy state. *)
   | Interrupt_shell
       (** Cancel the in-flight {!Run_shell}: its process group is terminated and
           the block settles interrupted. Emitted by the interrupt double-press

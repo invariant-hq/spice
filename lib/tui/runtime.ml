@@ -886,7 +886,7 @@ let append_prompt_history ~stdenv ~clock host ~session entry =
    same effective sandbox as the run, executed by {!Spice_tools.Shell} off the
    session drain — ephemeral, never persisted to the session
    (doc/plans/tui-next-composer.md §Host seams). *)
-let run_user_shell ?sandbox_flag ~stdenv ~host ~cancelled command =
+let run_user_shell ?sandbox_flag ~stdenv ~host ~cancelled input =
   let config = Spice_host.Host.config host in
   let workspace =
     Spice_workspace.single
@@ -905,14 +905,14 @@ let run_user_shell ?sandbox_flag ~stdenv ~host ~cancelled command =
       in
       Ok
         (Spice_tools.Shell.run ~fs:(Eio.Stdenv.fs stdenv) ~workspace
-           ~config:shell ~cancelled
-           (Spice_tools.Shell.Input.make command))
+           ~config:shell ~cancelled input)
 
 (* Distill a shell result into the settled transcript block: the first output
    line as the [⎿] summary, the exit shape and remaining line count as facts.
    The full 02-tools shell view (output tail, disclosure) is a later
    iteration. *)
-let shell_block ~command result =
+let shell_block input result =
+  let command = Spice_tools.Shell.Input.command input in
   let stream_lines stream =
     let text =
       match stream with
@@ -1214,6 +1214,11 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
            subscriptions fire on the drain fiber, off the Mosaic loop, and reach
            the shell only through it. *)
         let dispatch_ref = ref None in
+        (* Mosaic dispatch first enqueues the message, then requests a redraw.
+           Both operations are non-suspending; the Eio and test backends wake
+           by broadcasting a condition. Thus a present dispatch has no
+           recoverable failure after admission. Teardown clears the ref before
+           closing owners, when there is no interactive app left to settle. *)
         let deliver msg =
           match !dispatch_ref with Some dispatch -> dispatch msg | None -> ()
         in
@@ -2285,15 +2290,28 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
                             (App.settled ~now:(Eio.Time.now clock)
                                (failed_settle message)))
                   | None -> ())
-          | App.Run_shell command ->
+          | App.Run_shell input ->
               shell_cancelled := false;
               perform (fun () ->
-                  let result =
-                    run_user_shell ?sandbox_flag ~stdenv ~host
-                      ~cancelled:(fun () -> !shell_cancelled)
-                      command
+                  let block =
+                    try
+                      run_user_shell ?sandbox_flag ~stdenv ~host
+                        ~cancelled:(fun () -> !shell_cancelled)
+                        input
+                      |> shell_block input
+                    with
+                    | Eio.Cancel.Cancelled _ as exn -> raise exn
+                    | exn ->
+                        let backtrace = Printexc.get_raw_backtrace () in
+                        Log.err (fun m ->
+                            m "user shell raised: %s@.%s"
+                              (Printexc.to_string exn)
+                              (Printexc.raw_backtrace_to_string backtrace));
+                        Error
+                          ("shell execution failed: " ^ Printexc.to_string exn)
+                        |> shell_block input
                   in
-                  deliver (App.shell_finished (shell_block ~command result)))
+                  deliver (App.shell_finished block))
           | App.Interrupt_shell -> perform (fun () -> shell_cancelled := true)
           (* Provider login / logout (09-auth.md). [perform] runs each thunk in a
              daemon fiber (Mosaic's ~process_perform), so the browser / device

@@ -15,11 +15,6 @@ let json_obj fields =
 let json_null = Json.null ()
 let contains_nul s = String.contains s '\000'
 
-let validate_non_empty name = function
-  | "" -> invalid_arg (name ^ " must not be empty")
-  | s when contains_nul s -> invalid_arg (name ^ " must not contain NUL")
-  | _ -> ()
-
 module Input = struct
   type t = {
     command : string;
@@ -29,16 +24,51 @@ module Input = struct
     escalate : bool;
   }
 
+  type field = Command | Workdir | Description
+
+  type error =
+    | Empty of field
+    | Contains_nul of field
+    | Non_positive_timeout of int
+
+  let field_name = function
+    | Command -> "shell command"
+    | Workdir -> "workdir"
+    | Description -> "description"
+
+  let message = function
+    | Empty field -> field_name field ^ " must not be empty"
+    | Contains_nul field -> field_name field ^ " must not contain NUL"
+    | Non_positive_timeout timeout_ms ->
+        Printf.sprintf "timeout_ms must be positive, got %d" timeout_ms
+
+  let pp_error ppf error = Format.pp_print_string ppf (message error)
+
+  let validate_non_empty field = function
+    | "" -> Error (Empty field)
+    | value when contains_nul value -> Error (Contains_nul field)
+    | _ -> Ok ()
+
   let make ?workdir ?timeout_ms ?description ?(escalate = false) command =
-    validate_non_empty "command" command;
-    Option.iter (validate_non_empty "workdir") workdir;
-    Option.iter (validate_non_empty "description") description;
-    begin match timeout_ms with
-    | Some timeout_ms when timeout_ms <= 0 ->
-        invalid_arg "timeout_ms must be positive"
-    | Some _ | None -> ()
-    end;
-    { command; workdir; timeout_ms; description; escalate }
+    let ( let* ) = Result.bind in
+    let* () = validate_non_empty Command command in
+    let* () =
+      match workdir with
+      | Some workdir -> validate_non_empty Workdir workdir
+      | None -> Ok ()
+    in
+    let* () =
+      match description with
+      | Some description -> validate_non_empty Description description
+      | None -> Ok ()
+    in
+    let* () =
+      match timeout_ms with
+      | Some timeout_ms when timeout_ms <= 0 ->
+          Error (Non_positive_timeout timeout_ms)
+      | Some _ | None -> Ok ()
+    in
+    Ok { command; workdir; timeout_ms; description; escalate }
 
   let command t = t.command
   let workdir t = t.workdir
@@ -49,8 +79,9 @@ module Input = struct
   let codec =
     Jsont.Object.map ~kind:"shell input"
       (fun command workdir timeout_ms description escalate ->
-        decode_invalid_arg (fun () ->
-            make ?workdir ?timeout_ms ?description ?escalate command))
+        match make ?workdir ?timeout_ms ?description ?escalate command with
+        | Ok input -> input
+        | Error error -> decode_error (message error))
     |> Jsont.Object.mem "command" Jsont.string ~enc:command
     |> Jsont.Object.opt_mem "workdir" Jsont.string ~enc:workdir
     |> Jsont.Object.opt_mem "timeout_ms" Jsont.int ~enc:timeout_ms

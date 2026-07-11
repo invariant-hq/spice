@@ -40,14 +40,24 @@ module Input : sig
       [Input.t] is the host-side request type. Build values directly with
       {!make}, or decode provider JSON with {!decode}. *)
 
+  type field = Command | Workdir | Description
+  (** A string field validated by {!make}. *)
+
+  type error =
+    | Empty of field
+    | Contains_nul of field
+    | Non_positive_timeout of int
+  (** A shell input construction error. *)
+
   val make :
     ?workdir:string ->
     ?timeout_ms:int ->
     ?description:string ->
     ?escalate:bool ->
     string ->
-    t
-  (** [make command] runs [command] through the host-configured shell.
+    (t, error) result
+  (** [make command] is a request to run [command] through the host-configured
+      shell.
 
       [command] is non-empty shell text. [workdir], when present, is a
       workspace-relative path or an absolute path contained by the workspace;
@@ -61,10 +71,16 @@ module Input : sig
       confinement {!run} refuses the input; under unconfined or
       declared-external decisions it changes nothing.
 
-      Raises [Invalid_argument] if [command], [workdir], or [description] is
-      empty when supplied, if any string contains NUL, or if [timeout_ms <= 0].
-      Untrusted provider JSON goes through {!decode}, which reports the same
-      invalid states as decode errors. *)
+      Errors if [command], [workdir], or [description] is empty when supplied,
+      if any string contains NUL, or if [timeout_ms <= 0]. Untrusted provider
+      JSON goes through {!decode}, which reports the same invalid states as
+      decode errors. *)
+
+  val message : error -> string
+  (** [message error] is a human-readable diagnostic for [error]. *)
+
+  val pp_error : Format.formatter -> error -> unit
+  (** [pp_error ppf error] formats [error] for diagnostics. *)
 
   val command : t -> string
   (** [command t] is the requested shell command text. *)
