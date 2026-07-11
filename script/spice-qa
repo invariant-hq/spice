@@ -1,0 +1,339 @@
+#!/bin/bash
+# spice-qa — drive a real spice TUI session interactively, as a user would.
+#
+# tmux (dedicated server socket "spice-qa") holds the pty and the terminal
+# emulation; this script is a thin verb layer: inject input, dump the rendered
+# screen, wait on conditions, and report liveness. Nothing here fakes anything:
+# the real binary, the real config and providers, the wall clock.
+#
+#   spice-qa start [--name N] [--rows R] [--cols C] [--project DIR] [--bin BIN]
+#                  [-- SPICE_ARGS...]
+#   spice-qa screen [--name N] [--plain] [--sgr] [--history LINES]
+#   spice-qa type TEXT...        literal keystrokes (no Enter)
+#   spice-qa key KEY...          named keys: Enter Escape C-c Up BSpace F1 ...
+#   spice-qa submit TEXT...      type TEXT, then Enter as a separate write
+#   spice-qa paste [TEXT|-]      bracketed paste (stdin with -)
+#   spice-qa wait [--contains S] [--gone S] [--regex RE] [--stable MS]
+#                 [--quiet MS] [--timeout SECS]
+#   spice-qa status              one JSON line: alive, cpu, last output, ...
+#   spice-qa resize --rows R --cols C
+#   spice-qa diagnose [SECS]     cpu + hot-symbol sample of the spice process
+#   spice-qa tail [BYTES]        raw pty byte stream tail (escapes visible)
+#   spice-qa attach              print the command for a human to watch live
+#   spice-qa ls                  list sessions
+#   spice-qa stop [--name N]     archive final screen + logs, kill the session
+#
+# State per session: ~/.cache/spice-qa/<name>/ (raw.log input.log final.screen)
+
+set -euo pipefail
+
+SOCKET=spice-qa
+STATE_ROOT="$HOME/.cache/spice-qa"
+NAME=main
+
+die() { echo "spice-qa: $*" >&2; exit 2; }
+tm() { tmux -L "$SOCKET" "$@"; }
+state() { echo "$STATE_ROOT/$NAME"; }
+# Pane-form target (session:current-window): pipe-pane and set -w reject the
+# bare exact-session form "=name". Lifecycle verbs use session_target.
+target() { echo "=$NAME:"; }
+session_target() { echo "=$NAME"; }
+
+have_session() { tm has-session -t "$(session_target)" 2>/dev/null; }
+need_session() { have_session || die "no session '$NAME' (spice-qa start)"; }
+
+log_input() {
+  mkdir -p "$(state)"
+  printf '%s\t%s\t%s\n' "$(date '+%H:%M:%S')" "$1" "$2" >>"$(state)/input.log"
+}
+
+# ---------------------------------------------------------------- observation
+
+pane_fmt() { tm display-message -p -t "$(target)" "$1"; }
+
+capture() { # capture the visible grid (or --history N lines of scrollback)
+  local hist="${1:-0}"
+  if [ "$hist" -gt 0 ]; then tm capture-pane -p -t "$(target)" -S "-$hist"
+  else tm capture-pane -p -t "$(target)"; fi
+}
+
+capture_sgr() { tm capture-pane -pe -t "$(target)"; }
+
+screen_hash() { capture | cksum | cut -d' ' -f1; }
+
+spice_pid() { pane_fmt '#{pane_pid}'; }
+
+cpu_of() { ps -o %cpu= -p "$1" 2>/dev/null | tr -d ' ' || echo 0; }
+
+last_output_age_s() {
+  local log="$(state)/raw.log" now mtime
+  [ -f "$log" ] || { echo -1; return; }
+  now=$(date +%s); mtime=$(stat -f %m "$log")
+  echo $((now - mtime))
+}
+
+status_line() {
+  local dead pid cpu size cursor age mode
+  dead=$(pane_fmt '#{pane_dead}')
+  size=$(pane_fmt '#{pane_width}x#{pane_height}')
+  cursor=$(pane_fmt '#{cursor_x},#{cursor_y}')
+  age=$(last_output_age_s)
+  if [ "$dead" = 1 ]; then
+    local es sig
+    es=$(pane_fmt '#{pane_dead_status}'); sig=$(pane_fmt '#{pane_dead_signal}')
+    printf '{"session":"%s","alive":false,"exit_status":"%s","signal":"%s","size":"%s","last_output_s":%s}\n' \
+      "$NAME" "$es" "$sig" "$size" "$age"
+  else
+    pid=$(spice_pid); cpu=$(cpu_of "$pid")
+    mode=$(pane_fmt '#{?alternate_on,alt,primary}')
+    printf '{"session":"%s","alive":true,"pid":%s,"cpu":%s,"screen":"%s","size":"%s","cursor":"%s","last_output_s":%s}\n' \
+      "$NAME" "$pid" "${cpu:-0}" "$mode" "$size" "$cursor" "$age"
+  fi
+}
+
+cmd_screen() {
+  local plain=0 sgr=0 hist=0
+  while [ $# -gt 0 ]; do case "$1" in
+    --plain) plain=1 ;;
+    --sgr) sgr=1 ;;
+    --history) hist="$2"; shift ;;
+    *) die "screen: unknown flag $1" ;;
+  esac; shift; done
+  need_session
+  [ "$plain" = 1 ] || status_line
+  if [ "$sgr" = 1 ]; then capture_sgr; return; fi
+  capture "$hist" | cat -n
+}
+
+cmd_status() { need_session; status_line; }
+
+cmd_tail() {
+  need_session
+  tail -c "${1:-2000}" "$(state)/raw.log" | cat -v; echo
+}
+
+# --------------------------------------------------------------------- input
+
+cmd_type() {
+  need_session; log_input type "$*"
+  tm send-keys -t "$(target)" -l -- "$*"
+}
+
+cmd_key() {
+  need_session; log_input key "$*"
+  local k
+  for k in "$@"; do tm send-keys -t "$(target)" "$k"; done
+}
+
+cmd_submit() {
+  need_session; log_input submit "$*"
+  if [ -n "$*" ]; then
+    tm send-keys -t "$(target)" -l -- "$*"
+    # Two send-keys microseconds apart can still coalesce into one pty read,
+    # and a palette swallows an Enter that arrives in the text's chunk. Pace
+    # like a human: let the text render before pressing Enter.
+    sleep 0.2
+  fi
+  tm send-keys -t "$(target)" Enter
+}
+
+cmd_paste() {
+  need_session
+  local text
+  if [ "${1:-}" = "-" ]; then text=$(cat)
+  else text="$*"; fi
+  log_input paste "${text:0:120}"
+  printf '%s' "$text" | tm load-buffer -b spiceqa -
+  tm paste-buffer -p -b spiceqa -t "$(target)"
+}
+
+cmd_resize() {
+  local rows='' cols=''
+  while [ $# -gt 0 ]; do case "$1" in
+    --rows) rows="$2"; shift ;;
+    --cols) cols="$2"; shift ;;
+    *) die "resize: unknown flag $1" ;;
+  esac; shift; done
+  [ -n "$rows" ] && [ -n "$cols" ] || die "resize: need --rows and --cols"
+  need_session; log_input resize "${cols}x${rows}"
+  tm resize-window -t "$(target)" -x "$cols" -y "$rows"
+}
+
+# --------------------------------------------------------------------- waits
+
+cmd_wait() {
+  local contains='' gone='' regex='' stable=0 quiet=0 timeout=15
+  while [ $# -gt 0 ]; do case "$1" in
+    --contains) contains="$2"; shift ;;
+    --gone) gone="$2"; shift ;;
+    --regex) regex="$2"; shift ;;
+    --stable) stable="$2"; shift ;;
+    --quiet) quiet="$2"; shift ;;
+    --timeout) timeout="$2"; shift ;;
+    *) die "wait: unknown flag $1" ;;
+  esac; shift; done
+  need_session
+  local deadline=$((SECONDS + timeout)) scr ok
+  local prev_hash='' stable_since=''
+  while :; do
+    if [ "$(pane_fmt '#{pane_dead}')" = 1 ]; then
+      echo "WAIT-FAIL: spice exited while waiting"; status_line
+      capture | cat -n; exit 1
+    fi
+    scr=$(capture); ok=1
+    [ -n "$contains" ] && { printf '%s' "$scr" | grep -qF -- "$contains" || ok=0; }
+    [ -n "$regex" ]    && { printf '%s' "$scr" | grep -qE -- "$regex" || ok=0; }
+    [ -n "$gone" ]     && { printf '%s' "$scr" | grep -qF -- "$gone" && ok=0; }
+    if [ "$stable" -gt 0 ] && [ "$ok" = 1 ]; then
+      local h now_ms
+      h=$(printf '%s' "$scr" | cksum | cut -d' ' -f1)
+      now_ms=$(($(date +%s) * 1000))
+      if [ "$h" = "$prev_hash" ]; then
+        [ $((now_ms - stable_since)) -ge "$stable" ] || ok=0
+      else
+        prev_hash="$h"; stable_since=$now_ms; ok=0
+      fi
+    fi
+    if [ "$quiet" -gt 0 ] && [ "$ok" = 1 ]; then
+      [ "$(last_output_age_s)" -ge $(((quiet + 999) / 1000)) ] || ok=0
+    fi
+    [ "$ok" = 1 ] && { echo "WAIT-OK (${SECONDS}s)"; return 0; }
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      echo "WAIT-TIMEOUT after ${timeout}s; current screen:"; status_line
+      capture | cat -n; exit 1
+    fi
+    sleep 0.1
+  done
+}
+
+# One full round-trip: submit, echo observed, spinner gone, frame stable.
+cmd_turn() {
+  local timeout=120
+  if [ "${1:-}" = "--timeout" ]; then timeout="$2"; shift 2; fi
+  [ $# -ge 1 ] || die "turn: need a prompt"
+  cmd_submit "$@"
+  # The spinner appears within a frame of submit; a very fast turn may drop it
+  # again before the first poll, so this guard wait is tolerant.
+  "$0" wait --name "$NAME" --contains "esc to interrupt" --timeout 3 \
+    >/dev/null 2>&1 || true
+  "$0" wait --name "$NAME" --gone "esc to interrupt" --stable 800 \
+    --timeout "$timeout" >/dev/null
+  cmd_screen
+}
+
+# ----------------------------------------------------------------- diagnosis
+
+cmd_diagnose() {
+  need_session
+  local secs="${1:-5}" pid
+  [ "$(pane_fmt '#{pane_dead}')" = 1 ] && die "diagnose: spice already exited"
+  pid=$(spice_pid)
+  echo "pid $pid — sampling %cpu at 2 Hz for ${secs}s:"
+  local i n=$((secs * 2))
+  for ((i = 0; i < n; i++)); do printf '%s ' "$(cpu_of "$pid")"; sleep 0.5; done
+  echo
+  local out="$(state)/sample-$(date +%H%M%S).txt"
+  echo "capturing stacks: sample $pid $secs -> $out"
+  sample "$pid" "$secs" -f "$out" >/dev/null 2>&1 || die "sample failed"
+  echo "hot OCaml symbols:"
+  grep -oE 'caml[A-Za-z0-9_$]+' "$out" | sort | uniq -c | sort -rn | head -15
+}
+
+# ----------------------------------------------------------------- lifecycle
+
+cmd_start() {
+  local rows=32 cols=120 project='' bin=''
+  local -a spice_args=()
+  while [ $# -gt 0 ]; do case "$1" in
+    --name) NAME="$2"; shift ;;
+    --rows) rows="$2"; shift ;;
+    --cols) cols="$2"; shift ;;
+    --project) project="$2"; shift ;;
+    --bin) bin="$2"; shift ;;
+    --) shift; spice_args=("$@"); break ;;
+    *) die "start: unknown flag $1" ;;
+  esac; shift; done
+  have_session && die "session '$NAME' already running (spice-qa stop first)"
+
+  if [ -z "$bin" ]; then
+    local repo
+    repo=$(git rev-parse --show-toplevel 2>/dev/null) || repo=''
+    bin="$repo/_build/default/bin/main.exe"
+  fi
+  [ -x "$bin" ] || die "spice binary not found: $bin"
+
+  if [ -z "$project" ]; then
+    project="$STATE_ROOT/projects/$NAME"
+    mkdir -p "$project"
+    if [ ! -d "$project/.git" ]; then
+      git -C "$project" init -q
+      [ -f "$project/README.md" ] || echo "# spice-qa scratch project" >"$project/README.md"
+      git -C "$project" add -A && git -C "$project" commit -qm "init" || true
+    fi
+  fi
+  [ -d "$project" ] || die "project dir not found: $project"
+
+  rm -rf "$(state)"; mkdir -p "$(state)"
+  local conf="$STATE_ROOT/tmux.conf"
+  cat >"$conf" <<'EOF'
+set -g history-limit 10000
+set -g remain-on-exit on
+set -g status off
+set -g default-terminal tmux-256color
+set -g escape-time 10
+set -g focus-events on
+EOF
+  tm -f "$conf" new-session -d -s "$NAME" -x "$cols" -y "$rows" -c "$project" \
+    -- "$bin" --cwd "$project" ${spice_args[0]+"${spice_args[@]}"}
+  # "manual" pins the pane size against attaching clients; setting it globally
+  # at server start crashes tmux 3.6a's first spawn, so set it per-window here.
+  tm set-option -w -t "$(target)" window-size manual
+  tm pipe-pane -t "$(target)" "cat >> '$(state)/raw.log'"
+  log_input start "bin=$bin project=$project ${cols}x${rows}"
+  echo "session '$NAME' started: $bin  (project: $project, ${cols}x${rows})"
+  echo "watch live:  tmux -L $SOCKET attach -t $NAME -r"
+  # boot: first frame painted and stable for half a second
+  "$0" wait --name "$NAME" --stable 500 --timeout 20
+}
+
+cmd_stop() {
+  need_session
+  { status_line; capture | cat -n; } >"$(state)/final.screen" 2>&1 || true
+  tm kill-session -t "$(session_target)" 2>/dev/null || true
+  # Only stop the server once the last session is gone.
+  tm list-sessions >/dev/null 2>&1 || tm kill-server 2>/dev/null || true
+  echo "stopped '$NAME'; artifacts in $(state)/"
+}
+
+cmd_ls() { tm list-sessions 2>/dev/null || echo "no sessions"; }
+
+cmd_attach() {
+  echo "tmux -L $SOCKET attach -t $NAME -r   # read-only; omit -r to type"
+}
+
+# ---------------------------------------------------------------- dispatcher
+
+[ $# -ge 1 ] || die "usage: spice-qa <start|screen|type|key|submit|paste|wait|status|resize|diagnose|tail|attach|ls|stop> (see header)"
+CMD="$1"; shift
+
+# --name is accepted by every verb, before other args
+if [ "${1:-}" = "--name" ]; then NAME="$2"; shift 2; fi
+
+case "$CMD" in
+  start) cmd_start "$@" ;;
+  screen) cmd_screen "$@" ;;
+  type) cmd_type "$@" ;;
+  key) cmd_key "$@" ;;
+  submit) cmd_submit "$@" ;;
+  turn) cmd_turn "$@" ;;
+  paste) cmd_paste "$@" ;;
+  wait) cmd_wait "$@" ;;
+  status) cmd_status ;;
+  resize) cmd_resize "$@" ;;
+  diagnose) cmd_diagnose "$@" ;;
+  tail) cmd_tail "$@" ;;
+  attach) cmd_attach ;;
+  ls) cmd_ls ;;
+  stop) cmd_stop ;;
+  *) die "unknown command: $CMD" ;;
+esac
