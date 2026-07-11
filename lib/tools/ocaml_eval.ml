@@ -223,12 +223,16 @@ let permissions ~workspace ~config input =
           [ Permission.Access.path ~op:`Read dir ];
         Permission.Request.of_accesses ~source:name
           [
-            Permission.Access.argv ~cwd ~program:(Config.dune config)
+            Permission.Access.argv ~cwd
+              ~execution:Permission.Access.Command.Sandboxed
+              ~program:(Config.dune config)
               [ "ocaml"; "top"; "." ];
           ];
         Permission.Request.of_accesses ~source:name
           [
-            Permission.Access.argv ~cwd ~program:(Config.ocaml config)
+            Permission.Access.argv ~cwd
+              ~execution:Permission.Access.Command.Sandboxed
+              ~program:(Config.ocaml config)
               [ "-stdin"; "-noinit" ];
           ];
       ]

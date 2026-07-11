@@ -181,8 +181,8 @@ val permissions :
     {!Spice_permission.Access.Command.Argv} accesses for better review evidence.
     When parsing is ambiguous, it requests one conservative
     {!Spice_permission.Access.Command.Shell} access for the whole command.
-    Security must not depend on this parser; sandboxing and host policy remain
-    the execution boundary.
+    Both forms carry [Sandboxed] execution evidence because ordinary execution
+    uses [config]'s sealed sandbox. Security must not depend on the parser.
 
     An escalating input under workspace-write shaped confinement additionally
     requests one extension access named ["shell.escalate"] whose subject is the

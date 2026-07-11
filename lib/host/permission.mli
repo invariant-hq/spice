@@ -65,10 +65,10 @@ module Preset : sig
       {!Run.with_sandbox_backing}.
 
       An enforcing workspace-write sandbox backs native workspace mutation, so
-      [Default] gains workspace creates, modifies, and deletes. It does not
-      prove that every command-bearing tool uses that sandbox, so no preset
-      gains command rules. [Accept_edits] already allows workspace writes;
-      [Plan] and [Bypass] need no additional rules. *)
+      [Default] gains workspace creates, modifies, and deletes. [Default] and
+      [Accept_edits] also review destructive commands before allowing only
+      command facts whose execution route is proven sandboxed. [Plan] and
+      [Bypass] gain no rules. *)
 
   val equal : t -> t -> bool
   (** [equal a b] is [true] iff [a] and [b] are the same preset. *)
@@ -181,8 +181,8 @@ module Run : sig
       existing row, so durable configuration and the preset's own rules still
       decide first. Run assembly derives [sandbox_backed] from the resolved
       sandbox — {!Spice_host.Sandbox.enforces_workspace_write} — so it is [true]
-      only for an enforcing workspace-write sandbox. Command accesses remain
-      reviewable unless another explicit rule decides them. *)
+      only for an enforcing workspace-write sandbox. Direct command accesses
+      remain reviewable unless another explicit rule decides them. *)
 
   val with_session_rules :
     Spice_permission.Policy.Rule.t list -> 'src t -> 'src t

@@ -78,6 +78,9 @@ let argv ?cwd ~program args =
 
 let exec program args = argv ~program args
 
+let sandboxed_exec program args =
+  Access.argv ~execution:Access.Command.Sandboxed ~program args
+
 let argv_prefix ?cwd ~program ~args () =
   Policy.Match.command (Policy.Match.Command.argv_prefix ?cwd ~program ~args ())
 
@@ -797,6 +800,8 @@ let json_roundtrips_core_values () =
       argv
         ~cwd:(Access.Path_scope.workspace (workspace_path ""))
         ~program:"dune" [ "runtest" ];
+      Access.argv ~execution:Access.Command.Sandboxed ~program:"dune"
+        [ "build" ];
       Access.network ~protocol:`Https ~port:443 ~host:"example.com" ();
       Access.network ~protocol:(`Other "unix") ~host:"socket" ();
       Access.custom ~kind:`Custom ~subject:"todo" "todo_write";
@@ -858,6 +863,7 @@ let json_rejects_invalid_state () =
         ("type", Json.string "command");
         ("kind", Json.string "shell");
         ("text", Json.string "");
+        ("execution", Json.string "direct");
       ]
   in
   expect_decode_error "invalid decoded accesses are rejected" Access.jsont
@@ -943,6 +949,7 @@ let access_json_normalizes_outside_workspace_paths () =
         ("type", Json.string "command");
         ("kind", Json.string "shell");
         ("text", Json.string "make");
+        ("execution", Json.string "direct");
         ( "cwd",
           json_object
             [
@@ -1226,6 +1233,25 @@ let destructive_command_matcher () =
     Policy.Rule.jsont
     (Policy.Rule.review destructive)
 
+let sandboxed_command_matcher () =
+  let matcher = Policy.Match.command Policy.Match.Command.sandboxed in
+  let direct = exec "dune" [ "build" ] in
+  let sandboxed = sandboxed_exec "dune" [ "build" ] in
+  check "direct construction is fail-safe"
+    (match direct with
+    | Access.Command command ->
+        Access.Command.execution command = Access.Command.Direct
+    | Access.Path _ | Access.Network _ | Access.Custom _ -> false);
+  check "sandboxed matcher rejects a direct route"
+    (not (Policy.Match.matches matcher direct));
+  check "sandboxed matcher accepts explicit sealed evidence"
+    (Policy.Match.matches matcher sandboxed);
+  not_equal access_value ~msg:"execution route is part of permission identity"
+    direct sandboxed;
+  roundtrip "sandboxed access roundtrips" access_value Access.jsont sandboxed;
+  roundtrip "sandboxed matcher roundtrips" rule_value Policy.Rule.jsont
+    (Policy.Rule.allow matcher)
+
 let suggest_generalizes_reviewed_accesses () =
   let matches rule access =
     Policy.Match.matches (Policy.Rule.matcher rule) access
@@ -1360,4 +1386,6 @@ let () =
       test "change is inert and durable" change_is_inert_and_durable;
       test "destructive command matcher classifies irreversible commands"
         destructive_command_matcher;
+      test "sandboxed command matcher requires explicit execution evidence"
+        sandboxed_command_matcher;
     ]

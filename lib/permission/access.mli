@@ -112,26 +112,46 @@ module Command : sig
       invocation with no shell interpretation. Both are command facts; policy
       decides how to match them. *)
 
+  type execution = Direct | Sandboxed
+  (** The runtime route the command fact describes. [Sandboxed] is a trusted
+      claim that the exact operation executes through the run's sealed sandbox;
+      [Direct] makes no confinement claim. *)
+
   type t = private
-    | Shell of { text : string; cwd : Path_scope.t option }
+    | Shell of {
+        text : string;
+        cwd : Path_scope.t option;
+        execution : execution;
+      }
     | Argv of {
         program : string;
         args : string list;
         cwd : Path_scope.t option;
+        execution : execution;
       }
 
-  val shell : ?cwd:Path_scope.t -> string -> t
+  val shell : ?cwd:Path_scope.t -> ?execution:execution -> string -> t
   (** [shell ?cwd text] is shell command execution of [text].
 
-      Raises [Invalid_argument] if [text] is empty. *)
+      [execution] defaults to [Direct]. Raises [Invalid_argument] if [text] is
+      empty. *)
 
-  val argv : ?cwd:Path_scope.t -> program:string -> string list -> t
+  val argv :
+    ?cwd:Path_scope.t ->
+    ?execution:execution ->
+    program:string ->
+    string list ->
+    t
   (** [argv ?cwd ~program args] is direct execution of [program] with [args].
 
       [args] does not include [program]. Empty arguments are valid process
       arguments.
 
-      Raises [Invalid_argument] if [program] is empty. *)
+      [execution] defaults to [Direct]. Raises [Invalid_argument] if [program]
+      is empty. *)
+
+  val execution : t -> execution
+  (** [execution command] is the command's claimed runtime route. *)
 
   val stable_text : t -> string
   (** [stable_text t] is a canonical textual representation of [t] suitable as
@@ -151,11 +171,14 @@ end
 
     Private constructors expose the trusted facts for inspection. Build values
     with the constructors below; do not treat the variants as proof that the
-    underlying operation has been normalized or sandboxed.
+    underlying operation has been normalized. A command's [Sandboxed]
+    execution field is a host-produced claim about the route that operation
+    will use; the variant alone grants no capability.
 
     Invariant: path [root_key], outside-workspace path, unknown path, command
     text, command programs, unknown [cwd] text, network protocol names, hosts,
-    custom access names, and subjects are non-empty when present. Ports are in
+    custom access names, and subjects are non-empty when present. Command
+    execution route participates in access identity. Ports are in
     \[[1];[65535]\]. *)
 type t = private
   | Path of { op : path_op; scope : Path_scope.t }  (** Filesystem access. *)
@@ -198,14 +221,20 @@ val unknown_path : op:path_op -> string -> t
 val command : Command.t -> t
 (** [command command] is command execution access. *)
 
-val shell : ?cwd:Path_scope.t -> string -> t
+val shell :
+  ?cwd:Path_scope.t -> ?execution:Command.execution -> string -> t
 (** [shell ?cwd text] is command execution access for shell command [text]. It
     is [command (Command.shell ?cwd text)] and exists so producers need not name
     the {!Command} sub-fact.
 
     Raises [Invalid_argument] if [text] is empty. *)
 
-val argv : ?cwd:Path_scope.t -> program:string -> string list -> t
+val argv :
+  ?cwd:Path_scope.t ->
+  ?execution:Command.execution ->
+  program:string ->
+  string list ->
+  t
 (** [argv ?cwd ~program args] is command execution access for [program] run with
     [args]. It is [command (Command.argv ?cwd ~program args)]; [args] does not
     include [program].

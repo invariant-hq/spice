@@ -32,7 +32,10 @@ let exec_request ~argv workspace =
   | [] -> invalid_arg "argv must not be empty"
   | program :: args ->
       Permission.Request.of_accesses ~source:name
-        [ Permission.Access.argv ~cwd:(access_cwd workspace) ~program args ]
+        [
+          Permission.Access.argv ~cwd:(access_cwd workspace)
+            ~execution:Permission.Access.Command.Sandboxed ~program args;
+        ]
 
 let permissions workspace =
   [

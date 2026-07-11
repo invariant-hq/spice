@@ -236,11 +236,12 @@ let cwd ?root ?outside = function
 let argv_text argv = String.concat " " (List.map (Printf.sprintf "%S") argv)
 
 let access ?root ?outside = function
-  | Access.Command (Access.Command.Argv { program; args; cwd = access_cwd }) ->
+  | Access.Command
+      (Access.Command.Argv { program; args; cwd = access_cwd; _ }) ->
       Printf.sprintf "exec cwd=%s argv=%s"
         (cwd ?root ?outside access_cwd)
         (argv_text (program :: args))
-  | Access.Command (Access.Command.Shell { text; cwd = access_cwd }) ->
+  | Access.Command (Access.Command.Shell { text; cwd = access_cwd; _ }) ->
       Printf.sprintf "shell cwd=%s command=%S"
         (cwd ?root ?outside access_cwd)
         text

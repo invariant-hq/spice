@@ -473,7 +473,9 @@ let merlin_exec_access ~program ~workspace =
   match program with
   | [] -> invalid_arg "program prefix must not be empty"
   | argv_program :: args ->
-      Permission.Access.argv ~cwd ~program:argv_program args
+      Permission.Access.argv ~cwd
+        ~execution:Permission.Access.Command.Sandboxed ~program:argv_program
+        args
 
 let permissions ?(program = default_program) ~workspace input =
   match Workspace.resolve_string workspace (Input.path input) with

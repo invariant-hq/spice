@@ -201,6 +201,11 @@
   eio_main))
 
 (test
+ (name test_host_permission)
+ (modules test_host_permission)
+ (libraries windtrap spice_host spice_permission))
+
+(test
  (name test_host_artifacts)
  (modules test_host_artifacts)
  (libraries windtrap spice_host spice_protocol spice_session eio eio_main))

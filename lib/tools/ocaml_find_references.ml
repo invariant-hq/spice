@@ -319,6 +319,7 @@ let exec_request ~program ~file ~position ~scope workspace =
       Permission.Request.of_accesses ~source:name
         [
           Permission.Access.argv ~cwd:(access_cwd workspace)
+            ~execution:Permission.Access.Command.Sandboxed
             ~program:argv_program args;
         ]
 

@@ -63,14 +63,27 @@ module Preset = struct
         (Spice_permission.Policy.Match.path ~op
            Spice_permission.Policy.Match.Path.workspace)
     in
+    let review_destructive =
+      Spice_permission.Policy.Rule.review
+        (Spice_permission.Policy.Match.command
+           Spice_permission.Policy.Match.Command.destructive)
+    in
+    let allow_sandboxed =
+      Spice_permission.Policy.Rule.allow
+        (Spice_permission.Policy.Match.command
+           Spice_permission.Policy.Match.Command.sandboxed)
+    in
     match t with
     | Default ->
         [
           allow_workspace `Create;
           allow_workspace `Modify;
           allow_workspace `Delete;
+          review_destructive;
+          allow_sandboxed;
         ]
-    | Accept_edits | Plan | Bypass -> []
+    | Accept_edits -> [ review_destructive; allow_sandboxed ]
+    | Plan | Bypass -> []
 
   let equal = ( = )
   let pp ppf t = Format.pp_print_string ppf (to_string t)

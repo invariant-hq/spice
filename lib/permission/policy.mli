@@ -126,6 +126,11 @@ module Match : sig
         matching command is worth review, and a non-match is not a guarantee of
         safety. *)
 
+    val sandboxed : t
+    (** [sandboxed] matches command accesses whose host-produced execution fact
+        proves they run through the sealed sandbox. It does not match direct or
+        otherwise unproven command routes. *)
+
     val exact : Access.Command.t -> t
     (** [exact command] matches command accesses equal to [command]. *)
 

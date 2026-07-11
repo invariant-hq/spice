@@ -197,9 +197,9 @@ let access_text access =
   | Access.Path { op; scope } ->
       kind_string (Access.kind access)
       ^ " " ^ path_op_string op ^ " " ^ scope_display scope
-  | Access.Command (Access.Command.Shell { text; cwd }) ->
+  | Access.Command (Access.Command.Shell { text; cwd; _ }) ->
       "command shell " ^ shell_arg text ^ cwd_text cwd
-  | Access.Command (Access.Command.Argv { program; args; cwd }) ->
+  | Access.Command (Access.Command.Argv { program; args; cwd; _ }) ->
       "command exec "
       ^ String.concat " " (List.map shell_arg (program :: args))
       ^ cwd_text cwd

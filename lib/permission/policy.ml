@@ -135,10 +135,12 @@ module Command_match = struct
         args : string list;
         cwd : Path_match.t option;
       }
+    | Sandboxed
     | Destructive
 
   let any = Any
   let exact command = Exact command
+  let sandboxed = Sandboxed
   let destructive = Destructive
 
   let argv_prefix ?cwd ~program ~args () =
@@ -273,12 +275,19 @@ module Command_match = struct
         Access.Command.stable_text expected = Access.Command.stable_text command
     | ( Argv_prefix { program; args; cwd },
         Access.Command.Argv
-          { program = access_program; args = access_args; cwd = access_cwd } )
+          {
+            program = access_program;
+            args = access_args;
+            cwd = access_cwd;
+            _;
+          } )
       ->
         String.equal access_program program
         && list_has_prefix ~prefix:args access_args
         && optional_scope_matches cwd access_cwd
     | Argv_prefix _, Access.Command.Shell _ -> false
+    | Sandboxed, command ->
+        Access.Command.execution command = Access.Command.Sandboxed
     | Destructive, command -> command_is_destructive command
 
   let stable_text = function
@@ -290,10 +299,12 @@ module Command_match = struct
         ^ String.concat ":" (List.map stable_field args)
         ^ ":"
         ^ stable_option Path_match.stable_text cwd
+    | Sandboxed -> "sandboxed"
     | Destructive -> "destructive"
 
   let pp ppf = function
     | Any -> Format.pp_print_string ppf "any-command"
+    | Sandboxed -> Format.pp_print_string ppf "sandboxed-command"
     | Destructive -> Format.pp_print_string ppf "destructive-command"
     | Exact command ->
         Format.fprintf ppf "command-exact(%a)" Access.Command.pp command
@@ -769,6 +780,10 @@ module Rule = struct
     Jsont.Object.map ~kind:"destructive command matcher" Command_match.destructive
     |> Jsont.Object.error_unknown |> Jsont.Object.finish
 
+  let command_sandboxed_pattern_jsont =
+    Jsont.Object.map ~kind:"sandboxed command matcher" Command_match.sandboxed
+    |> Jsont.Object.error_unknown |> Jsont.Object.finish
+
   let command_exact_pattern_jsont =
     let make access =
       match access with
@@ -779,8 +794,8 @@ module Rule = struct
     Jsont.Object.map ~kind:"exact command matcher" make
     |> Jsont.Object.mem "access" Access.jsont ~enc:(function
       | Command_match.Exact command -> Access.command command
-      | Command_match.Any | Command_match.Argv_prefix _ | Command_match.Destructive
-        ->
+      | Command_match.Any | Command_match.Argv_prefix _
+      | Command_match.Sandboxed | Command_match.Destructive ->
           assert false)
     |> Jsont.Object.error_unknown |> Jsont.Object.finish
 
@@ -792,18 +807,20 @@ module Rule = struct
     Jsont.Object.map ~kind:"argv prefix command matcher" make
     |> Jsont.Object.mem "program" Jsont.string ~enc:(function
       | Command_match.Argv_prefix { program; _ } -> program
-      | Command_match.Any | Command_match.Exact _ | Command_match.Destructive ->
+      | Command_match.Any | Command_match.Exact _ | Command_match.Sandboxed
+      | Command_match.Destructive ->
           assert false)
     |> Jsont.Object.mem "args"
          Jsont.(list string)
          ~enc:(function
            | Command_match.Argv_prefix { args; _ } -> args
-           | Command_match.Any | Command_match.Exact _ | Command_match.Destructive
-             ->
+           | Command_match.Any | Command_match.Exact _
+           | Command_match.Sandboxed | Command_match.Destructive ->
                assert false)
     |> Jsont.Object.opt_mem "cwd" scope_jsont ~enc:(function
       | Command_match.Argv_prefix { cwd; _ } -> cwd
-      | Command_match.Any | Command_match.Exact _ | Command_match.Destructive ->
+      | Command_match.Any | Command_match.Exact _ | Command_match.Sandboxed
+      | Command_match.Destructive ->
           assert false)
     |> Jsont.Object.error_unknown |> Jsont.Object.finish
 
@@ -813,6 +830,10 @@ module Rule = struct
     in
     let destructive_case =
       Jsont.Object.Case.map "destructive" command_destructive_pattern_jsont
+        ~dec:Fun.id
+    in
+    let sandboxed_case =
+      Jsont.Object.Case.map "sandboxed" command_sandboxed_pattern_jsont
         ~dec:Fun.id
     in
     let exact_case =
@@ -826,6 +847,8 @@ module Rule = struct
       | Command_match.Any as pattern -> Jsont.Object.Case.value any_case pattern
       | Command_match.Destructive as pattern ->
           Jsont.Object.Case.value destructive_case pattern
+      | Command_match.Sandboxed as pattern ->
+          Jsont.Object.Case.value sandboxed_case pattern
       | Command_match.Exact _ as pattern ->
           Jsont.Object.Case.value exact_case pattern
       | Command_match.Argv_prefix _ as pattern ->
@@ -835,6 +858,7 @@ module Rule = struct
       [
         Jsont.Object.Case.make any_case;
         Jsont.Object.Case.make destructive_case;
+        Jsont.Object.Case.make sandboxed_case;
         Jsont.Object.Case.make exact_case;
         Jsont.Object.Case.make argv_prefix_case;
       ]
@@ -1018,6 +1042,7 @@ module Match = struct
 
     let any = Command_match.any
     let destructive = Command_match.destructive
+    let sandboxed = Command_match.sandboxed
     let exact = Command_match.exact
     let argv_prefix = Command_match.argv_prefix
   end

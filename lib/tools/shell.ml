@@ -369,7 +369,10 @@ let parse_shell script =
 let access_of_argv ~cwd argv =
   match argv with
   | [] -> None
-  | program :: args -> Some (Permission.Access.argv ?cwd ~program args)
+  | program :: args ->
+      Some
+        (Permission.Access.argv ?cwd
+           ~execution:Permission.Access.Command.Sandboxed ~program args)
 
 let command_accesses ~cwd command =
   let cwd = Some (Permission.Access.Path_scope.workspace cwd) in
@@ -378,7 +381,11 @@ let command_accesses ~cwd command =
       List.filter_map
         (fun segment -> Option.bind segment.argv (access_of_argv ~cwd))
         segments
-  | { confidence = `Fallback; _ } -> [ Permission.Access.shell ?cwd command ]
+  | { confidence = `Fallback; _ } ->
+      [
+        Permission.Access.shell ?cwd
+          ~execution:Permission.Access.Command.Sandboxed command;
+      ]
 
 let escalation_access_name = "shell.escalate"
 

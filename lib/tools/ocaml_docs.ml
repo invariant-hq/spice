@@ -1785,7 +1785,8 @@ let merlin_exec_access ~program ~workspace =
   match program with
   | [] -> invalid_arg "program prefix must not be empty"
   | argv_program :: args ->
-      Permission.Access.argv ~cwd:(access_cwd workspace) ~program:argv_program
+      Permission.Access.argv ~cwd:(access_cwd workspace)
+        ~execution:Permission.Access.Command.Sandboxed ~program:argv_program
         args
 
 let switch_lib_root opam_switch_prefix =
@@ -1818,7 +1819,8 @@ let permissions ?(program = default_program)
         | [] -> []
         | dune :: args ->
             [
-              Permission.Access.argv ~cwd:(access_cwd workspace) ~program:dune
+              Permission.Access.argv ~cwd:(access_cwd workspace)
+                ~execution:Permission.Access.Command.Sandboxed ~program:dune
                 args;
             ]
       in
@@ -1840,6 +1842,7 @@ let permissions ?(program = default_program)
                   Permission.Access.path_scope ~op:`Read
                     (Permission.Access.Path_scope.outside_workspace abs);
                   Permission.Access.argv ~cwd:(access_cwd workspace)
+                    ~execution:Permission.Access.Command.Sandboxed
                     ~program:ocamlfind_program [ "query" ];
                 ])
       in
