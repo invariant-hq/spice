@@ -212,7 +212,7 @@ let%expect_test "build mode restores the wordless frame" =
 09 |      ▎ welcome — and thanks for trying spice this early.
 10 |      ▎ it's experimental: sessions and config may change without migration.
 11 |
-12 |           ────────
+12 |           ────────────────────────────────────────────────────────────
 13 |           ❯ message spice
 14 |           ────────────────────────────────────────────────────────────
 15 |
