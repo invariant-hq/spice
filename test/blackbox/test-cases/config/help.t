@@ -77,7 +77,7 @@ Validate documents strict unknown-field rejection.
 The precedence order is documented in user-facing language on the config
 group and show help pages: user file, project file, project-local file,
 SPICE_CONFIG, environment, then runtime overrides — with the workspace
-allowlist called out.
+trust gate and project allowlist called out.
 
   $ spice config --help=plain | grep -c 'CONFIG PRECEDENCE'
   1
@@ -85,5 +85,5 @@ allowlist called out.
   $ spice config show --help=plain | grep -o 'increasing precedence'
   increasing precedence
 
-  $ spice config show --help=plain | grep -o 'workspace-safe allowlist'
-  workspace-safe allowlist
+  $ spice config show --help=plain | grep -o 'activate only after spice trust'
+  activate only after spice trust
