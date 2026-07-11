@@ -29,6 +29,7 @@ let unit_scopes = Review.unit_scopes
 let file_unit_scopes = Review.file_unit_scopes
 let units = Review.units
 let reviewed_units = Review.reviewed_units
+let file_reviewed = Review.file_reviewed
 let open_crs = Review.open_crs
 let progress = Review.progress
 let is_complete = Review.is_complete

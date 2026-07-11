@@ -413,6 +413,13 @@ val reviewed_units : t -> int
 (** [reviewed_units review] is the number of units whose effective mark is
     reviewed. *)
 
+val file_reviewed : t -> path:Spice_path.Rel.t -> bool
+(** [file_reviewed review ~path] is [true] iff every one of [path]'s review
+    units is reviewed — the file's coverage is complete. This is the reviewed
+    fact about a file, and it is not {!is_reviewed} on its {!Scope.File}: marks
+    are made on units, so a file whose every hunk is reviewed carries no mark of
+    its own. [false] for a path outside the feature or with no units. *)
+
 val open_crs : t -> int
 (** [open_crs review] is the number of valid, unresolved CR occurrences. *)
 

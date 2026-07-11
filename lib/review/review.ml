@@ -487,6 +487,16 @@ let files t = List.length (Feature.files t.feature)
 let units t = List.length (unit_scopes t)
 let reviewed_units t = List.length (List.filter (is_reviewed t) (unit_scopes t))
 
+(* A file is reviewed when its coverage is complete — every unit reviewed —
+   not when the file scope itself carries a mark. Marks are made on units
+   (space marks the hunk), so an all-hunks-reviewed file has no mark of its
+   own, and [is_reviewed (Scope.File path)] would call it unreviewed. For an
+   Opaque file the single unit IS the file scope, so the two agree there. *)
+let file_reviewed t ~path =
+  match file_unit_scopes t ~path with
+  | None | Some [] -> false
+  | Some scopes -> List.for_all (is_reviewed t) scopes
+
 let open_crs t =
   Array.fold_left
     (fun open_crs occ ->

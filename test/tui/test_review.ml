@@ -57,7 +57,7 @@ let%expect_test "the review screen marks, approves, and shows the verdict" =
     {|01 | ────────────────────────────────────────────────────────────────────────────────
 02 | Review  HEAD..worktree                                   1/1 reviewed · approved
 03 |  ▾ lib                          │lib/code.ml · reviewed · +1 −1
-04 |  ❯ [✓] code.ml                M │  1   let alpha = 1
+04 |    ❯ [✓] code.ml              M │  1   let alpha = 1
 05 |                                 │  2   let beta = 2
 06 |                                 │❯ 3 - let gamma = 3
 07 |                                 │  3 + let gamma = 33
@@ -171,7 +171,7 @@ let%expect_test "/review opens from the stage and esc returns to it" =
     {|01 | ────────────────────────────────────────────────────────────────────────────────
 02 | Review  HEAD..worktree                                    0/1 reviewed · pending
 03 |  ▾ lib                          │lib/code.ml · unreviewed · +1 −1
-04 |  ❯ [ ] code.ml                M │ 1   let alpha = 1
+04 |    ❯ [ ] code.ml              M │ 1   let alpha = 1
 05 |                                 │ 2   let beta = 2
 06 |                                 │ 3 - let gamma = 3
 07 |                                 │ 3 + let gamma = 33
@@ -266,7 +266,7 @@ let%expect_test "the key table toggles with ?" =
     {|01 | ────────────────────────────────────────────────────────────────────────────────
 02 | Review  HEAD..worktree                                    0/1 reviewed · pending
 03 |  ▾ lib                          │lib/code.ml · unreviewed · +1 −1
-04 |  ❯ [ ] code.ml                M │ 1   let alpha = 1
+04 |    ❯ [ ] code.ml              M │ 1   let alpha = 1
 05 |                                 │ 2   let beta = 2
 06 |                                 │ 3 - let gamma = 3
 07 |                                 │ 3 + let gamma = 33
@@ -299,7 +299,7 @@ let%expect_test "below 80 columns the split collapses to one focused pane" =
     {|01 | ──────────────────────────────────────────────────────────────────────
 02 | Review  HEAD..worktree                          0/1 reviewed · pending
 03 |  ▾ lib
-04 |  ❯ [ ] code.ml                                                      M
+04 |    ❯ [ ] code.ml                                                    M
 05 |
 06 |
 07 |
@@ -368,8 +368,8 @@ let%expect_test "CR add and resolve round trip through the source" =
     {|01 | ────────────────────────────────────────────────────────────────────────────────
 02 | Review  HEAD..worktree                                    0/1 reviewed · pending
 03 |  ▾ lib                          │lib/code.ml · unreviewed · +2 −1
-04 |  ❯ [ ] code.ml                M │ 1   let alpha = 1
-05 |      CR alice: CRDT state needs │ 2   let beta = 2
+04 |    ❯ [ ] code.ml              M │ 1   let alpha = 1
+05 |        CR alice: CRDT state need│ 2   let beta = 2
 06 |                                 │ 3 - let gamma = 3
 07 |                                 │ 3 + (* CR alice: CRDT state needs a note *)
 08 |                                 │ 4 + let gamma = 33
@@ -405,8 +405,8 @@ let%expect_test "CR add and resolve round trip through the source" =
     {|01 | ────────────────────────────────────────────────────────────────────────────────
 02 | Review  HEAD..worktree                                    0/1 reviewed · pending
 03 |  ▾ lib                          │lib/code.ml · unreviewed · +2 −1
-04 |  ❯ [ ] code.ml                M │ 1   let alpha = 1
-05 |      XCR user for alice: CRDT st│ 2   let beta = 2
+04 |    ❯ [ ] code.ml              M │ 1   let alpha = 1
+05 |        XCR user for alice: CRDT │ 2   let beta = 2
 06 |                                 │ 3 - let gamma = 3
 07 |                                 │ 3 + (* XCR user for alice: CRDT state needs a
 08 |                                 │ 4 + let gamma = 33
@@ -458,8 +458,8 @@ let%expect_test "CR edit and remove update the source" =
     {|01 | ────────────────────────────────────────────────────────────────────────────────
 02 | Review  HEAD..worktree                                    0/1 reviewed · pending
 03 |  ▾ lib                          │lib/code.ml · unreviewed · +2 −1
-04 |  ❯ [ ] code.ml                M │ 1   let alpha = 1
-05 |      CR: rename delta           │ 2   let beta = 2
+04 |    ❯ [ ] code.ml              M │ 1   let alpha = 1
+05 |        CR: rename delta         │ 2   let beta = 2
 06 |                                 │ 3 - let gamma = 3
 07 |                                 │ 3 + let gamma = 33
 08 |                                 │ 4 + (* CR: rename delta *)
@@ -511,7 +511,7 @@ let%expect_test "line and deletion-hunk comments keep their source anchor" =
       {|01 | ────────────────────────────────────────────────────────────────────────────────
 02 | Review  HEAD..worktree                                    0/1 reviewed · pending
 03 |  ▾ lib                          │lib/code.ml · unreviewed · +0 −1
-04 |  ❯ [ ] code.ml                M │ 1   let f () =
+04 |    ❯ [ ] code.ml              M │ 1   let f () =
 05 |                                 │ 2     let kept = 1 in
 06 |                                 │ 3 -   let removed = 2 in
 07 |                                 │ 3     kept
@@ -572,7 +572,7 @@ let%expect_test "live refresh adds units and stales an approval" =
     {|01 | ────────────────────────────────────────────────────────────────────────────────
 02 | Review  HEAD..worktree                           1/2 reviewed · approved · stale
 03 |  ▾ lib                          │lib/code.ml · reviewed · +1 −1
-04 |  ❯ [✓] code.ml                M │  1   let alpha = 1
+04 |    ❯ [✓] code.ml              M │  1   let alpha = 1
 05 |    [ ] notes.txt              M │  2   let beta = 2
 06 |                                 │❯ 3 - let gamma = 3
 07 |                                 │  3 + let gamma = 33
@@ -607,8 +607,8 @@ let%expect_test "space on a reviewed unit unmarks it" =
   [%expect
     {|01 | ────────────────────────────────────────────────────────────────────────────────
 02 | Review  HEAD..worktree                                    0/1 reviewed · pending
-03 |  ▾ lib                          │lib/code.ml · reviewed · +1 −1
-04 |  ❯ [ ] code.ml                M │  1   let alpha = 1
+03 |  ▾ lib                          │lib/code.ml · unreviewed · +1 −1
+04 |    ❯ [ ] code.ml              M │  1   let alpha = 1
 05 |                                 │  2   let beta = 2
 06 |                                 │❯ 3 - let gamma = 3
 07 |                                 │  3 + let gamma = 33
@@ -656,7 +656,7 @@ let%expect_test "the cursor steps between hunks" =
     {|01 | ────────────────────────────────────────────────────────────────────────────────
 02 | Review  HEAD..worktree                                    0/2 reviewed · pending
 03 |  ▾ lib                          │lib/code.ml · hunk 1/2 · unreviewed · +2 −2
-04 |  ❯ [ ] code.ml                M │❯  1   let v1 = 1
+04 |    ❯ [ ] code.ml              M │❯  1   let v1 = 1
 05 |                                 │   2 - let v2 = 2
 06 |                                 │   2 + let v2 = 20
 07 |                                 │   3   let v3 = 3
@@ -684,7 +684,7 @@ let%expect_test "the cursor steps between hunks" =
     {|01 | ────────────────────────────────────────────────────────────────────────────────
 02 | Review  HEAD..worktree                                    0/2 reviewed · pending
 03 |  ▾ lib                          │lib/code.ml · hunk 2/2 · unreviewed · +2 −2
-04 |  ❯ [ ] code.ml                M │  4   let v4 = 4
+04 |    ❯ [ ] code.ml              M │  4   let v4 = 4
 05 |                                 │  5   let v5 = 5
 06 |                                 │  6   let v6 = 6
 07 |                                 │  7   let v7 = 7
@@ -768,8 +768,8 @@ let%expect_test "a malformed CR renders as a problem row" =
     {|01 | ────────────────────────────────────────────────────────────────────────────────
 02 | Review  HEAD..worktree                                    0/1 reviewed · pending
 03 |  ▾ lib                          │lib/code.ml · unreviewed · +1 −0
-04 |  ❯ [ ] code.ml                M │ 1   let x = 1
-05 |      ! CR body must not be empty│ 2 + (* CR: *)
+04 |    ❯ [ ] code.ml              M │ 1   let x = 1
+05 |        ! CR body must not be emp│ 2 + (* CR: *)
 06 |                                 │
 07 |                                 │
 08 |                                 │
@@ -802,7 +802,7 @@ let%expect_test "ctrl+c arms and quits from review" =
     {|01 | ────────────────────────────────────────────────────────────────────────────────
 02 | Review  HEAD..worktree                                    0/1 reviewed · pending
 03 |  ▾ lib                          │lib/code.ml · unreviewed · +1 −1
-04 |  ❯ [ ] code.ml                M │ 1   let alpha = 1
+04 |    ❯ [ ] code.ml              M │ 1   let alpha = 1
 05 |                                 │ 2   let beta = 2
 06 |                                 │ 3 - let gamma = 3
 07 |                                 │ 3 + let gamma = 33
@@ -826,5 +826,63 @@ let%expect_test "ctrl+c arms and quits from review" =
   Tui.keys t Key.ctrl_c;
   Tui.await_exit t;
   ignore (Tui.outcome t)
+
+(* {2 Tree depth and the file's reviewed fact} *)
+
+(* Two facts one frame proves.
+
+   Depth: a root-level file gets no `▾ <dir>` header, so it must render one
+   level out from the files that hang under one — otherwise it reads as the
+   last group's child (the tree had a single depth: [dune-project] appeared to
+   live in [lib/]).
+
+   The file's reviewed fact: space at a HUNK cursor marks the hunk, not the
+   file scope, and [✓] here rides on the counter's coverage rule. The nav's
+   checkbox has always reported coverage (all units reviewed) while the diff
+   header asked whether the file scope itself carried a mark — two different
+   definitions of a reviewed file. Both now read {!Spice_review.file_reviewed}.
+   The header side of that agreement is pinned where the two disagreed
+   visibly: "space on a reviewed unit unmarks it", whose header used to read
+   "reviewed" beside a [ ] row and a 0/1 counter. *)
+let seed_two_levels project =
+  Project.write project "lib/code.ml" base_code;
+  Project.write project "root.ml" "let root = 1\n";
+  Project.git_baseline project;
+  Project.write project "lib/code.ml" sample_code;
+  Project.write project "root.ml" "let root = 2\n"
+
+let%expect_test "a root file sits out of the group and marks agree" =
+  Tui.run ~name:"review-depth" ~review:true ~seed:seed_two_levels @@ fun t ->
+  Tui.settle t;
+  (* Into the diff pane and onto the hunk, so space marks the HUNK. *)
+  Tui.keys t Key.enter;
+  Tui.settle t;
+  Tui.keys t " ";
+  Tui.settle t;
+  Tui.print t;
+  [%expect {|01 | ────────────────────────────────────────────────────────────────────────────────
+02 | Review  HEAD..worktree                                    1/2 reviewed · pending
+03 |  ▾ lib                          │root.ml · unreviewed · +1 −1
+04 |      [✓] code.ml              M │❯ 1 - let root = 1
+05 |  ❯ [ ] root.ml                M │  1 + let root = 2
+06 |                                 │
+07 |                                 │
+08 |                                 │
+09 |                                 │
+10 |                                 │
+11 |                                 │
+12 |                                 │
+13 |                                 │
+14 |                                 │
+15 |                                 │
+16 |                                 │
+17 |                                 │
+18 |                                 │
+19 |                                 │
+20 |                                 │
+21 |                                 │
+22 |                                 │
+23 |
+24 | tab focus nav · space mark hunk · c comment · ]/[ hunk · ctrl+o context · esc na|}]
 
 [%%run_tests "spice.tui.review"]

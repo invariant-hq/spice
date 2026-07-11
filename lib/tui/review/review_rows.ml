@@ -20,15 +20,9 @@ let occ_line occ = Spice_cr.Occurrence.line occ
 let occ_is_valid occ = Result.is_ok (Spice_cr.Occurrence.comment occ)
 let occ_in_file occ path = String.equal (occ_path_string occ) (path_string path)
 
-let unreviewed_units review file =
-  let path = Spice_review.Feature.File.path file in
-  match Spice_review.file_unit_scopes review ~path with
-  | None -> 0
-  | Some scopes ->
-      List.length
-        (List.filter
-           (fun scope -> not (Spice_review.is_reviewed review scope))
-           scopes)
+let file_reviewed review file =
+  Spice_review.file_reviewed review
+    ~path:(Spice_review.Feature.File.path file)
 
 (* {1 Cursor} *)
 
@@ -49,6 +43,10 @@ let cr_selected review index =
 
 (* {1 Tree} *)
 
+(* [grouped] is the one level of depth the tree has: a row under a `▾ <dir>`
+   header indents past it. Without it a root-level file — which gets no header —
+   renders at the same depth as the previous group's children and reads as one
+   of them. *)
 type row =
   | Group of string  (** A `▾ <dir>` header; not selectable. *)
   | File of {
@@ -56,8 +54,14 @@ type row =
       status : Spice_review.Feature.File.status;
       selected : bool;
       reviewed : bool;
+      grouped : bool;
     }
-  | Cr of { occ : Spice_cr.Occurrence.t; index : int; selected : bool }
+  | Cr of {
+      occ : Spice_cr.Occurrence.t;
+      index : int;
+      selected : bool;
+      grouped : bool;
+    }
 
 let cursor_of_row = function
   | File f -> Some (Spice_review.Cursor.Scope (Spice_review.Scope.File f.path))
@@ -74,26 +78,27 @@ let leaf_path = function
 
 let dir_of path = match Filename.dirname path with "." -> "" | dir -> dir
 
-let file_row review file =
+let file_row review ~grouped file =
   File
     {
       path = Spice_review.Feature.File.path file;
       status = Spice_review.Feature.File.status file;
       selected = file_selected review (Spice_review.Feature.File.path file);
-      reviewed = unreviewed_units review file = 0;
+      reviewed = file_reviewed review file;
+      grouped;
     }
 
-let cr_row review index occ =
-  Cr { occ; index; selected = cr_selected review index }
+let cr_row review ~grouped index occ =
+  Cr { occ; index; selected = cr_selected review index; grouped }
 
 (* A file's CR children: every occurrence anchored in it, source order. *)
-let cr_children review indexed file =
+let cr_children review ~grouped indexed file =
   let path = Spice_review.Feature.File.path file in
   indexed
   |> List.filter (fun (_, occ) -> occ_in_file occ path)
   |> List.stable_sort (fun (_, a) (_, b) ->
       Int.compare (occ_line a) (occ_line b))
-  |> List.map (fun (index, occ) -> cr_row review index occ)
+  |> List.map (fun (index, occ) -> cr_row review ~grouped index occ)
 
 let build review =
   let feature = Spice_review.feature review in
@@ -131,16 +136,16 @@ let build review =
     | [] -> []
     | leaf :: rest ->
         let dir = dir_of (leaf_path leaf) in
+        let grouped = not (String.equal dir "") in
         let header =
-          if (not (String.equal dir current)) && not (String.equal dir "") then
-            [ Group dir ]
-          else []
+          if grouped && not (String.equal dir current) then [ Group dir ] else []
         in
         let body =
           match leaf with
           | File_leaf file ->
-              file_row review file :: cr_children review indexed file
-          | Cr_leaf (index, occ) -> [ cr_row review index occ ]
+              file_row review ~grouped file
+              :: cr_children review ~grouped indexed file
+          | Cr_leaf (index, occ) -> [ cr_row review ~grouped index occ ]
         in
         header @ body @ emit dir rest
   in
@@ -222,6 +227,9 @@ let row_box ?on_mouse nodes =
     ~size:{ Mosaic.width = Mosaic.pct 100; height = Mosaic.px 1 }
     nodes
 
+(* One level of depth: a grouped row hangs under its `▾ <dir>` header. *)
+let indent ~grouped base = if grouped then base ^ "  " else base
+
 let render ~focused ~dimmed ~on_click row =
   match row with
   | Group dir ->
@@ -236,7 +244,8 @@ let render ~focused ~dimmed ~on_click row =
       in
       row_box ?on_mouse:(on_mouse_of on_click row)
         [
-          Mosaic.text ~wrap:`None ~flex_shrink:0. " ";
+          Mosaic.text ~wrap:`None ~flex_shrink:0.
+            (indent ~grouped:f.grouped " ");
           cursor_cell ~focused ~dimmed f.selected;
           Mosaic.text ~style:(dim ~dimmed mark_style) ~wrap:`None
             ~flex_shrink:0. mark;
@@ -264,7 +273,8 @@ let render ~focused ~dimmed ~on_click row =
       in
       row_box ?on_mouse:(on_mouse_of on_click row)
         [
-          Mosaic.text ~wrap:`None ~flex_shrink:0. "   ";
+          Mosaic.text ~wrap:`None ~flex_shrink:0.
+            (indent ~grouped:c.grouped "   ");
           cursor_cell ~focused ~dimmed c.selected;
           Mosaic.text ~style ~wrap:`None ~truncate:true ~flex_shrink:1. text;
           spacer;

@@ -236,7 +236,11 @@ let file_scope_line review file hunk =
   let reviewed =
     match hunk with
     | Some hunk -> reviewed_hunk review path hunk
-    | None -> Spice_review.is_reviewed review (Spice_review.Scope.File path)
+    (* Without a hunk in view the line speaks for the whole file, so it reports
+       the file's coverage — the same fact the nav tree's checkbox shows. Asking
+       [is_reviewed] about the file scope would report the file's own mark, which
+       a fully-hunk-reviewed file never has. *)
+    | None -> Spice_review.file_reviewed review ~path
   in
   let state =
     if reviewed then ("reviewed", Style.success) else ("unreviewed", Style.muted)
