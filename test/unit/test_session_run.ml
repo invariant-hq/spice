@@ -521,6 +521,38 @@ let interrupt_finishes_turn_as_cancelled () =
   | Error Run.Error.No_active_turn -> ()
   | Error error -> failf "unexpected interrupt error: %a" Run.Error.pp error
 
+(* The drive's repair: a turn whose model call failed terminally must still
+   reach a terminal event, or it stays active in the saved session and every
+   later command is refused against it. *)
+let fail_finishes_turn_as_failed () =
+  let step =
+    match Run.fail ~message:"openai rate-limited the request" (session ()) with
+    | Ok step -> step
+    | Error error -> failf "fail failed: %a" Run.Error.pp error
+  in
+  equal int ~msg:"fail appends one terminal event" 1
+    (List.length (Run.Step.events step));
+  (match Run.Step.next step with
+  | Run.Step.Finished { turn = turn_id; outcome } -> (
+      is_true ~msg:"fail finishes the active turn"
+        (Session.Turn.Id.equal turn_id (Session.Turn.id turn));
+      match outcome with
+      | Session.Turn.Outcome.Failed { message } ->
+          equal string ~msg:"fail records the message"
+            "openai rate-limited the request" message
+      | _ ->
+          failf "expected failed outcome, got %a" Run.Step.pp_next
+            (Run.Step.next step))
+  | next -> failf "expected finished step, got %a" Run.Step.pp_next next);
+  equal
+    (option (testable ~pp:Session.Turn.Id.pp ~equal:Session.Turn.Id.equal ()))
+    ~msg:"failed session has no active turn" None
+    (Session.State.active_turn_id (Session.state (Run.Step.session step)));
+  match Run.fail ~message:"nothing to close" (empty_session ()) with
+  | Ok _ -> failf "fail without active turn should fail"
+  | Error Run.Error.No_active_turn -> ()
+  | Error error -> failf "unexpected fail error: %a" Run.Error.pp error
+
 let prelude_reaches_model_request () =
   let prelude =
     match Llm.Request.Prelude.make [ Llm.Message.system "Be brief." ] with
@@ -1029,6 +1061,55 @@ let interrupt_answers_pending_host_tool_call () =
             (Llm.Tool.Result.is_error result)
       | _ -> failf "expected a tool result as the last transcript message")
 
+(* A failed turn answers its unanswered calls for the same reason an
+   interrupted one does: the transcript is saved, and the next turn's request
+   carries it. An unanswered tool call there is rejected by the provider — so
+   the turn that failed would poison the turns after it. *)
+let fail_answers_pending_host_tool_call () =
+  let host_tool =
+    Llm.Tool.make ~name:"ask_user" ~input_schema:(Json.object' []) ()
+  in
+  let turn =
+    Session.Turn.make
+      ~id:(Session.Turn.Id.of_string "turn-1")
+      ~input:(Session.Turn.Input.user_text "Use the host tool.")
+      ~model ~declarations:[ host_tool ] ~host_tools:[ "ask_user" ]
+      ~max_steps:max_int ()
+  in
+  let config = config ~host_tools:[ host_tool ] [] in
+  let blocked =
+    match
+      Run.accept_response config
+        (response (call ~id:"question-1" ~name:"ask_user" ()))
+        (session_with turn)
+    with
+    | Ok step -> step
+    | Error error -> failf "record response failed: %a" Run.Error.pp error
+  in
+  match Run.fail ~message:"the provider is unavailable" (Run.Step.session blocked)
+  with
+  | Error error -> failf "fail failed: %a" Run.Error.pp error
+  | Ok step -> (
+      equal int
+        ~msg:"fail appends the synthesized tool result and the terminal event" 2
+        (List.length (Run.Step.events step));
+      let state = Session.state (Run.Step.session step) in
+      is_true
+        ~msg:
+          "the failed transcript is provider-well-formed (no pending tool \
+           results)"
+        (Llm.Transcript.is_ready (Session.State.transcript state));
+      match
+        List.rev (Llm.Transcript.messages (Session.State.transcript state))
+      with
+      | Llm.Message.Tool_result result :: _ ->
+          equal string ~msg:"the synthesized result answers the question call"
+            "question-1"
+            (Llm.Tool.Result.call_id result);
+          is_true ~msg:"the synthesized result is a tool error"
+            (Llm.Tool.Result.is_error result)
+      | _ -> failf "expected a tool result as the last transcript message")
+
 (* Regression companion: interrupting mid-drain, with an executable claim
    planned but not yet finished, finishes that claim with the interrupted
    result so the claim tracking and the transcript both stay consistent. *)
@@ -1317,6 +1398,7 @@ let () =
         block_accessors_identify_call_and_turn;
       test "interrupt finishes turn as cancelled"
         interrupt_finishes_turn_as_cancelled;
+      test "fail finishes turn as failed" fail_finishes_turn_as_failed;
       test "config prelude reaches model request" prelude_reaches_model_request;
       test "resumed turn keeps accepted tool declarations"
         resumed_turn_keeps_accepted_tool_declarations;
@@ -1338,6 +1420,8 @@ let () =
         host_tool_answer_rejects_executable_call;
       test "interrupt answers pending host tool call"
         interrupt_answers_pending_host_tool_call;
+      test "fail answers pending host tool call"
+        fail_answers_pending_host_tool_call;
       test "interrupt finishes pending claim" interrupt_finishes_pending_claim;
       test "policy denial uses configured message"
         policy_denial_uses_configured_message;
