@@ -90,10 +90,12 @@ The implementation is complete only when all of these invariants hold.
    user ownership.
 8. Every subprocess started on behalf of a model tool executes through the
    run's sealed sandbox, whether its permission fact is a command, a path
-   access, or another semantic operation. Until that route is guaranteed, the
-   operation receives no sandbox-derived permission credit.
-9. Automatic project processes, which have no agent permission request, require
-   workspace trust and still execute through the run's sealed sandbox.
+   access, or another semantic operation. A command permission fact records
+   whether that route is proven; callers that cannot prove it remain fail-safe
+   and receive no sandbox-derived permission credit.
+9. Automatic project processes require workspace trust and execute through the
+   run's sealed sandbox, but never create agent permission prompts. They are
+   product-owned startup behavior rather than model-requested operations.
 10. Headless operation never infers trust from non-interactivity, Git
     membership, filesystem ownership, bypass mode, or a permissive sandbox.
 11. Project instructions and skills are gated as ambient instruction channels.
@@ -452,18 +454,26 @@ an unsandboxed fallback.
 
 ## Permission and process semantics
 
-### Remove the invalid global command credit
+### Credit only a proven sealed command route
 
-`Permission.Preset.sandbox_backed_rules` stops adding both
-`review_destructive` and `allow_command`. Without `allow_command`, the former
-does not change the fallback result. The default preset retains only the
-workspace create/modify/delete credits backed by the native workspace boundary;
-`Accept_edits` gains no sandbox-backed rules.
+Command permission facts carry a small domain-shaped execution-route value:
+`Sandboxed` when the exact operation is known to use the run's sealed sandbox,
+and `Direct` otherwise. Construction defaults to `Direct`; confinement is never
+inferred from a tool name, command text, or the presence of a sandbox elsewhere
+in the run.
 
-Consequently, command-bearing tools remain reviewable unless a user-owned
-durable rule, session approval, or bypass preset decides otherwise. This is the
-safe behavior until command facts encode a proven execution route; do not add a
-`sandboxed` boolean claim merely to recover automatic approval.
+Under an enforcing `workspace-write` posture, sandbox-backed policy first
+reviews destructive commands, then allows non-destructive commands whose route
+is `Sandboxed`. This restores routine Dune, Merlin, search, evaluation, and
+shell workflows without prompt flooding while keeping `Direct` commands
+reviewable. Read-only, danger-full-access, external-sandbox, and unavailable
+backends contribute no workspace-write command credit.
+
+The existing order remains authoritative: explicit durable rules precede the
+preset and sandbox-backed rules, exact session grants apply only after those
+rules, and Plan mode's command denial is never relaxed. Shell escalation stays
+a separate custom access and therefore remains reviewable even when the
+ordinary command fact is sandboxed.
 
 ### Confine every command-bearing standard tool
 
@@ -644,7 +654,13 @@ more cheaply through a black-box workflow.
 
 - Workspace-write no longer auto-allows a generic command access.
 - Native workspace edits retain their intended sandbox-backed credit.
-- Every standard command-bearing OCaml tool is still permission reviewed.
+- Routine Dune, Merlin, search, evaluation, and shell commands whose sealed
+  route is proven do not prompt under enforcing workspace-write.
+- A direct or otherwise unproven command remains reviewable.
+- Destructive commands and shell escalation remain reviewable even when the
+  ordinary command route is sealed.
+- Read-only, danger-full-access, external-sandbox, and unavailable backends
+  contribute no workspace-write command credit.
 - Fixed-command glob/search fixtures also execute through the sealed sandbox,
   despite exposing path permissions rather than command permissions.
 - After approval, an OCaml/Merlin/Dune fixture may write inside allowed
@@ -728,7 +744,15 @@ plan document is committed separately before implementation.
    - Reload once after persistence, before snapshot/brief/prewarm construction.
    - Update test harness seeding and add PTY coverage.
 
-6. **`docs(security): Define the workspace trust boundary`**
+6. **`fix(permission): Credit only proven sandboxed commands`**
+   - Add the execution route to existing command permission facts, defaulting
+     to direct/unproven.
+   - Target the narrow sandbox-backed allow rule at the sealed route after the
+     destructive-command review rule.
+   - Thread sealed-route evidence from every standard sandboxed subprocess tool
+     and ordinary shell execution; keep escalation separate.
+
+7. **`docs(security): Define the workspace trust boundary`**
    - Align README, architecture, security, configuration, CLI help, doctor,
      settings facts, and performance notes.
    - State the three independent boundaries and headless behavior.
@@ -752,8 +776,9 @@ The feature is ready when:
 - every enabled project process is trust-gated and routed through the sealed
   sandbox (which may be deliberately unconfined only when the user selected
   `danger-full-access` or declared an external boundary);
-- ordinary command permission is no longer auto-approved based on confinement
-  that may not exist;
+- ordinary commands are auto-approved only when their sealed execution route
+  is proven and an enforcing workspace-write posture supplies the matching
+  credit;
 - TUI, headless, config, doctor, instruction, skill, notice, and tooling
   behavior agree;
 - focused black-box cases, `dune build @all`, and `dune runtest` pass.
