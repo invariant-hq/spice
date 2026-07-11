@@ -720,6 +720,22 @@ let native_idle_close_joins_reader () =
     ~msg:"closed native watcher returns None" None
     (next_timeout ~clock watcher)
 
+let native_close_during_event_flood () =
+  with_temp_dir @@ fun root ->
+  with_eio @@ fun ~sw:_ ~clock ->
+  for iteration = 1 to 100 do
+    Eio.Switch.run (fun sw ->
+        let watcher =
+          make ~backend:`Native ~poll_interval:5.0 ~settle_delay:0.01 ~sw ~clock
+            root
+        in
+        let file = path root (Printf.sprintf "event-%03d" iteration) in
+        write_file file "event";
+        Fswatch.close watcher;
+        Fswatch.close watcher);
+    Gc.full_major ()
+  done
+
 let native_wakeup_observes_create () =
   with_temp_dir @@ fun root ->
   with_native_watcher ~poll_interval:5.0 root @@ fun ~sw:_ ~clock watcher ->
@@ -806,6 +822,8 @@ let () =
           test "best backend constructs" best_backend_constructs;
           test ~timeout:4.0 "native idle close joins reader"
             native_idle_close_joins_reader;
+          test ~timeout:10.0 "native close during event flood"
+            native_close_during_event_flood;
           test ~timeout:2.0 "native wakeup observes create"
             native_wakeup_observes_create;
           test ~timeout:2.0 "native wakeup observes nested create"

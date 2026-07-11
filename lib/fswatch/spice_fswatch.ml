@@ -603,13 +603,9 @@ module Native = struct
         match create root latency (fun () -> Signal.notify signal) with
         | exception _ -> None
         | raw ->
-            let closed = ref false in
             let close () =
-              if not !closed then begin
-                closed := true;
-                Signal.close signal;
-                match stop raw with () -> () | exception _ -> ()
-              end
+              Signal.close signal;
+              match stop raw with () -> () | exception _ -> ()
             in
             Some
               ({ wakeup = signal; rebuild = (fun _dirs -> Ok ()); close } : t)

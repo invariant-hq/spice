@@ -47,23 +47,36 @@
 #define kFSEventStreamCreateFlagFileEvents 0
 #endif
 
+typedef enum spice_fsevents_state {
+  SPICE_FSEVENTS_ACTIVE,
+  SPICE_FSEVENTS_STOPPING,
+  SPICE_FSEVENTS_DRAINED,
+} spice_fsevents_state;
+
 typedef struct spice_fsevents_t {
   value callback;
   FSEventStreamRef stream;
   dispatch_queue_t queue;
-  bool callback_rooted;
-  atomic_bool stopped;
+  dispatch_group_t drain_group;
+  atomic_int state;
 } spice_fsevents_t;
 
-#define Fsevents_val(v) (*((spice_fsevents_t **)Data_custom_val(v)))
+typedef _Atomic(spice_fsevents_t *) spice_fsevents_handle;
+
+#define Fsevents_handle(v) ((spice_fsevents_handle *)Data_custom_val(v))
+
+static spice_fsevents_t *take_fsevents(value v_t) {
+  return atomic_exchange_explicit(Fsevents_handle(v_t), NULL,
+                                  memory_order_acq_rel);
+}
+
+static void drain_queue(void *unused) { (void)unused; }
 
 static void stop_fsevents(spice_fsevents_t *t) {
-  if (t == NULL ||
-      atomic_exchange_explicit(&t->stopped, true, memory_order_acq_rel))
-    return;
   if (t->stream != NULL) {
     FSEventStreamStop(t->stream);
     FSEventStreamInvalidate(t->stream);
+    dispatch_sync_f(t->queue, NULL, drain_queue);
     FSEventStreamRelease(t->stream);
     t->stream = NULL;
   }
@@ -73,15 +86,49 @@ static void stop_fsevents(spice_fsevents_t *t) {
   }
 }
 
-static void finalize_fsevents(value v_t) {
-  spice_fsevents_t *t = Fsevents_val(v_t);
-  if (t != NULL) {
-    stop_fsevents(t);
-    if (t->callback_rooted)
-      caml_remove_global_root(&t->callback);
-    caml_stat_free(t);
-    Fsevents_val(v_t) = NULL;
+static dispatch_queue_t cleanup_queue(void) {
+  return dispatch_get_global_queue(QOS_CLASS_UTILITY, 0);
+}
+
+static void drain_fsevents(void *context) {
+  spice_fsevents_t *t = context;
+  stop_fsevents(t);
+  atomic_store_explicit(&t->state, SPICE_FSEVENTS_DRAINED,
+                        memory_order_release);
+}
+
+static void free_drained_fsevents(void *context) {
+  spice_fsevents_t *t = context;
+  if (!caml_c_thread_register()) {
+    /* Domain zero can be unavailable during process shutdown. Native state is
+       already drained; keep the root and its address alive until process exit. */
+    return;
   }
+  caml_acquire_runtime_system();
+  caml_remove_generational_global_root(&t->callback);
+  caml_release_runtime_system();
+  caml_c_thread_unregister();
+  dispatch_release(t->drain_group);
+  caml_stat_free(t);
+}
+
+static void finalize_fsevents(value v_t) {
+  spice_fsevents_t *t = take_fsevents(v_t);
+  if (t == NULL)
+    return;
+
+  int expected = SPICE_FSEVENTS_ACTIVE;
+  if (atomic_compare_exchange_strong_explicit(
+          &t->state, &expected, SPICE_FSEVENTS_STOPPING,
+          memory_order_acq_rel, memory_order_acquire))
+    dispatch_group_async_f(t->drain_group, cleanup_queue(), t,
+                           drain_fsevents);
+
+  if (expected == SPICE_FSEVENTS_DRAINED)
+    dispatch_async_f(cleanup_queue(), t, free_drained_fsevents);
+  else
+    dispatch_group_notify_f(t->drain_group, cleanup_queue(), t,
+                            free_drained_fsevents);
 }
 
 static struct custom_operations fsevents_ops = {
@@ -116,7 +163,8 @@ static void fsevents_callback(const FSEventStreamRef streamRef, void *client,
   bool interesting = false;
 
   if (t == NULL ||
-      atomic_load_explicit(&t->stopped, memory_order_acquire))
+      atomic_load_explicit(&t->state, memory_order_acquire) !=
+          SPICE_FSEVENTS_ACTIVE)
     return;
 
   for (size_t i = 0; i < numEvents; i++) {
@@ -129,7 +177,8 @@ static void fsevents_callback(const FSEventStreamRef streamRef, void *client,
   if (!interesting)
     return;
 
-  caml_c_thread_register();
+  if (!caml_c_thread_register())
+    return;
   caml_acquire_runtime_system();
   CAMLparam0();
   CAMLlocal1(result);
@@ -151,15 +200,20 @@ CAMLprim value spice_file_watcher_fsevents_create(value v_path, value v_latency,
   CAMLlocal1(v_t);
 
   spice_fsevents_t *t = caml_stat_alloc(sizeof(spice_fsevents_t));
-  t->callback = v_callback;
+  t->callback = Val_unit;
   t->stream = NULL;
   t->queue = NULL;
-  t->callback_rooted = false;
-  atomic_init(&t->stopped, false);
+  t->drain_group = dispatch_group_create();
+  if (t->drain_group == NULL) {
+    caml_stat_free(t);
+    caml_failwith("dispatch_group_create failed");
+  }
+  atomic_init(&t->state, SPICE_FSEVENTS_ACTIVE);
 
   CFStringRef path =
       CFStringCreateWithCString(NULL, String_val(v_path), kCFStringEncodingUTF8);
   if (path == NULL) {
+    dispatch_release(t->drain_group);
     caml_stat_free(t);
     caml_failwith("FSEvents path is not valid UTF-8");
   }
@@ -168,6 +222,7 @@ CAMLprim value spice_file_watcher_fsevents_create(value v_path, value v_latency,
                                    &kCFTypeArrayCallBacks);
   CFRelease(path);
   if (paths == NULL) {
+    dispatch_release(t->drain_group);
     caml_stat_free(t);
     caml_failwith("CFArrayCreate failed");
   }
@@ -181,36 +236,66 @@ CAMLprim value spice_file_watcher_fsevents_create(value v_path, value v_latency,
       kFSEventStreamEventIdSinceNow, Double_val(v_latency), flags);
   CFRelease(paths);
   if (t->stream == NULL) {
+    dispatch_release(t->drain_group);
     caml_stat_free(t);
     caml_failwith("FSEventStreamCreate failed");
   }
 
   t->queue = dispatch_queue_create("spice.file_watcher.fsevents", NULL);
   if (t->queue == NULL) {
-    stop_fsevents(t);
+    FSEventStreamRelease(t->stream);
+    dispatch_release(t->drain_group);
     caml_stat_free(t);
     caml_failwith("dispatch_queue_create failed");
   }
 
-  caml_register_global_root(&t->callback);
-  t->callback_rooted = true;
+  v_t = caml_alloc_custom(&fsevents_ops, sizeof(spice_fsevents_handle), 0, 1);
+  atomic_init(Fsevents_handle(v_t), NULL);
+  t->callback = v_callback;
+  caml_register_generational_global_root(&t->callback);
   FSEventStreamSetDispatchQueue(t->stream, t->queue);
   if (!FSEventStreamStart(t->stream)) {
-    stop_fsevents(t);
-    caml_remove_global_root(&t->callback);
-    t->callback_rooted = false;
+    FSEventStreamInvalidate(t->stream);
+    FSEventStreamRelease(t->stream);
+    dispatch_release(t->queue);
+    caml_remove_generational_global_root(&t->callback);
+    dispatch_release(t->drain_group);
     caml_stat_free(t);
     caml_failwith("FSEventStreamStart failed");
   }
 
-  v_t = caml_alloc_custom(&fsevents_ops, sizeof(spice_fsevents_t *), 0, 1);
-  Fsevents_val(v_t) = t;
+  atomic_store_explicit(Fsevents_handle(v_t), t, memory_order_release);
   CAMLreturn(v_t);
 }
 
 CAMLprim value spice_file_watcher_fsevents_stop(value v_t) {
   CAMLparam1(v_t);
-  stop_fsevents(Fsevents_val(v_t));
+  spice_fsevents_t *t =
+      atomic_load_explicit(Fsevents_handle(v_t), memory_order_acquire);
+  if (t == NULL)
+    CAMLreturn(Val_unit);
+
+  int expected = SPICE_FSEVENTS_ACTIVE;
+  if (atomic_compare_exchange_strong_explicit(
+          &t->state, &expected, SPICE_FSEVENTS_STOPPING,
+          memory_order_acq_rel, memory_order_acquire)) {
+    dispatch_group_async_f(t->drain_group, cleanup_queue(), t,
+                           drain_fsevents);
+    caml_release_runtime_system();
+    dispatch_group_wait(t->drain_group, DISPATCH_TIME_FOREVER);
+    caml_acquire_runtime_system();
+  } else if (expected == SPICE_FSEVENTS_STOPPING) {
+    CAMLreturn(Val_unit);
+  }
+
+  spice_fsevents_t *owned = t;
+  if (atomic_compare_exchange_strong_explicit(
+          Fsevents_handle(v_t), &owned, NULL, memory_order_acq_rel,
+          memory_order_acquire)) {
+    caml_remove_generational_global_root(&t->callback);
+    dispatch_release(t->drain_group);
+    caml_stat_free(t);
+  }
   CAMLreturn(Val_unit);
 }
 
