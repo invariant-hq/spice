@@ -1222,20 +1222,6 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
               dispatch_ref := Some dispatch;
               f ())
         in
-        (* Pre-warm the run off the submit path. [build_run] runs a one-shot
-           [dune describe] over the workspace, merlin program resolution, the
-           context and skills loads, and the fswatch spawn (producers.ml) — all
-           of which cost seconds on a cold workspace. Doing them lazily on the
-           first Start_turn left the working line lagging submit by that long, so
-           fork them at launch: the run is ready — or its build error held — by
-           the time the user submits. [fresh_session_id] mints the id here so
-           [build_run] can seed [Run.start] with it; that seed (anchors + the
-           goal-artifact load) tolerates a session whose document does not exist
-           yet — it seeds from the id string and the goal load returns None when
-           absent (run.ml). The document itself is written only on the first
-           submit ([Session.create] below), so an abandoned home visit never
-           leaves an empty "untitled" session in the store to pollute recents.
-           Plain fiber + promise: no [run_in_systhread] waits on this path. *)
         (* The mode the next runner is built with and each turn declares
            (10-commands.md §Mode switches: /plan and /build set the next-turn
            contract). Read on the perform fibers between scheduler yields, like
@@ -1266,22 +1252,12 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
               Eio.Promise.resolve resolver ()
           | None -> ()
         in
-        (* The fresh session id is minted before the prewarm fork so consumers
-           that only need the id (history attribution) never wait on
-           [build_run] — which costs seconds on a cold workspace. *)
-        let session_seed = Spice_host.Session.fresh_session_id ~clock in
-        (* The pending fresh run, a ref so [/clear] can re-arm the fresh path
-           with a new seed after the launch prewarm was consumed. *)
-        let arm_fresh seed =
-          let promise, resolve = Eio.Promise.create () in
-          Eio.Fiber.fork ~sw (fun () ->
-              Eio.Promise.resolve resolve
-                ( seed,
-                  build_run ?sandbox_flag ~sw ~stdenv ~host ~session_id:seed ()
-                ));
-          promise
+        (* Prompt history needs a session attribution before the first turn has
+           created a document. The id is inert: only [attach_fresh], running
+           under [Start_turn], may assemble a run or persist the session. *)
+        let fresh_session =
+          ref (Spice_host.Session.fresh_session_id ~clock)
         in
-        let prewarm = ref (arm_fresh session_seed) in
         (* The session's model selection. [None] derives the model from config
            and account connectivity at each binding, so a /login flips the
            derived default by the next turn; a /model pick pins the pair for
@@ -1361,14 +1337,10 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
           in
           deliver (App.snapshot_refreshed snapshot)
         in
-        (* The session's live attachment, created on the first turn from the
-           pre-warmed run. Held as [(live, run)]: the run is the workspace
-           assembly each turn's contract binds over. Resume onto an existing
-           session is a later iteration, so exactly one session is ever
-           attached. [Session.create] (the document write) and the
-           {!Spice_host.Live} attachment stay here — never pre-warmed — so the
-           store gains a session only once the user has actually asked for
-           one. *)
+        (* The session's live attachment, created by the first turn. Held as
+           [(live, run)]: the run is the workspace assembly each turn's
+           contract binds over. Resume onto an existing session is a later
+           iteration, so exactly one session is ever attached. *)
         let attachment = ref None in
         let created_session = ref None in
         let main_pending = ref false in
@@ -1403,6 +1375,22 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
               Log.err (fun m ->
                   m "run close failed: %s"
                     (Spice_host.Jobs.Close_error.message error))
+        in
+        (* A newly assembled run stays owned by the current [Start_turn] until
+           [f] returns [Ok] after installing it in [attachment]. Structured
+           failures close it before returning; cancellation and unexpected
+           exceptions close it under protection, then keep their original
+           identity and backtrace. *)
+        let with_owned_run run f =
+          match f () with
+          | Ok _ as result -> result
+          | Error _ as result ->
+              close_run run;
+              result
+          | exception exn ->
+              let backtrace = Printexc.get_raw_backtrace () in
+              Eio.Cancel.protect (fun () -> close_run run);
+              Printexc.raise_with_backtrace exn backtrace
         in
         let submit live command =
           main_pending := true;
@@ -1456,53 +1444,37 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
               | Spice_host.Jobs.Resumed _ ->
                   ())
         in
-        (* Attach a fresh session from the pre-warmed run: the path taken when no
-           resume is armed. [Session.create] (the document write) and the
-           {!Spice_host.Live} attachment live here — never pre-warmed — so the
-           store gains a session only once the user has actually asked for one. *)
+        (* The first [Start_turn] owns the whole fresh path: assemble the run,
+           bind its turn contract, persist the document, and transfer both run
+           and live attachment together. Nothing is started speculatively at
+           TUI launch, and every failure before transfer closes the run. *)
         let attach_fresh () =
-          let session_id, run_result = Eio.Promise.await !prewarm in
-          match run_result with
+          let session_id = !fresh_session in
+          match build_run ?sandbox_flag ~sw ~stdenv ~host ~session_id () with
           | Error _ as error -> error
-          | Ok run -> (
-              (* Binding happens before [Session.create], so a failed binding
-                 leaves no orphan document. The prewarm continues to own the
-                 run after either failure, so the next submit can retry after a
-                 login without rebuilding and final teardown still closes it. *)
-              match bind_runner run with
-              | Error message -> Error message
-              | Ok (runner, _model, _effort) ->
+          | Ok run ->
+              with_owned_run run (fun () ->
+                  let* runner, _model, _effort = bind_runner run in
                   let store = Spice_host.Session.store ~stdenv host in
                   let created_at =
                     Spice_session.Time.of_unix_seconds_float
                       (Eio.Time.now clock)
                   in
-                  (match
-                     Spice_host.Session.create ~store ~id:session_id ~cwd
-                       ~created_at ()
-                     |> Result.map_error Spice_protocol.Error.message
-                   with
-                  | Error message -> Error message
-                  | Ok document ->
-                      let live = Spice_host.Live.attach ~sw ~runner document in
-                      subscribe live;
-                      subscribe_jobs (Spice_host.Run.jobs run);
-                      attachment := Some (live, run);
-                      created_session := Some session_id;
-                      Ok (live, run)))
-        in
-        (* Close the abandoned prewarmed run on the resume path. A daemon awaits
-           the captured build and closes its complete ownership product; a
-           [/clear] re-arm cannot redirect it onto the replacement. *)
-        let close_abandoned_prewarm () =
-          (* Capture the handle now: a [/clear] re-arm must not redirect this
-             daemon onto the replacement run it is not abandoning. *)
-          let abandoned = !prewarm in
-          Eio.Fiber.fork_daemon ~sw (fun () ->
-              (match Eio.Promise.await abandoned with
-              | _, Ok run -> close_run run
-              | _, Error _ -> ());
-              `Stop_daemon)
+                  let* document =
+                    Spice_host.Session.create ~store ~id:session_id ~cwd
+                      ~created_at ()
+                    |> Result.map_error Spice_protocol.Error.message
+                  in
+                  let live = Spice_host.Live.attach ~sw ~runner document in
+                  (* These subscriptions do not suspend and only reject owners
+                     already closing. Both values are fresh, so no close or
+                     cancellation can interleave before ownership transfers to
+                     [attachment]. *)
+                  subscribe live;
+                  subscribe_jobs (Spice_host.Run.jobs run);
+                  attachment := Some (live, run);
+                  created_session := Some session_id;
+                  Ok (live, run))
         in
         (* Attach the resumed session behind [pending] (armed before its perform
            fork), replaying under a run built for its own id. A resume superseded
@@ -1516,9 +1488,8 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
            consumer only recovers — it neither re-reports the failure nor eats
            this submit. Recovery keeps a session already attached (a failed
            mid-chat resume stays on the current chat) and mints fresh only when
-           none is (a failed launch resume): [attach_fresh] re-consumes the
-           one-shot prewarm, valid precisely because [attachment = None] means no
-           earlier attach consumed it. *)
+           none is (a failed launch resume): [attach_fresh] builds only when the
+           pending first turn needs a fresh attachment. *)
         let rec consume_resume pending =
           let result = Eio.Promise.await pending in
           match !resume_pending with
@@ -1543,21 +1514,17 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
                   | Some att -> Ok att
                   | None -> attach_fresh ())
               | Ok document ->
-                  close_abandoned_prewarm ();
                   let session_id =
                     Spice_session.id
                       (Spice_session_store.Document.session document)
                   in
                   (match
                      build_run ?sandbox_flag ~sw ~stdenv ~host ~session_id ()
-                   with
+                  with
                   | Error _ as error -> error
-                  | Ok run -> (
-                      match bind_runner run with
-                      | Error message ->
-                          close_run run;
-                          Error message
-                      | Ok (runner, _model, _effort) ->
+                  | Ok run ->
+                      with_owned_run run (fun () ->
+                          let* runner, _model, _effort = bind_runner run in
                           close_attachment ();
                           let live =
                             Spice_host.Live.attach ~sw ~runner document
@@ -1970,30 +1937,45 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
         in
         let start_turn ?origin input =
           perform (fun () ->
-              match ensure_attachment () with
-              | Error message ->
+              try
+                match ensure_attachment () with
+                | Error message ->
+                    deliver
+                      (App.settled ~now:(Eio.Time.now clock)
+                         (failed_settle message))
+                | Ok (live, run) -> (
+                    (* Every turn re-binds its contract — selection, fresh
+                       credential store, current mode — and swaps the runner
+                       before submitting, so a /login or /model between turns
+                       takes effect on this very turn. *)
+                    match bind_runner run with
+                    | Error message ->
+                        deliver
+                          (App.settled ~now:(Eio.Time.now clock)
+                             (failed_settle message))
+                    | Ok (runner, model, effort) ->
+                        Spice_host.Live.set_runner live runner;
+                        refresh_snapshot ();
+                        let turn =
+                          make_turn ?origin ~clock
+                            ~config:(Spice_host.Host.config host)
+                            ~model ~effort input
+                        in
+                        submit live (Spice_protocol.Command.Start turn))
+              with
+              | Eio.Cancel.Cancelled _ as exn -> raise exn
+              | exn ->
+                  let backtrace = Printexc.get_raw_backtrace () in
+                  Log.err (fun m ->
+                      m "turn setup raised: %s@.%s" (Printexc.to_string exn)
+                        (Printexc.raw_backtrace_to_string backtrace));
+                  let error =
+                    Spice_protocol.Error.Internal
+                      ("couldn't start the turn: " ^ Printexc.to_string exn)
+                  in
                   deliver
                     (App.settled ~now:(Eio.Time.now clock)
-                       (failed_settle message))
-              | Ok (live, run) -> (
-                  (* Every turn re-binds its contract — selection, fresh
-                     credential store, current mode — and swaps the runner
-                     before submitting, so a /login or /model between turns
-                     takes effect on this very turn. *)
-                  match bind_runner run with
-                  | Error message ->
-                      deliver
-                        (App.settled ~now:(Eio.Time.now clock)
-                           (failed_settle message))
-                  | Ok (runner, model, effort) ->
-                      Spice_host.Live.set_runner live runner;
-                      refresh_snapshot ();
-                      let turn =
-                        make_turn ?origin ~clock
-                          ~config:(Spice_host.Host.config host)
-                          ~model ~effort input
-                      in
-                      submit live (Spice_protocol.Command.Start turn)))
+                       (settled_of_result (Error error))))
         in
         let command = function
           | App.Quit -> Mosaic.Cmd.quit
@@ -2170,17 +2152,12 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
               perform (fun () ->
                   (* Start over: supersede any in-flight resume (its producer
                      sees a non-current pending and goes inert — the same guard
-                     a newer pick relies on), close the session and its run, and
-                     re-arm the fresh path under a new seed. The next submit
-                     consumes it through [attach_fresh], creating the new
-                     document exactly as a launch's first submit does.
-                     [close_abandoned_prewarm] runs before the re-arm so it
-                     captures the outgoing unconsumed build. *)
+                     a newer pick relies on), close the session and its run,
+                     and mint the inert id the next [Start_turn] will build. *)
                   resume_pending := None;
                   close_attachment ();
-                  close_abandoned_prewarm ();
-                  prewarm :=
-                    arm_fresh (Spice_host.Session.fresh_session_id ~clock))
+                  fresh_session :=
+                    Spice_host.Session.fresh_session_id ~clock)
           | App.Fork_session id ->
               resume_into (fun () ->
                   let store = Spice_host.Session.store ~stdenv host in
@@ -2269,12 +2246,12 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
                   deliver
                     (App.dir_loaded ~dir (load_mention_dir ~stdenv ~cwd dir)))
           (* History records are attributed to the active session — the resumed
-             one when set, else the pre-minted [session_seed]; never awaiting
-             the prewarm, so ctrl+r is live from the first frame. *)
+             one when set, else the inert fresh id. No run is needed, so ctrl+r
+             stays live from the first frame. *)
           | App.Load_prompt_history ->
               perform (fun () ->
                   let session =
-                    Option.value ~default:session_seed !created_session
+                    Option.value ~default:!fresh_session !created_session
                   in
                   deliver
                     (App.prompt_history_loaded ~session
@@ -2282,7 +2259,7 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
           | App.Append_prompt_history entry ->
               perform (fun () ->
                   let session =
-                    Option.value ~default:session_seed !created_session
+                    Option.value ~default:!fresh_session !created_session
                   in
                   match
                     append_prompt_history ~stdenv ~clock host ~session entry
@@ -2498,10 +2475,7 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
           ~finally:(fun () ->
             shell_cancelled := true;
             dispatch_ref := None;
-            close_attachment ();
-            match Eio.Promise.peek !prewarm with
-            | Some (_, Ok run) -> close_run run
-            | Some (_, Error _) | None -> ())
+            close_attachment ())
           (fun () -> Mosaic.run ~matrix ~process_perform ?probe app);
         Ok { last_session = !created_session }
 

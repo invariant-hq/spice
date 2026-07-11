@@ -5,6 +5,73 @@
 
 open Tui_harness
 
+let%expect_test "a run-construction failure settles without exiting" =
+  Tui.run ~name:"turn-error-run-construction"
+    ~env:
+      [
+        ("SPICE_SANDBOX_MODE", "external-sandbox");
+        ("SPICE_SANDBOX_REQUIRE", "enforced");
+      ]
+  @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "start this turn";
+  Tui.enter t;
+  Tui.settle t;
+  Tui.print t;
+  Tui.keys t Key.ctrl_c;
+  Tui.keys t Key.ctrl_c;
+  Tui.await_exit t;
+  print_endline "runtime remained interactive";
+  [%expect
+    {|
+    01 |
+    02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+    03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+    04 |        sandbox: external-sandbox (config)
+    05 |
+    06 | ✗ sandbox unavailable: a declared external sandbox does not satisfy sandbox.
+    07 |   require=enforced
+    08 |   next: set sandbox.require=enforced-or-external to accept the declared
+    09 |   boundary, or choose an enforceable mode
+    10 |   Tell spice how to proceed.
+    11 |
+    12 |
+    13 |
+    14 |
+    15 |
+    16 |
+    17 |
+    18 |
+    19 |
+    20 |
+    21 | ────────────────────────────────────────────────────────────────────────────────
+    22 | ❯ message spice
+    23 | ────────────────────────────────────────────────────────────────────────────────
+    24 |   ! not logged in · /login · $PROJECT · gpt-5.5 medium · dune: ✗
+    runtime remained interactive|}]
+
+let%expect_test "an unexpected run-construction exception settles" =
+  Tui.run ~name:"turn-error-run-exception" @@ fun t ->
+  Tui.settle t;
+  let git_marker = Project.path (Tui.project t) ".git" in
+  Unix.symlink ".git" git_marker;
+  Fun.protect
+    ~finally:(fun () -> Unix.unlink git_marker)
+    (fun () ->
+      Tui.keys t "start through the broken workspace";
+      Tui.enter t;
+      Tui.settle t;
+      Printf.printf "settled composer restored: %b\n"
+        (String.includes ~affix:"❯ message spice" (Tui.screen t)));
+  Tui.keys t Key.ctrl_c;
+  Tui.keys t Key.ctrl_c;
+  Tui.await_exit t;
+  print_endline "runtime remained interactive";
+  [%expect
+    {|
+    settled composer restored: true
+    runtime remained interactive|}]
+
 (* Turn lifecycle beyond the happy path. The old suite pinned a single provider
    failure (an HTTP 400); production needs the status variety (an auth-shaped
    401, a server-shaped 500), the submit-validation floor (an empty or

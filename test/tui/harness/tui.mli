@@ -115,6 +115,10 @@ val await_exit : ?timeout:float -> t -> unit
 (** [await_exit ?timeout session] waits until the application has returned an
     outcome. [timeout], when supplied, bounds the wait in real seconds. *)
 
+val exits_within : t -> float -> bool
+(** [exits_within session seconds] waits up to [seconds] for the application to
+    return. It is [false] on timeout instead of raising. *)
+
 val outcome : t -> Spice_tui.outcome
 (** [outcome session] is the completed application outcome.
 

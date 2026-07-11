@@ -104,10 +104,55 @@ let%expect_test "the quit chord exits the app cleanly" =
   print_string "exited cleanly\n";
   [%expect {| exited cleanly |}]
 
+let remove_if_exists path =
+  try Unix.unlink path with Unix.Unix_error (Unix.ENOENT, _, _) -> ()
+
+let with_blocking_dune f =
+  let executable = Filename.temp_file "spice-sit04-dune-" ".sh" in
+  Project.write_path executable
+    {|#!/bin/sh
+printf x > .sit04-dune-started
+while [ ! -f .sit04-dune-release ]; do
+  /bin/sleep 0.01
+done
+exit 1
+|};
+  Unix.chmod executable 0o700;
+  Fun.protect
+    ~finally:(fun () -> remove_if_exists executable)
+    (fun () -> f ~executable)
+
+let%expect_test "quitting cancels first-turn run construction" =
+  with_blocking_dune @@ fun ~executable ->
+  let script =
+    [
+      Provider_script.message ~expect:[ "start while dune blocks" ]
+        ~id:"sit04-unreachable" "unreachable";
+    ]
+  in
+  Tui.run ~name:"states-quit-run-build" ~provider:script
+    ~env:
+      [
+        ("SPICE_DUNE", executable); ("SPICE_WORKSPACE_TOOLING", "on");
+      ]
+  @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "start while dune blocks";
+  Tui.enter t;
+  Tui.await_file t ".sit04-dune-started";
+  Tui.keys t Key.ctrl_c;
+  Tui.keys t Key.ctrl_c;
+  let exited_before_release = Tui.exits_within t 0.5 in
+  if not exited_before_release then
+    Project.write (Tui.project t) ".sit04-dune-release" "";
+  Tui.await_exit t;
+  Printf.printf "exited before release: %b\n" exited_before_release;
+  [%expect {| exited before release: true |}]
+
 (* Deliberately not covered here (see the coverage report):
-   - workspace-tooling knob variants (auto/on): the eager launch spawns a real
-     `dune` subprocess whose readiness is outside the virtual clock, making the
-     first sampled footer depend on host scheduling. Deterministic dune-state
+   - workspace-tooling knob variants (auto/on): first-turn construction spawns a
+     real `dune` subprocess whose readiness is outside the virtual clock, making
+     the first sampled footer depend on host scheduling. Deterministic dune-state
      coverage needs the faked dune-RPC seam (v3 plan §6, a Phase-2 item), not env
      knobs.
    - empty-store / sessions-empty and the git workspace block: owned by the

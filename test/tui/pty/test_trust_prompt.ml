@@ -69,17 +69,20 @@ let%expect_test "arrow navigation can trust and continue" =
   Pty.wait t (Screen.has "Selection: 2");
   Pty.send t "\r";
   Pty.wait t (Screen.has "dune:");
+  print_fact "project process remains deferred" (not (Sys.file_exists marker));
+  Pty.send t "start after trust\r";
   Pty.wait t (fun _ -> Sys.file_exists marker);
   print_fact "trusted stored" (store_has project "trusted");
-  print_fact "project process starts after consent" (Sys.file_exists marker);
+  print_fact "project process starts under first turn" (Sys.file_exists marker);
   print_fact "trusted decision remains in scrollback"
     (Screen.contains (Pty.raw t) "Project customization is enabled");
   Pty.quit t;
   [%expect
     {|
     no project process before consent: true
+    project process remains deferred: true
     trusted stored: true
-    project process starts after consent: true
+    project process starts under first turn: true
     trusted decision remains in scrollback: true |}]
 
 let exit_without_store name input =

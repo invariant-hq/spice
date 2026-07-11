@@ -475,6 +475,15 @@ let await_exit ?timeout t =
   | None -> wait ()
   | Some seconds -> Eio.Time.with_timeout_exn t.real_clock seconds wait
 
+let exits_within t seconds =
+  match
+    Eio.Time.with_timeout t.real_clock seconds (fun () ->
+        await_exit t;
+        Ok ())
+  with
+  | Ok () -> true
+  | Error `Timeout -> false
+
 (* The TUI's exit outcome, valid once the app has quit ({!await_exit}). Fails if
    the run errored or the app has not exited yet. *)
 let outcome t =

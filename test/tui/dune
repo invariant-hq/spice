@@ -32,6 +32,7 @@
   spice_host
   spice_host_builtin
   spice_llm
+  spice_path
   spice_protocol
   spice_session
   spice_workspace)

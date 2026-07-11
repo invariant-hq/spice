@@ -102,6 +102,13 @@ let get_or_fail pp = function
   | Ok value -> value
   | Error error -> failwith (Format.asprintf "%a" pp error)
 
+let trust_project ~stdenv ~process_env project =
+  Host.Trust.trust ~stdenv ~process_env
+    ~root:(Spice_path.Abs.of_string_exn (Project.root project))
+    ()
+  |> get_or_fail Host.Trust.Error.pp
+  |> ignore
+
 let make_start id prompt =
   Protocol.Command.Start.make
     ~id:(Session.Turn.Id.of_string id)
@@ -132,6 +139,7 @@ let%expect_test "run construction does not read a workspace-sized review source"
   let process_env = Project.env_snapshot bindings in
   Eio_main.run @@ fun stdenv ->
   Eio.Switch.run @@ fun sw ->
+  trust_project ~stdenv ~process_env project;
   let config =
     Host.Config.load ~stdenv ~process_env ~cwd:(Project.root project) ()
     |> get_or_fail Host.Config.Error.pp
@@ -191,6 +199,7 @@ let%expect_test "an oversized watcher snapshot warns and run close stays bounded
   let process_env = Project.env_snapshot bindings in
   Eio_main.run @@ fun stdenv ->
   Eio.Switch.run @@ fun sw ->
+  trust_project ~stdenv ~process_env project;
   let config =
     Host.Config.load ~stdenv ~process_env ~cwd:(Project.root project) ()
     |> get_or_fail Host.Config.Error.pp

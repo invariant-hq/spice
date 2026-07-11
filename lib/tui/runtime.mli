@@ -42,8 +42,9 @@ val run :
       Defaults to {!Spice_host.Env.current}.
 
     Commands performed by the Mosaic application run in daemon fibers. Eio
-    cancellation unwinds those fibers. Another exception from one command is
-    logged with its recorded backtrace and that command is dropped; it does not
-    fail the shared runtime switch or terminate the session. Fatal exceptions
-    outside this contained command boundary follow Matrix's terminal-restoring
-    uncaught-exception path. *)
+    cancellation unwinds those fibers. A turn-construction exception is logged
+    with its recorded backtrace and delivered as a failed turn settlement, so
+    the composer becomes interactive again. Another command exception is logged
+    and that command is dropped; neither failure fails the shared runtime switch
+    or terminates the session. Fatal exceptions outside this contained command
+    boundary follow Matrix's terminal-restoring uncaught-exception path. *)
