@@ -282,9 +282,10 @@ val enforces_workspace_write : Effective.t -> bool
     {!Spice_sandbox.Evidence.Refused}.
 
     It is the single predicate run assembly uses to decide whether the
-    permission posture may credit the sandbox
+    permission posture may credit native workspace mutations to the sandbox
     ({!Spice_host.Permission.Run.with_sandbox_backing}): only under an enforcing
-    workspace-write confinement is a command's blast radius bounded to the
-    writable set. Read-only, danger-full-access, and declared-external postures
-    return [false], so a run without that confinement keeps reviewing commands.
+    workspace-write confinement are their writes bounded to the writable set.
+    Read-only, danger-full-access, and declared-external postures return [false].
+    Model-authored shell commands remain independently reviewable in every
+    preset that does not explicitly decide them.
 *)

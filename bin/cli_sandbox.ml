@@ -191,12 +191,18 @@ let policy_facts effective =
    a missing toolchain is never the sandbox's doing; this line shows where
    [dune] resolves from — or which rungs were checked — so the two failure
    classes are told apart at a glance. *)
-let toolchain_status workspace =
+let toolchain_status host workspace =
+  let trusted =
+    Spice_host.Config.workspace_trust (Spice_host.Host.config host)
+    |> Spice_host.Trust.is_trusted
+  in
   let workspace_root =
-    match Spice_workspace.roots workspace with
-    | root :: _ ->
-        Some (Spice_path.Abs.to_string (Spice_workspace.Root.dir root))
-    | [] -> None
+    if not trusted then None
+    else
+      match Spice_workspace.roots workspace with
+      | root :: _ ->
+          Some (Spice_path.Abs.to_string (Spice_workspace.Root.dir root))
+      | [] -> None
   in
   let toolchain =
     Spice_ocaml_toolchain.discover ~env:(Unix.environment ()) ~workspace_root
@@ -233,7 +239,7 @@ let explain_text host workspace effective =
   | None -> ()
   | Some (kept, stripped) ->
       stdout_printf "environment=inherited %d, stripped %d\n" kept stripped);
-  stdout_printf "toolchain=%s\n" (toolchain_status workspace);
+  stdout_printf "toolchain=%s\n" (toolchain_status host workspace);
   stdout_printf "origin sandbox.mode=%s\n" (mode_origin_detail host effective)
 
 let explain_json host workspace effective =
@@ -303,7 +309,7 @@ let explain_json host workspace effective =
                        (fun value -> Jsont.Json.string value)
                        Sandbox.Env.stripped_patterns) );
               ] );
-      ("toolchain", Jsont.Json.string (toolchain_status workspace));
+      ("toolchain", Jsont.Json.string (toolchain_status host workspace));
       ( "origins",
         json_obj
           [
@@ -352,7 +358,8 @@ let explain_command =
        ~doc:
          "Report the sandbox policy Spice would apply to this workspace: mode, \
           backend, network, writable roots, protected entries, and environment \
-          stripping."
+          stripping. This reports operating-system authority, not permission \
+          approval for model-authored shell commands."
        ~exits)
     (exit_term
        CTerm.(const explain $ json_flag $ Cli_arg.run_overrides $ cwd_arg))
@@ -375,7 +382,8 @@ let group =
              "For $(b,workspace-write), writable roots are shaped by the \
               workspace, temp roots, $(b,sandbox.writable_roots), and the \
               $(b,sandbox.toolchain_caches) preset. Network posture is shaped \
-              by $(b,sandbox.network).";
+              by $(b,sandbox.network). Confined commands retain read access \
+              across the host; permission review is a separate boundary.";
          ]
        ~exits)
     [ status_command; explain_command ]

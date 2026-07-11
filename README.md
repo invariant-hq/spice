@@ -108,7 +108,9 @@ up automatically.
   durable, inspectable rules (`spice permission list`).
 - Sandboxed execution modes (`read-only`, `workspace-write`,
   `danger-full-access`) that fail closed when the platform cannot enforce
-  them (`spice sandbox status`).
+  them (`spice sandbox status`). Confined commands may read the host, so
+  model-authored shell still reviews by default; an explicit ordered policy can
+  opt a local model into read-anywhere, write-confined execution.
 - Workspace trust gates ambient project configuration, instructions, skills,
   notices, and built-in tooling. Unknown workspaces ask before activation in
   the TUI; headless runs continue with project customization disabled.

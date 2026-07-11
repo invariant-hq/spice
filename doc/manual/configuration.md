@@ -121,13 +121,14 @@ resolution.
 
 Unknown and untrusted workspaces behave as if the integration did not engage,
 regardless of the configured value. When the tooling does not engage, Spice
-starts no background workspace processes and the footer's `dune:` glyph shows
-the degraded state; the OCaml and Dune tools stay in the catalog and can still
-run on demand through ordinary permission and sandbox checks. `off` is the
-setting for trusted CI, headless, and non-interactive runs that want a
-deterministic, process-free session. The `SPICE_WORKSPACE_TOOLING` environment
-variable overrides the configured value with the same `auto`, `on`, and `off`
-spellings; it cannot override workspace trust.
+starts no background workspace processes, omits every Dune/Merlin/eval tool
+that can run project code or select project-local executables, and shows a
+degraded `dune:` footer glyph. Pure OCaml syntax search and structural edits
+remain available. `off` is the setting for trusted CI, headless, and
+non-interactive runs that want a deterministic, process-free session. The
+`SPICE_WORKSPACE_TOOLING` environment variable overrides the configured value
+with the same `auto`, `on`, and `off` spellings; it cannot override workspace
+trust.
 
 Trust does not override run mode. A trusted read-only run may perform
 read-only Dune/Merlin inspection through the sealed sandbox, but never starts
@@ -153,8 +154,8 @@ first match wins:
    for the active switch. This recovers sessions launched from a context
    that had the switch active but lost `PATH` (editor terminals, desktop
    launchers).
-4. **`<workspace root>/_opam/bin`** — an opam local switch at the
-   workspace root.
+4. **`<workspace root>/_opam/bin`** — an opam local switch at the workspace
+   root, considered only after that canonical workspace is trusted.
 
 If your shell shows `dune` but Spice reports it missing, the usual cause is
 that the shell exposes it only through an alias or an interactive-only hook
@@ -162,11 +163,12 @@ that child processes do not inherit. Relaunch from a shell where
 `command -v dune` prints a real path, or set `SPICE_DUNE`.
 
 Two surfaces show the resolution without starting a session: `spice doctor`
-carries an `ocaml toolchain` check, and `spice sandbox explain` a
-`toolchain=` line. Both print where `dune` resolves from — or, when it does
-not, every rung that was checked. The sandbox is never the cause of a
-missing toolchain: the confined mount keeps the whole host filesystem
-readable (`readable=/` in `spice sandbox explain`); only writes are scoped.
+carries an `ocaml toolchain` check, and `spice sandbox explain` a `toolchain=`
+line. Both print where `dune` resolves from—or, when it does not, every
+permitted rung that was checked. They skip the project-local `_opam` rung until
+workspace trust. The sandbox is never the cause of a missing system toolchain:
+the confined mount keeps the whole host filesystem readable (`readable=/` in
+`spice sandbox explain`); only writes are scoped.
 
 ## Filesystem Notices
 

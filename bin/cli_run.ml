@@ -2022,6 +2022,8 @@ let sandbox =
              $(b,sandbox.mode) config applies; without that, Spice uses \
              $(b,workspace-write). Restricted modes are requirements: they \
              fail closed when no backend can enforce them. \
+             A sandbox bounds operating-system authority; it does not approve \
+             a model-authored shell command. \
              $(b,danger-full-access) runs commands without confinement; \
              $(b,external-sandbox) declares that Spice already runs inside an \
              external isolation boundary.")

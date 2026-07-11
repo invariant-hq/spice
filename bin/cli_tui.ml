@@ -119,7 +119,8 @@ let sandbox =
      $(b,workspace-write), $(b,danger-full-access), or $(b,external-sandbox). \
      When absent, $(b,sandbox.mode) config applies; without that, Spice uses \
      $(b,workspace-write). Restricted modes fail closed when no backend can \
-     enforce them."
+     enforce them. A sandbox bounds operating-system authority; it does not \
+     approve a model-authored shell command."
   in
   CArg.(
     value & opt (some (enum modes)) None & info [ "sandbox" ] ~docv:"MODE" ~doc)

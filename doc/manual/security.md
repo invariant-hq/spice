@@ -16,11 +16,12 @@ The default posture is:
 
 On a supported host, and absent an earlier durable rule, this lets ordinary
 native workspace edits run without review because their filesystem capability
-is bounded. It also lets non-destructive commands run without review when the
-host proves their executor uses the sealed sandbox. Destructive commands,
-escalation, direct routes, and non-enforcing postures remain reviewable. If the
-platform cannot enforce the default sandbox, the run fails before provider
-credentials are loaded or a session is created.
+is bounded. Model-authored shell commands still require review: write
+confinement does not authorize the host files they can read. Fixed host tools
+remain low-friction because their sealed child processes implement the typed
+operation the user approved; they are not exposed as additional shell
+authority. If the platform cannot enforce the default sandbox, the run fails
+before provider credentials are loaded or a session is created.
 
 ## The three boundaries
 
@@ -47,12 +48,15 @@ and proposed diffs are review evidence; they do not change permission identity.
 
 Policy evaluation is pure and ordered:
 
-1. Durable rules are evaluated in order.
-2. The selected preset's rules follow the durable rules.
-3. Rules credited from an enforcing workspace-write sandbox follow the preset.
-4. For each access, the first matching rule wins.
-5. If no rule matches, an exact session grant may allow the access.
-6. Otherwise the access requires review.
+1. Plan's command-deny guard applies first when that preset is selected.
+2. Session-scoped family allows installed by a reviewer apply next.
+3. Durable rules are evaluated in order.
+4. The selected preset's ordinary rules follow the durable rules.
+5. Native-mutation rules credited from an enforcing workspace-write sandbox
+   follow the preset.
+6. For each access, the first matching rule wins.
+7. If no rule matches, an exact session grant may allow the access.
+8. Otherwise the access requires review.
 
 Rules take precedence over session grants. A later deny or review rule can
 therefore override an earlier session approval. In a grouped request, any
@@ -68,17 +72,17 @@ confinement does not depend on the parse succeeding.
 
 | Preset | Base behavior | Additional behavior under an enforcing `workspace-write` sandbox |
 | --- | --- | --- |
-| `default` | Allows workspace reads. Other accesses require review. | Also allows native workspace creates, modifications, deletions, and non-destructive commands proven to use the sealed sandbox. |
-| `accept-edits` | Allows workspace reads, creates, modifications, and deletions. Commands and other accesses require review. | Also allows non-destructive commands proven to use the sealed sandbox. |
+| `default` | Allows workspace reads. Other accesses require review. | Also allows native workspace creates, modifications, and deletions. Shell commands remain reviewable. |
+| `accept-edits` | Allows workspace reads, creates, modifications, and deletions. Commands and other accesses require review. | No command allowance is added. |
 | `plan` | Allows workspace reads and denies workspace writes and commands. | No additional rules; the deny posture is preserved. |
 | `bypass` | Allows every access not decided by an earlier durable rule. | No additional rules are needed. |
 
-The destructive-command matcher deliberately errs toward review. It currently
-recognizes recursive or forced `rm`, `git push --force`, `git reset --hard`,
-`git clean --force`, `dd`, `shred`, `mkfs`, and `sudo`/`doas`, including a
-lenient scan of ambiguous shell text. A non-match is not a proof that a command
-is harmless; it means only that the built-in classifier did not select it for
-mandatory review.
+The destructive-command matcher deliberately errs toward review. It recognizes
+destructive file, Git, and disk operations; recursively unwraps standard
+shells, `command`, `exec`, and common pass-through wrappers; and treats
+substitutions, redirects, dynamic evaluation, and other opaque shell syntax
+conservatively. It may therefore review a harmless expression. A non-match is
+not authority and is not a proof that a command is harmless.
 
 `bypass` is intentionally per-run only:
 
@@ -190,13 +194,14 @@ executors the sealed spawn capability. Shell results additionally carry
 evidence saying whether confinement was enforced, refused, not requested, or
 declared external.
 
-Command permission facts distinguish a proven `sandboxed` execution route from
-a fail-safe `direct` route. Under enforcing `workspace-write`, the default and
-accept-edits presets review destructive commands first and then allow only the
-proven route. The fact is produced by the executor-owning host code; policy
-never infers it from a tool name or command string. Shell escalation is a
-`direct` command fact plus a separate custom access, so a sealed command grant
-cannot be reused to approve dropping confinement.
+Shell command facts distinguish a proven `sandboxed` execution route from a
+`direct` route. Sandbox refusal produces neither route, no permission prompt,
+and no child. The default and accept-edits presets review both executable
+routes; users who accept read-anywhere confined execution may explicitly allow
+the sandboxed route with ordered durable rules. Fixed host tools do not expose
+their implementation argv as command facts. Shell escalation is a `direct`
+command fact plus a separate custom access, so a sealed command grant cannot be
+reused to approve dropping confinement.
 
 ### Modes
 
@@ -217,7 +222,9 @@ ordinary filesystem permissions allow it. Environment filtering removes many
 ambient credentials, and restricted network reduces command-side exfiltration,
 but neither prevents a command from returning readable file contents in its
 tool output. Use an external isolation boundary when host-file confidentiality
-is required.
+is required. If read-anywhere is deliberate—for example with a local
+model—use the ordered opt-in in
+[Permission rules](permission-rules.md#prompt-free-confined-shell-for-a-local-model).
 
 Native file tools have a narrower boundary: they accept workspace paths, check
 realpath containment when dereferencing them, refuse symlink escapes, and do
@@ -358,10 +365,12 @@ Workspace `run.max_steps` may tighten a value selected outside the workspace
 but cannot widen it. Workspace `permission.rules` are always stripped. Every
 other supported key outside the allowlist—including permission mode, sandbox
 posture, shell program, provider endpoints, web enablement, private-network
-access, and user instruction/skill switches—is ignored. Invalid, unreadable,
-or oversized workspace config degrades to an empty layer rather than failing
-host startup. `spice config show --origins` reports every ignored, clamped, or
-degraded input.
+access, and user instruction/skill switches—is ignored. Invalid, unreadable, or
+oversized workspace config degrades rather than failing host startup. If the
+two workspace files create an invalid effective cross-field configuration,
+Spice disables both layers together; it never retains an arbitrary half.
+`spice config show --origins` reports every ignored, clamped, or degraded
+input.
 
 The allowlist still applies after trust. Trust is consent to consume named
 project inputs, not a grant of arbitrary authority: permission mode, sandbox
@@ -396,9 +405,10 @@ spice sandbox explain
 `config show` reports the effective `workspace_trust` state and omits disabled
 project values. `doctor` reports the trust-store path and validity plus the
 canonical root and resolved state without contacting a provider or starting
-project tooling. `sandbox status` reports platform, selected backend, mode,
-requirement, and availability without loading provider credentials or creating
-a session.
+project tooling. Both doctor and sandbox explain omit project-local `_opam`
+lookup until the workspace is trusted. `sandbox status` reports platform,
+selected backend, mode, requirement, and availability without loading provider
+credentials or creating a session.
 `sandbox explain` additionally reports readable and writable posture,
 protected entries, network state, environment-filter counts, toolchain
 resolution, and config origin. Both commands support `--json`.

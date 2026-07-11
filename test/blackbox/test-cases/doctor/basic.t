@@ -110,6 +110,29 @@ decision without starting a run.
   $ grep -o '"status=untrusted"' nested-untrusted.json
   "status=untrusted"
 
+Doctor does not even consider a project-local toolchain before workspace
+consent. Once the same canonical root is trusted, the local switch becomes an
+eligible diagnostic source.
+
+  $ mkdir -p local-switch/.git local-switch/_opam/bin
+  $ printf '#!/bin/sh\nexit 0\n' > local-switch/_opam/bin/dune
+  $ chmod +x local-switch/_opam/bin/dune
+  $ spice_bin=$(command -v spice)
+  $ env -u SPICE_DUNE -u OPAM_SWITCH_PREFIX PATH=/usr/bin:/bin OPENAI_API_KEY=test-key SPICE_MODEL=openai/gpt-5.5 "$spice_bin" doctor -C local-switch > local-unknown.out
+  $ grep 'project-local _opam lookup disabled' local-unknown.out
+    project-local _opam lookup disabled: workspace trust is unknown
+  $ if grep -q 'local-switch/_opam' local-unknown.out; then echo considered; else echo not-considered; fi
+  not-considered
+  $ env -u SPICE_DUNE -u OPAM_SWITCH_PREFIX PATH=/usr/bin:/bin "$spice_bin" sandbox explain --cwd local-switch > local-sandbox.out
+  $ if grep -q 'local-switch/_opam' local-sandbox.out; then echo considered; else echo not-considered; fi
+  not-considered
+  $ spice trust local-switch >/dev/null
+  $ env -u SPICE_DUNE -u OPAM_SWITCH_PREFIX PATH=/usr/bin:/bin OPENAI_API_KEY=test-key SPICE_MODEL=openai/gpt-5.5 "$spice_bin" doctor -C local-switch > local-trusted.out
+  $ sed -n '/^ocaml toolchain:/,/^sandbox:/p' local-trusted.out | sed -E 's|dune: .*/local-switch/_opam/bin/dune|dune: $LOCAL_DUNE|'
+  ocaml toolchain: ok
+    dune: $LOCAL_DUNE (via local _opam switch)
+  sandbox: ok
+
 Unknown config fields are a warning, not a failure.
 
   $ mkdir -p "$XDG_CONFIG_HOME/spice"

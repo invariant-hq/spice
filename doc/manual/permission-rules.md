@@ -15,7 +15,9 @@ Put rules under `permission.rules` in either:
 
 The extra config's rules evaluate before user rules. Within one file, rules
 evaluate in array order. They are followed by the active preset and then any
-sandbox-backed runtime rules.
+sandbox-backed runtime rules. The Plan preset's command-deny guard is the one
+non-configurable exception: it evaluates before durable and session rules, so a
+command allow installed for Build cannot leak execution into Plan.
 
 Project `.spice/config.json` and `.spice/config.local.json` files never
 contribute permission rules. Spice strips those rules and reports an
@@ -64,8 +66,8 @@ session grants. An unmatched, ungranted access requires review. If any access
 in a grouped request is denied, the whole request is denied.
 
 This ordering makes broad durable allows powerful. For example, a durable rule
-allowing every command suppresses the normal command review. Prefer the
-narrowest matcher that describes the intended exception.
+allowing every command suppresses the normal command review outside Plan.
+Prefer the narrowest matcher that describes the intended exception.
 
 ## Path matchers
 
@@ -183,15 +185,55 @@ The built-in route and broad command patterns are:
 
 `sandboxed` matches only a host-produced command fact that proves ordinary
 execution uses the run's sealed sandbox. It never infers confinement from the
-program or source tool. The enforcing workspace-write posture uses this matcher
-after its destructive-command review rule; direct routes and non-enforcing
-postures get no such credit. An escalation request carries a direct ordinary
-command fact plus the distinct `shell.escalate` custom access.
+program or source tool. Built-in presets do not automatically allow this
+matcher: confined commands can read the host, so allowing them is an explicit
+confidentiality choice. Direct routes and non-enforcing postures never match it.
+An escalation request carries a direct ordinary command fact plus the distinct
+`shell.escalate` custom access.
 
-`destructive` is the conservative built-in classifier for recursive or forced
-`rm`, force push, hard reset, forced clean, `dd`, `shred`, `mkfs`, `sudo`, and
-`doas`. A non-match is not proof of safety. `any` matches every command access
-and can shadow built-in safety rules when placed in durable config.
+`destructive` is the conservative built-in classifier for destructive file,
+Git, and disk operations. It recursively inspects standard shell `-c` payloads,
+`command`/`exec`, and common pass-through wrappers, and treats substitutions,
+redirects, dynamic evaluation, unsupported wrappers, and parse failures as
+reviewable. False-positive review is intentional. A non-match is not proof of
+safety. `any` matches every command access and can shadow built-in safety rules
+when placed in durable config.
+
+### Prompt-free confined shell for a local model
+
+The confined modes deliberately permit reads across the host and restrict
+writes. If that is the policy you want—for example, so a local model can inspect
+installed `.mli` files—put these rules in the user config, in this order:
+
+```json
+{
+  "permission": {
+    "rules": [
+      {
+        "action": "review",
+        "matcher": {
+          "type": "command",
+          "pattern": { "type": "destructive" }
+        }
+      },
+      {
+        "action": "allow",
+        "matcher": {
+          "type": "command",
+          "pattern": { "type": "sandboxed" }
+        }
+      }
+    ]
+  }
+}
+```
+
+The first matching rule wins, so the destructive review must come first. This
+allows only execution proven to use Spice's sealed sandbox. It does not allow
+direct, externally confined, escalated, refused, or Plan-mode commands. The
+tradeoff is explicit: command output can contain any host file readable by the
+user account. Use an external VM or container when the model must not see those
+files.
 
 An `exact` command pattern wraps a complete command access object. It is mainly
 useful for generated policy and is less portable than an argv prefix:

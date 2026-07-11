@@ -293,14 +293,19 @@ let sessions_check ~stdenv host =
    the toolchain before a session trips over it. Absence is a warning, not a
    failure: spice serves non-OCaml projects too. *)
 let toolchain_check host =
+  let config = Spice_host.Host.config host in
+  let trust = Spice_host.Config.workspace_trust config in
+  let trusted = Spice_host.Trust.is_trusted trust in
   let workspace_root =
-    match Spice_host.workspace host with
-    | Error _ -> None
-    | Ok workspace -> (
-        match Spice_workspace.roots workspace with
-        | root :: _ ->
-            Some (Spice_path.Abs.to_string (Spice_workspace.Root.dir root))
-        | [] -> None)
+    if not trusted then None
+    else
+      match Spice_host.workspace host with
+      | Error _ -> None
+      | Ok workspace -> (
+          match Spice_workspace.roots workspace with
+          | root :: _ ->
+              Some (Spice_path.Abs.to_string (Spice_workspace.Root.dir root))
+          | [] -> None)
   in
   let toolchain =
     Spice_ocaml_toolchain.discover ~env:(Unix.environment ()) ~workspace_root
@@ -311,7 +316,16 @@ let toolchain_check host =
     | Some _ -> Pass
     | None -> Warn
   in
-  { name = "ocaml toolchain"; verdict; details = [ detail ] }
+  let details =
+    if trusted then [ detail ]
+    else
+      [
+        detail;
+        "project-local _opam lookup disabled: workspace trust is "
+        ^ Spice_host.Trust.status_to_string (Spice_host.Trust.status trust);
+      ]
+  in
+  { name = "ocaml toolchain"; verdict; details }
 
 let project_config_check host =
   let config = Spice_host.Host.config host in

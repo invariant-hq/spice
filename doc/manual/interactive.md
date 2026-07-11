@@ -32,6 +32,12 @@ Escape, Ctrl+C, and EOF exit without writing. A persistence error remains in the
 preflight for retry. Trust does not grant file, command, or network permission
 and does not weaken the selected sandbox.
 
+Choosing trust saves the decision and reloads the host once. If project
+activation fails, Spice restores the workspace to `untrusted` and keeps the
+preflight open with the activation error. If that rollback also fails, the
+screen says that `trusted` may remain and prints the exact `spice untrust ROOT`
+repair command; it never reports an activation failure as a save failure.
+
 A workspace already recorded as trusted or untrusted skips the preflight. Run
 `spice trust DIR` or `spice untrust DIR` and restart to change the decision.
 
