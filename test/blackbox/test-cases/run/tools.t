@@ -390,7 +390,7 @@ the apply_patch family.
   proceed with the obvious next step, and do not use this to approve a
   plan: in plan mode, propose_plan is the approval mechanism.
   
-  Input schema: {"type":"object","properties":{"header":{"type":"string"},"question":{"type":"string"},"options":{"type":"array","items":{"type":"object","properties":{"label":{"type":"string"},"description":{"type":"string"}},"required":["label"],"additionalProperties":false}},"multi":{"type":"boolean"}},"required":["question"],"additionalProperties":false}
+  Input schema: {"type":"object","properties":{"header":{"type":"string","minLength":1},"question":{"type":"string","minLength":1},"options":{"type":"array","items":{"type":"object","properties":{"label":{"type":"string","minLength":1},"description":{"type":"string","minLength":1}},"required":["label"],"additionalProperties":false}},"multi":{"type":"boolean"}},"required":["question"],"additionalProperties":false}
   
   ## todo_write
   
@@ -479,7 +479,7 @@ the apply_patch family.
   what matters in your own message. Do not end your turn while a spawned
   result you need is still pending.
   
-  Input schema: {"type":"object","properties":{"role":{"type":"string","enum":["explore","review","verify"]},"task":{"type":"string"},"scope":{"type":"array","items":{"type":"string"}},"expected_output":{"type":"string"}},"required":["role","task"],"additionalProperties":false}
+  Input schema: {"type":"object","properties":{"role":{"type":"string","enum":["explore","review","verify"]},"task":{"type":"string","minLength":1},"scope":{"type":"array","items":{"type":"string","minLength":1}},"expected_output":{"type":"string","minLength":1}},"required":["role","task"],"additionalProperties":false}
   
   ## wait_subagents
   
@@ -495,7 +495,7 @@ the apply_patch family.
   cancelled run reports that it was cancelled. Waiting on a run that
   already settled returns its recorded result again.
   
-  Input schema: {"type":"object","properties":{"runs":{"type":"array","items":{"type":"string"}}},"required":["runs"],"additionalProperties":false}
+  Input schema: {"type":"object","properties":{"runs":{"type":"array","items":{"type":"string","minLength":1},"minItems":1}},"required":["runs"],"additionalProperties":false}
   
   ## cancel_subagent
   
@@ -511,7 +511,7 @@ the apply_patch family.
   recorded result without another transition. Cancelling a run that already
   completed or failed is an error and changes nothing.
   
-  Input schema: {"type":"object","properties":{"run":{"type":"string"}},"required":["run"],"additionalProperties":false}
+  Input schema: {"type":"object","properties":{"run":{"type":"string","minLength":1}},"required":["run"],"additionalProperties":false}
   
   ## message_subagent
   
@@ -528,7 +528,7 @@ the apply_patch family.
   If a running subagent finishes without acting on a message you sent,
   message it again to resume it.
   
-  Input schema: {"type":"object","properties":{"run":{"type":"string"},"message":{"type":"string"}},"required":["run","message"],"additionalProperties":false}
+  Input schema: {"type":"object","properties":{"run":{"type":"string","minLength":1},"message":{"type":"string","minLength":1}},"required":["run","message"],"additionalProperties":false}
 
 Every other model receives the string-replace family — write_file plus edit_file
 — and no apply_patch. The same catalog otherwise; assert the family difference
