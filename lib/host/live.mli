@@ -35,8 +35,9 @@ val attach :
     Live is per-session, not per-turn: it survives a
     {!Spice_protocol.Outcome.Finished} outcome so the next
     {!Spice_protocol.Command.Start} can be submitted on the same attachment. Its
-    resources — the loop fiber, subscriptions — are released when [sw]
-    completes; there is no implicit disposal when a turn finishes. *)
+    resources — the loop fiber, subscriptions — are released by {!close}, with
+    [sw] remaining the structured-cancellation safety net. There is no implicit
+    disposal when a root turn finishes. *)
 
 val set_runner : t -> Runner.t -> unit
 (** [set_runner t runner] replaces the runner used to drain [t]'s commands.
@@ -52,16 +53,21 @@ val set_runner : t -> Runner.t -> unit
     then submits the next {!Spice_protocol.Command.Start} on the same
     attachment. *)
 
-val detach : t -> unit
-(** [detach t] stops [t]'s drain loop and drops its subscriptions.
+val close : t -> unit
+(** [close t] prevents new work and returns only after the drain loop has
+    stopped and no work can emit events or mutate the held document. An
+    in-flight drain is interrupted and publishes its ordinary interrupted
+    settlement before [close] returns. An idle turn parked on a waiting boundary
+    has no executing work to cancel: close stops its attachment without changing
+    that durable boundary. An explicit {!force_interrupt} queued before close is
+    preserved and does settle such a parked turn as interrupted.
 
-    The loop fiber exits promptly — an in-flight drain runs to completion, since
-    [detach] does not cancel, but no queued or later-{!submit}ted command drains
-    after it. {!events} and {!on_settled} subscriptions are cleared, so nothing
-    further is delivered. The held {!document} and {!outcome} keep returning the
-    last state. Use this to release a stale attachment — for instance after an
-    out-of-band compaction rewrites the document under it — instead of leaving
-    its loop fiber idling on [sw] until the switch completes. *)
+    Other queued commands that have not started are discarded. Pending {!amend}
+    calls fail with {!Spice_protocol.Error.Internal}.
+
+    [close] is idempotent: concurrent and repeated callers join the same drain
+    completion. A stale caller that invokes {!submit}, {!set_runner}, {!events},
+    or {!on_settled} after close is a programmer error. *)
 
 val submit : t -> Spice_protocol.Command.t -> unit
 (** [submit t command] enqueues [command] for the single drain.
@@ -138,7 +144,7 @@ val amend :
     result: [Ok document] with the adopted document, or [Error _] (in which case
     the held {!document} is unchanged). A blocking call, unlike the
     fire-and-forget {!submit}; a job queued while a turn is in flight runs once
-    that turn blocks or finishes, never during it. On a detached attachment it
+    that turn blocks or finishes, never during it. On a closed attachment it
     is {!Spice_protocol.Error.Internal} at once, since no drain remains to run
     it. *)
 
@@ -167,7 +173,7 @@ val events : t -> (Spice_protocol.Event.t -> unit) -> unit
     an observer the consumer installed on the same runner still fires, so
     headless rendering and Live subscribers coexist. A subscriber that raises
     does not abort the drain loop or starve other subscribers: the exception is
-    isolated to that delivery. Subscriptions last until [sw] completes.
+    isolated to that delivery. Subscriptions last until {!close} completes.
 
     The event stream carries only renderable facts; execution failures are not
     events. They reach the surface through {!on_settled} (push) and {!outcome}
@@ -201,7 +207,7 @@ val on_settled :
 
 val is_pending : t -> bool
 (** [is_pending t] is [true] iff [t] has a command or amendment queued or in
-    progress. A detached attachment is not pending because it can no longer
+    progress. A closed attachment is not pending because it can no longer
     deliver work to its subscribers. *)
 
 val document : t -> Spice_session_store.Document.t

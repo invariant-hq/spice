@@ -90,6 +90,14 @@ let cancellation_client ~child_started =
              [ Llm.Stream.Finished (response ~model "second child completed") ]))
     ()
 
+let blocked_client ~started =
+  let provider = Llm.Provider.make "openai" in
+  Llm.Client.make ~provider
+    ~run:(fun ~cancelled:_ request ->
+      let model = Llm.Request.model request in
+      Ok (blocked_stream ~started ~model))
+    ()
+
 let get_or_fail pp = function
   | Ok value -> value
   | Error error -> failwith (Format.asprintf "%a" pp error)
@@ -157,7 +165,7 @@ let%expect_test "run construction does not read a workspace-sized review source"
     |> get_or_fail Host.Host.Error.pp
   in
   let after = Gc.quick_stat () in
-  Host.Run.stop run;
+  Host.Run.close run |> Result.get_ok;
   let major_words = after.Gc.major_words -. before.Gc.major_words in
   Printf.printf "construction allocation bounded: %b\n"
     (major_words < 4_000_000.);
@@ -202,7 +210,7 @@ let%expect_test
     |> get_or_fail Host.Host.Error.pp
   in
   Fun.protect
-    ~finally:(fun () -> Host.Run.stop run)
+    ~finally:(fun () -> ignore (Host.Run.close run : _ result))
     (fun () ->
       let model =
         Host.Models.for_select (Host.Host.catalog host) "openai/gpt-5.5"
@@ -259,7 +267,27 @@ let%expect_test
           Eio.Promise.await next_root_started);
       List.rev !settlements
       |> List.iter (fun turn -> print_endline (Session.Turn.Id.to_string turn));
-      [%expect {|turn-root-first|}])
+      let close_ok = Result.is_ok (Host.Run.close run) in
+      let child_cancelled =
+        match Host.Jobs.list (Host.Run.jobs run) with
+        | [ record ] -> (
+            match Protocol.Subagent_run.status record with
+            | Protocol.Subagent_run.Status.Cancelled _ -> true
+            | Protocol.Subagent_run.Status.Queued
+            | Protocol.Subagent_run.Status.Running _
+            | Protocol.Subagent_run.Status.Blocked _
+            | Protocol.Subagent_run.Status.Completed _
+            | Protocol.Subagent_run.Status.Failed _ ->
+                false)
+        | [] | _ :: _ :: _ -> false
+      in
+      Printf.printf "run close: %b\n" close_ok;
+      Printf.printf "running child cancelled: %b\n" child_cancelled;
+      [%expect
+        {|
+        turn-root-first
+        run close: true
+        running child cancelled: true|}])
 
 let%expect_test
     "cancelling a stalled child settles once and releases its capacity" =
@@ -302,7 +330,7 @@ let%expect_test
     |> get_or_fail Host.Host.Error.pp
   in
   Fun.protect
-    ~finally:(fun () -> Host.Run.stop run)
+    ~finally:(fun () -> ignore (Host.Run.close run : _ result))
     (fun () ->
       let model =
         Host.Models.for_select (Host.Host.catalog host) "openai/gpt-5.5"
@@ -435,3 +463,93 @@ let%expect_test
         child settlements: 1
         settlements: 2
         completed|}])
+
+let%expect_test "closing a live session interrupts and joins its blocked turn" =
+  Project.with_temp "live-close" @@ fun project ->
+  let bindings = Project.bindings project in
+  Project.apply bindings;
+  let process_env = Project.env_snapshot bindings in
+  Eio_main.run @@ fun stdenv ->
+  Eio.Switch.run @@ fun sw ->
+  let config =
+    Host.Config.load ~stdenv ~process_env ~cwd:(Project.root project) ()
+    |> get_or_fail Host.Config.Error.pp
+  in
+  let host =
+    Host.Host.load ~stdenv ~registry:Spice_host_builtin.registry ~config ()
+    |> get_or_fail Host.Host.Error.pp
+  in
+  let workspace =
+    Spice_workspace.single (Spice_workspace.Root.make (Host.Config.cwd config))
+  in
+  let sandbox =
+    Host.Sandbox.resolve ~flag:Host.Sandbox.Mode.Danger_full_access
+      ~stdenv ~env:(Host.Env.get process_env) ~workspace ()
+  in
+  let plan =
+    Host.Run.plan ~workspace ~sandbox
+      ~permission:(Host.Config.permission_posture config)
+      ()
+    |> get_or_fail Host.Sandbox.Gate_error.pp
+  in
+  let store = Host.Session.store ~stdenv host in
+  let session = Session.Id.of_string "session-live-close" in
+  let run =
+    Host.Run.start ~sw ~stdenv host plan ~store ~session
+      ~http:(Spice_host_builtin.web_http_client stdenv)
+      ~fetch_https:(Spice_host_builtin.web_fetch_https ())
+      ()
+    |> get_or_fail Host.Host.Error.pp
+  in
+  Fun.protect
+    ~finally:(fun () -> ignore (Host.Run.close run : _ result))
+    (fun () ->
+      let model =
+        Host.Models.for_select (Host.Host.catalog host) "openai/gpt-5.5"
+        |> get_or_fail Host.Host.Error.pp
+      in
+      let started, resolve_started = Eio.Promise.create () in
+      let client = blocked_client ~started:resolve_started in
+      let runner =
+        Host.Run.runner run ~mode:Protocol.Mode.Build ~model ~client
+        |> get_or_fail Host.Host.Error.pp
+      in
+      let created_at =
+        Eio.Time.now (Eio.Stdenv.clock stdenv)
+        |> Session.Time.of_unix_seconds_float
+      in
+      let document =
+        Host.Session.create ~store ~id:session ~cwd:(Host.Run.cwd run)
+          ~created_at ()
+        |> get_or_fail Protocol.Error.pp
+      in
+      let live = Host.Live.attach ~sw ~runner document in
+      let settlements = ref [] in
+      Host.Live.on_settled live (fun result -> settlements := result :: !settlements);
+      Host.Live.submit live
+        (Protocol.Command.Start (make_start "turn-live-close" "block forever"));
+      let clock = Eio.Stdenv.clock stdenv in
+      Eio.Time.with_timeout_exn clock 5. (fun () -> Eio.Promise.await started);
+      Eio.Time.with_timeout_exn clock 2. (fun () -> Host.Live.close live);
+      Host.Live.close live;
+      let interrupted =
+        match !settlements with
+        | [ Ok (_, Protocol.Outcome.Finished { outcome; _ }) ] -> (
+            match outcome with
+            | Session.Turn.Outcome.Interrupted { cancelled = true; _ } -> true
+            | Session.Turn.Outcome.Completed | Session.Turn.Outcome.Step_limit
+            | Session.Turn.Outcome.Interrupted { cancelled = false; _ }
+            | Session.Turn.Outcome.Failed _ ->
+                false)
+        | [ Ok (_, Protocol.Outcome.Waiting _) ] | [ Error _ ] | [] | _ :: _ :: _
+          ->
+            false
+      in
+      Printf.printf "settlements: %d\n" (List.length !settlements);
+      Printf.printf "interrupted: %b\n" interrupted;
+      Printf.printf "pending: %b\n" (Host.Live.is_pending live);
+      [%expect
+        {|
+        settlements: 1
+        interrupted: true
+        pending: false|}])

@@ -1,0 +1,20 @@
+(rule
+ ; Process is intentionally private to spice_tools, so consumers receive no
+ ; CMI for Spice_tools__Process. Compile this exact source under a test-local
+ ; name instead of widening the production library's public waist.
+ (targets process_under_test.ml)
+ (deps ../../lib/tools/process.ml)
+ (action
+  (copy %{deps} %{targets})))
+
+(test
+ (name test_process)
+ (modules test_process process_under_test)
+ (libraries
+  eio
+  eio.unix
+  eio_main
+  logs
+  spice_permission
+  spice_sandbox
+  unix))

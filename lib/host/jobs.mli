@@ -18,12 +18,32 @@
 
     Spawns are detached from the parent turn: {!spawn} returns once the child is
     launched, and the parent model can continue or explicitly call {!wait}.
-    Child teardown is never part of a parent command's settlement. A CLI process
-    that is about to destroy the registry may call {!drain} explicitly after it
-    has published the root result. *)
+    Child teardown is never part of a parent command's settlement. The run that
+    created the registry closes it explicitly after publishing the root result.
+    *)
 
 type t
 (** The type for a session tree's run registry. *)
+
+module Close_error : sig
+  type failure = private {
+    child : Spice_session.Id.t;
+    message : string;
+  }
+  (** One child attachment or ledger failure observed while closing. *)
+
+  type t
+  (** The non-empty collection of failures from one registry close. *)
+
+  val failures : t -> failure list
+  (** [failures error] is every failed child close, in spawn order. *)
+
+  val message : t -> string
+  (** [message error] is the complete human-readable diagnostic. *)
+
+  val pp : Format.formatter -> t -> unit
+  (** [pp] formats {!message}. *)
+end
 
 (** The type for {!wait}'s outcome. Four cases are settlements the spawning
     handler formats into the model-visible tool result — the ledger transition
@@ -167,15 +187,6 @@ val wait :
     searches [parent]'s whole tree, so recursive descendants remain addressable
     after a process restart without exposing another root's runs. *)
 
-val drain : ?cancelled:(unit -> bool) -> t -> unit
-(** [drain ?cancelled t] waits for every run that is unsettled when [drain]
-    starts. It is an explicit process-teardown operation, never a session
-    interpreter hook: child fibers live under the registry switch, so draining
-    gives them a chance to write their completed, blocked, failed, or cancelled
-    ledger state before the switch closes. Callers publish the root settlement
-    first. Unknown-run errors are impossible for the captured registry entries
-    and are ignored. *)
-
 val cancel :
   t ->
   caller:Spice_session.Id.t ->
@@ -186,13 +197,24 @@ val cancel :
     of band so a child blocked inside provider or tool I/O cannot hold the
     operation indefinitely; [cancel] returns the ordinary settlement only
     after the attachment and running-capacity slot have been released. A run
-    parked on a waiting boundary is cancelled directly — a pure ledger
-    transition plus release of the held attachment, published as {!Settled}.
+    parked on a waiting boundary is finished through the same Live interrupt;
+    its already-released capacity is not decremented a second time.
 
     Cancelling an already-cancelled run is idempotent: it returns the recorded
     settlement without another ledger transition or {!Settled} event. Errors
     when [run] is not a strict descendant of [caller], is not registered, or
     already completed or failed. *)
+
+val close : t -> (unit, Close_error.t) result
+(** [close t] prevents new child work, cancels every executing run, and joins
+    every child attachment before returning. A child already settled on a
+    waiting boundary remains durably Blocked and can be recovered by a later
+    registry; closing only releases its idle attachment. Executing children
+    publish their ordinary durable cancellation settlement before close returns.
+
+    Closing is idempotent: concurrent and repeated callers receive the same
+    result. It continues closing other children after a ledger failure and
+    returns all such failures in one diagnostic. *)
 
 val message :
   runner:resume_runner ->

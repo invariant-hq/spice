@@ -72,6 +72,11 @@ val await_turn : t -> int -> string
     response, and the resulting turn settlement, then returns the request body.
 *)
 
+val await_file : ?timeout:float -> t -> string -> unit
+(** [await_file ?timeout session path] pumps the application until [path]
+    exists in the temporary project. [timeout] defaults to five real seconds.
+    *)
+
 val release : t -> string -> unit
 (** [release session gate] resolves provider [gate] and settles the app. *)
 
@@ -106,8 +111,9 @@ val await_review_refresh : t -> (unit -> unit) -> unit
 (** [await_review_refresh session change] applies [change], waits for the real
     workspace watcher, advances the virtual debounce, and settles. *)
 
-val await_exit : t -> unit
-(** [await_exit session] waits until the application has returned an outcome. *)
+val await_exit : ?timeout:float -> t -> unit
+(** [await_exit ?timeout session] waits until the application has returned an
+    outcome. [timeout], when supplied, bounds the wait in real seconds. *)
 
 val outcome : t -> Spice_tui.outcome
 (** [outcome session] is the completed application outcome.

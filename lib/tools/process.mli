@@ -18,6 +18,7 @@ type status =
   | Exited of int
   | Signaled of int
   | Cancelled
+  | Timed_out of { timeout_ms : int }
   | Output_exceeded of string
   | Failed of string
   | Refused of Spice_sandbox.Error.t
@@ -74,16 +75,19 @@ val command_execution :
 val run :
   ?stdout_limit:int ->
   ?stderr_limit:int ->
+  timeout_ms:int ->
   cancelled:(unit -> bool) ->
   string list ->
   result
 (** [run argv] executes [argv] as a direct process invocation.
 
     [argv] must contain the executable name followed by its arguments. An empty
-    [argv] returns [Failed]. [cancelled] is polled while the child is running.
-    [stdout_limit] and [stderr_limit] default to conservative bounded values.
+    [argv] returns [Failed]. [cancelled] is polled while the child is running,
+    and [timeout_ms] bounds the complete wait. [stdout_limit] and
+    [stderr_limit] default to conservative bounded values.
 
-    Raises [Invalid_argument] if either limit is negative. *)
+    Raises [Invalid_argument] if either limit is negative or [timeout_ms] is not
+    positive. *)
 
 val run_shell :
   cwd:string ->
@@ -123,12 +127,13 @@ val run_sandboxed :
   ?stdout_limit:int ->
   ?stderr_limit:int ->
   sandbox:Spice_sandbox.t ->
+  timeout_ms:int ->
   cancelled:(unit -> bool) ->
   string list ->
   result
-(** [run_sandboxed ~sandbox argv] prepares [argv] through [sandbox] before
-    executing it with {!run}'s bounded direct-process semantics. A refusal is
-    returned as [Refused] and starts no process. *)
+(** [run_sandboxed ~sandbox ~timeout_ms argv] prepares [argv] through [sandbox]
+    before executing it with {!run}'s bounded direct-process semantics. A
+    refusal is returned as [Refused] and starts no process. *)
 
 val run_sandboxed_shell :
   sandbox:Spice_sandbox.t ->

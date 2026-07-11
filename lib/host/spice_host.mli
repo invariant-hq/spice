@@ -131,7 +131,7 @@ module Jobs = Jobs
 module Run = Run
 (** The run waist: {!Run.plan} resolves the fail-closed posture, {!Run.start}
     assembles workspace, context, skills, tools, notice producers, mutations,
-    handler, and interpreter, and {!Run.stop} tears the producers down. *)
+    handler and interpreter, and {!Run.close} tears the whole owned run down. *)
 
 (** {1:assembly Assembly glue} *)
 

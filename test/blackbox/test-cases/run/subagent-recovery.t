@@ -1,11 +1,14 @@
-A completed detached child remains actionable after the parent process exits.
-The next host process hydrates the durable run and `wait_subagents` returns its
-recorded result.
+A child the parent explicitly waits to completion remains actionable after the
+parent process exits. The next host process hydrates the durable run and
+`wait_subagents` returns its recorded result.
+
+  $ export SPICE_FAKE_PROVIDER_ACCEPT_TIMEOUT=10
 
   $ cat > launch.jsonl <<'JSONL'
   > {"expect":{"body_contains":["launch recoverable child","\"name\":\"spawn_subagent\""]},"response":{"id":"resp-recovery-spawn","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-recovery-spawn","call_id":"recover-child","name":"spawn_subagent","arguments":"{\"role\":\"explore\",\"task\":\"Record durable findings\"}"}]}}
   > {"expect":{"body_contains":["Role: explore","Record durable findings"]},"response":{"id":"resp-recovery-child","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"durable child findings"}]}]}}
-  > {"expect":{"body_contains":["subagent explore launched (session recovery-parent-sub-recover-child)"]},"response":{"id":"resp-recovery-parent","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Child launched."}]}]}}
+  > {"expect":{"body_contains":["subagent explore launched (session recovery-parent-sub-recover-child)"]},"response":{"id":"resp-recovery-parent-wait","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-recovery-parent-wait","call_id":"recover-launch-wait","name":"wait_subagents","arguments":"{\"runs\":[\"recovery-parent-sub-recover-child\"]}"}]}}
+  > {"expect":{"body_contains":["function_call_output","recover-launch-wait","subagent explore completed","durable child findings"]},"response":{"id":"resp-recovery-parent","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Child launched."}]}]}}
   > JSONL
   $ SPICE_FAKE_PROVIDER_UNORDERED=1 start_fake_openai launch.jsonl launch-capture launch-port
   $ spice run --json --cwd "$PWD" --permission-mode bypass --id recovery-parent "launch recoverable child" 2>&1 | grep -o '"final_text":"Child launched."'
@@ -64,14 +67,15 @@ permanent running ghost.
   $ grep -o '"type":"failed"' $SPICE_TEST_DATA_HOME/subagents/recovery-parent/recovery-parent-sub-orphan.json
   "type":"failed"
 
-A child parked on `message_parent` also survives process teardown. Its durable
-waiting boundary is reattached and answered in place, so the resumed child
-finishes the original turn.
+A child the parent explicitly observes parked on `message_parent` also survives
+process teardown. Its durable waiting boundary is reattached and answered in
+place, so the resumed child finishes the original turn.
 
   $ cat > park.jsonl <<'JSONL'
   > {"expect":{"body_contains":["launch a parked child","\"name\":\"spawn_subagent\""]},"response":{"id":"resp-park-spawn","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-park-spawn","call_id":"park-child","name":"spawn_subagent","arguments":"{\"role\":\"explore\",\"task\":\"Ask across a restart\"}"}]}}
   > {"expect":{"body_contains":["Role: explore","Ask across a restart","\"name\":\"message_parent\""]},"response":{"id":"resp-park-question","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-park-question","call_id":"park-question","name":"message_parent","arguments":"{\"message\":\"What is the answer?\"}"}]}}
-  > {"expect":{"body_contains":["subagent explore launched (session parked-parent-sub-park-child)"]},"response":{"id":"resp-park-parent","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Parked child launched."}]}]}}
+  > {"expect":{"body_contains":["subagent explore launched (session parked-parent-sub-park-child)"]},"response":{"id":"resp-park-parent-wait","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-park-parent-wait","call_id":"park-launch-wait","name":"wait_subagents","arguments":"{\"runs\":[\"parked-parent-sub-park-child\"]}"}]}}
+  > {"expect":{"body_contains":["function_call_output","park-launch-wait","child session asked: What is the answer?"]},"response":{"id":"resp-park-parent","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Parked child launched."}]}]}}
   > JSONL
   $ SPICE_FAKE_PROVIDER_UNORDERED=1 start_fake_openai park.jsonl park-capture park-port
   $ spice run --json --cwd "$PWD" --permission-mode bypass --id parked-parent "launch a parked child" 2>&1 | grep -o '"final_text":"Parked child launched."'

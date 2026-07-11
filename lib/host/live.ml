@@ -64,10 +64,12 @@ type t = {
   mutable events : (Spice_protocol.Event.t -> unit) list;
   mutable settled : (settled -> unit) list;
   mutable cancelling : bool;
-  mutable detached : bool;
+  mutable closing : bool;
   mutable working : bool;
   mutable drain_cancel : Eio.Switch.t option;
   signal : Eio.Condition.t;
+  stopped : unit Eio.Promise.t;
+  stop : unit Eio.Promise.u;
 }
 
 let has_active_turn document =
@@ -225,20 +227,24 @@ let run_job t job =
 let rec run t =
   (* [loop_no_mutex] registers the waiter before re-checking the queue, so a
      [submit] or [amend] that broadcasts between two drains is never a lost
-     wakeup. A {!detach} that broadcasts is seen the same way: the predicate
-     returns [None] to end the loop rather than [Some] work. *)
+     wakeup. A {!close} that preserved or synthesized an interrupt drains that
+     work first; otherwise closing stops the daemon even when its document is
+     parked on an idle boundary. *)
   let next =
     Eio.Condition.loop_no_mutex t.signal (fun () ->
-        if t.detached then Some None else Option.map Option.some (take_work t))
+        match take_work t with
+        | Some work -> Some (Some work)
+        | None when t.closing -> Some None
+        | None -> None)
   in
   match next with
   | None ->
-      (* Detached before these jobs could drain: their callers are blocked on
-         the reply promise, so fail them rather than strand the fibers. *)
+      (* Closing before these jobs could drain: their callers are blocked on the
+         reply promise, so fail them rather than strand the fibers. *)
       List.iter
         (fun job ->
           Eio.Promise.resolve job.reply
-            (Error (Spice_protocol.Error.Internal "live session detached")))
+            (Error (Spice_protocol.Error.Internal "live session closed")))
         t.jobs;
       t.jobs <- [];
       `Stop_daemon
@@ -256,6 +262,7 @@ let rec run t =
       run t
 
 let attach ~sw ~runner document =
+  let stopped, stop = Eio.Promise.create () in
   let t =
     {
       runner;
@@ -267,35 +274,34 @@ let attach ~sw ~runner document =
       events = [];
       settled = [];
       cancelling = false;
-      detached = false;
+      closing = false;
       working = false;
       drain_cancel = None;
       signal = Eio.Condition.create ();
+      stopped;
+      stop;
     }
   in
   t.runner <- tapped t runner;
-  Eio.Fiber.fork_daemon ~sw (fun () -> run t);
+  Eio.Fiber.fork_daemon ~sw (fun () ->
+      Fun.protect
+        ~finally:(fun () ->
+          t.events <- [];
+          t.settled <- [];
+          ignore (Eio.Promise.try_resolve t.stop () : bool))
+        (fun () -> run t));
   t
 
 (* Installing the tapped runner reassigns [t.runner], which the loop reads afresh
    at each {!drain}: the in-flight drain keeps the runner it was handed to
    {!Runner.execute}, and the swap takes effect at the next drain start. Queue,
    subscriptions, document, and cancellation flag are untouched. *)
-let set_runner t runner = t.runner <- tapped t runner
-
-(* End the drain loop promptly and drop subscriptions. The loop fiber, blocked in
-   [loop_no_mutex] on an empty queue, wakes on the broadcast, sees [detached], and
-   returns rather than draining. An in-flight drain runs to completion — [detach]
-   does not cancel — but the loop exits before the next command, and cleared
-   subscriptions mean neither its settle nor any later {!submit} is delivered. The
-   held [document] and [outcome] are left intact for post-detach reads. *)
-let detach t =
-  t.detached <- true;
-  t.events <- [];
-  t.settled <- [];
-  Eio.Condition.broadcast t.signal
+let set_runner t runner =
+  if t.closing then invalid_arg "Live.set_runner: closed";
+  t.runner <- tapped t runner
 
 let submit t command =
+  if t.closing then invalid_arg "Live.submit: closed";
   (match command with
   | Spice_protocol.Command.Interrupt _ ->
       (* Preempt any in-flight drain and drain ahead of the preserved queue. *)
@@ -309,29 +315,63 @@ let submit t command =
   Eio.Condition.broadcast t.signal
 
 let force_interrupt ?reason t =
-  (* Flip the sampled flag first: a [run_in_systhread] tool wait is
-     uncancellable, so failing the drain's switch cannot wake it — the flag it
-     polls does. Front-queue the interrupt exactly as {!submit} does so the
-     hard-cancelled drain, once unwound to the last durable document, settles as
-     [Interrupted]. Then fail the in-flight drain's switch, clearing the handle so
-     a second force degrades to the cooperative path rather than re-failing. With
-     no drain in flight this is precisely a submitted interrupt. *)
-  t.cancelling <- true;
-  t.front <- Spice_protocol.Command.Interrupt { reason } :: t.front;
-  (match t.drain_cancel with
-  | Some sw ->
-      t.drain_cancel <- None;
-      Eio.Switch.fail sw Force_interrupt
-  | None -> ());
-  Eio.Condition.broadcast t.signal
+  if t.closing then ()
+  else begin
+    (* Flip the sampled flag first: a [run_in_systhread] tool wait is
+       uncancellable, so failing the drain's switch cannot wake it — the flag it
+       polls does. Front-queue the interrupt exactly as {!submit} does so the
+       hard-cancelled drain, once unwound to the last durable document, settles
+       as [Interrupted]. Then fail the in-flight drain's switch, clearing the
+       handle so a second force degrades to the cooperative path rather than
+       re-failing. With no drain in flight this is precisely a submitted
+       interrupt. *)
+    t.cancelling <- true;
+    t.front <- Spice_protocol.Command.Interrupt { reason } :: t.front;
+    (match t.drain_cancel with
+    | Some sw ->
+        t.drain_cancel <- None;
+        Eio.Switch.fail sw Force_interrupt
+    | None -> ());
+    Eio.Condition.broadcast t.signal
+  end
+
+let close t =
+  Eio.Cancel.protect (fun () ->
+      if not t.closing then begin
+        t.closing <- true;
+        t.cancelling <- true;
+        let interrupt_drain = Option.is_some t.drain_cancel in
+        t.back <- [];
+        List.iter
+          (fun job ->
+            Eio.Promise.resolve job.reply
+              (Error (Spice_protocol.Error.Internal "live session closed")))
+          t.jobs;
+        t.jobs <- [];
+        t.front <-
+          (match t.front with
+          | (Spice_protocol.Command.Interrupt _ as command) :: _ -> [ command ]
+          | _ when interrupt_drain ->
+              [
+                Spice_protocol.Command.Interrupt
+                  { reason = Some "session closed" };
+              ]
+          | _ -> []);
+        (match t.drain_cancel with
+        | Some sw when interrupt_drain ->
+            t.drain_cancel <- None;
+            Eio.Switch.fail sw Force_interrupt
+        | Some _ | None -> ());
+        Eio.Condition.broadcast t.signal
+      end;
+      Eio.Promise.await t.stopped)
 
 let amend t edit =
   (* Enqueue a read-modify-write for the single drain and block until it runs.
-     A detached attachment has no drain to run it, so fail immediately rather
+     A closed attachment has no drain to run it, so fail immediately rather
      than await a reply that never comes; the check and enqueue do not suspend,
-     so [detached] cannot flip between them. *)
-  if t.detached then
-    Error (Spice_protocol.Error.Internal "live session detached")
+     so [closing] cannot flip between them. *)
+  if t.closing then Error (Spice_protocol.Error.Internal "live session closed")
   else begin
     let reply, resolver = Eio.Promise.create () in
     t.jobs <- t.jobs @ [ { edit; reply = resolver } ];
@@ -347,11 +387,16 @@ let write ?live ~store ~session ~f () =
       | Error _ as error -> error
       | Ok document -> f document)
 
-let events t handler = t.events <- t.events @ [ handler ]
-let on_settled t handler = t.settled <- t.settled @ [ handler ]
+let events t handler =
+  if t.closing then invalid_arg "Live.events: closed";
+  t.events <- t.events @ [ handler ]
+
+let on_settled t handler =
+  if t.closing then invalid_arg "Live.on_settled: closed";
+  t.settled <- t.settled @ [ handler ]
 
 let is_pending t =
-  (not t.detached)
+  (not t.closing)
   && (t.working
      || match (t.front, t.back, t.jobs) with [], [], [] -> false | _ -> true)
 

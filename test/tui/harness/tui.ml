@@ -451,6 +451,13 @@ let await_turn t index =
   settle_turn t;
   body
 
+let await_file ?(timeout = 5.) t path =
+  Eio.Time.with_timeout_exn t.real_clock timeout (fun () ->
+      while not (Project.exists t.project path) do
+        check_alive t;
+        breathe t
+      done)
+
 let stop t =
   t.stopping <- true;
   Matrix_test.stop t.backend
@@ -458,10 +465,15 @@ let stop t =
 (* Block until the app quits on its own (a quit chord, /quit, or a review close),
    i.e. the loop fiber's [Spice_tui.run] returned. Use before {!outcome}; do not
    {!settle} after the app has exited (settle would fail loudly). *)
-let await_exit t =
-  while not t.finished do
-    Eio.Condition.await_no_mutex t.parked_cond
-  done
+let await_exit ?timeout t =
+  let wait () =
+    while not t.finished do
+      Eio.Condition.await_no_mutex t.parked_cond
+    done
+  in
+  match timeout with
+  | None -> wait ()
+  | Some seconds -> Eio.Time.with_timeout_exn t.real_clock seconds wait
 
 (* The TUI's exit outcome, valid once the app has quit ({!await_exit}). Fails if
    the run errored or the app has not exited yet. *)

@@ -91,8 +91,8 @@ val plan :
 (** {1:run The run} *)
 
 type t
-(** The type for an assembled coding run. Its notice producers must be released
-    with {!stop} when the run ends. *)
+(** The type for an assembled coding run. Close it with {!close} when the run
+    ends. *)
 
 val start :
   sw:Eio.Switch.t ->
@@ -134,9 +134,11 @@ val jobs : t -> Jobs.t
     Surfaces subscribe to it for identity-tagged child progress and settlement
     events; its children run on [start]'s [sw]. *)
 
-val stop : t -> unit
-(** [stop t] stops [t]'s notice producers and the Dune RPC instance they own.
-    Idempotent for the run switch's lifetime; call it once the run ends. *)
+val close : t -> (unit, Jobs.Close_error.t) result
+(** [close t] closes the child registry and then stops every notice producer
+    and Dune RPC instance created by {!start}. It returns only after child
+    attachments can no longer emit or mutate state. Producer teardown still
+    runs when a child ledger transition fails. Closing is idempotent. *)
 
 (** {1:parts The interpreter and assembled parts}
 

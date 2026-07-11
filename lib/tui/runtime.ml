@@ -689,8 +689,8 @@ let resolve_sandbox ?flag ~stdenv host ~workspace =
    (run.mli's fail-closed contract). The turn contract — mode, model,
    credentialed client — binds per turn via {!Spice_host.Run.runner}, so
    assembly happens once per session and a login, model switch, or mode switch
-   needs no reassembly. [Run.stop] releases the run's notice producers when the
-   run is superseded (a resume) or the TUI exits. *)
+   needs no reassembly. [Run.close] releases the whole owned run when it is
+   superseded or the TUI exits. *)
 let build_run ?sandbox_flag ~sw ~stdenv ~host ~session_id () =
   let config = Spice_host.Host.config host in
   let workspace =
@@ -711,19 +711,7 @@ let build_run ?sandbox_flag ~sw ~stdenv ~host ~session_id () =
       ()
     |> Result.map_error host_error
   in
-  (* [stop] releases this run's producers (the fswatch process, the Dune watch,
-     the notice pollers). It is idempotent and registered on [sw] as the
-     teardown safety net; a run superseded by a resume is stopped early through
-     this handle so its producers do not outlive it. *)
-  let stopped = ref false in
-  let stop () =
-    if not !stopped then begin
-      stopped := true;
-      Spice_host.Run.stop run
-    end
-  in
-  Eio.Switch.on_release sw stop;
-  Ok (run, stop)
+  Ok run
 
 let turn_reasoning config model =
   match
@@ -1383,7 +1371,6 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
            one. *)
         let attachment = ref None in
         let created_session = ref None in
-        let job_registries = ref [] in
         let main_pending = ref false in
         (* A terminal event is durable progress, not command completion. Keep
            the main check pending until Live publishes the matching settlement;
@@ -1409,23 +1396,26 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
             ref =
           ref None
         in
-        (* The live run's [stop] handle. A run superseded by a mode switch or a
-           resume must have its producers stopped, not merely left to [sw]'s
-           teardown; [adopt] records the incoming run and stops the one it
-           replaces. Touched only between scheduler yields on the single UI
-           domain. *)
-        let current_stop = ref ignore in
-        let adopt stop =
-          let previous = !current_stop in
-          current_stop := stop;
-          previous ()
+        let close_run run =
+          match Spice_host.Run.close run with
+          | Ok () -> ()
+          | Error error ->
+              Log.err (fun m ->
+                  m "run close failed: %s"
+                    (Spice_host.Jobs.Close_error.message error))
         in
         let submit live command =
           main_pending := true;
           Spice_host.Live.submit live command
         in
-        let detach live =
-          Spice_host.Live.detach live;
+        let close_attachment () =
+          (match !attachment with
+          | None -> ()
+          | Some (live, run) ->
+              attachment := None;
+              Fun.protect
+                ~finally:(fun () -> close_run run)
+                (fun () -> Spice_host.Live.close live));
           main_pending := false
         in
         let subscribe live =
@@ -1446,12 +1436,10 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
            ticker, permission escalation, and resume land with their surfaces.
 
            One subscription per run, and a run belongs to exactly one registry
-           (the one whose spawn handler minted it), so a [Set_mode] rebuild
-           subscribes the new run's registry while the superseded registry keeps
-           delivering the children it is still draining — every run reaches the
-           shell exactly once, none is dropped across the swap. *)
+           (the one whose spawn handler minted it). Session replacement closes
+           that registry before subscribing the replacement, so old children
+           cannot deliver into the new session. *)
         let subscribe_jobs jobs =
-          job_registries := jobs :: !job_registries;
           let wake =
             Spice_host.Config.Runtime.subagent_wake
               (Spice_host.Config.runtime (Spice_host.Host.config host))
@@ -1474,43 +1462,45 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
            store gains a session only once the user has actually asked for one. *)
         let attach_fresh () =
           let session_id, run_result = Eio.Promise.await !prewarm in
-          let* run, prewarm_stop = run_result in
-          (* The binding happens before [Session.create], so a failed binding
-             (nothing connected yet) leaves no orphan document — and unlike the
-             assembly, it is re-attempted on the next submit: a /login between
-             two submits turns this very path green. The assembly is mode-free,
-             so a mode switch before the first turn needs no rebuild — the
-             binding carries [!current_mode]. *)
-          let* runner, _model, _effort = bind_runner run in
-          let store = Spice_host.Session.store ~stdenv host in
-          let created_at =
-            Spice_session.Time.of_unix_seconds_float (Eio.Time.now clock)
-          in
-          let* document =
-            Spice_host.Session.create ~store ~id:session_id ~cwd ~created_at ()
-            |> Result.map_error Spice_protocol.Error.message
-          in
-          let live = Spice_host.Live.attach ~sw ~runner document in
-          subscribe live;
-          subscribe_jobs (Spice_host.Run.jobs run);
-          adopt prewarm_stop;
-          attachment := Some (live, run);
-          created_session := Some session_id;
-          Ok (live, run)
+          match run_result with
+          | Error _ as error -> error
+          | Ok run -> (
+              (* Binding happens before [Session.create], so a failed binding
+                 leaves no orphan document. The prewarm continues to own the
+                 run after either failure, so the next submit can retry after a
+                 login without rebuilding and final teardown still closes it. *)
+              match bind_runner run with
+              | Error message -> Error message
+              | Ok (runner, _model, _effort) ->
+                  let store = Spice_host.Session.store ~stdenv host in
+                  let created_at =
+                    Spice_session.Time.of_unix_seconds_float
+                      (Eio.Time.now clock)
+                  in
+                  (match
+                     Spice_host.Session.create ~store ~id:session_id ~cwd
+                       ~created_at ()
+                     |> Result.map_error Spice_protocol.Error.message
+                   with
+                  | Error message -> Error message
+                  | Ok document ->
+                      let live = Spice_host.Live.attach ~sw ~runner document in
+                      subscribe live;
+                      subscribe_jobs (Spice_host.Run.jobs run);
+                      attachment := Some (live, run);
+                      created_session := Some session_id;
+                      Ok (live, run)))
         in
-        (* Stop the abandoned prewarmed run on the resume path (only here — the
-           fresh path adopts it): a daemon awaits the prewarm build and stops its
-           producers (the fswatch, the Dune RPC), so a resumed session does not
-           carry an unused watch for its whole lifetime. Released by [sw] only if
-           the await never completes (teardown reaches it first). Idempotent —
-           [build_run]'s [stop] guards itself. *)
-        let stop_abandoned_prewarm () =
+        (* Close the abandoned prewarmed run on the resume path. A daemon awaits
+           the captured build and closes its complete ownership product; a
+           [/clear] re-arm cannot redirect it onto the replacement. *)
+        let close_abandoned_prewarm () =
           (* Capture the handle now: a [/clear] re-arm must not redirect this
              daemon onto the replacement run it is not abandoning. *)
           let abandoned = !prewarm in
           Eio.Fiber.fork_daemon ~sw (fun () ->
               (match Eio.Promise.await abandoned with
-              | _, Ok (_, prewarm_stop) -> prewarm_stop ()
+              | _, Ok run -> close_run run
               | _, Error _ -> ());
               `Stop_daemon)
         in
@@ -1528,7 +1518,7 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
            mid-chat resume stays on the current chat) and mints fresh only when
            none is (a failed launch resume): [attach_fresh] re-consumes the
            one-shot prewarm, valid precisely because [attachment = None] means no
-           earlier attach adopted or stopped it. *)
+           earlier attach consumed it. *)
         let rec consume_resume pending =
           let result = Eio.Promise.await pending in
           match !resume_pending with
@@ -1553,34 +1543,35 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
                   | Some att -> Ok att
                   | None -> attach_fresh ())
               | Ok document ->
-                  stop_abandoned_prewarm ();
+                  close_abandoned_prewarm ();
                   let session_id =
                     Spice_session.id
                       (Spice_session_store.Document.session document)
                   in
-                  let* run, stop =
-                    build_run ?sandbox_flag ~sw ~stdenv ~host ~session_id ()
-                  in
-                  let* runner, _model, _effort = bind_runner run in
-                  let live = Spice_host.Live.attach ~sw ~runner document in
-                  subscribe live;
-                  subscribe_jobs (Spice_host.Run.jobs run);
-                  adopt stop;
-                  (* Replace any still-attached session: a mid-chat resume whose
-                     producer [enter_session] already detached leaves this a
-                     no-op ([Live.detach] is idempotent), but the consumer owns
-                     the swap outright rather than relying on that ordering. *)
-                  (match !attachment with
-                  | Some (old_live, _) -> detach old_live
-                  | None -> ());
-                  attachment := Some (live, run);
-                  created_session := Some session_id;
-                  Ok (live, run))
+                  (match
+                     build_run ?sandbox_flag ~sw ~stdenv ~host ~session_id ()
+                   with
+                  | Error _ as error -> error
+                  | Ok run -> (
+                      match bind_runner run with
+                      | Error message ->
+                          close_run run;
+                          Error message
+                      | Ok (runner, _model, _effort) ->
+                          close_attachment ();
+                          let live =
+                            Spice_host.Live.attach ~sw ~runner document
+                          in
+                          subscribe live;
+                          subscribe_jobs (Spice_host.Run.jobs run);
+                          attachment := Some (live, run);
+                          created_session := Some session_id;
+                          Ok (live, run))))
         in
         let ensure_attachment () =
           (* [resume_pending] is consulted before [attachment]: a resume armed
              while a session is still attached (a mid-chat quick-switch) has not
-             yet run its [enter_session] detach, so [attachment] still holds the
+             yet run [enter_session], so [attachment] still holds the
              OLD session — reusing it would submit the turn to the session the
              user just navigated away from. Awaiting the pending resume attaches
              the turn to the session actually resumed. With no resume in flight
@@ -1596,14 +1587,14 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
         (* Enter a session's transcript: replay its durable events through the
            turn reducer (turn.mli: replay lands settled through the identical
            path) so the shell rebuilds the transcript (12-home.md §The drop:
-           resume skips the home). Any prior attachment is detached first —
-           resuming replaces the active session. The attach target is the
+           resume skips the home). The prior attachment and its complete run
+           close before replay, so no old event can reach the new session. The
+           attach target is the
            [resume_pending] handle the command interpreter armed and the caller
            resolves once this returns, so [ensure_attachment] awaits it rather
            than minting a fresh session. *)
         let enter_session document =
-          (match !attachment with Some (live, _) -> detach live | None -> ());
-          attachment := None;
+          close_attachment ();
           let session_id =
             Spice_session.id (Spice_session_store.Document.session document)
           in
@@ -2179,22 +2170,15 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
               perform (fun () ->
                   (* Start over: supersede any in-flight resume (its producer
                      sees a non-current pending and goes inert — the same guard
-                     a newer pick relies on), detach the session (its document
-                     stays on disk), stop the run's producers, and re-arm the
-                     fresh path under a new seed. The next submit consumes it
-                     through [attach_fresh], creating the new document exactly
-                     as a launch's first submit does. [stop_abandoned_prewarm]
-                     runs before the re-arm so it captures the outgoing run —
-                     on a pre-submit /clear that is the unconsumed launch
-                     prewarm, and after a submit the stop is idempotent with
-                     the one [adopt] just ran. *)
+                     a newer pick relies on), close the session and its run, and
+                     re-arm the fresh path under a new seed. The next submit
+                     consumes it through [attach_fresh], creating the new
+                     document exactly as a launch's first submit does.
+                     [close_abandoned_prewarm] runs before the re-arm so it
+                     captures the outgoing unconsumed build. *)
                   resume_pending := None;
-                  (match !attachment with
-                  | Some (live, _) -> detach live
-                  | None -> ());
-                  attachment := None;
-                  adopt ignore;
-                  stop_abandoned_prewarm ();
+                  close_attachment ();
+                  close_abandoned_prewarm ();
                   prewarm :=
                     arm_fresh (Spice_host.Session.fresh_session_id ~clock))
           | App.Fork_session id ->
@@ -2503,11 +2487,22 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
               |> Mosaic.Probe.with_pending ~name:"spice.live" (fun () ->
                   !main_pending)
               |> Mosaic.Probe.with_pending ~name:"spice.jobs" (fun () ->
-                  List.exists Spice_host.Jobs.is_pending !job_registries)
+                  match !attachment with
+                  | Some (_, run) ->
+                      Spice_host.Jobs.is_pending (Spice_host.Run.jobs run)
+                  | None -> false)
               |> receive)
             probe
         in
-        Mosaic.run ~matrix ~process_perform ?probe app;
+        Fun.protect
+          ~finally:(fun () ->
+            shell_cancelled := true;
+            dispatch_ref := None;
+            close_attachment ();
+            match Eio.Promise.peek !prewarm with
+            | Some (_, Ok run) -> close_run run
+            | Some (_, Error _) | None -> ())
+          (fun () -> Mosaic.run ~matrix ~process_perform ?probe app);
         Ok { last_session = !created_session }
 
 let resolve_unknown_trust ~stdenv ~process_env startup host =

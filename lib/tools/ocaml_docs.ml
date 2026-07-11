@@ -16,6 +16,7 @@ let max_doc_bytes = 500
 let default_max_source_bytes = 2 * 1024 * 1024
 let max_source_bytes = 8 * 1024 * 1024
 let max_source_bytes_limit = max_source_bytes
+let ocamlfind_timeout_ms = 10_000
 let default_program = Ocaml_merlin.default_program
 let default_ocamlfind_program = "ocamlfind"
 
@@ -1228,27 +1229,35 @@ let read_in_workspace_unit ~fs ~workspace ~max_bytes unit =
    covers overviews and nested-in-main modules; wrapped sublibrary submodules in
    a switch install are not resolved (their per-module source may not be
    installed) — such a query returns a not-found result. *)
-let ocamlfind_query ~sandbox ~process_mgr:_ ~ocamlfind_program library =
+let ocamlfind_query ~sandbox ~ocamlfind_program ~cancelled library =
   let result =
-    Process.run_sandboxed ~sandbox
-      ~cancelled:(fun () -> false)
+    Process.run_sandboxed ~sandbox ~timeout_ms:ocamlfind_timeout_ms ~cancelled
       [ ocamlfind_program; "query"; "-format"; "%d\n%v"; library ]
   in
   match result.Process.status with
   | Process.Exited 0 -> (
       match String.split_on_char '\n' (String.trim result.Process.stdout) with
-      | dir :: version :: _ -> Some (String.trim dir, String.trim version)
-      | [ dir ] -> Some (String.trim dir, "unknown")
-      | [] -> None)
-  | _ -> None
+      | dir :: version :: _ -> Ok (Some (String.trim dir, String.trim version))
+      | [ dir ] -> Ok (Some (String.trim dir, "unknown"))
+      | [] -> Ok None)
+  | Process.Cancelled -> fail `Failed "tool call cancelled"
+  | Process.Timed_out { timeout_ms } ->
+      fail `Timed_out
+        ("ocamlfind query timed out after " ^ string_of_int timeout_ms ^ "ms")
+  | Process.Refused error ->
+      fail `Unavailable (Spice_sandbox.Error.message error)
+  | Process.Exited _ | Process.Signaled _ | Process.Output_exceeded _
+  | Process.Failed _ ->
+      Ok None
 
-let read_switch_source ~sandbox ~process_mgr ~ocamlfind_program ~opam_switch_prefix
-    ~max_bytes ~library ~main rel =
-  match ocamlfind_query ~sandbox ~process_mgr ~ocamlfind_program library with
-  | None ->
+let read_switch_source ~sandbox ~ocamlfind_program ~opam_switch_prefix
+    ~max_bytes ~cancelled ~library ~main rel =
+  match ocamlfind_query ~sandbox ~ocamlfind_program ~cancelled library with
+  | Error _ as error -> error
+  | Ok None ->
       fail `Not_found
         (Printf.sprintf "could not locate library %S with ocamlfind" library)
-  | Some (lib_dir, version) ->
+  | Ok (Some (lib_dir, version)) ->
       let module_file =
         match rel with
         | [] -> String.uncapitalize_ascii main
@@ -1656,7 +1665,7 @@ let dependency_origin ~library read =
       }
 
 let resolve_name_form ~sandbox ?describe_freshness ~fs ~workspace ~max_bytes
-    ~ocamlfind_program ~opam_switch_prefix ~process_mgr ~project input form =
+    ~ocamlfind_program ~opam_switch_prefix ~project ~cancelled input form =
   let scope = Input.scope input in
   let package = Input.package input in
   (* Determine library candidate, module segments, focus. *)
@@ -1763,8 +1772,8 @@ let resolve_name_form ~sandbox ?describe_freshness ~fs ~workspace ~max_bytes
                 (Printf.sprintf "could not locate the source of %S" library)
             else
               match
-                read_switch_source ~sandbox ~process_mgr ~ocamlfind_program
-                  ~opam_switch_prefix ~max_bytes ~library ~main rel
+                read_switch_source ~sandbox ~ocamlfind_program
+                  ~opam_switch_prefix ~max_bytes ~cancelled ~library ~main rel
               with
               | Error failure -> Error failure
               | Ok (read, origin, nested) ->
@@ -1924,8 +1933,8 @@ let run ~sandbox ?(program = default_program)
         | Ok (project, describe_freshness) -> (
             match
               resolve_name_form ~sandbox ?describe_freshness ~fs ~workspace
-                ~max_bytes ~ocamlfind_program ~opam_switch_prefix ~process_mgr
-                ~project input form
+                ~max_bytes ~ocamlfind_program ~opam_switch_prefix ~project
+                ~cancelled input form
             with
             | Ok result -> result
             | Error { kind; message } -> Tool.Result.failed kind message))

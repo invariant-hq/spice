@@ -11,6 +11,7 @@ type status =
   | Exited of int
   | Signaled of int
   | Cancelled
+  | Timed_out of { timeout_ms : int }
   | Output_exceeded of string
   | Failed of string
   | Refused of Spice_sandbox.Error.t
@@ -199,10 +200,65 @@ let read_plain buffer fd bytes =
 let kill_process_group pid signal =
   try Unix.kill (-pid) signal with Unix.Unix_error _ -> kill pid signal
 
-let terminate_process_group pid =
+let process_group_exists pid =
+  match Unix.kill (-pid) 0 with
+  | () -> true
+  | exception Unix.Unix_error (Unix.ESRCH, _, _) -> false
+  | exception Unix.Unix_error _ -> true
+
+let terminate_process_group ~grace_seconds pid =
   kill_process_group pid Sys.sigterm;
-  Unix.sleepf 0.2;
-  kill_process_group pid Sys.sigkill
+  let deadline = Unix.gettimeofday () +. grace_seconds in
+  let rec await leader_status =
+    let leader_status =
+      match leader_status with
+      | Some _ -> leader_status
+      | None -> (
+          match waitpid_nointr [ Unix.WNOHANG ] pid with
+          | 0, _ -> None
+          | _, status -> Some status)
+    in
+    match leader_status with
+    | Some status when not (process_group_exists pid) -> status
+    | _ when Unix.gettimeofday () >= deadline ->
+        if process_group_exists pid then kill_process_group pid Sys.sigkill;
+        let status =
+          match leader_status with
+          | Some status -> status
+          | None -> snd (waitpid_nointr [] pid)
+        in
+        let kill_deadline = Unix.gettimeofday () +. 0.02 in
+        let rec await_group () =
+          if
+            process_group_exists pid
+            && Unix.gettimeofday () < kill_deadline
+          then begin
+            Unix.sleepf 0.002;
+            await_group ()
+          end
+        in
+        await_group ();
+        status
+    | _ ->
+        Unix.sleepf 0.002;
+        await leader_status
+  in
+  await None
+
+let terminate_process ~grace_seconds pid =
+  kill pid Sys.sigterm;
+  let deadline = Unix.gettimeofday () +. grace_seconds in
+  let rec await () =
+    match waitpid_nointr [ Unix.WNOHANG ] pid with
+    | 0, _ when Unix.gettimeofday () < deadline ->
+        Unix.sleepf 0.002;
+        await ()
+    | 0, _ ->
+        kill pid Sys.sigkill;
+        snd (waitpid_nointr [] pid)
+    | _, status -> status
+  in
+  await ()
 
 let write_all fd text =
   let bytes = Bytes.of_string text in
@@ -218,7 +274,7 @@ let write_all fd text =
 
 let child_exec_error error fn arg = unix_error_message error fn arg
 
-let fork_exec ~cwd ~env ~stdin ~stdout ~stderr ~exec_error argv =
+let fork_exec ?cwd ~env ~stdin ~stdout ~stderr ~exec_error argv =
   match argv with
   | [] -> Error "empty argv"
   | prog :: _ -> (
@@ -226,10 +282,9 @@ let fork_exec ~cwd ~env ~stdin ~stdout ~stderr ~exec_error argv =
       | exception Unix.Unix_error (error, fn, arg) ->
           Error (unix_error_message error fn arg)
       | 0 ->
-          begin try ignore (Unix.setsid ()) with Unix.Unix_error _ -> ()
-          end;
           begin try
-            Unix.chdir cwd;
+            ignore (Unix.setsid ());
+            Option.iter Unix.chdir cwd;
             Unix.dup2 stdin Unix.stdin;
             Unix.dup2 stdout Unix.stdout;
             Unix.dup2 stderr Unix.stderr;
@@ -445,8 +500,9 @@ let run_shell_blocking ~cwd ~env ~timeout_ms ~max_output_bytes ?stdin ~cancelled
               Log.debug (fun m ->
                   m "cancelled, terminating process group pid=%d" pid);
               close_stdin ();
-              terminate_process_group pid;
-              ignore (waitpid_nointr [] pid);
+              ignore
+                (terminate_process_group ~grace_seconds:0.2 pid
+                  : Unix.process_status);
               drain Shell_cancelled open_fds
             end
             else if elapsed_ms start >= timeout_ms then begin
@@ -454,8 +510,9 @@ let run_shell_blocking ~cwd ~env ~timeout_ms ~max_output_bytes ?stdin ~cancelled
                   m "timeout after %dms, terminating process group pid=%d"
                     timeout_ms pid);
               close_stdin ();
-              terminate_process_group pid;
-              ignore (waitpid_nointr [] pid);
+              ignore
+                (terminate_process_group ~grace_seconds:0.2 pid
+                  : Unix.process_status);
               drain (Shell_timed_out { timeout_ms }) open_fds
             end
             else
@@ -481,9 +538,11 @@ let run_shell_blocking ~cwd ~env ~timeout_ms ~max_output_bytes ?stdin ~cancelled
           | Some message -> finish (Shell_failed_to_start message)))
 
 let run_blocking ?(stdout_limit = default_stdout_limit)
-    ?(stderr_limit = default_stderr_limit) ~env ~cancelled argv =
+    ?(stderr_limit = default_stderr_limit) ~env ~timeout_ms ~cancelled argv =
   validate_limit "stdout_limit" stdout_limit;
   validate_limit "stderr_limit" stderr_limit;
+  if timeout_ms <= 0 then invalid_arg "timeout_ms must be positive";
+  let started = Unix.gettimeofday () in
   match argv with
   | [] -> { status = Failed "empty argv"; stdout = ""; stderr = "" }
   | prog :: _ -> (
@@ -597,26 +656,36 @@ let run_blocking ?(stdout_limit = default_stdout_limit)
                 match !exceeded with
                 | Some stream ->
                     Log.warn (fun m ->
-                        m "output exceeded limit on %s, terminating pid=%d"
+                        m
+                          "output exceeded limit on %s, terminating process \
+                           pid=%d"
                           stream pid);
-                    kill pid Sys.sigterm;
-                    Unix.sleepf 0.02;
-                    kill pid Sys.sigkill;
-                    ignore (waitpid_nointr [] pid);
+                    ignore
+                      (terminate_process ~grace_seconds:0.02 pid
+                        : Unix.process_status);
                     drain (Output_exceeded stream) open_fds
                 | None -> (
                     if cancelled () then begin
-                      kill pid Sys.sigterm;
-                      Unix.sleepf 0.02;
-                      kill pid Sys.sigkill;
-                      ignore (waitpid_nointr [] pid);
+                      ignore
+                        (terminate_process ~grace_seconds:0.02 pid
+                          : Unix.process_status);
                       drain Cancelled open_fds
                     end
                     else
                       let open_fds = poll open_fds in
-                      match waitpid_nointr [ Unix.WNOHANG ] pid with
-                      | 0, _ -> wait open_fds
-                      | _, status -> drain (status_of_unix status) open_fds)
+                      match !exceeded with
+                      | Some _ -> wait open_fds
+                      | None -> (
+                          match waitpid_nointr [ Unix.WNOHANG ] pid with
+                          | 0, _ when elapsed_ms started < timeout_ms ->
+                              wait open_fds
+                          | 0, _ ->
+                              ignore
+                                (terminate_process ~grace_seconds:0.02 pid
+                                  : Unix.process_status);
+                              drain (Timed_out { timeout_ms }) open_fds
+                          | _, status ->
+                              drain (status_of_unix status) open_fds))
               in
               let status = wait [ stdout_r; stderr_r ] in
               cleanup ();
@@ -655,14 +724,16 @@ let run_sandboxed_shell ~sandbox ~cwd ~env ~timeout_ms ~max_output_bytes ?stdin
   | Ok (argv, env) ->
       run_shell ~cwd ~env ~timeout_ms ~max_output_bytes ?stdin ~cancelled argv
 
-let run ?stdout_limit ?stderr_limit ~cancelled argv =
+let run ?stdout_limit ?stderr_limit ~timeout_ms ~cancelled argv =
   Eio_unix.run_in_systhread ~label:"spice-process" (fun () ->
       run_blocking ?stdout_limit ?stderr_limit ~env:(Unix.environment ())
-        ~cancelled argv)
+        ~timeout_ms ~cancelled argv)
 
-let run_sandboxed ?stdout_limit ?stderr_limit ~sandbox ~cancelled argv =
+let run_sandboxed ?stdout_limit ?stderr_limit ~sandbox ~timeout_ms ~cancelled
+    argv =
   match prepare ~sandbox ~env:(Unix.environment ()) argv with
   | Error error -> { status = Refused error; stdout = ""; stderr = "" }
   | Ok (argv, env) ->
       Eio_unix.run_in_systhread ~label:"spice-process" (fun () ->
-          run_blocking ?stdout_limit ?stderr_limit ~env ~cancelled argv)
+          run_blocking ?stdout_limit ?stderr_limit ~env ~timeout_ms ~cancelled
+            argv)

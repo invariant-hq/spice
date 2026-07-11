@@ -11,7 +11,7 @@
     instance for the run so the tool catalog and the watchers share one
     endpoint, and so a run has exactly one teardown instead of separate
     fswatch/dune strands. This is a private module {!Run} owns: {!Run.start}
-    starts it, {!Run.stop} stops it, and no other consumer reaches it.
+    starts it, {!Run.close} stops it, and no other consumer reaches it.
 
     Producers publish {!Spice_protocol.Notice.t} values into the queue; session
     execution consumes them through {!Session.with_notices}. *)

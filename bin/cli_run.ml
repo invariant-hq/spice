@@ -483,10 +483,8 @@ type runtime = {
   notices : Spice_host.Notice_queue.t;
       (** The run's notice queue, for the ephemeral goal-context notice on
           user-initiated goal turns. *)
-  drain_jobs : unit -> unit;
-      (** Waits for detached children only after the root result has been
-          rendered. This is process teardown, never interpreter settlement. *)
-  stop_dune : unit -> unit;
+  close : unit -> unit;
+      (** Closes children and producers after the root result is rendered. *)
   permission_of : Session.State.t -> Cli_block.permission_context;
       (** The one projection behind blocked rendering and saved-event metadata,
           so the surfaces cannot disagree. *)
@@ -657,33 +655,29 @@ let assemble ?cwd_override_abs ?skills:preloaded_skills ~sw ~stdenv ~json ~store
          ~fetch_https:(Spice_host_builtin.web_fetch_https ())
          ?max_steps ?skills:preloaded_skills ?cwd_override:cwd_override_abs ())
   in
-  let stop_dune () = Spice_host.Run.stop run in
-  (* A goal-driven run settles several turns in one invocation, so the
-     producers must outlive each settle; teardown stays with the caller's
-     [Fun.protect ~finally:stop_dune]. Goal-less runs keep the prompt
-     stop-on-settle. *)
-  let goal_driven =
-    match
-      Spice_host.Artifacts.Goal.load ~fs:(Eio.Stdenv.fs stdenv)
-        ~root:(Store.root store |> Spice_path.Abs.to_string)
-        session_id
-    with
-    | Ok (Some goal) -> Spice_protocol.Goal.is_unfinished goal
-    | Ok None | Error _ -> false
+  let closed = ref false in
+  let close () =
+    if not !closed then begin
+      closed := true;
+      match Spice_host.Run.close run with
+      | Ok () -> ()
+      | Error error ->
+          stderr_printf "spice: run close failed: %s\n"
+            (Spice_host.Jobs.Close_error.message error)
+    end
   in
-  let* runner = assembly (Spice_host.Run.runner run ~mode ~model ~client) in
+  let* runner =
+    match assembly (Spice_host.Run.runner run ~mode ~model ~client) with
+    | Ok runner -> Ok runner
+    | Error _ as error ->
+        close ();
+        error
+  in
   let runner =
     runner
     |> Spice_host.Runner.with_hooks (fun hooks ->
         let hooks =
           hooks |> Host_session.with_observe (render_timeline ~json ~session_id)
-        in
-        let hooks =
-          if goal_driven then hooks
-          else
-            Host_session.with_terminal_observed
-              (fun ~observe:_ _ -> stop_dune ())
-              hooks
         in
         match
           after_save json
@@ -703,8 +697,7 @@ let assemble ?cwd_override_abs ?skills:preloaded_skills ~sw ~stdenv ~json ~store
       cwd;
       runner;
       notices = Spice_host.Run.notices run;
-      drain_jobs = (fun () -> Spice_host.Jobs.drain (Spice_host.Run.jobs run));
-      stop_dune;
+      close;
       permission_of;
     }
 
@@ -1338,7 +1331,7 @@ let start json raw_id title model reasoning_effort workflow_mode permission_mode
                 ~objective ?token_budget:goal_budget ~now:(now stdenv) ())
            |> Result.map Option.some
      in
-     let* ({ model; cwd; stop_dune; permission_of; _ } as runtime) =
+     let* ({ model; cwd; close; permission_of; _ } as runtime) =
        assemble ?cwd_override_abs ?skills:preloaded_skills ~sw ~stdenv ~json
          ~store ~session_id:id host ~mode ~model ~reasoning_request
          ~permission_mode ~sandbox ~max_steps
@@ -1356,24 +1349,24 @@ let start json raw_id title model reasoning_effort workflow_mode permission_mode
      let turn =
        make_turn ~skill_texts stdenv model prompt max_steps ~reasoning_request
      in
-     let* result =
-       Fun.protect ~finally:stop_dune (fun () ->
+     Fun.protect ~finally:close (fun () ->
+         let* result =
            execution_terminal ~json ~stdenv ~store ~id ~started
              (drive_goal ~stdenv ~store ~json
                 ~unattended:(effective_unattended host permission_unattended)
                 ~mode ~max_steps ~reasoning_request runtime document
-                (Spice_protocol.Command.Start turn)))
-     in
-     print_changed_trailer ~json ~stdenv ~store result;
-     let status =
-       print_result ~saved_hint:(not ephemeral) ~json ~permission_of
-         ~duration_ms:(duration_ms ~started stdenv)
-         result
-     in
-     runtime.drain_jobs ();
-     if not ephemeral then
-       maybe_generate_title ~sw ~stdenv host store (result_document result);
-     Ok status)
+                (Spice_protocol.Command.Start turn))
+         in
+         print_changed_trailer ~json ~stdenv ~store result;
+         let status =
+           print_result ~saved_hint:(not ephemeral) ~json ~permission_of
+             ~duration_ms:(duration_ms ~started stdenv)
+             result
+         in
+         close ();
+         if not ephemeral then
+           maybe_generate_title ~sw ~stdenv host store (result_document result);
+         Ok status))
 
 let resume_document_in_host ~stdenv host json model reasoning_effort
     workflow_mode permission_mode permission_unattended sandbox max_steps
@@ -1397,12 +1390,12 @@ let resume_document_in_host ~stdenv host json model reasoning_effort
      in
      let max_steps = effective_max_steps host max_steps in
      let reasoning_request = effective_reasoning host reasoning_effort in
-     let* ({ model; stop_dune; permission_of; _ } as runtime) =
+     let* ({ model; close; permission_of; _ } as runtime) =
        assemble ~sw ~stdenv ~json ~store ~session_id:id host ~mode ~model
          ~reasoning_request ~permission_mode ~sandbox ~max_steps
      in
-     let* result =
-       Fun.protect ~finally:stop_dune (fun () ->
+     Fun.protect ~finally:close (fun () ->
+         let* result =
            execution_terminal ~json ~stdenv ~store ~id ~started
              (drive_goal ~stdenv ~store ~json
                 ~unattended:(effective_unattended host permission_unattended)
@@ -1412,17 +1405,17 @@ let resume_document_in_host ~stdenv host json model reasoning_effort
                 | Some prompt ->
                     Spice_protocol.Command.Start
                       (make_turn stdenv model prompt max_steps
-                         ~reasoning_request))))
-     in
-     print_changed_trailer ~json ~stdenv ~store result;
-     let status =
-       print_result ~json ~permission_of
-         ~duration_ms:(duration_ms ~started stdenv)
-         result
-     in
-     runtime.drain_jobs ();
-     maybe_generate_title ~sw ~stdenv host store (result_document result);
-     Ok status)
+                         ~reasoning_request)))
+         in
+         print_changed_trailer ~json ~stdenv ~store result;
+         let status =
+           print_result ~json ~permission_of
+             ~duration_ms:(duration_ms ~started stdenv)
+             result
+         in
+         close ();
+         maybe_generate_title ~sw ~stdenv host store (result_document result);
+         Ok status))
 
 let resume json model reasoning_effort workflow_mode permission_mode
     permission_unattended sandbox max_steps cwd overrides id prompt =
@@ -1517,12 +1510,12 @@ let continue json model reasoning_effort workflow_mode permission_mode
          let* action = resolve_continuation document continuation in
          let max_steps = effective_max_steps host max_steps in
          let reasoning_request = effective_reasoning host reasoning_effort in
-         let* ({ stop_dune; permission_of; _ } as runtime) =
+         let* ({ close; permission_of; _ } as runtime) =
            assemble ~sw ~stdenv ~json ~store ~session_id:id host ~mode ~model
              ~reasoning_request ~permission_mode ~sandbox ~max_steps
          in
-         let* result =
-           Fun.protect ~finally:stop_dune (fun () ->
+         Fun.protect ~finally:close (fun () ->
+             let* result =
                execution_terminal ~json ~stdenv ~store ~id ~started
                  (match action with
                  | Reply { id = permission; answer; message } ->
@@ -1559,16 +1552,15 @@ let continue json model reasoning_effort workflow_mode permission_mode
                        ~unattended:
                          (effective_unattended host permission_unattended)
                        ~mode ~max_steps ~reasoning_request runtime document
-                       (Spice_protocol.Command.Finish_tool (id, result))))
-         in
-         print_changed_trailer ~json ~stdenv ~store result;
-         let status =
-           print_result ~json ~permission_of
-             ~duration_ms:(duration_ms ~started stdenv)
-             result
-         in
-         runtime.drain_jobs ();
-         Ok status)
+                       (Spice_protocol.Command.Finish_tool (id, result)))
+             in
+             print_changed_trailer ~json ~stdenv ~store result;
+             let status =
+               print_result ~json ~permission_of
+                 ~duration_ms:(duration_ms ~started stdenv)
+                 result
+             in
+             Ok status))
 
 (* Goal lifecycle verbs are session-scoped continuations that mutate the goal
    artifact, not the session transcript. Pause, edit, and clear need no
@@ -1656,7 +1648,7 @@ let goal_reply json model reasoning_effort workflow_mode permission_mode
                  let reasoning_request =
                    effective_reasoning host reasoning_effort
                  in
-                 let* ({ model; stop_dune; permission_of; _ } as runtime) =
+                 let* ({ model; close; permission_of; _ } as runtime) =
                    assemble ~sw ~stdenv ~json ~store ~session_id:id host ~mode
                      ~model ~reasoning_request ~permission_mode ~sandbox
                      ~max_steps
@@ -1666,23 +1658,22 @@ let goal_reply json model reasoning_effort workflow_mode permission_mode
                      (Goal_run.continuation_prompt goal)
                      max_steps ~reasoning_request
                  in
-                 let* result =
-                   Fun.protect ~finally:stop_dune (fun () ->
+                 Fun.protect ~finally:close (fun () ->
+                     let* result =
                        execution_terminal ~json ~stdenv ~store ~id ~started
                          (drive_goal ~stdenv ~store ~json
                             ~unattended:
                               (effective_unattended host permission_unattended)
                             ~mode ~max_steps ~reasoning_request runtime document
-                            (Spice_protocol.Command.Start turn)))
-                 in
-                 print_changed_trailer ~json ~stdenv ~store result;
-                 let status =
-                   print_result ~json ~permission_of
-                     ~duration_ms:(duration_ms ~started stdenv)
-                     result
-                 in
-                 runtime.drain_jobs ();
-                 Ok status))
+                            (Spice_protocol.Command.Start turn))
+                     in
+                     print_changed_trailer ~json ~stdenv ~store result;
+                     let status =
+                       print_result ~json ~permission_of
+                         ~duration_ms:(duration_ms ~started stdenv)
+                         result
+                     in
+                     Ok status)))
 
 (* Dispatch *)
 

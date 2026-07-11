@@ -443,6 +443,54 @@ let%expect_test "a shell permission prompt gates the call and records it" =
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗        ? for shortcuts|}]
 
+let process_exists pid =
+  match Unix.kill pid 0 with
+  | () -> true
+  | exception Unix.Unix_error (Unix.ESRCH, _, _) -> false
+  | exception Unix.Unix_error _ -> true
+
+let process_group_exists pgid =
+  match Unix.kill (-pgid) 0 with
+  | () -> true
+  | exception Unix.Unix_error (Unix.ESRCH, _, _) -> false
+  | exception Unix.Unix_error _ -> true
+
+let%expect_test "quitting joins and reaps a blocked shell tool" =
+  let command =
+    "echo $$ > .blocked-shell.pid; trap '' TERM; while :; do sleep 1; done"
+  in
+  let script =
+    [
+      Provider_script.tool_call ~expect:[ "block the shell" ]
+        ~id:"r-blocked-shell" ~call_id:"c-blocked-shell" ~name:"shell"
+        ~arguments:(Printf.sprintf {|{"command":%S,"timeout_ms":600000}|} command)
+        ();
+    ]
+  in
+  Tui.run ~name:"tools-blocked-shell-close" ~provider:script @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "block the shell";
+  Tui.enter t;
+  ignore (Tui.await_request t 1 : string);
+  Tui.await_suspend t;
+  Tui.enter t;
+  Tui.await_file t ".blocked-shell.pid";
+  let pid =
+    Project.read (Tui.project t) ".blocked-shell.pid"
+    |> String.trim |> int_of_string
+  in
+  Tui.keys t Key.ctrl_c;
+  Tui.keys t Key.ctrl_c;
+  Tui.await_exit ~timeout:3. t;
+  Printf.printf "exited: %b\n" (match Tui.outcome t with _ -> true);
+  Printf.printf "shell alive: %b\n" (process_exists pid);
+  Printf.printf "shell process group alive: %b\n" (process_group_exists pid);
+  [%expect
+    {|
+    exited: true
+    shell alive: false
+    shell process group alive: false|}]
+
 (* Shell failure (02-tools.md §Shell): a nonzero exit is humanized to
    [exited N · <duration>] — never the raw [command exited with status N] — and
    the LAST output lines auto-show with a [… +N lines ▸] overflow. The duration

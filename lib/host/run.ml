@@ -643,7 +643,12 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
         (fun rule -> session_rules := !session_rules @ [ rule ]);
     }
 
-let stop t = Producers.stop t.producers
+let close t =
+  Eio.Cancel.protect (fun () ->
+      Fun.protect
+        ~finally:(fun () -> Producers.stop t.producers)
+        (fun () -> Jobs.close t.jobs))
+
 let jobs t = t.jobs
 let runner t ~mode ~model ~client = t.runner_for ~mode ~model ~client
 let add_session_rule t rule = t.add_session_rule rule
