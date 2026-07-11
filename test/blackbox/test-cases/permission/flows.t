@@ -98,6 +98,25 @@ reviewer denial.
   $ spice session export unattended-run | grep -o '"answer":"deny"'
   "answer":"deny"
 
+Write confinement does not authorize model-authored host reads. A shell routed
+through an enforcing workspace-write sandbox still waits for review, and the
+process cannot start before that decision.
+
+  $ outside=$(mktemp -d)
+  $ printf 'host secret\n' > "$outside/secret"
+  $ cat > shell-read.jsonl <<JSONL
+  > {"expect":{"body_contains":["\"name\":\"shell\""]},"response":{"id":"resp-shell-read","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-shell-read","call_id":"call-shell-read","name":"shell","arguments":"{\"command\":\"printf started > shell-started; cat $outside/secret\"}"}]}}
+  > JSONL
+  $ start_fake_openai shell-read.jsonl capture-shell-read port-shell-read
+  $ spice run --cwd "$PWD" --sandbox workspace-write --id shell-read "read a host file" >/dev/null 2>&1; echo exit:$?
+  exit:3
+  $ wait_fake_server
+  $ test ! -e shell-started && echo process-not-started
+  process-not-started
+  $ spice session show --json shell-read | grep -o '"kind":"needs_review"'
+  "kind":"needs_review"
+  $ rm -r "$outside"
+
 The JSONL stream shows the same provenance on permission.resolved, and the
 unattended denial can never allow: the denied tool did not run.
 

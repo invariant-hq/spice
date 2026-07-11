@@ -41,11 +41,11 @@ let command ?(execution = Access.Command.Direct) program args =
 
 let sandboxed = Access.Command.Sandboxed
 
-let sealed_commands_receive_narrow_credit () =
+let sealed_commands_review_by_default () =
   List.iter
     (fun (label, access) ->
       decide ~sandbox_backed:true Permission.Preset.Default [ access ]
-      |> expect_allowed label)
+      |> expect_review label)
     [
       ("Dune", command ~execution:sandboxed "dune" [ "build" ]);
       ("Merlin", command ~execution:sandboxed "ocamlmerlin" [ "type-enclosing" ]);
@@ -53,7 +53,22 @@ let sealed_commands_receive_narrow_credit () =
     ];
   decide ~sandbox_backed:true Permission.Preset.Accept_edits
     [ command ~execution:sandboxed "dune" [ "runtest" ] ]
-  |> expect_allowed "accept-edits sealed command"
+  |> expect_review "accept-edits sealed command"
+
+let explicit_read_anywhere_opt_in () =
+  let review_destructive =
+    Policy.Rule.review (Policy.Match.command Policy.Match.Command.destructive)
+  in
+  let allow_sandboxed =
+    Policy.Rule.allow (Policy.Match.command Policy.Match.Command.sandboxed)
+  in
+  let durable = [ [ review_destructive; allow_sandboxed ] ] in
+  decide ~durable ~sandbox_backed:true Permission.Preset.Default
+    [ Access.shell ~execution:sandboxed "cat ~/.config/raven/api.mli" ]
+  |> expect_allowed "explicit ordinary sandboxed command";
+  decide ~durable ~sandbox_backed:true Permission.Preset.Default
+    [ Access.shell ~execution:sandboxed "rm -rf _build" ]
+  |> expect_review "destructive rule precedes sandboxed allow"
 
 let unproven_and_sensitive_commands_still_review () =
   decide ~sandbox_backed:true Permission.Preset.Default
@@ -90,8 +105,10 @@ let posture_and_rule_precedence_are_preserved () =
 let () =
   run "spice.host.permission"
     [
-      test "sealed commands receive narrow workspace-write credit"
-        sealed_commands_receive_narrow_credit;
+      test "sealed commands review under the safe default"
+        sealed_commands_review_by_default;
+      test "ordered durable rules opt into read-anywhere shell"
+        explicit_read_anywhere_opt_in;
       test "unproven and sensitive commands still review"
         unproven_and_sensitive_commands_still_review;
       test "posture and explicit rule precedence are preserved"

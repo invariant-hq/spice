@@ -66,8 +66,8 @@ module Preset : sig
 
       An enforcing workspace-write sandbox backs native workspace mutation, so
       [Default] gains workspace creates, modifies, and deletes. [Default] and
-      [Accept_edits] also review destructive commands before allowing only
-      command facts whose execution route is proven sandboxed. [Plan] and
+      [Accept_edits] do not gain command rules: write confinement does not
+      authorize the host reads available to a sandboxed command. [Plan] and
       [Bypass] gain no rules. *)
 
   val equal : t -> t -> bool
