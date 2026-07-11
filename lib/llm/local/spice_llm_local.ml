@@ -954,7 +954,7 @@ type partial = {
   input : Buffer.t;
 }
 
-let stream_events ~cancelled requested_model api_stream =
+let consume_events ~cancelled ~on_event requested_model api_stream =
   let partials : (int, partial) Hashtbl.t = Hashtbl.create 4 in
   let call_order = ref [] in
   let content = Buffer.create 256 in
@@ -1168,7 +1168,19 @@ let stream_events ~cancelled requested_model api_stream =
                     "local stream ended without completion"))
           end
   in
-  Llm.Stream.make ~close:(fun () -> Api.Chat.close api_stream) next
+  let rec consume () =
+    match next () with
+    | Some (Llm.Stream.Event event) ->
+        on_event event;
+        consume ()
+    | Some (Llm.Stream.Finished response) -> Ok response
+    | Some (Llm.Stream.Failed error) -> Error error
+    | None ->
+        Error
+          (stream_error Llm.Error.Malformed_stream
+             "local stream ended without a terminal result")
+  in
+  Fun.protect ~finally:(fun () -> Api.Chat.close api_stream) consume
 
 let server_binary ?(config = Config.default) () =
   Server.find_binary config.Config.server_binary
@@ -1252,9 +1264,6 @@ let client ~sw ~env ?http ?observe_download ?(config = Config.default) () =
       Log.info (fun m -> m "request started model=%s" id);
       match Api.Chat.create_stream api_client api_request with
       | Error error -> Error (api_error error)
-      | Ok api_stream ->
-          Llm.Stream.iter_events
-            (stream_events ~cancelled model api_stream)
-            ~f:on_event
+      | Ok api_stream -> consume_events ~cancelled ~on_event model api_stream
   in
   Llm.Client.make ~provider ~accepts ~run ()

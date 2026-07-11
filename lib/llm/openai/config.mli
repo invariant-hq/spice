@@ -43,7 +43,8 @@ val make :
       They let one adapter serve OpenAI-compatible routes that need
       route-specific headers, such as the ChatGPT backend's account-scoping
       header. Defaults to [[]].
-    - [timeout_s] is the per-attempt HTTP timeout in seconds when present.
+    - [timeout_s] is the whole logical-request deadline, covering retries,
+      backoff, and streamed response consumption. It defaults to 600 seconds.
     - [max_retries] is the number of retry attempts after the initial request
       when present.
 
@@ -68,8 +69,8 @@ val project : t -> string option
 val headers : t -> (string * string) list
 (** [headers t] are the extra request headers, in supplied order. *)
 
-val timeout_s : t -> float option
-(** [timeout_s t] is the per-attempt timeout in seconds, if any. *)
+val timeout_s : t -> float
+(** [timeout_s t] is the whole logical-request deadline in seconds. *)
 
 val max_retries : t -> int option
 (** [max_retries t] is the retry count after the initial attempt, if any. *)

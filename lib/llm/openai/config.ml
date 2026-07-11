@@ -8,7 +8,7 @@ type t = {
   organization : string option;
   project : string option;
   headers : (string * string) list;
-  timeout_s : float option;
+  timeout_s : float;
   max_retries : int option;
 }
 
@@ -33,11 +33,11 @@ let normalize_base_url = function
       if String.is_empty value then invalid "base_url must not be only slashes";
       Some value
 
-let check_timeout_s = function
-  | None -> ()
-  | Some value ->
-      if (not (Float.is_finite value)) || value <= 0. then
-        invalid "timeout_s must be positive and finite"
+let default_timeout_s = 600.
+
+let check_timeout_s value =
+  if (not (Float.is_finite value)) || value <= 0. then
+    invalid "timeout_s must be positive and finite"
 
 let check_max_retries = function
   | None -> ()
@@ -53,8 +53,8 @@ let check_headers headers =
         invalid ("header " ^ name ^ " value must not contain newline"))
     headers
 
-let make ?base_url ?organization ?project ?(headers = []) ?timeout_s
-    ?max_retries () =
+let make ?base_url ?organization ?project ?(headers = [])
+    ?(timeout_s = default_timeout_s) ?max_retries () =
   check_optional "base_url" base_url;
   check_optional "organization" organization;
   check_optional "project" project;

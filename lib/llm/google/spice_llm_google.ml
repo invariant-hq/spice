@@ -45,10 +45,9 @@ let stream_error kind message = llm_error ~phase:Llm.Error.Stream kind message
 let cancelled_error ?(phase = Llm.Error.Startup) () =
   llm_error ~phase Llm.Error.Cancelled "Google Gemini request cancelled"
 
-let transport_kind message =
-  if String.includes ~affix:"timed out" (String.lowercase_ascii message) then
-    Llm.Error.Timeout
-  else Llm.Error.Transport
+let timeout_error ~phase seconds =
+  llm_error ~phase Llm.Error.Timeout
+    (Printf.sprintf "Google Gemini request timed out after %gs" seconds)
 
 let json_string json =
   match Jsont_bytesrw.encode_string Jsont.json json with
@@ -765,8 +764,7 @@ let redacted_body body =
       ^ " bytes>")
 
 let api_error ?(phase = Llm.Error.Startup) = function
-  | Api.Error.Transport message ->
-      llm_error ~phase (transport_kind message) message
+  | Api.Error.Transport message -> llm_error ~phase Llm.Error.Transport message
   | Api.Error.Decode message -> llm_error ~phase Llm.Error.Decode message
   | Api.Error.Response response ->
       let fallback = error_kind_of_status response.Api.Error.status in
@@ -971,7 +969,7 @@ let handle_event state event =
                 |> List.iter (handle_part state))
           candidates)
 
-let stream_events ~cancelled ~elapsed requested_model api_stream =
+let consume_events ~cancelled ~elapsed ~on_event requested_model api_stream =
   let state = state () in
   let rec next () =
     if not (Queue.is_empty state.pending) then Some (Queue.take state.pending)
@@ -1011,9 +1009,22 @@ let stream_events ~cancelled ~elapsed requested_model api_stream =
               Some (Llm.Stream.Finished response)
           end
   in
-  Llm.Stream.make ~close:(fun () -> Api.Generate_content.close api_stream) next
+  let rec consume () =
+    match next () with
+    | Some (Llm.Stream.Event event) ->
+        on_event event;
+        consume ()
+    | Some (Llm.Stream.Finished response) -> Ok response
+    | Some (Llm.Stream.Failed error) -> Error error
+    | None ->
+        Error
+          (stream_error Llm.Error.Malformed_stream
+             "Google Gemini stream ended without a terminal result")
+  in
+  Fun.protect ~finally:(fun () -> Api.Generate_content.close api_stream) consume
 
-let stream ~sw ~env config credential ~cancelled request =
+let perform_request ~sw ~env config credential ~phase ~cancelled ~on_event
+    request =
   if cancelled () then Error (cancelled_error ())
   else
     let model = Llm.Request.model request in
@@ -1032,13 +1043,21 @@ let stream ~sw ~env config credential ~cancelled request =
         match Api.Generate_content.create_stream api_client api_request with
         | Error error -> Error (api_error error)
         | Ok api_stream ->
-            Ok (stream_events ~cancelled ~elapsed model api_stream))
+            phase := Llm.Error.Stream;
+            consume_events ~cancelled ~elapsed ~on_event model api_stream)
 
 let run ~env config credential ~cancelled ~on_event request =
-  Eio.Switch.run ~name:"google.request" @@ fun sw ->
-  match stream ~sw ~env config credential ~cancelled request with
-  | Error _ as error -> error
-  | Ok stream -> Llm.Stream.iter_events stream ~f:on_event
+  let phase = ref Llm.Error.Startup in
+  match
+    Eio.Time.with_timeout env#clock (Config.timeout_s config) (fun () ->
+        Ok
+          ( Eio.Switch.run ~name:"google.request" @@ fun sw ->
+            perform_request ~sw ~env config credential ~phase ~cancelled
+              ~on_event request ))
+  with
+  | Ok result -> result
+  | Error `Timeout ->
+      Error (timeout_error ~phase:!phase (Config.timeout_s config))
 
 let client ~env ?(config = Config.default) ~credential () =
   let accepts model =

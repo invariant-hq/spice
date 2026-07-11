@@ -99,6 +99,13 @@ let equal_error_kind msg kind error =
   equal string ~msg (Llm.Error.label kind)
     (Llm.Error.label (Llm.Error.kind error))
 
+let equal_error_phase msg expected error =
+  let label = function
+    | Llm.Error.Startup -> "startup"
+    | Llm.Error.Stream -> "stream"
+  in
+  equal string ~msg (label expected) (label (Llm.Error.phase error))
+
 let equal_stop msg expected response =
   match Llm.Response.stop response with
   | None -> failf "%s: expected stop" msg
@@ -358,7 +365,9 @@ let model_and_config_contracts () =
     (Openai.Config.organization config);
   equal (option string) ~msg:"project" (Some "proj")
     (Openai.Config.project config);
-  check "timeout" (Openai.Config.timeout_s config = Some 5.);
+  check "timeout" (Float.equal (Openai.Config.timeout_s config) 5.);
+  check "default timeout"
+    (Float.equal (Openai.Config.timeout_s Openai.Config.default) 600.);
   equal (option int) ~msg:"max retries" (Some 2)
     (Openai.Config.max_retries config);
   expect_invalid_arg "base_url cannot normalize empty" (fun () ->
@@ -946,6 +955,85 @@ let retry_policy () =
   equal_error_kind "400 kind" Llm.Error.Invalid_request error;
   equal int ~msg:"400 not retried" 1 (List.length requests)
 
+let deadline_config port ?(max_retries = 0) () =
+  Openai.Config.make
+    ~base_url:("http://127.0.0.1:" ^ string_of_int port)
+    ~timeout_s:0.3 ~max_retries ()
+
+let request_deadline_bounds_response_headers () =
+  let result, requests =
+    Llm_test_server.with_server ~name:"openai-stalled-headers"
+      (fun _index _request -> Llm_test_server.Hold)
+      (fun port ->
+        run_stream ~config:(deadline_config port ()) port (request ()))
+  in
+  let events, error = expect_stream_error "stalled response headers" result in
+  equal int ~msg:"no events before response headers" 0 (List.length events);
+  equal_error_kind "stalled headers kind" Llm.Error.Timeout error;
+  equal_error_phase "stalled headers phase" Llm.Error.Startup error;
+  equal int ~msg:"stalled headers request count" 1 (List.length requests)
+
+let request_deadline_bounds_partial_stream () =
+  let delta =
+    sse_event "response.output_text.delta"
+      (json_object
+         [
+           ("type", Json.string "response.output_text.delta");
+           ("delta", Json.string "first");
+         ])
+  in
+  let prefix =
+    Llm_test_server.response_head ~content_type:"text/event-stream" 200
+      ~content_length:(String.length delta + 128)
+    ^ delta
+  in
+  let result, requests =
+    Llm_test_server.with_server ~name:"openai-partial-stream"
+      (fun _index _request -> Llm_test_server.Hold_after prefix)
+      (fun port ->
+        run_stream ~config:(deadline_config port ()) port (request ()))
+  in
+  let events, error = expect_stream_error "partial stream" result in
+  equal int ~msg:"one event before partial stream timeout" 1
+    (List.length events);
+  equal_error_kind "partial stream kind" Llm.Error.Timeout error;
+  equal_error_phase "partial stream phase" Llm.Error.Stream error;
+  equal int ~msg:"partial stream request count" 1 (List.length requests)
+
+let request_deadline_includes_retry_backoff () =
+  let response =
+    http_response
+      ~headers:[ ("retry-after", "60") ]
+      500 {|{"error":{"message":"retry"}}|}
+  in
+  let result, requests =
+    Llm_test_server.with_server ~name:"openai-retry-backoff"
+      (fun _index _request -> Llm_test_server.Reply response)
+      (fun port ->
+        run_stream
+          ~config:(deadline_config port ~max_retries:1 ())
+          port (request ()))
+  in
+  let events, error = expect_stream_error "retry backoff" result in
+  equal int ~msg:"no retry backoff events" 0 (List.length events);
+  equal_error_kind "retry backoff kind" Llm.Error.Timeout error;
+  equal_error_phase "retry backoff phase" Llm.Error.Startup error;
+  equal int ~msg:"deadline prevents second attempt" 1 (List.length requests)
+
+let request_deadline_bounds_partial_error_body () =
+  let prefix = Llm_test_server.response_head 500 ~content_length:128 ^ "{" in
+  let result, requests =
+    Llm_test_server.with_server ~name:"openai-partial-error"
+      (fun _index _request -> Llm_test_server.Hold_after prefix)
+      (fun port ->
+        run_stream ~config:(deadline_config port ()) port (request ()))
+  in
+  let events, error = expect_stream_error "partial error body" result in
+  equal int ~msg:"no partial error events" 0 (List.length events);
+  equal_error_kind "partial error kind" Llm.Error.Timeout error;
+  equal_error_phase "partial error phase" Llm.Error.Startup error;
+  equal int ~msg:"partial error request count" 1 (List.length requests)
+
 let completed_stream_decodes_events_and_response () =
   let usage =
     json_object
@@ -1383,6 +1471,14 @@ let () =
       test "non-json HTTP error body is not a log payload"
         non_json_http_error_body_is_not_a_log_payload;
       test "retry policy" retry_policy;
+      test ~timeout:2.0 "request deadline bounds response headers"
+        request_deadline_bounds_response_headers;
+      test ~timeout:2.0 "request deadline bounds a partial stream"
+        request_deadline_bounds_partial_stream;
+      test ~timeout:2.0 "request deadline includes retry backoff"
+        request_deadline_includes_retry_backoff;
+      test ~timeout:2.0 "request deadline bounds a partial error body"
+        request_deadline_bounds_partial_error_body;
       test "completed stream decodes events and response"
         completed_stream_decodes_events_and_response;
       test "completed stream falls back to done items"

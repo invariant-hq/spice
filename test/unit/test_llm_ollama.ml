@@ -98,6 +98,13 @@ let equal_error_kind msg kind error =
   equal string ~msg (Llm.Error.label kind)
     (Llm.Error.label (Llm.Error.kind error))
 
+let equal_error_phase msg expected error =
+  let label = function
+    | Llm.Error.Startup -> "startup"
+    | Llm.Error.Stream -> "stream"
+  in
+  equal string ~msg (label expected) (label (Llm.Error.phase error))
+
 let rec waitpid_nointr flags pid =
   match Unix.waitpid flags pid with
   | result -> result
@@ -270,10 +277,14 @@ let request ?tools ?options ?transcript () =
     ~model:(Ollama.model "qwen2.5-coder:7b")
     ?tools ?options transcript
 
-let run_stream ?(cancelled = fun () -> false) ?credential ?on_event port request
-    =
+let run_stream ?(cancelled = fun () -> false) ?credential ?config ?on_event port
+    request =
   let config =
-    Ollama.Config.make ~base_url:("http://127.0.0.1:" ^ string_of_int port) ()
+    Option.value config
+      ~default:
+        (Ollama.Config.make
+           ~base_url:("http://127.0.0.1:" ^ string_of_int port)
+           ())
   in
   Eio_main.run @@ fun env ->
   let client = Ollama.client ~env ~config ?credential () in
@@ -295,10 +306,14 @@ let model_config_and_credentials () =
   expect_invalid_arg "model id cannot be empty" (fun () ->
       ignore (Ollama.model ""));
   let config =
-    Ollama.Config.make ~base_url:"http://ollama.example.test///" ()
+    Ollama.Config.make ~base_url:"http://ollama.example.test///" ~timeout_s:30.
+      ()
   in
   equal string ~msg:"base_url trimmed" "http://ollama.example.test"
     (Ollama.Config.base_url config);
+  check "timeout" (Float.equal (Ollama.Config.timeout_s config) 30.);
+  check "default timeout"
+    (Float.equal (Ollama.Config.timeout_s Ollama.Config.default) 1800.);
   ignore (Ollama.Config.make () : Ollama.Config.t);
   expect_invalid_arg "base_url cannot be empty" (fun () ->
       ignore (Ollama.Config.make ~base_url:"" ()));
@@ -306,6 +321,8 @@ let model_config_and_credentials () =
       ignore (Ollama.Config.make ~base_url:"///" ()));
   expect_invalid_arg "base_url cannot contain newline" (fun () ->
       ignore (Ollama.Config.make ~base_url:"http://x\nbad" ()));
+  expect_invalid_arg "timeout must be positive" (fun () ->
+      ignore (Ollama.Config.make ~timeout_s:0. ()));
   ignore (Ollama.Credential.api_key "ollama-key" : Ollama.Credential.t);
   ignore (Ollama.Credential.bearer "session-token" : Ollama.Credential.t);
   expect_invalid_arg "api key cannot be empty" (fun () ->
@@ -698,6 +715,46 @@ let startup_cancellation_does_not_touch_transport () =
   equal_error_kind "cancelled" Llm.Error.Cancelled error;
   equal int ~msg:"requests" 0 (List.length requests)
 
+let deadline_config port =
+  Ollama.Config.make
+    ~base_url:("http://127.0.0.1:" ^ string_of_int port)
+    ~timeout_s:0.3 ()
+
+let request_deadline_bounds_response_headers () =
+  let result, requests =
+    Llm_test_server.with_server ~name:"ollama-stalled-headers"
+      (fun _index _request -> Llm_test_server.Hold)
+      (fun port -> run_stream ~config:(deadline_config port) port (request ()))
+  in
+  let events, error = expect_stream_error "stalled response headers" result in
+  equal int ~msg:"no events before response headers" 0 (List.length events);
+  equal_error_kind "stalled headers kind" Llm.Error.Timeout error;
+  equal_error_phase "stalled headers phase" Llm.Error.Startup error;
+  equal int ~msg:"stalled headers request count" 1 (List.length requests)
+
+let request_deadline_bounds_partial_stream () =
+  let delta =
+    "data: "
+    ^ json_string (delta_chunk [ ("content", Json.string "first") ])
+    ^ "\n\n"
+  in
+  let prefix =
+    Llm_test_server.response_head ~content_type:"text/event-stream" 200
+      ~content_length:(String.length delta + 128)
+    ^ delta
+  in
+  let result, requests =
+    Llm_test_server.with_server ~name:"ollama-partial-stream"
+      (fun _index _request -> Llm_test_server.Hold_after prefix)
+      (fun port -> run_stream ~config:(deadline_config port) port (request ()))
+  in
+  let events, error = expect_stream_error "partial stream" result in
+  equal int ~msg:"one event before partial stream timeout" 1
+    (List.length events);
+  equal_error_kind "partial stream kind" Llm.Error.Timeout error;
+  equal_error_phase "partial stream phase" Llm.Error.Stream error;
+  equal int ~msg:"partial stream request count" 1 (List.length requests)
+
 let () =
   run "spice.llm.ollama"
     [
@@ -711,4 +768,8 @@ let () =
       test "stream failures are classified" stream_failures_are_classified;
       test "startup cancellation does not touch transport"
         startup_cancellation_does_not_touch_transport;
+      test ~timeout:2.0 "request deadline bounds response headers"
+        request_deadline_bounds_response_headers;
+      test ~timeout:2.0 "request deadline bounds a partial stream"
+        request_deadline_bounds_partial_stream;
     ]

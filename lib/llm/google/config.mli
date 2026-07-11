@@ -16,8 +16,8 @@ type t
 val default : t
 (** [default] is [make ()].
 
-    Provider defaults are applied by the raw API layer: the public Google
-    endpoint, no per-attempt timeout, and two retry attempts after the initial
+    Provider defaults are applied by the adapter: the public Google endpoint, a
+    600-second whole-request deadline, and two retry attempts after the initial
     request. *)
 
 val make : ?base_url:string -> ?timeout_s:float -> ?max_retries:int -> unit -> t
@@ -25,8 +25,8 @@ val make : ?base_url:string -> ?timeout_s:float -> ?max_retries:int -> unit -> t
 
     - [base_url] is the API root, without the endpoint path. Trailing slashes,
       when present, are removed.
-    - [timeout_s] is the per-attempt HTTP timeout in seconds when present; it is
-      not a total timeout across retries.
+    - [timeout_s] is the whole logical-request deadline, covering retries,
+      backoff, and streamed response consumption. It defaults to 600 seconds.
     - [max_retries] is the number of retry attempts after the initial request
       when present.
 
@@ -39,10 +39,8 @@ val base_url : t -> string option
 
     [None] means the Google Gemini default endpoint. *)
 
-val timeout_s : t -> float option
-(** [timeout_s t] is the per-attempt timeout in seconds, if any.
-
-    [None] means no provider-configured HTTP timeout. *)
+val timeout_s : t -> float
+(** [timeout_s t] is the whole logical-request deadline in seconds. *)
 
 val max_retries : t -> int option
 (** [max_retries t] is the retry count after the initial attempt, if any.

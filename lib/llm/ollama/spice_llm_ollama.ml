@@ -20,11 +20,12 @@ let contains_newline value =
   String.exists (function '\n' | '\r' -> true | _ -> false) value
 
 module Config = struct
-  type t = { base_url : string }
+  type t = { base_url : string; timeout_s : float }
 
   let default_base_url = "http://127.0.0.1:11434"
+  let default_timeout_s = 1800.
 
-  let make ?(base_url = default_base_url) () =
+  let make ?(base_url = default_base_url) ?(timeout_s = default_timeout_s) () =
     if String.is_empty base_url then
       invalid "Config.make" "base_url must not be empty";
     if contains_newline base_url then
@@ -32,10 +33,13 @@ module Config = struct
     let base_url = String.drop_last_while (Char.equal '/') base_url in
     if String.is_empty base_url then
       invalid "Config.make" "base_url must not be only slashes";
-    { base_url }
+    if (not (Float.is_finite timeout_s)) || timeout_s <= 0. then
+      invalid "Config.make" "timeout_s must be positive and finite";
+    { base_url; timeout_s }
 
   let default = make ()
   let base_url t = t.base_url
+  let timeout_s t = t.timeout_s
 end
 
 module Credential = struct
@@ -68,6 +72,10 @@ let stream_error kind message = llm_error ~phase:Llm.Error.Stream kind message
 
 let cancelled_error ?(phase = Llm.Error.Startup) () =
   llm_error ~phase Llm.Error.Cancelled "Ollama request cancelled"
+
+let timeout_error ~phase seconds =
+  llm_error ~phase Llm.Error.Timeout
+    (Printf.sprintf "Ollama request timed out after %gs" seconds)
 
 (* Request encoding: provider-neutral messages to chat-completions JSON. *)
 
@@ -339,7 +347,7 @@ type partial = {
   input : Buffer.t;
 }
 
-let stream_events ~cancelled requested_model api_stream =
+let consume_events ~cancelled ~on_event requested_model api_stream =
   let partials : (int, partial) Hashtbl.t = Hashtbl.create 4 in
   let call_order = ref [] in
   let content = Buffer.create 256 in
@@ -553,7 +561,19 @@ let stream_events ~cancelled requested_model api_stream =
                     "Ollama stream ended without completion"))
           end
   in
-  Llm.Stream.make ~close:(fun () -> Api.Chat.close api_stream) next
+  let rec consume () =
+    match next () with
+    | Some (Llm.Stream.Event event) ->
+        on_event event;
+        consume ()
+    | Some (Llm.Stream.Finished response) -> Ok response
+    | Some (Llm.Stream.Failed error) -> Error error
+    | None ->
+        Error
+          (stream_error Llm.Error.Malformed_stream
+             "Ollama stream ended without a terminal result")
+  in
+  Fun.protect ~finally:(fun () -> Api.Chat.close api_stream) consume
 
 let client ~env ?(config = Config.default) ?credential () =
   let accepts model =
@@ -564,18 +584,27 @@ let client ~env ?(config = Config.default) ?credential () =
   let run ~cancelled ~on_event request =
     if cancelled () then Error (cancelled_error ())
     else
-      Eio.Switch.run ~name:"ollama.request" @@ fun sw ->
-      let api_client =
-        Api.Client.make ~headers ~base_url:(Config.base_url config) ~sw ~env ()
-      in
-      let model = Llm.Request.model request in
-      let* api_request = encode_request request in
-      Log.info (fun m -> m "request started model=%s" (Llm.Model.id model));
-      match Api.Chat.create_stream api_client api_request with
-      | Error error -> Error (api_error error)
-      | Ok api_stream ->
-          Llm.Stream.iter_events
-            (stream_events ~cancelled model api_stream)
-            ~f:on_event
+      let phase = ref Llm.Error.Startup in
+      match
+        Eio.Time.with_timeout env#clock (Config.timeout_s config) (fun () ->
+            Ok
+              ( Eio.Switch.run ~name:"ollama.request" @@ fun sw ->
+                let api_client =
+                  Api.Client.make ~headers ~base_url:(Config.base_url config)
+                    ~sw ~env ()
+                in
+                let model = Llm.Request.model request in
+                let* api_request = encode_request request in
+                Log.info (fun m ->
+                    m "request started model=%s" (Llm.Model.id model));
+                match Api.Chat.create_stream api_client api_request with
+                | Error error -> Error (api_error error)
+                | Ok api_stream ->
+                    phase := Llm.Error.Stream;
+                    consume_events ~cancelled ~on_event model api_stream ))
+      with
+      | Ok result -> result
+      | Error `Timeout ->
+          Error (timeout_error ~phase:!phase (Config.timeout_s config))
   in
   Llm.Client.make ~provider ~accepts ~run ()

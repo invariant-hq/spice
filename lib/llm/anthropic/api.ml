@@ -99,7 +99,6 @@ type http_request = {
   url : string;
   headers : (string * string) list;
   body : string;
-  timeout_s : float option;
 }
 
 let make_request t ~path ~body attempt =
@@ -107,13 +106,7 @@ let make_request t ~path ~body attempt =
   let base_url =
     Option.value (Config.base_url config) ~default:default_base_url
   in
-  {
-    meth = "POST";
-    url = base_url ^ path;
-    headers = headers t attempt;
-    body;
-    timeout_s = Config.timeout_s config;
-  }
+  { meth = "POST"; url = base_url ^ path; headers = headers t attempt; body }
 
 let call_cohttp_stream ~sw client request =
   let response, body =
@@ -148,14 +141,9 @@ let cohttp_stream t request =
     let http_client =
       Cohttp_eio.Client.make ~https:(Some (https ~authenticator)) env#net
     in
-    match request.timeout_s with
-    | None -> call_cohttp_stream ~sw http_client request
-    | Some seconds ->
-        Eio.Time.with_timeout_exn env#clock seconds (fun () ->
-            call_cohttp_stream ~sw http_client request)
+    call_cohttp_stream ~sw http_client request
   with
-  | Eio.Time.Timeout ->
-      Error (Error.Transport "Anthropic HTTP transport timed out")
+  | Eio.Cancel.Cancelled _ as exn -> raise exn
   | exn -> Error (Error.Transport (Printexc.to_string exn))
 
 let stream_post t ~path ~body =
@@ -368,7 +356,11 @@ module Messages = struct
     {
       next =
         (fun () ->
-          if !closed then None else next_sse_event (fun () -> read_line reader));
+          if !closed then None
+          else
+            try next_sse_event (fun () -> read_line reader) with
+            | Eio.Cancel.Cancelled _ as exn -> raise exn
+            | exn -> Some (Error (Error.Transport (Printexc.to_string exn))));
       close = (fun () -> closed := true);
     }
 

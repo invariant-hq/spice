@@ -5,7 +5,7 @@
 
 type t = {
   base_url : string option;
-  timeout_s : float option;
+  timeout_s : float;
   max_retries : int option;
 }
 
@@ -29,17 +29,17 @@ let normalize_base_url = function
       if String.is_empty value then invalid "base_url must not be only slashes";
       Some value
 
-let check_timeout_s = function
-  | None -> ()
-  | Some value ->
-      if (not (Float.is_finite value)) || value <= 0. then
-        invalid "timeout_s must be positive and finite"
+let default_timeout_s = 600.
+
+let check_timeout_s value =
+  if (not (Float.is_finite value)) || value <= 0. then
+    invalid "timeout_s must be positive and finite"
 
 let check_max_retries = function
   | None -> ()
   | Some value -> if value < 0 then invalid "max_retries must be non-negative"
 
-let make ?base_url ?timeout_s ?max_retries () =
+let make ?base_url ?(timeout_s = default_timeout_s) ?max_retries () =
   check_base_url base_url;
   check_timeout_s timeout_s;
   check_max_retries max_retries;

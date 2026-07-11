@@ -3,6 +3,11 @@
  (modules test_support)
  (libraries windtrap jsont))
 
+(library
+ (name llm_test_server)
+ (modules llm_test_server)
+ (libraries windtrap unix))
+
 (test
  (name test_path)
  (modules test_path)
@@ -156,6 +161,7 @@
  (libraries
   windtrap
   test_support
+  llm_test_server
   cohttp-eio
   jsont
   jsont.bytesrw
@@ -372,6 +378,7 @@
  (libraries
   windtrap
   test_support
+  llm_test_server
   jsont
   jsont.bytesrw
   spice_llm
@@ -387,6 +394,7 @@
  (libraries
   windtrap
   test_support
+  llm_test_server
   jsont
   jsont.bytesrw
   spice_llm
@@ -402,6 +410,7 @@
  (libraries
   windtrap
   test_support
+  llm_test_server
   jsont
   jsont.bytesrw
   spice_llm
@@ -417,6 +426,7 @@
  (libraries
   windtrap
   test_support
+  llm_test_server
   jsont
   jsont.bytesrw
   spice_llm

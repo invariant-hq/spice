@@ -115,9 +115,10 @@ module Messages : sig
   (** [next stream] is the next raw SSE event from [stream].
 
       It is [Some (Ok event)] for a decoded event, [Some (Error e)] for a
-      decoding failure, and [None] after EOF or after {!close}. A premature
-      [None] is not classified here; the Spice adapter decides whether EOF is a
-      malformed model stream for its higher-level contract. *)
+      decoding or transport failure, and [None] after EOF or after {!close}.
+      Cancellation propagates to the caller. A premature [None] is not
+      classified here; the Spice adapter decides whether EOF is a malformed
+      model stream for its higher-level contract. *)
 
   val close : stream -> unit
   (** [close stream] closes [stream] locally.
@@ -131,13 +132,12 @@ module Messages : sig
   (** [create_stream client request] sends [request] to Anthropic [/messages]
       and returns a raw event stream.
 
-      The call uses the client's base URL, timeout, and retry policy. Retryable
-      statuses are [408], [409], [429], and [5xx]; transport failures are also
-      retryable. [retry-after-ms] and [retry-after] response headers are honored
-      when present.
+      The call uses the client's base URL and retry policy. Retryable statuses
+      are [408], [409], [429], and [5xx]; transport failures are also retryable.
+      [retry-after-ms] and [retry-after] response headers are honored when
+      present.
 
       Returns [Error (Response r)] for the final non-2xx HTTP response,
-      [Error (Transport message)] for exhausted transport failures and timeouts,
-      and [Error (Decode message)] if the request body cannot be JSON-encoded.
-  *)
+      [Error (Transport message)] for exhausted transport failures, and
+      [Error (Decode message)] if the request body cannot be JSON-encoded. *)
 end

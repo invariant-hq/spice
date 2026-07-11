@@ -391,6 +391,39 @@ let managed_server_round_trip () =
   equal string ~msg:"second round trip works" "Hello"
     (Llm.Response.text response2)
 
+let health_timeout_releases_the_connection () =
+  with_temp_dir @@ fun dir ->
+  let gguf = Filename.concat dir "partial-health.gguf" in
+  Out_channel.with_open_bin gguf (fun output ->
+      Out_channel.output_string output "g");
+  let sse_path = Filename.concat dir "partial-health.sse" in
+  Out_channel.with_open_bin sse_path (fun output ->
+      Out_channel.output_string output scenario);
+  let health_dump = Filename.concat dir "health-requests" in
+  Unix.putenv "SPICE_FAKE_LLAMA_SSE" sse_path;
+  Unix.putenv "SPICE_FAKE_LLAMA_DUMP" "";
+  Unix.putenv "SPICE_FAKE_LLAMA_PARTIAL_HEALTH_COUNT" "1";
+  Unix.putenv "SPICE_FAKE_LLAMA_HEALTH_DUMP" health_dump;
+  Fun.protect
+    ~finally:(fun () ->
+      Unix.putenv "SPICE_FAKE_LLAMA_PARTIAL_HEALTH_COUNT" "";
+      Unix.putenv "SPICE_FAKE_LLAMA_HEALTH_DUMP" "")
+    (fun () ->
+      let config =
+        Local.Config.make ~model_dir:dir ~server_binary:(fake_server_binary ())
+          ~ctx_size:4096 ~startup_timeout_s:10. ()
+      in
+      ignore
+        (expect_stream_ok "partial health recovers"
+           (run_stream ~config (request ~model_id:gguf))));
+  let requests =
+    In_channel.with_open_bin health_dump In_channel.input_all
+    |> String.split_on_char '\n'
+    |> List.filter (fun line -> not (String.is_empty line))
+  in
+  equal (list string) ~msg:"health retried after closing the stalled response"
+    [ "1"; "2" ] requests
+
 (* Synthetic GGUF weights whose header parses: residency accounting needs a
    known memory estimate per model file. Tiny geometry keeps the estimated
    need near the fixed engine overhead (~1.7 GiB). *)
@@ -508,6 +541,8 @@ let () =
       test "artifact status" artifact_status;
       test "artifact prepare cancellation" artifact_prepare_cancellation;
       test "managed server round trip" managed_server_round_trip;
+      test ~timeout:6. "health timeout releases the stalled connection"
+        health_timeout_releases_the_connection;
       test "co-resident servers within budget" co_resident_servers;
       test "eviction under a tight budget" eviction_under_budget;
       test "missing binary is reported" missing_binary_is_reported;

@@ -58,10 +58,9 @@ let stream_error kind message = llm_error ~phase:Llm.Error.Stream kind message
 let cancelled_error ?(phase = Llm.Error.Startup) () =
   llm_error ~phase Llm.Error.Cancelled "OpenAI request cancelled"
 
-let transport_kind message =
-  if String.includes ~affix:"timed out" (String.lowercase_ascii message) then
-    Llm.Error.Timeout
-  else Llm.Error.Transport
+let timeout_error ~phase seconds =
+  llm_error ~phase Llm.Error.Timeout
+    (Printf.sprintf "OpenAI request timed out after %gs" seconds)
 
 let json_string json =
   match Jsont_bytesrw.encode_string Jsont.json json with
@@ -641,8 +640,7 @@ let redacted_body body =
       ^ " bytes>")
 
 let api_error ?(phase = Llm.Error.Startup) = function
-  | Api.Error.Transport message ->
-      llm_error ~phase (transport_kind message) message
+  | Api.Error.Transport message -> llm_error ~phase Llm.Error.Transport message
   | Api.Error.Decode message -> llm_error ~phase Llm.Error.Decode message
   | Api.Error.Response response ->
       let fallback = error_kind_of_status response.Api.Error.status in
@@ -699,7 +697,7 @@ let tool_call_of_partial partial =
   | None, _ -> decode_error "OpenAI streamed function_call is missing call_id"
   | _, None -> decode_error "OpenAI streamed function_call is missing name"
 
-let stream_events ~cancelled ~elapsed requested_model api_stream =
+let consume_events ~cancelled ~elapsed ~on_event requested_model api_stream =
   let partials = Hashtbl.create 8 in
   let pending = Queue.create () in
   let reasoning_summary = Buffer.create 128 in
@@ -879,9 +877,22 @@ let stream_events ~cancelled ~elapsed requested_model api_stream =
                (stream_error Llm.Error.Malformed_stream
                   "OpenAI stream ended without response.completed"))
   in
-  Llm.Stream.make ~close:(fun () -> Api.Responses.close api_stream) next
+  let rec consume () =
+    match next () with
+    | Some (Llm.Stream.Event event) ->
+        on_event event;
+        consume ()
+    | Some (Llm.Stream.Finished response) -> Ok response
+    | Some (Llm.Stream.Failed error) -> Error error
+    | None ->
+        Error
+          (stream_error Llm.Error.Malformed_stream
+             "OpenAI stream ended without a terminal result")
+  in
+  Fun.protect ~finally:(fun () -> Api.Responses.close api_stream) consume
 
-let stream ~sw ~env config credential ~cancelled request =
+let perform_request ~sw ~env config credential ~phase ~cancelled ~on_event
+    request =
   if cancelled () then Error (cancelled_error ())
   else
     let model = Llm.Request.model request in
@@ -900,13 +911,21 @@ let stream ~sw ~env config credential ~cancelled request =
         match Api.Responses.create_stream api_client api_request with
         | Error error -> Error (api_error error)
         | Ok api_stream ->
-            Ok (stream_events ~cancelled ~elapsed model api_stream))
+            phase := Llm.Error.Stream;
+            consume_events ~cancelled ~elapsed ~on_event model api_stream)
 
 let run ~env config credential ~cancelled ~on_event request =
-  Eio.Switch.run ~name:"openai.request" @@ fun sw ->
-  match stream ~sw ~env config credential ~cancelled request with
-  | Error _ as error -> error
-  | Ok stream -> Llm.Stream.iter_events stream ~f:on_event
+  let phase = ref Llm.Error.Startup in
+  match
+    Eio.Time.with_timeout env#clock (Config.timeout_s config) (fun () ->
+        Ok
+          ( Eio.Switch.run ~name:"openai.request" @@ fun sw ->
+            perform_request ~sw ~env config credential ~phase ~cancelled
+              ~on_event request ))
+  with
+  | Ok result -> result
+  | Error `Timeout ->
+      Error (timeout_error ~phase:!phase (Config.timeout_s config))
 
 let client ~env ?(config = Config.default) ~credential () =
   let accepts model =

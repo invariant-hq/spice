@@ -36,16 +36,23 @@ module Config : sig
       [http://127.0.0.1:11434]; the OpenAI-compatible endpoint lives under its
       [/v1] path and the native discovery API under [/api]. *)
 
-  val make : ?base_url:string -> unit -> t
+  val make : ?base_url:string -> ?timeout_s:float -> unit -> t
   (** [make ()] is a checked connection configuration.
 
-      Raises [Invalid_argument] if [base_url] is empty or contains a newline. *)
+      [timeout_s] is the whole logical-request deadline, covering connection
+      setup and streamed response consumption. It defaults to 1800 seconds.
+
+      Raises [Invalid_argument] if [base_url] is empty or contains a newline, or
+      [timeout_s] is not positive and finite. *)
 
   val default : t
   (** [default] is [make ()]. *)
 
   val base_url : t -> string
   (** [base_url t] is [t]'s normalized daemon root URL. *)
+
+  val timeout_s : t -> float
+  (** [timeout_s t] is the whole logical-request deadline in seconds. *)
 end
 
 module Credential : sig

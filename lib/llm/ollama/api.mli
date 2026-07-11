@@ -80,13 +80,14 @@ module Chat : sig
 
   val next : stream -> (event, Error.t) result option
   (** [next stream] is the next event, or [None] after the underlying response
-      body ends. *)
+      body ends. Transport failures are returned as [Error]; cancellation
+      propagates to the caller. *)
 
   val close : stream -> unit
   (** [close stream] abandons the stream. *)
 
   val create_stream : Client.t -> request -> (stream, Error.t) result
   (** [create_stream client request] posts [request] with [stream: true] and
-      returns the event stream. No timeout applies: local generation is
-      legitimately slow. *)
+      returns the event stream. The provider adapter owns the whole-request
+      deadline. *)
 end

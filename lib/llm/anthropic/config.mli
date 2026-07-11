@@ -8,8 +8,8 @@
     Configuration values are inert. They do not read process environment
     variables, open network resources, or validate credentials. The provider
     adapter consumes them when constructing an {!Api.Client.t}; absent fields
-    select the adapter defaults for Anthropic's public API endpoint, per-attempt
-    timeout, and retry policy. *)
+    select the adapter defaults for Anthropic's public API endpoint,
+    whole-request deadline, and retry policy. *)
 
 (** {1:types Types} *)
 
@@ -26,7 +26,8 @@ val make : ?base_url:string -> ?timeout_s:float -> ?max_retries:int -> unit -> t
 
     - [base_url] is the API root, without the endpoint path. Trailing slashes
       are ignored. The value is otherwise used as supplied.
-    - [timeout_s] is the per-attempt HTTP timeout in seconds when present.
+    - [timeout_s] is the whole logical-request deadline, covering retries,
+      backoff, and streamed response consumption. It defaults to 600 seconds.
     - [max_retries] is the number of retry attempts after the initial request
       when present.
 
@@ -39,8 +40,8 @@ val make : ?base_url:string -> ?timeout_s:float -> ?max_retries:int -> unit -> t
 val base_url : t -> string option
 (** [base_url t] is the configured API root, if any. *)
 
-val timeout_s : t -> float option
-(** [timeout_s t] is the per-attempt timeout in seconds, if any. *)
+val timeout_s : t -> float
+(** [timeout_s t] is the whole logical-request deadline in seconds. *)
 
 val max_retries : t -> int option
 (** [max_retries t] is the retry count after the initial attempt, if any. *)

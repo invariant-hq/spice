@@ -72,7 +72,8 @@ module Chat : sig
 
   val next : stream -> (event, Error.t) result option
   (** [next stream] is the next event, or [None] after the underlying response
-      body ends. *)
+      body ends. Transport failures are returned as [Error]; cancellation
+      propagates to the caller. *)
 
   val close : stream -> unit
   (** [close stream] abandons the stream. *)

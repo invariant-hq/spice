@@ -75,19 +75,25 @@ let call ?body t meth path headers =
              body = read_body response_body;
            })
     else Ok response_body
-  with exn -> Error (Error.Transport (Printexc.to_string exn))
+  with
+  | Eio.Cancel.Cancelled _ as exn -> raise exn
+  | exn -> Error (Error.Transport (Printexc.to_string exn))
 
 let health ?(timeout_s = 2.0) t =
   let clock = Eio.Stdenv.clock t.Client.env in
   match
     Eio.Time.with_timeout clock timeout_s (fun () ->
-        Ok (call t `GET "/health" []))
+        Ok
+          ( Eio.Switch.run ~name:"ollama.health" @@ fun sw ->
+            let t = { t with Client.sw } in
+            match call t `GET "/health" [] with
+            | Error _ as error -> error
+            | Ok body ->
+                ignore (read_body body);
+                Ok () ))
   with
   | Error `Timeout -> Error (Error.Transport "health check timed out")
-  | Ok (Error _ as error) -> error
-  | Ok (Ok body) ->
-      ignore (read_body body);
-      Ok ()
+  | Ok result -> result
 
 (* Buffered line reading over an Eio flow, tolerant of CRLF. *)
 type line_reader = {
@@ -245,7 +251,11 @@ module Chat = struct
     {
       next =
         (fun () ->
-          if !closed then None else next_sse_event (fun () -> read_line reader));
+          if !closed then None
+          else
+            try next_sse_event (fun () -> read_line reader) with
+            | Eio.Cancel.Cancelled _ as exn -> raise exn
+            | exn -> Some (Error (Error.Transport (Printexc.to_string exn))));
       close = (fun () -> closed := true);
     }
 

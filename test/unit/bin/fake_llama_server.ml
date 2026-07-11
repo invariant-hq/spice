@@ -63,6 +63,29 @@ let respond fd ?(content_type = "application/json") status body =
   let bytes = Bytes.of_string text in
   ignore (Unix.write fd bytes 0 (Bytes.length bytes))
 
+let partial_health fd =
+  let text =
+    "HTTP/1.1 200 OK\r\n\
+     Content-Type: application/json\r\n\
+     Content-Length: 128\r\n\
+     Connection: close\r\n\
+     \r\n\
+     {"
+  in
+  let bytes = Bytes.of_string text in
+  ignore (Unix.write fd bytes 0 (Bytes.length bytes));
+  let byte = Bytes.create 1 in
+  let rec wait_for_close () =
+    match Unix.read fd byte 0 1 with 0 -> () | _ -> wait_for_close ()
+  in
+  wait_for_close ()
+
+let append_line path line =
+  let output = open_out_gen [ Open_creat; Open_append; Open_text ] 0o600 path in
+  output_string output line;
+  output_char output '\n';
+  close_out_noerr output
+
 let file_contents path =
   let ic = open_in_bin path in
   Fun.protect
@@ -75,6 +98,12 @@ let () =
   Unix.setsockopt socket Unix.SO_REUSEADDR true;
   Unix.bind socket (Unix.ADDR_INET (Unix.inet_addr_loopback, port));
   Unix.listen socket 8;
+  let health_requests = ref 0 in
+  let partial_health_count =
+    match Sys.getenv_opt "SPICE_FAKE_LLAMA_PARTIAL_HEALTH_COUNT" with
+    | None -> 0
+    | Some value -> Option.value (int_of_string_opt value) ~default:0
+  in
   while true do
     let client, _ = Unix.accept socket in
     Fun.protect
@@ -84,8 +113,17 @@ let () =
         match read_request ic with
         | exception End_of_file -> ()
         | request_line, body ->
-            if String.starts_with ~prefix:"GET /health" request_line then
-              respond client 200 {|{"status":"ok"}|}
+            if String.starts_with ~prefix:"GET /health" request_line then begin
+              incr health_requests;
+              Option.iter
+                (fun path ->
+                  if not (String.is_empty path) then
+                    append_line path (string_of_int !health_requests))
+                (Sys.getenv_opt "SPICE_FAKE_LLAMA_HEALTH_DUMP");
+              if !health_requests <= partial_health_count then
+                partial_health client
+              else respond client 200 {|{"status":"ok"}|}
+            end
             else if
               String.starts_with ~prefix:"POST /v1/chat/completions"
                 request_line

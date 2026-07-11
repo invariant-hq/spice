@@ -105,9 +105,10 @@ module Generate_content : sig
   (** [next stream] is the next raw SSE event from [stream].
 
       It is [Some (Ok event)] for a decoded event, [Some (Error e)] for a
-      decoding failure, and [None] after EOF or after {!close}. EOF is not
-      classified here; the Spice adapter converts EOF into the terminal semantic
-      response for its higher-level contract. *)
+      decoding or transport failure, and [None] after EOF or after {!close}.
+      Cancellation propagates to the caller. EOF is not classified here; the
+      Spice adapter converts EOF into the terminal semantic response for its
+      higher-level contract. *)
 
   val close : stream -> unit
   (** [close stream] closes [stream] locally.
@@ -120,7 +121,7 @@ module Generate_content : sig
       returns a raw event stream.
 
       Returns [Error (Response r)] for non-2xx HTTP responses,
-      [Error (Transport message)] for transport failures and timeouts, and
+      [Error (Transport message)] for transport failures, and
       [Error (Decode message)] if the request body cannot be JSON-encoded.
       Retryable transport failures and HTTP statuses [408], [409], [429], and
       [5xx] are retried according to {!Config.max_retries}; [retry-after-ms] and
