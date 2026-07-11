@@ -469,11 +469,11 @@ shell workflows without prompt flooding while keeping `Direct` commands
 reviewable. Read-only, danger-full-access, external-sandbox, and unavailable
 backends contribute no workspace-write command credit.
 
-The existing order remains authoritative: explicit durable rules precede the
-preset and sandbox-backed rules, exact session grants apply only after those
-rules, and Plan mode's command denial is never relaxed. Shell escalation stays
-a separate custom access and therefore remains reviewable even when the
-ordinary command fact is sandboxed.
+The existing order remains authoritative: installed session rules keep their
+highest precedence, explicit durable rules precede the preset and
+sandbox-backed rules, and Plan contributes no sandbox-backed allowance after
+its command denial. Shell escalation stays a separate custom access and
+therefore remains reviewable even when the ordinary command fact is sandboxed.
 
 ### Confine every command-bearing standard tool
 
