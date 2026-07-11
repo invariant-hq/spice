@@ -200,3 +200,37 @@ Unsupported store versions fail closed and leave the original bytes intact.
   openai/gpt-5.4
   $ cat "$XDG_CONFIG_HOME/spice/trust.json"
   {"version":1,"workspaces":{}}
+
+Same-process fibers share the store mutex rather than relying on POSIX's
+process-scoped record lock. A waiter cancelled behind another process's lock
+propagates cancellation and writes no decision. Non-regular authority stores
+fail closed without following a symlink or changing its target.
+
+  $ export XDG_CONFIG_HOME="$PWD/fiber-config"
+  $ mkdir -p fiber-a/.git fiber-b/.git fiber-c/.git
+  $ trust_probe=$(find_up bin/spice_trust_probe.exe)
+  $ "$trust_probe" concurrent "$PWD/fiber-a" "$PWD/fiber-b"
+  first=trusted second=untrusted
+  $ sed "s#$PWD#<root>#g" "$XDG_CONFIG_HOME/spice/trust.json"
+  {"version":2,"workspaces":{"<root>/fiber-a":"trusted","<root>/fiber-b":"untrusted"}}
+  $ lock_path="$XDG_CONFIG_HOME/spice/trust.json.lock"
+  $ "$trust_probe" hold "$lock_path" lock-ready & lock_pid=$!
+  $ wait_for_file lock-ready
+  $ "$trust_probe" cancel "$PWD/fiber-c"
+  cancelled
+  $ kill "$lock_pid" 2>/dev/null || true
+  $ wait "$lock_pid" 2>/dev/null || true
+  $ if grep -q 'fiber-c' "$XDG_CONFIG_HOME/spice/trust.json"; then echo mutated; else echo unchanged; fi
+  unchanged
+  $ mv "$XDG_CONFIG_HOME/spice/trust.json" "$XDG_CONFIG_HOME/spice/saved-trust.json"
+  $ mkdir "$XDG_CONFIG_HOME/spice/trust.json"
+  $ spice trust fiber-c
+  spice: could not read workspace trust store $TESTCASE_ROOT/workspace/fiber-config/spice/trust.json: path is not a regular file
+  [1]
+  $ rmdir "$XDG_CONFIG_HOME/spice/trust.json"
+  $ ln -s saved-trust.json "$XDG_CONFIG_HOME/spice/trust.json"
+  $ spice trust fiber-c
+  spice: could not read workspace trust store $TESTCASE_ROOT/workspace/fiber-config/spice/trust.json: path is not a regular file
+  [1]
+  $ sed "s#$PWD#<root>#g" "$XDG_CONFIG_HOME/spice/saved-trust.json"
+  {"version":2,"workspaces":{"<root>/fiber-a":"trusted","<root>/fiber-b":"untrusted"}}

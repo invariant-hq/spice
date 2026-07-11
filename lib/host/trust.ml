@@ -133,7 +133,7 @@ let store_of_json path json =
       store_error Error.Decode path "top-level value must be an object"
 
 let load_store stdenv path =
-  match Eio.Path.kind ~follow:true (fs_path stdenv path) with
+  match Eio.Path.kind ~follow:false (fs_path stdenv path) with
   | `Not_found -> Ok String_map.empty
   | `Regular_file -> (
       match Eio.Path.load (fs_path stdenv path) with

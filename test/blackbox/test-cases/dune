@@ -4,7 +4,8 @@
  (deps
   %{bin:spice}
   ../bin/spice_fake_provider_server.exe
-  ../bin/spice_fake_chat_server.exe)
+  ../bin/spice_fake_chat_server.exe
+  ../bin/spice_trust_probe.exe)
  (setup_scripts ../setup-script.sh)
  (conflict_markers error)
  (timeout 30))

@@ -7,3 +7,8 @@
  (name spice_fake_chat_server)
  (modules spice_fake_chat_server)
  (libraries unix))
+
+(executable
+ (name spice_trust_probe)
+ (modules spice_trust_probe)
+ (libraries eio eio_main spice_host spice_path unix))
