@@ -425,25 +425,24 @@ let request_source_file ~fs ~workspace input =
             | Ok contents -> Ok (path, contents)
             | Error _ as error -> error))
 
-let merlin_exec_access ~program ~workspace =
+let merlin_exec_access ~execution ~program ~workspace =
   let cwd =
     Permission.Access.Path_scope.workspace (Workspace.root_path workspace)
   in
   match program with
   | [] -> invalid_arg "program prefix must not be empty"
   | argv_program :: args ->
-      Permission.Access.argv ~cwd
-        ~execution:Permission.Access.Command.Sandboxed ~program:argv_program
-        args
+      Permission.Access.argv ~cwd ~execution ~program:argv_program args
 
-let permission_for_input ?(program = default_program) ~workspace input =
+let permissions ?(program = default_program) ~sandbox ~workspace input =
+  let execution = Process.command_execution sandbox in
   match Workspace.resolve_string workspace (Input.path input) with
   | Error _ ->
       [
         Permission.Request.of_accesses ~source:name
           [
             Permission.Access.unknown_path ~op:`Read (Input.path input);
-            merlin_exec_access ~program ~workspace;
+            merlin_exec_access ~execution ~program ~workspace;
           ];
       ]
   | Ok path ->
@@ -451,12 +450,9 @@ let permission_for_input ?(program = default_program) ~workspace input =
         Permission.Request.of_accesses ~source:name
           [
             Permission.Access.path ~op:`Read path;
-            merlin_exec_access ~program ~workspace;
+            merlin_exec_access ~execution ~program ~workspace;
           ];
       ]
-
-let permissions ?program ~workspace input =
-  permission_for_input ?program ~workspace input
 
 let output_of_response ~workspace ~cwd ~source_path input = function
   | Found found ->
@@ -520,6 +516,6 @@ let run ~sandbox ?(program = default_program) ~fs ~workspace ctx input =
 
 let tool ~sandbox ?program ~fs ~workspace () =
   Tool.make ~name ~description ~input:Input.contract ~output:Output.encode
-    ~permissions:(permissions ?program ~workspace)
+    ~permissions:(permissions ?program ~sandbox ~workspace)
     ~run:(run ~sandbox ?program ~fs ~workspace)
     ()

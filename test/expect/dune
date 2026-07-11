@@ -201,6 +201,8 @@
   jsont
   spice_ocaml
   spice_ocaml_dune
+  spice_digest
+  spice_permission
   spice_sandbox
   spice_tools
   spice_path
@@ -236,6 +238,8 @@
   eio_main
   unix
   jsont
+  spice_digest
+  spice_permission
   spice_sandbox
   spice_tools
   spice_path
@@ -309,6 +313,7 @@
   eio_main
   unix
   jsont
+  spice_digest
   spice_sandbox
   spice_tools
   spice_path

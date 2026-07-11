@@ -138,11 +138,13 @@ val permissions :
   ?program:string list ->
   ?ocamlfind_program:string ->
   ?opam_switch_prefix:string ->
+  sandbox:Spice_sandbox.t ->
   workspace:Spice_workspace.t ->
   Input.t ->
   Spice_permission.Request.t list
-(** [permissions ~workspace input] is the set of read and execution permissions
-    the request needs.
+(** [permissions ~sandbox ~workspace input] is the set of read and execution
+    permissions the request needs. Command identity is derived from [sandbox]'s
+    sealed evidence.
 
     For a path-form query it is the workspace file read plus a Merlin execution
     request. For a name-form query on a dune-package project it requests

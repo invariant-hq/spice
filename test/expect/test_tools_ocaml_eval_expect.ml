@@ -11,6 +11,22 @@ module Workspace = Spice_workspace
 
 let sandbox = Spice_sandbox.seal Spice_sandbox.Spec.Unconfined
 
+let fake_backend =
+  Spice_sandbox.Backend.make ~id:"fake"
+    ~available:(fun () -> Ok ())
+    ~prepare:(fun _policy ->
+      Ok
+        (Spice_sandbox.Backend.prepared ~prefix:[]
+           ~profile:(Spice_digest.string "canonical")))
+    ()
+
+let enforced_sandbox =
+  Spice_sandbox.seal ~backend:fake_backend
+    (Spice_sandbox.Spec.Confined Spice_sandbox.Confinement.read_only)
+
+let external_sandbox =
+  Spice_sandbox.seal Spice_sandbox.Spec.Declared_external
+
 let json_obj fields =
   Json.object'
     (List.map (fun (name, value) -> Json.mem (Json.name name) value) fields)
@@ -85,6 +101,25 @@ let decode_call tool input =
   | Ok call -> call
   | Error error -> failf "decode failed: %a" Tool.Error.pp error
 
+let execution_name = function
+  | Spice_permission.Access.Command.Direct -> "direct"
+  | Spice_permission.Access.Command.Sandboxed -> "sandboxed"
+
+let print_command_routes label call =
+  let routes =
+    Tool.Call.permissions call
+    |> List.concat_map Spice_permission.Request.accesses
+    |> List.filter_map (function
+         | Spice_permission.Access.Command command ->
+             Some
+               (execution_name
+                  (Spice_permission.Access.Command.execution command))
+         | Spice_permission.Access.Path _ | Spice_permission.Access.Network _
+         | Spice_permission.Access.Custom _ ->
+             None)
+  in
+  Printf.printf "%s: %s\n" label (String.concat "," routes)
+
 let print_status result =
   match Tool.Result.status result with
   | Tool.Result.Completed -> print_endline "status: completed"
@@ -144,6 +179,23 @@ let%expect_test "ocaml_eval evaluates code in a Dune library context" =
     dir: lib
     stdout has answer: true
     truncated: false |}]
+
+let%expect_test "eval command facts match sealed sandbox evidence" =
+  with_project @@ fun ~root:_ ~fs ~workspace ->
+  let config = Eval.Config.make () in
+  let input = json_obj [ ("code", Json.string "1 + 1") ] in
+  let call sandbox =
+    Eval.tool ~sandbox ~fs ~workspace ~config () |> fun tool ->
+    decode_call tool input
+  in
+  print_command_routes "unconfined" (call sandbox);
+  print_command_routes "external" (call external_sandbox);
+  print_command_routes "enforced" (call enforced_sandbox);
+  [%expect
+    {|
+    unconfined: direct,direct
+    external: direct,direct
+    enforced: sandboxed,sandboxed |}]
 
 let%expect_test "ocaml_eval rejects unknown input fields" =
   with_project @@ fun ~root:_ ~fs ~workspace ->

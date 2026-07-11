@@ -36,6 +36,15 @@ type shell_result = {
   shell_duration_ms : int;
 }
 
+let command_execution sandbox =
+  match Spice_sandbox.evidence sandbox with
+  | Spice_sandbox.Evidence.Enforced _ ->
+      Spice_permission.Access.Command.Sandboxed
+  | Spice_sandbox.Evidence.Not_requested
+  | Spice_sandbox.Evidence.Declared_external
+  | Spice_sandbox.Evidence.Refused _ ->
+      Spice_permission.Access.Command.Direct
+
 let split_env binding =
   match String.index_opt binding '=' with
   | None -> (binding, "")

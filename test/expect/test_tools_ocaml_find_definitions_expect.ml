@@ -11,6 +11,22 @@ module Workspace = Spice_workspace
 
 let sandbox = Spice_sandbox.seal Spice_sandbox.Spec.Unconfined
 
+let fake_backend =
+  Spice_sandbox.Backend.make ~id:"fake"
+    ~available:(fun () -> Ok ())
+    ~prepare:(fun _policy ->
+      Ok
+        (Spice_sandbox.Backend.prepared ~prefix:[]
+           ~profile:(Spice_digest.string "canonical")))
+    ()
+
+let enforced_sandbox =
+  Spice_sandbox.seal ~backend:fake_backend
+    (Spice_sandbox.Spec.Confined Spice_sandbox.Confinement.read_only)
+
+let external_sandbox =
+  Spice_sandbox.seal Spice_sandbox.Spec.Declared_external
+
 let json_obj fields =
   Json.object'
     (List.map (fun (name, value) -> Json.mem (Json.name name) value) fields)
@@ -142,6 +158,25 @@ let decode_call tool input =
   | Ok call -> call
   | Error error -> failf "decode failed: %a" Tool.Error.pp error
 
+let execution_name = function
+  | Spice_permission.Access.Command.Direct -> "direct"
+  | Spice_permission.Access.Command.Sandboxed -> "sandboxed"
+
+let print_command_routes label call =
+  let routes =
+    Tool.Call.permissions call
+    |> List.concat_map Spice_permission.Request.accesses
+    |> List.filter_map (function
+         | Spice_permission.Access.Command command ->
+             Some
+               (execution_name
+                  (Spice_permission.Access.Command.execution command))
+         | Spice_permission.Access.Path _ | Spice_permission.Access.Network _
+         | Spice_permission.Access.Custom _ ->
+             None)
+  in
+  Printf.printf "%s: %s\n" label (String.concat "," routes)
+
 let%expect_test "input contract validates source coordinates and lookup kind" =
   print_decode "minimal"
     (json_obj
@@ -216,6 +251,29 @@ let%expect_test "tool locates a workspace definition through Merlin output" =
     OCaml definitions: 1
     - lib/main.ml:1:4-1:4
     index_status: unknown |}]
+
+let%expect_test "Merlin command facts match sealed sandbox evidence" =
+  with_project @@ fun ~root:_ ~merlin ~fs ~cwd:_ ~workspace ->
+  let input =
+    json_obj
+      [
+        ("path", Json.string "lib/main.ml");
+        ("line", Json.int 2);
+        ("column", Json.int 10);
+      ]
+  in
+  let call sandbox =
+    Find.tool ~sandbox ~program:[ merlin ] ~fs ~workspace () |> fun tool ->
+    decode_call tool input
+  in
+  print_command_routes "unconfined" (call sandbox);
+  print_command_routes "external" (call external_sandbox);
+  print_command_routes "enforced" (call enforced_sandbox);
+  [%expect
+    {|
+    unconfined: direct
+    external: direct
+    enforced: sandboxed |}]
 
 let%expect_test "tool preserves external definition targets" =
   with_project @@ fun ~root:_ ~merlin ~fs ~cwd:_ ~workspace ->

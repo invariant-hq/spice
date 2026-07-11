@@ -808,8 +808,8 @@ let find_input input =
     ~path:(Input.path input) ~line:(Input.line input)
     ~column:(Input.column input) ()
 
-let permissions ?(program = default_program) ~workspace input =
-  match Find.permissions ~program ~workspace (find_input input) with
+let permissions ?(program = default_program) ~sandbox ~workspace input =
+  match Find.permissions ~program ~sandbox ~workspace (find_input input) with
   | [] -> []
   | base when Input.dry_run input -> base
   | base ->
@@ -985,6 +985,6 @@ let run ~sandbox ?(program = default_program) ~fs ~workspace ctx input =
 
 let tool ~sandbox ?program ~fs ~workspace () =
   Tool.make ~name ~description ~input:Input.contract ~output:Output.encode
-    ~permissions:(fun input -> permissions ?program ~workspace input)
+    ~permissions:(fun input -> permissions ?program ~sandbox ~workspace input)
     ~run:(run ~sandbox ?program ~fs ~workspace)
     ()

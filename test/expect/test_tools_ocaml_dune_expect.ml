@@ -13,6 +13,22 @@ module Workspace = Spice_workspace
 
 let sandbox = Spice_sandbox.seal Spice_sandbox.Spec.Unconfined
 
+let fake_backend =
+  Spice_sandbox.Backend.make ~id:"fake"
+    ~available:(fun () -> Ok ())
+    ~prepare:(fun _policy ->
+      Ok
+        (Spice_sandbox.Backend.prepared ~prefix:[]
+           ~profile:(Spice_digest.string "canonical")))
+    ()
+
+let enforced_sandbox =
+  Spice_sandbox.seal ~backend:fake_backend
+    (Spice_sandbox.Spec.Confined Spice_sandbox.Confinement.read_only)
+
+let external_sandbox =
+  Spice_sandbox.seal Spice_sandbox.Spec.Declared_external
+
 let prepare ~argv ~env = Ok (argv, env)
 
 let json_obj fields =
@@ -126,6 +142,25 @@ let decode_call tool ~name =
   | Ok call -> call
   | Error error -> failf "decode failed: %a" Tool.Error.pp error
 
+let execution_name = function
+  | Spice_permission.Access.Command.Direct -> "direct"
+  | Spice_permission.Access.Command.Sandboxed -> "sandboxed"
+
+let print_command_routes label call =
+  let routes =
+    Tool.Call.permissions call
+    |> List.concat_map Spice_permission.Request.accesses
+    |> List.filter_map (function
+         | Spice_permission.Access.Command command ->
+             Some
+               (execution_name
+                  (Spice_permission.Access.Command.execution command))
+         | Spice_permission.Access.Path _ | Spice_permission.Access.Network _
+         | Spice_permission.Access.Custom _ ->
+             None)
+  in
+  Printf.printf "%s: %s\n" label (String.concat "," routes)
+
 let print_status result =
   match Tool.Result.status result with
   | Tool.Result.Completed -> print_endline "status: completed"
@@ -185,6 +220,21 @@ let%expect_test "ocaml_dune_describe runs dune describe for a tiny project" =
     line2: root: .
     line3: build_context: _build/default
     line4: components: 1 local=1 external=0 |}]
+
+let%expect_test "Dune command facts match sealed sandbox evidence" =
+  with_project_clock @@ fun ~root:_ ~process_mgr ~clock ~cwd ~workspace ->
+  let call sandbox =
+    Describe.tool ~sandbox ~process_mgr ~clock ~cwd ~workspace ()
+    |> decode_call ~name:Describe.name
+  in
+  print_command_routes "unconfined" (call sandbox);
+  print_command_routes "external" (call external_sandbox);
+  print_command_routes "enforced" (call enforced_sandbox);
+  [%expect
+    {|
+    unconfined: direct,direct
+    external: direct,direct
+    enforced: sandboxed,sandboxed |}]
 
 let%expect_test
     "ocaml_dune_describe roots dune describe at a nested project cwd" =

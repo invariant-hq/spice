@@ -746,12 +746,13 @@ plan document is committed separately before implementation.
    - Update test harness seeding and add PTY coverage.
 
 6. **`fix(permission): Credit only proven sandboxed commands`**
-   - Add the execution route to existing command permission facts, defaulting
-     to direct/unproven.
+   - Add the execution route to existing command permission facts.
    - Target the narrow sandbox-backed allow rule at the sealed route after the
      destructive-command review rule.
-   - Thread sealed-route evidence from every standard sandboxed subprocess tool
-     and ordinary shell execution; keep escalation separate.
+   - Require the sealed sandbox in every public command-bearing permission
+     constructor and derive its route through one private executor observer, so
+     public queries and tool closures cannot disagree. Keep shell escalation
+     separate.
 
 7. **`docs(security): Define the workspace trust boundary`**
    - Align README, architecture, security, configuration, CLI help, doctor,

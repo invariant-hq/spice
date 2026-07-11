@@ -373,12 +373,9 @@ type command_route =
   | Refused of Spice_sandbox.Error.t
 
 let sandbox_route sandbox =
-  match Spice_sandbox.evidence sandbox with
-  | Spice_sandbox.Evidence.Enforced _ -> Sandboxed
-  | Spice_sandbox.Evidence.Not_requested
-  | Spice_sandbox.Evidence.Refused _
-  | Spice_sandbox.Evidence.Declared_external ->
-      Direct
+  match Process.command_execution sandbox with
+  | Permission.Access.Command.Sandboxed -> Sandboxed
+  | Permission.Access.Command.Direct -> Direct
 
 let command_route ~config input =
   let sandbox = Config.sandbox config in

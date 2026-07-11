@@ -192,12 +192,14 @@ end
 
 val permissions :
   ?program:string list ->
+  sandbox:Spice_sandbox.t ->
   workspace:Spice_workspace.t ->
   Input.t ->
   Spice_permission.Request.t list
-(** [permissions ~workspace input] are the source-file read and Merlin execution
-    permissions required to run [input]. [program] is the [ocamlmerlin]
-    invocation prefix and defaults to {!default_program}. *)
+(** [permissions ~sandbox ~workspace input] are the source-file read and Merlin
+    execution permissions required to run [input]. Command identity is derived
+    from [sandbox]'s sealed evidence. [program] is the [ocamlmerlin] invocation
+    prefix and defaults to {!default_program}. *)
 
 val run :
   sandbox:Spice_sandbox.t ->

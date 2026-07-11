@@ -312,18 +312,18 @@ let references_of_value ~workspace ~default_path value =
 let access_cwd workspace =
   Permission.Access.Path_scope.workspace (Workspace.root_path workspace)
 
-let exec_request ~program ~file ~position ~scope workspace =
+let exec_request ~execution ~program ~file ~position ~scope workspace =
   match occurrences_argv ~program ~file ~position ~scope with
   | [] -> invalid_arg "argv must not be empty"
   | argv_program :: args ->
       Permission.Request.of_accesses ~source:name
         [
-          Permission.Access.argv ~cwd:(access_cwd workspace)
-            ~execution:Permission.Access.Command.Sandboxed
+          Permission.Access.argv ~cwd:(access_cwd workspace) ~execution
             ~program:argv_program args;
         ]
 
-let permissions ?(program = default_program) ~workspace input =
+let permissions ?(program = default_program) ~sandbox ~workspace input =
+  let execution = Process.command_execution sandbox in
   match Workspace.resolve_string workspace (Input.path input) with
   | Error _ -> []
   | Ok path ->
@@ -334,7 +334,7 @@ let permissions ?(program = default_program) ~workspace input =
           [ Permission.Access.path ~op:`Read root ];
         Permission.Request.of_accesses ~source:name
           [ Permission.Access.path ~op:`Read path ];
-        exec_request ~program ~file:abs ~position:(Input.position input)
+        exec_request ~execution ~program ~file:abs ~position:(Input.position input)
           ~scope:(Input.scope input) workspace;
       ]
 
@@ -614,6 +614,6 @@ let run ~sandbox ?(program = default_program) ~fs ~workspace ctx input =
 
 let tool ~sandbox ?program ~fs ~workspace () =
   Tool.make ~name ~description ~input:Input.contract ~output:Output.encode
-    ~permissions:(fun input -> permissions ?program ~workspace input)
+    ~permissions:(permissions ?program ~sandbox ~workspace)
     ~run:(run ~sandbox ?program ~fs ~workspace)
     ()

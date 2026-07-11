@@ -65,6 +65,12 @@ type shell_result = {
 }
 (** Completed shell-style process result. *)
 
+val command_execution :
+  Spice_sandbox.t -> Spice_permission.Access.Command.execution
+(** [command_execution sandbox] is the permission identity of commands prepared
+    by [sandbox]. Only sealed, enforced confinement is [Sandboxed]; unconfined,
+    externally declared, and refused routes are [Direct]. *)
+
 val run :
   ?stdout_limit:int ->
   ?stderr_limit:int ->

@@ -1781,13 +1781,12 @@ let resolve_name_form ~sandbox ?describe_freshness ~fs ~workspace ~max_bytes
 let access_cwd workspace =
   Permission.Access.Path_scope.workspace (Workspace.root_path workspace)
 
-let merlin_exec_access ~program ~workspace =
+let merlin_exec_access ~execution ~program ~workspace =
   match program with
   | [] -> invalid_arg "program prefix must not be empty"
   | argv_program :: args ->
-      Permission.Access.argv ~cwd:(access_cwd workspace)
-        ~execution:Permission.Access.Command.Sandboxed ~program:argv_program
-        args
+      Permission.Access.argv ~cwd:(access_cwd workspace) ~execution
+        ~program:argv_program args
 
 let switch_lib_root opam_switch_prefix =
   let prefix =
@@ -1799,7 +1798,8 @@ let switch_lib_root opam_switch_prefix =
 
 let permissions ?(program = default_program)
     ?(ocamlfind_program = default_ocamlfind_program) ?opam_switch_prefix
-    ~workspace input =
+    ~sandbox ~workspace input =
+  let execution = Process.command_execution sandbox in
   match classify (Input.query input) with
   | Path -> (
       match Workspace.resolve_string workspace (Input.query input) with
@@ -1808,7 +1808,7 @@ let permissions ?(program = default_program)
           let accesses =
             [
               Permission.Access.path ~op:`Read path;
-              merlin_exec_access ~program ~workspace;
+              merlin_exec_access ~execution ~program ~workspace;
             ]
           in
           [ Permission.Request.of_accesses ~source:name accesses ])
@@ -1819,9 +1819,8 @@ let permissions ?(program = default_program)
         | [] -> []
         | dune :: args ->
             [
-              Permission.Access.argv ~cwd:(access_cwd workspace)
-                ~execution:Permission.Access.Command.Sandboxed ~program:dune
-                args;
+              Permission.Access.argv ~cwd:(access_cwd workspace) ~execution
+                ~program:dune args;
             ]
       in
       let pkg_read =
@@ -1841,8 +1840,7 @@ let permissions ?(program = default_program)
                 [
                   Permission.Access.path_scope ~op:`Read
                     (Permission.Access.Path_scope.outside_workspace abs);
-                  Permission.Access.argv ~cwd:(access_cwd workspace)
-                    ~execution:Permission.Access.Command.Sandboxed
+                  Permission.Access.argv ~cwd:(access_cwd workspace) ~execution
                     ~program:ocamlfind_program [ "query" ];
                 ])
       in
@@ -1935,9 +1933,9 @@ let run ~sandbox ?(program = default_program)
 let tool ~sandbox ?program ?ocamlfind_program ?opam_switch_prefix ?project_source
     ~process_mgr ~clock ~fs ~cwd ~workspace () =
   Tool.make ~name ~description ~input:Input.contract ~output:Output.encode
-    ~permissions:(fun input ->
-      permissions ?program ?ocamlfind_program ?opam_switch_prefix ~workspace
-        input)
+    ~permissions:
+      (permissions ?program ?ocamlfind_program ?opam_switch_prefix ~sandbox
+         ~workspace)
     ~run:(fun ctx input ->
       run ~sandbox ?program ?ocamlfind_program ?opam_switch_prefix ?project_source
         ~process_mgr ~clock ~fs ~cwd ~workspace

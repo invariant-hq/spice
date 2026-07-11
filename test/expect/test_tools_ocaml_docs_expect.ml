@@ -338,10 +338,11 @@ let%expect_test "permissions surface" =
   with_fixture @@ fun ~process_mgr:_ ~clock:_ ~fs:_ ~cwd:_ ~workspace ->
   Printf.printf "path form requests: %d\n"
     (List.length
-       (Docs.permissions ~workspace (Docs.Input.make "lib/demo/demo.mli")));
+       (Docs.permissions ~sandbox ~workspace
+          (Docs.Input.make "lib/demo/demo.mli")));
   Printf.printf "name form requests: %d\n"
     (List.length
-       (Docs.permissions ~opam_switch_prefix:"/tmp/switch" ~workspace
+       (Docs.permissions ~sandbox ~opam_switch_prefix:"/tmp/switch" ~workspace
           (Docs.Input.make "eio")));
   [%expect {|
     path form requests: 1
