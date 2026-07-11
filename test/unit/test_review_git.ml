@@ -45,7 +45,18 @@ let with_repo f =
   write dir "gone.txt" "to delete\n";
   git [ "add"; "-A" ];
   git [ "commit"; "-q"; "-m"; "init" ];
-  f ~proc ~fs ~dir ~git
+  let run ~cwd args =
+    let stderr = Buffer.create 256 in
+    match
+      Eio.Process.parse_out ~stderr:(Eio.Flow.buffer_sink stderr) proc
+        Eio.Buf_read.take_all ("git" :: "-C" :: cwd :: args)
+    with
+    | output -> Ok output
+    | exception exn ->
+        let message = String.trim (Buffer.contents stderr) in
+        Error (if String.is_empty message then Printexc.to_string exn else message)
+  in
+  f ~run ~fs ~dir ~git
 
 let mutate_worktree ~dir ~git =
   (* Modify with a CR, add a tracked file with a CR, delete a tracked file,
@@ -80,10 +91,10 @@ let review_record () =
   (Review.Persist.of_review review, review, scope)
 
 let discovery_and_base_resolution () =
-  with_repo @@ fun ~proc ~fs ~dir ~git:_ ->
+  with_repo @@ fun ~run ~fs ~dir ~git:_ ->
   let repo =
     expect_ok "discover from a subdirectory"
-      (Git.discover ~proc ~fs ~cwd:(Filename.concat dir "lib"))
+      (Git.discover ~run ~fs ~cwd:(Filename.concat dir "lib"))
   in
   equal string ~msg:"root is the worktree root" (Unix.realpath dir)
     (Unix.realpath (Git.root repo));
@@ -99,7 +110,7 @@ let discovery_and_base_resolution () =
   Fun.protect ~finally:(fun () ->
       ignore (Sys.command ("rm -rf " ^ Filename.quote outside)))
   @@ fun () ->
-  match Git.discover ~proc ~fs ~cwd:outside with
+  match Git.discover ~run ~fs ~cwd:outside with
   | Ok _ -> failf "expected not-a-repository"
   | Error error -> (
       match Git.Error.kind error with
@@ -107,15 +118,15 @@ let discovery_and_base_resolution () =
       | _ -> failf "unexpected error: %a" Git.Error.pp error)
 
 let user_handle_is_sanitized () =
-  with_repo @@ fun ~proc ~fs ~dir ~git:_ ->
-  let repo = expect_ok "discover" (Git.discover ~proc ~fs ~cwd:dir) in
+  with_repo @@ fun ~run ~fs ~dir ~git:_ ->
+  let repo = expect_ok "discover" (Git.discover ~run ~fs ~cwd:dir) in
   equal string ~msg:"whitespace becomes dashes" "Alice-Smith"
     (Spice_cr.Handle.to_string (Git.user_handle repo))
 
 let load_worktree_snapshot () =
-  with_repo @@ fun ~proc ~fs ~dir ~git ->
+  with_repo @@ fun ~run ~fs ~dir ~git ->
   mutate_worktree ~dir ~git;
-  let repo = expect_ok "discover" (Git.discover ~proc ~fs ~cwd:dir) in
+  let repo = expect_ok "discover" (Git.discover ~run ~fs ~cwd:dir) in
   let base = expect_ok "resolve" (Git.resolve_base repo "HEAD") in
   let load = expect_ok "load" (Git.load repo ~base) in
   let files = Review.Feature.files load.Review.Live.feature in
@@ -157,9 +168,9 @@ let load_worktree_snapshot () =
     [ "lib/a.ml"; "new.ml" ] cr_paths
 
 let fingerprints_and_load_if_changed () =
-  with_repo @@ fun ~proc ~fs ~dir ~git ->
+  with_repo @@ fun ~run ~fs ~dir ~git ->
   mutate_worktree ~dir ~git;
-  let repo = expect_ok "discover" (Git.discover ~proc ~fs ~cwd:dir) in
+  let repo = expect_ok "discover" (Git.discover ~run ~fs ~cwd:dir) in
   let base = expect_ok "resolve" (Git.resolve_base repo "HEAD") in
   let first = expect_ok "fingerprint" (Git.fingerprint repo ~base) in
   let second = expect_ok "fingerprint again" (Git.fingerprint repo ~base) in
@@ -201,9 +212,9 @@ let fingerprints_and_load_if_changed () =
   | `Unchanged -> failf "expected a reload"
 
 let untracked_content_moves_fingerprint_with_preserved_mtime () =
-  with_repo @@ fun ~proc ~fs ~dir ~git:_ ->
+  with_repo @@ fun ~run ~fs ~dir ~git:_ ->
   write dir "scratch.ml" "let x = 1\n";
-  let repo = expect_ok "discover" (Git.discover ~proc ~fs ~cwd:dir) in
+  let repo = expect_ok "discover" (Git.discover ~run ~fs ~cwd:dir) in
   let base = expect_ok "resolve" (Git.resolve_base repo "HEAD") in
   let path = Filename.concat dir "scratch.ml" in
   let stat = Unix.stat path in
@@ -221,13 +232,13 @@ let tracked_meta_files_are_excluded () =
   (* [load_worktree_snapshot] pins that an *untracked* .spice file is excluded;
      this pins the symmetric tracked side: a committed meta file that is then
      edited must not review itself, while an ordinary tracked edit still does. *)
-  with_repo @@ fun ~proc ~fs ~dir ~git ->
+  with_repo @@ fun ~run ~fs ~dir ~git ->
   write dir ".spice/state.json" "{\"revision\":1}";
   git [ "add"; "-A" ];
   git [ "commit"; "-q"; "-m"; "track a meta file" ];
   write dir ".spice/state.json" "{\"revision\":2}";
   write dir "lib/a.ml" "let a = 1\nlet b = 2\nlet c = 4\n";
-  let repo = expect_ok "discover" (Git.discover ~proc ~fs ~cwd:dir) in
+  let repo = expect_ok "discover" (Git.discover ~run ~fs ~cwd:dir) in
   let base = expect_ok "resolve" (Git.resolve_base repo "HEAD") in
   let load = expect_ok "load" (Git.load repo ~base) in
   let paths =
@@ -241,9 +252,9 @@ let tracked_meta_files_are_excluded () =
     (List.mem "lib/a.ml" paths)
 
 let stats_projection () =
-  with_repo @@ fun ~proc ~fs ~dir ~git ->
+  with_repo @@ fun ~run ~fs ~dir ~git ->
   mutate_worktree ~dir ~git;
-  let repo = expect_ok "discover" (Git.discover ~proc ~fs ~cwd:dir) in
+  let repo = expect_ok "discover" (Git.discover ~run ~fs ~cwd:dir) in
   let base = expect_ok "resolve" (Git.resolve_base repo "HEAD") in
   let stats = expect_ok "stats" (Git.stats repo ~base) in
   (* lib/a.ml +1, new.ml +2, bin.dat binary (0/0), gone.txt -1, untracked.txt
@@ -260,9 +271,9 @@ let stats_projection () =
     stats.Spice_diff.files
 
 let crs_scan () =
-  with_repo @@ fun ~proc ~fs ~dir ~git ->
+  with_repo @@ fun ~run ~fs ~dir ~git ->
   mutate_worktree ~dir ~git;
-  let repo = expect_ok "discover" (Git.discover ~proc ~fs ~cwd:dir) in
+  let repo = expect_ok "discover" (Git.discover ~run ~fs ~cwd:dir) in
   let base = expect_ok "resolve" (Git.resolve_base repo "HEAD") in
   let occurrences = expect_ok "crs" (Git.crs repo ~base) in
   let paths =
@@ -292,9 +303,9 @@ let crs_scan () =
     counts.Spice_cr.Occurrence.addressed
 
 let glance_short_circuits_when_unchanged () =
-  with_repo @@ fun ~proc ~fs ~dir ~git ->
+  with_repo @@ fun ~run ~fs ~dir ~git ->
   mutate_worktree ~dir ~git;
-  let repo = expect_ok "discover" (Git.discover ~proc ~fs ~cwd:dir) in
+  let repo = expect_ok "discover" (Git.discover ~run ~fs ~cwd:dir) in
   let base = expect_ok "resolve" (Git.resolve_base repo "HEAD") in
   let first =
     match expect_ok "glance" (Git.glance_if_changed repo ~base ~known:None) with
@@ -327,7 +338,7 @@ let glance_short_circuits_when_unchanged () =
   | `Unchanged -> failf "a changed worktree must reload"
 
 let records_save_load_and_prune () =
-  with_repo @@ fun ~proc:_ ~fs ~dir ~git:_ ->
+  with_repo @@ fun ~run:_ ~fs ~dir ~git:_ ->
   let record, review, scope = review_record () in
   let key = Git.Records.key ~base:"base" in
   let store_dir = Filename.concat dir "reviews" in

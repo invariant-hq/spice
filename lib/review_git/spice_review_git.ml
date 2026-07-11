@@ -28,33 +28,24 @@ module Error = struct
   let pp ppf t = Format.pp_print_string ppf t.message
 end
 
-type proc = Proc : _ Eio.Process.mgr -> proc
+type run = cwd:string -> string list -> (string, string) result
 type fs = Fs : _ Eio.Path.t -> fs
-type t = { proc : proc; fs : fs; root : string }
+type t = { run : run; fs : fs; root : string }
 
 let root t = t.root
 
-(* Git invocation. Non-zero exits raise inside [parse_out]; the trimmed
-   stderr is the diagnostic. *)
 let git_output ?cwd t args =
-  let (Proc proc) = t.proc in
   let directory = Option.value cwd ~default:t.root in
-  let stderr_buffer = Buffer.create 256 in
   let start = Unix.gettimeofday () in
-  match
-    Eio.Process.parse_out
-      ~stderr:(Eio.Flow.buffer_sink stderr_buffer)
-      proc Eio.Buf_read.take_all
-      ("git" :: "-C" :: directory :: args)
-  with
-  | output ->
+  match t.run ~cwd:directory args with
+  | Ok output ->
       Log.debug (fun m ->
           m "git %s ok duration=%.0fms bytes=%d" (String.concat " " args)
             ((Unix.gettimeofday () -. start) *. 1000.)
             (String.length output));
       Ok output
-  | exception _ ->
-      let stderr = String.trim (Buffer.contents stderr_buffer) in
+  | Error stderr ->
+      let stderr = String.trim stderr in
       Log.debug (fun m ->
           m "git %s failed duration=%.0fms stderr=%s" (String.concat " " args)
             ((Unix.gettimeofday () -. start) *. 1000.)
@@ -65,8 +56,8 @@ let git_output ?cwd t args =
 
 let git_failed message = Error (Error.make (Error.Git_failed message) message)
 
-let discover ~proc ~fs ~cwd =
-  let probe = { proc = Proc proc; fs = Fs fs; root = cwd } in
+let discover ~run ~fs ~cwd =
+  let probe = { run; fs = Fs fs; root = cwd } in
   match git_output ~cwd probe [ "rev-parse"; "--show-toplevel" ] with
   | Ok output -> (
       match String.split_on_char '\n' (String.trim output) with

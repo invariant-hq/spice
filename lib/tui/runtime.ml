@@ -172,12 +172,9 @@ let spice_handle =
 
 (* A worktree glance handle plus a resolved base, when the cwd is a repository
    with a HEAD. A fresh repo (no HEAD) yields no worktree/CR lines. *)
-let discover_repo ~stdenv ~cwd =
-  let proc = Eio.Stdenv.process_mgr stdenv in
+let discover_repo ~run ~stdenv ~cwd =
   let fs = Eio.Stdenv.fs stdenv in
-  match
-    Spice_review_git.discover ~proc ~fs ~cwd:(Spice_path.Abs.to_string cwd)
-  with
+  match Spice_review_git.discover ~run ~fs ~cwd:(Spice_path.Abs.to_string cwd) with
   | Error _ -> None
   | Ok repo -> (
       match Spice_review_git.resolve_base repo "HEAD" with
@@ -187,8 +184,8 @@ let discover_repo ~stdenv ~cwd =
 (* The brief loader: cheap host probes assembled into a {!Home.Brief.t}. The worktree
    glance short-circuits on an unchanged fingerprint so an idle worktree costs
    one probe per tick; the derived lines are cached against it. *)
-let make_brief_loader ?sandbox_flag ~trusted ~engaged ~stdenv ~clock ~host ~cwd
-    () =
+let make_brief_loader ?sandbox_flag ~git_run ~trusted ~engaged ~stdenv ~clock
+    ~host ~cwd () =
   let config = Spice_host.Host.config host in
   let warning = config_warning ?flag:sandbox_flag config in
   let workspace = Spice_workspace.single (Spice_workspace.Root.make cwd) in
@@ -208,7 +205,9 @@ let make_brief_loader ?sandbox_flag ~trusted ~engaged ~stdenv ~clock ~host ~cwd
   in
   (* Lazy: the git spawn belongs to the first (asynchronous) brief load, not
      the boot critical path before the first frame. *)
-  let repo = lazy (if trusted then discover_repo ~stdenv ~cwd else None) in
+  let repo =
+    lazy (if trusted then discover_repo ~run:git_run ~stdenv ~cwd else None)
+  in
   let store = Spice_host.Session.store ~stdenv host in
   let known = ref None in
   let cached_worktree = ref None in
@@ -683,6 +682,34 @@ let resolve_sandbox ?flag ~stdenv host ~workspace =
     ~stdenv
     ~env:(Spice_host.Env.get process_env)
     ~workspace ()
+
+let git_runner ~stdenv ~process_env ~sandbox ~cwd args =
+  let argv = Spice_sandbox.Argv.make ~program:"git" ("-C" :: cwd :: args) in
+  match
+    Spice_sandbox.spawn sandbox ~argv
+      ~env:(Spice_host.Env.to_list process_env)
+  with
+  | Error error -> Error (Spice_sandbox.Error.message error)
+  | Ok spawn ->
+      let argv =
+        Spice_sandbox.Spawn.argv spawn |> Spice_sandbox.Argv.to_list
+      in
+      let env =
+        Spice_sandbox.Spawn.env spawn
+        |> List.map (fun (name, value) -> name ^ "=" ^ value)
+        |> Array.of_list
+      in
+      let stderr_buffer = Buffer.create 256 in
+      match
+        Eio.Process.parse_out ~env
+          ~stderr:(Eio.Flow.buffer_sink stderr_buffer)
+          (Eio.Stdenv.process_mgr stdenv)
+          Eio.Buf_read.take_all argv
+      with
+      | output -> Ok output
+      | exception exn ->
+          let stderr = String.trim (Buffer.contents stderr_buffer) in
+          Error (if String.is_empty stderr then Printexc.to_string exn else stderr)
 
 (* Assemble the workspace run for a session: gate the sandbox — the [--sandbox]
    flag over the config mode — and start the credential-free assembly
@@ -1170,10 +1197,22 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
             ~root:(Spice_path.Abs.to_string cwd)
         in
         let sandbox_flag = startup.App.sandbox in
+        let workspace =
+          Spice_workspace.single (Spice_workspace.Root.make cwd)
+        in
+        let effective_sandbox =
+          resolve_sandbox ?flag:sandbox_flag host ~workspace
+        in
+        let git_run =
+          git_runner ~stdenv
+            ~process_env:
+              (Spice_host.Config.process_env (Spice_host.Host.config host))
+            ~sandbox:(Spice_host.Sandbox.Effective.sandbox effective_sandbox)
+        in
         let snapshot = build_snapshot ?sandbox_flag ~stdenv host in
         let load_brief =
-          make_brief_loader ?sandbox_flag ~trusted ~engaged:tooling_engaged
-            ~stdenv ~clock ~host ~cwd ()
+          make_brief_loader ?sandbox_flag ~git_run ~trusted
+            ~engaged:tooling_engaged ~stdenv ~clock ~host ~cwd ()
         in
         let load_health =
           make_health_loader ~engaged:tooling_engaged ~stdenv ~clock ~cwd
@@ -1794,9 +1833,8 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
           | Some repo when String.equal (Spice_review_git.root repo) root ->
               Ok repo
           | _ -> (
-              let proc = Eio.Stdenv.process_mgr stdenv in
               let fs = Eio.Stdenv.fs stdenv in
-              match Spice_review_git.discover ~proc ~fs ~cwd:root with
+              match Spice_review_git.discover ~run:git_run ~fs ~cwd:root with
               | Error _ as error -> error
               | Ok repo ->
                   review_repo_ref := Some repo;
@@ -1812,7 +1850,6 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
           |> Result.map Spice_host.Workspace_state.reviews_dir
         in
         let open_review_snapshot base_spec =
-          let proc = Eio.Stdenv.process_mgr stdenv in
           let fs = Eio.Stdenv.fs stdenv in
           (* Discover at the workspace root the rest of the runtime uses (the home
              brief's [discover_repo] does the same), not [Sys.getcwd ()] — under
@@ -1822,7 +1859,7 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
             | Some abs -> Spice_path.Abs.to_string abs
             | None -> Sys.getcwd ()
           in
-          match Spice_review_git.discover ~proc ~fs ~cwd with
+          match Spice_review_git.discover ~run:git_run ~fs ~cwd with
           | Error error -> Error (Spice_review_git.Error.message error)
           | Ok repo -> (
               review_repo_ref := Some repo;

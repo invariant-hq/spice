@@ -51,13 +51,18 @@ end
 (** {1:repositories Repositories} *)
 
 type t
-(** The type for repository handles. A handle records the process and filesystem
-    capabilities and the resolved worktree root; it owns no processes or file
-    descriptors. *)
+(** The type for repository handles. A handle records the injected Git runner,
+    filesystem capability, and resolved worktree root; it owns no processes or
+    file descriptors. *)
+
+type run = cwd:string -> string list -> (string, string) result
+(** A prepared Git runner. The argument list excludes [git] and [-C cwd]. The
+    host owns process construction, confinement, environment, and capture;
+    [Error message] is a display-safe refusal or process diagnostic. *)
 
 val discover :
-  proc:_ Eio.Process.mgr -> fs:_ Eio.Path.t -> cwd:string -> (t, Error.t) result
-(** [discover ~proc ~fs ~cwd] is the repository whose worktree contains [cwd].
+  run:run -> fs:_ Eio.Path.t -> cwd:string -> (t, Error.t) result
+(** [discover ~run ~fs ~cwd] is the repository whose worktree contains [cwd].
     Errors with {!Error.Not_a_repository} when [cwd] is not inside a Git
     worktree. *)
 

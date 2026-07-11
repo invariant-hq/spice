@@ -126,6 +126,7 @@
   spice_provider
   spice_review
   spice_review_git
+  spice_sandbox
   spice_tui_review
   spice_session
   spice_session_store

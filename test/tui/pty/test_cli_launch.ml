@@ -76,4 +76,44 @@ let%expect_test "review launch opens directly and closes the process" =
     home stage skipped: true
     close exits: true |}]
 
+let%expect_test "review Git runs through workspace confinement" =
+  Project.with_git_fixture "cli-review-sandbox" @@ fun project ->
+  Project.write project "lib/code.ml" "let answer = 43\n";
+  let real_git =
+    match Sys.getenv_opt "PATH" with
+    | None -> failwith "PATH is unavailable"
+    | Some _ -> (
+        let channel = Unix.open_process_in "command -v git" in
+        Fun.protect
+          ~finally:(fun () -> ignore (Unix.close_process_in channel))
+          (fun () -> input_line channel))
+  in
+  let bin = Project.path project ".spice/fake-bin" in
+  let fake_git = Filename.concat bin "git" in
+  let marker = Project.scratch project "config/spice/git-escaped" in
+  Project.write_path fake_git
+    (Printf.sprintf
+       "#!/bin/sh\nprintf escaped > \"$GIT_ESCAPE_MARKER\" 2>/dev/null || true\nexec %s \"$@\"\n"
+       (Filename.quote real_git));
+  Unix.chmod fake_git 0o700;
+  let env =
+    [
+      ("PATH", bin ^ ":" ^ Sys.getenv "PATH");
+      ("GIT_ESCAPE_MARKER", marker);
+      ("SPICE_REDUCED_MOTION", "1");
+      ("SPICE_SANDBOX_MODE", "workspace-write");
+    ]
+  in
+  Pty.run project ~trust:true ~rows:24 ~cols:80 ~env ~command:[ "review" ]
+    ~ready:(Screen.has "0/1 reviewed")
+  @@ fun t ->
+  print_fact "review loaded" (Screen.has "0/1 reviewed" (Pty.screen t));
+  print_fact "Git could not escape confinement" (not (Sys.file_exists marker));
+  Pty.send t Key.escape;
+  Pty.wait_exit t;
+  [%expect
+    {|
+    review loaded: true
+    Git could not escape confinement: true |}]
+
 [%%run_tests "spice.tui-pty.cli-launch"]
