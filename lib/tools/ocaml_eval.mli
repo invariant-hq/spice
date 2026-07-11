@@ -119,14 +119,13 @@ module Config : sig
 end
 
 val permissions :
-  sandbox:Spice_sandbox.t ->
   workspace:Spice_workspace.t ->
-  config:Config.t ->
   Input.t ->
   Spice_permission.Request.t list
-(** [permissions ~sandbox ~workspace ~config input] declares the workspace read
-    and command execution accesses needed to evaluate [input]. Command identity
-    is derived from [sandbox]'s sealed evidence.
+(** [permissions ~workspace input] declares the workspace read and
+    model-authored OCaml execution operation needed to evaluate [input]. The
+    latter is a custom command-kind fact whose subject is the submitted code;
+    fixed Dune and OCaml argv remain sealed implementation details.
 
     If [dir] cannot be resolved inside [workspace], the returned list is empty;
     {!run} reports the same problem as an invalid-input tool result. *)

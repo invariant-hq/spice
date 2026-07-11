@@ -135,25 +135,20 @@ module Input : sig
 end
 
 val permissions :
-  ?program:string list ->
-  ?ocamlfind_program:string ->
   ?opam_switch_prefix:string ->
-  sandbox:Spice_sandbox.t ->
   workspace:Spice_workspace.t ->
   Input.t ->
   Spice_permission.Request.t list
-(** [permissions ~sandbox ~workspace input] is the set of read and execution
-    permissions the request needs. Command identity is derived from [sandbox]'s
-    sealed evidence.
+(** [permissions ~workspace input] is the set of workspace, package metadata,
+    and installed-library reads the documentation operation needs.
 
-    For a path-form query it is the workspace file read plus a Merlin execution
-    request. For a name-form query on a dune-package project it requests
-    execution of [dune describe] (universe resolution) and a workspace read of
-    the [_build/_private/default/.pkg] tree — both inside the workspace root.
+    For a path-form query it is the workspace file read. For a name-form query
+    on a dune-package project it requests the project-root and
+    [_build/_private/default/.pkg] reads used by universe resolution.
 
-    For a name-form query on an opam project it additionally requests execution
-    of [ocamlfind] and a read of the switch library root, which lies **outside**
-    the workspace. [permissions] is pure and cannot run [ocamlfind] to learn the
+    For a name-form query on an opam project it additionally requests a read of
+    the switch library root, which lies **outside** the workspace. [permissions]
+    is pure and cannot run [ocamlfind] to learn the
     exact [lib/<pkg>] directory, so the honest, visible request names the whole
     switch library root [<prefix>/lib] via [Access.path_scope ~op:`Read] over
     [Path_scope.outside_workspace] ([access.mli:90,175]); [opam_switch_prefix]

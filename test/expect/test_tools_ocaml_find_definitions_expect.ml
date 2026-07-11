@@ -252,7 +252,7 @@ let%expect_test "tool locates a workspace definition through Merlin output" =
     - lib/main.ml:1:4-1:4
     index_status: unknown |}]
 
-let%expect_test "Merlin command facts match sealed sandbox evidence" =
+let%expect_test "Merlin implementation argv is not a permission fact" =
   with_project @@ fun ~root:_ ~merlin ~fs ~cwd:_ ~workspace ->
   let input =
     json_obj
@@ -271,9 +271,9 @@ let%expect_test "Merlin command facts match sealed sandbox evidence" =
   print_command_routes "enforced" (call enforced_sandbox);
   [%expect
     {|
-    unconfined: direct
-    external: direct
-    enforced: sandboxed |}]
+    unconfined:
+    external:
+    enforced: |}]
 
 let%expect_test "tool preserves external definition targets" =
   with_project @@ fun ~root:_ ~merlin ~fs ~cwd:_ ~workspace ->

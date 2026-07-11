@@ -169,18 +169,31 @@ let%expect_test "ocaml_eval evaluates code in a Dune library context" =
   let call = decode_call tool input in
   Printf.printf "tool: %s\n" (Tool.Call.tool call);
   Printf.printf "permissions: %d\n" (List.length (Tool.Call.permissions call));
+  let model_code_access =
+    Tool.Call.permissions call
+    |> List.concat_map Spice_permission.Request.accesses
+    |> List.exists (function
+         | Spice_permission.Access.Custom
+             { kind = `Command; name = "ocaml.eval"; subject = Some _ } ->
+             true
+         | Spice_permission.Access.Path _ | Spice_permission.Access.Command _
+         | Spice_permission.Access.Network _ | Spice_permission.Access.Custom _ ->
+             false)
+  in
+  Printf.printf "model code access: %b\n" model_code_access;
   Tool.Call.run call () |> print_eval_result;
   [%expect
     {|
     tool: ocaml_eval
-    permissions: 3
+    permissions: 1
+    model code access: true
     status: completed
     stage: eval
     dir: lib
     stdout has answer: true
     truncated: false |}]
 
-let%expect_test "eval command facts match sealed sandbox evidence" =
+let%expect_test "eval implementation argv is not a permission fact" =
   with_project @@ fun ~root:_ ~fs ~workspace ->
   let config = Eval.Config.make () in
   let input = json_obj [ ("code", Json.string "1 + 1") ] in
@@ -193,9 +206,9 @@ let%expect_test "eval command facts match sealed sandbox evidence" =
   print_command_routes "enforced" (call enforced_sandbox);
   [%expect
     {|
-    unconfined: direct,direct
-    external: direct,direct
-    enforced: sandboxed,sandboxed |}]
+    unconfined:
+    external:
+    enforced: |}]
 
 let%expect_test "ocaml_eval rejects unknown input fields" =
   with_project @@ fun ~root:_ ~fs ~workspace ->

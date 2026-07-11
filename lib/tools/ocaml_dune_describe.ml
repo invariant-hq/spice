@@ -20,30 +20,11 @@ let json_string_option = function
   | None -> json_null
   | Some value -> Json.string value
 
-let access_cwd workspace =
-  Permission.Access.Path_scope.workspace (Workspace.root_path workspace)
-
 let read_root_request workspace =
   Permission.Request.of_accesses ~source:name
     [ Permission.Access.path ~op:`Read (Workspace.root_path workspace) ]
 
-let exec_request ~execution ~argv workspace =
-  match argv with
-  | [] -> invalid_arg "argv must not be empty"
-  | program :: args ->
-      Permission.Request.of_accesses ~source:name
-        [
-          Permission.Access.argv ~cwd:(access_cwd workspace) ~execution
-            ~program args;
-        ]
-
-let permissions ~sandbox workspace =
-  let execution = Process.command_execution sandbox in
-  [
-    read_root_request workspace;
-    exec_request ~execution ~argv:(Dune.Describe.workspace_args ()) workspace;
-    exec_request ~execution ~argv:(Dune.Describe.tests_args ()) workspace;
-  ]
+let permissions workspace = [ read_root_request workspace ]
 
 let path_json path = Json.string (Workspace.Path.display path)
 
@@ -329,6 +310,6 @@ let run ~sandbox ~process_mgr ~clock ~cwd ~workspace ?project_source ctx () =
 
 let tool ~sandbox ~process_mgr ~clock ~cwd ~workspace ?project_source () =
   Tool.make ~name ~description ~input:Tool.Input.empty ~output:Output.encode
-    ~permissions:(fun () -> permissions ~sandbox workspace)
+    ~permissions:(fun () -> permissions workspace)
     ~run:(run ~sandbox ~process_mgr ~clock ~cwd ~workspace ?project_source)
     ()

@@ -208,8 +208,7 @@ let resolve_dir ~fs ~workspace input =
       | Ok _ -> Ok dir
       | Error error -> Error (Fs.Error.message error))
 
-let permissions ~sandbox ~workspace ~config input =
-  let execution = Process.command_execution sandbox in
+let permissions ~workspace input =
   let resolved =
     match Input.dir input with
     | None -> Ok (Workspace.root_path workspace)
@@ -218,20 +217,12 @@ let permissions ~sandbox ~workspace ~config input =
   match resolved with
   | Error _ -> []
   | Ok dir ->
-      let cwd = Permission.Access.Path_scope.workspace dir in
       [
         Permission.Request.of_accesses ~source:name
-          [ Permission.Access.path ~op:`Read dir ];
-        Permission.Request.of_accesses ~source:name
           [
-            Permission.Access.argv ~cwd ~execution ~program:(Config.dune config)
-              [ "ocaml"; "top"; "." ];
-          ];
-        Permission.Request.of_accesses ~source:name
-          [
-            Permission.Access.argv ~cwd ~execution
-              ~program:(Config.ocaml config)
-              [ "-stdin"; "-noinit" ];
+            Permission.Access.path ~op:`Read dir;
+            Permission.Access.custom ~kind:`Command ~subject:(Input.code input)
+              "ocaml.eval";
           ];
       ]
 
@@ -556,7 +547,7 @@ let run ~sandbox ~fs ~workspace ~config ?watch
 
 let tool ~sandbox ~fs ~workspace ~config ?watch () =
   Tool.make ~name ~description ~input:Input.contract ~output:Output.encode
-    ~permissions:(fun input -> permissions ~sandbox ~workspace ~config input)
+    ~permissions:(permissions ~workspace)
     ~run:(fun ctx input ->
       run ~sandbox ~fs ~workspace ~config ?watch
         ~cancelled:(fun () -> Tool.Context.cancelled ctx)

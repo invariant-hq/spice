@@ -46,13 +46,10 @@ module Output : sig
       and retained typed evidence, and [None] otherwise. *)
 end
 
-val permissions :
-  sandbox:Spice_sandbox.t ->
-  Spice_workspace.t ->
-  Spice_permission.Request.t list
-(** [permissions ~sandbox workspace] are the read and executable permissions
-    required to run the Dune describe commands for [workspace]. The command
-    execution identity is derived from [sandbox]'s sealed evidence. *)
+val permissions : Spice_workspace.t -> Spice_permission.Request.t list
+(** [permissions workspace] is the workspace-root read required by the
+    model-visible description operation. The fixed Dune subprocesses are
+    sealed implementation details, not separate permission operations. *)
 
 val run :
   sandbox:Spice_sandbox.t ->

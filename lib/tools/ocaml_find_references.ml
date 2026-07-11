@@ -226,10 +226,6 @@ let occurrences_args ~file ~position ~scope =
     file;
   ]
 
-let occurrences_argv ~program ~file ~position ~scope =
-  Ocaml_merlin.argv ~program ~command:"occurrences"
-    ~args:(occurrences_args ~file ~position ~scope)
-
 type parse_error =
   | Invalid_response of string
   | Location_outside_workspace of string * string
@@ -309,33 +305,16 @@ let references_of_value ~workspace ~default_path value =
   | Jsont.Object _ ->
       Error (Invalid_response "occurrences value is not a list")
 
-let access_cwd workspace =
-  Permission.Access.Path_scope.workspace (Workspace.root_path workspace)
-
-let exec_request ~execution ~program ~file ~position ~scope workspace =
-  match occurrences_argv ~program ~file ~position ~scope with
-  | [] -> invalid_arg "argv must not be empty"
-  | argv_program :: args ->
-      Permission.Request.of_accesses ~source:name
-        [
-          Permission.Access.argv ~cwd:(access_cwd workspace) ~execution
-            ~program:argv_program args;
-        ]
-
-let permissions ?(program = default_program) ~sandbox ~workspace input =
-  let execution = Process.command_execution sandbox in
+let permissions ~workspace input =
   match Workspace.resolve_string workspace (Input.path input) with
   | Error _ -> []
   | Ok path ->
       let root = Workspace.root_path workspace in
-      let abs = Spice_path.Abs.to_string (Workspace.Path.abs path) in
       [
         Permission.Request.of_accesses ~source:name
           [ Permission.Access.path ~op:`Read root ];
         Permission.Request.of_accesses ~source:name
           [ Permission.Access.path ~op:`Read path ];
-        exec_request ~execution ~program ~file:abs ~position:(Input.position input)
-          ~scope:(Input.scope input) workspace;
       ]
 
 let location_json location =
@@ -614,6 +593,6 @@ let run ~sandbox ?(program = default_program) ~fs ~workspace ctx input =
 
 let tool ~sandbox ?program ~fs ~workspace () =
   Tool.make ~name ~description ~input:Input.contract ~output:Output.encode
-    ~permissions:(permissions ?program ~sandbox ~workspace)
+    ~permissions:(permissions ~workspace)
     ~run:(run ~sandbox ?program ~fs ~workspace)
     ()

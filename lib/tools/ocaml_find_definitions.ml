@@ -425,24 +425,13 @@ let request_source_file ~fs ~workspace input =
             | Ok contents -> Ok (path, contents)
             | Error _ as error -> error))
 
-let merlin_exec_access ~execution ~program ~workspace =
-  let cwd =
-    Permission.Access.Path_scope.workspace (Workspace.root_path workspace)
-  in
-  match program with
-  | [] -> invalid_arg "program prefix must not be empty"
-  | argv_program :: args ->
-      Permission.Access.argv ~cwd ~execution ~program:argv_program args
-
-let permissions ?(program = default_program) ~sandbox ~workspace input =
-  let execution = Process.command_execution sandbox in
+let permissions ~workspace input =
   match Workspace.resolve_string workspace (Input.path input) with
   | Error _ ->
       [
         Permission.Request.of_accesses ~source:name
           [
             Permission.Access.unknown_path ~op:`Read (Input.path input);
-            merlin_exec_access ~execution ~program ~workspace;
           ];
       ]
   | Ok path ->
@@ -450,7 +439,6 @@ let permissions ?(program = default_program) ~sandbox ~workspace input =
         Permission.Request.of_accesses ~source:name
           [
             Permission.Access.path ~op:`Read path;
-            merlin_exec_access ~execution ~program ~workspace;
           ];
       ]
 
@@ -516,6 +504,6 @@ let run ~sandbox ?(program = default_program) ~fs ~workspace ctx input =
 
 let tool ~sandbox ?program ~fs ~workspace () =
   Tool.make ~name ~description ~input:Input.contract ~output:Output.encode
-    ~permissions:(permissions ?program ~sandbox ~workspace)
+    ~permissions:(permissions ~workspace)
     ~run:(run ~sandbox ?program ~fs ~workspace)
     ()

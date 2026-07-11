@@ -39,11 +39,35 @@ trusted fixture root cannot leak into it.
   $ spice skills list | grep -E 'outside-only|project-only|relative-only|project skills disabled'
     [1] outside-only  path  $TESTCASE_ROOT/outside-skills/outside-only
     project skills disabled: workspace is not trusted
+  $ spice debug tools > unknown-tools.txt
+  $ for tool in ocaml_dune_describe ocaml_dune_diagnostics ocaml_eval ocaml_docs ocaml_find_definitions ocaml_find_references ocaml_rename ocaml_type_at; do if grep -q "^## $tool$" unknown-tools.txt; then echo "unexpected: $tool"; fi; done
+  $ grep -E '^## ocaml_(ast_edit|search_expressions|replace_expressions)$' unknown-tools.txt
+  ## ocaml_ast_edit
+  ## ocaml_replace_expressions
+  ## ocaml_search_expressions
 
 An unknown headless workspace stays useful but does not inject project inputs
 or start automatic project processes.
 
   $ printf '(lang dune 3.0)\n' > dune-project
+  $ mkdir -p _opam/bin
+  $ cat > _opam/bin/dune <<'EOF'
+  > #!/bin/sh
+  > printf local-switch > "$LOCAL_SWITCH_MARKER"
+  > EOF
+  $ chmod +x _opam/bin/dune
+  $ export LOCAL_SWITCH_MARKER="$PWD/local-switch-spawned"
+  $ cat > unknown-shell.jsonl <<'EOF'
+  > {"expect":{"body_contains":["try local dune","\"name\":\"shell\""]},"response":{"id":"resp-unknown-shell-1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-unknown-shell","call_id":"call-unknown-shell","name":"shell","arguments":"{\"command\":\"dune --version\"}"}]}}
+  > {"expect":{"body_contains":["function_call_output","call-unknown-shell"]},"response":{"id":"resp-unknown-shell-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"restricted shell finished"}]}]}}
+  > EOF
+  $ start_fake_openai unknown-shell.jsonl unknown-shell-capture unknown-shell-port
+  $ spice_bin=$(command -v spice)
+  $ PATH=/usr/bin:/bin SPICE_WORKSPACE_TOOLING=off "$spice_bin" run --ephemeral --permission-mode bypass --sandbox danger-full-access "try local dune" 2>/dev/null | grep 'restricted shell finished'
+  restricted shell finished
+  $ wait_fake_server
+  $ test ! -e "$LOCAL_SWITCH_MARKER" && echo no-local-switch-process
+  no-local-switch-process
   $ mkdir fake-bin
   $ cat > fake-bin/dune <<'EOF'
   > #!/bin/sh
@@ -85,6 +109,16 @@ fields outside the workspace allowlist.
     [1] project-only  project  $TESTCASE_ROOT/workspace/.spice/skills/project-only
     [2] relative-only  path  $TESTCASE_ROOT/workspace/relative-skills/relative-only
     [3] outside-only  path  $TESTCASE_ROOT/outside-skills/outside-only
+  $ cat > trusted-shell.jsonl <<'EOF'
+  > {"expect":{"body_contains":["use local dune","\"name\":\"shell\""]},"response":{"id":"resp-trusted-shell-1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-trusted-shell","call_id":"call-trusted-shell","name":"shell","arguments":"{\"command\":\"dune --version\"}"}]}}
+  > {"expect":{"body_contains":["function_call_output","call-trusted-shell"]},"response":{"id":"resp-trusted-shell-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"trusted shell finished"}]}]}}
+  > EOF
+  $ start_fake_openai trusted-shell.jsonl trusted-shell-capture trusted-shell-port
+  $ PATH=/usr/bin:/bin SPICE_WORKSPACE_TOOLING=off "$spice_bin" run --ephemeral --permission-mode bypass --sandbox danger-full-access "use local dune" 2>/dev/null | grep 'trusted shell finished'
+  trusted shell finished
+  $ wait_fake_server
+  $ test -e "$LOCAL_SWITCH_MARKER" && echo local-switch-process-started
+  local-switch-process-started
   $ cat > trusted-run.jsonl <<'EOF'
   > {"expect":{"body_contains":["trusted prompt","REPOSITORY INSTRUCTION","project-only","relative-only"]},"response":{"id":"resp-trusted","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"trusted answer"}]}]}}
   > EOF

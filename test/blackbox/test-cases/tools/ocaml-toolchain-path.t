@@ -9,6 +9,7 @@ toolchain-locator variables this cram run may carry so the fixture controls
 them.
 
   $ SPICE="$(command -v spice)"
+  $ export SPICE_FAKE_PROVIDER_ACCEPT_TIMEOUT=12
   $ unset DUNE_OCAML_STDLIB OPAM_SWITCH_PREFIX SPICE_DUNE
 
   $ mkdir -p fixture/lib

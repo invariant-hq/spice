@@ -1787,16 +1787,6 @@ let resolve_name_form ~sandbox ?describe_freshness ~fs ~workspace ~max_bytes
 (* Permissions                                                        *)
 (* ------------------------------------------------------------------ *)
 
-let access_cwd workspace =
-  Permission.Access.Path_scope.workspace (Workspace.root_path workspace)
-
-let merlin_exec_access ~execution ~program ~workspace =
-  match program with
-  | [] -> invalid_arg "program prefix must not be empty"
-  | argv_program :: args ->
-      Permission.Access.argv ~cwd:(access_cwd workspace) ~execution
-        ~program:argv_program args
-
 let switch_lib_root opam_switch_prefix =
   let prefix =
     match opam_switch_prefix with
@@ -1805,32 +1795,18 @@ let switch_lib_root opam_switch_prefix =
   in
   Option.map (fun prefix -> Filename.concat prefix "lib") prefix
 
-let permissions ?(program = default_program)
-    ?(ocamlfind_program = default_ocamlfind_program) ?opam_switch_prefix
-    ~sandbox ~workspace input =
-  let execution = Process.command_execution sandbox in
+let permissions ?opam_switch_prefix ~workspace input =
   match classify (Input.query input) with
   | Path -> (
       match Workspace.resolve_string workspace (Input.query input) with
       | Error _ -> []
       | Ok path ->
-          let accesses =
-            [
-              Permission.Access.path ~op:`Read path;
-              merlin_exec_access ~execution ~program ~workspace;
-            ]
+          let accesses = [ Permission.Access.path ~op:`Read path ]
           in
           [ Permission.Request.of_accesses ~source:name accesses ])
   | Library _ | Module_path _ | Focused _ -> (
-      let describe_argv = Dune.Describe.workspace_args () in
-      let describe_access =
-        match describe_argv with
-        | [] -> []
-        | dune :: args ->
-            [
-              Permission.Access.argv ~cwd:(access_cwd workspace) ~execution
-                ~program:dune args;
-            ]
+      let project_read =
+        [ Permission.Access.path ~op:`Read (Workspace.root_path workspace) ]
       in
       let pkg_read =
         match
@@ -1849,11 +1825,9 @@ let permissions ?(program = default_program)
                 [
                   Permission.Access.path_scope ~op:`Read
                     (Permission.Access.Path_scope.outside_workspace abs);
-                  Permission.Access.argv ~cwd:(access_cwd workspace) ~execution
-                    ~program:ocamlfind_program [ "query" ];
                 ])
       in
-      let accesses = describe_access @ pkg_read @ switch_accesses in
+      let accesses = project_read @ pkg_read @ switch_accesses in
       match accesses with
       | [] -> []
       | accesses -> [ Permission.Request.of_accesses ~source:name accesses ])
@@ -1942,9 +1916,7 @@ let run ~sandbox ?(program = default_program)
 let tool ~sandbox ?program ?ocamlfind_program ?opam_switch_prefix ?project_source
     ~process_mgr ~clock ~fs ~cwd ~workspace () =
   Tool.make ~name ~description ~input:Input.contract ~output:Output.encode
-    ~permissions:
-      (permissions ?program ?ocamlfind_program ?opam_switch_prefix ~sandbox
-         ~workspace)
+    ~permissions:(permissions ?opam_switch_prefix ~workspace)
     ~run:(fun ctx input ->
       run ~sandbox ?program ?ocamlfind_program ?opam_switch_prefix ?project_source
         ~process_mgr ~clock ~fs ~cwd ~workspace

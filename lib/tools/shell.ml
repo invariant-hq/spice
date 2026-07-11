@@ -158,6 +158,7 @@ module Config = struct
     max_timeout_ms : int;
     max_output_bytes : int;
     environment : (string * string option) list;
+    toolchain_root : Spice_path.Abs.t option;
   }
 
   let default_shell =
@@ -181,7 +182,7 @@ module Config = struct
 
   let make ?(shell = default_shell) ?sandbox ?(network_restricted = false)
       ?(default_timeout_ms = 60_000) ?(max_timeout_ms = 600_000)
-      ?(max_output_bytes = 65_536) ?(environment = []) () =
+      ?(max_output_bytes = 65_536) ?(environment = []) ?toolchain_root () =
     let sandbox =
       match sandbox with Some sandbox -> sandbox | None -> default_sandbox ()
     in
@@ -203,6 +204,7 @@ module Config = struct
       max_timeout_ms;
       max_output_bytes;
       environment;
+      toolchain_root;
     }
 
   let shell t = t.shell
@@ -212,6 +214,7 @@ module Config = struct
   let max_timeout_ms t = t.max_timeout_ms
   let max_output_bytes t = t.max_output_bytes
   let environment t = t.environment
+  let toolchain_root t = t.toolchain_root
 
   let resolve_timeout_ms t = function
     | None -> Ok t.default_timeout_ms
@@ -718,14 +721,11 @@ let environment_array bindings =
    switch on [PATH] still runs [dune] from the shell tool. The adjustment
    precedes the sandbox partition, which never strips [PATH]; the search space
    is also what the exit-127 note consults. *)
-let with_toolchain ~workspace bindings =
+let with_toolchain ~workspace_root bindings =
   let env = environment_array bindings in
   let toolchain =
     Spice_ocaml_toolchain.discover ~env
-      ~workspace_root:
-        (Some
-           (Spice_path.Abs.to_string
-              (Workspace.Path.abs (Workspace.root_path workspace))))
+      ~workspace_root:(Option.map Spice_path.Abs.to_string workspace_root)
   in
   let adjusted = Spice_ocaml_toolchain.env toolchain ~program:"dune" in
   let bindings =
@@ -929,7 +929,8 @@ let run ~fs ~workspace ~config ?(cancelled = default_cancelled) input =
               shell_command (Config.shell config) (Input.command input)
             in
             let toolchain, base_env =
-              with_toolchain ~workspace (process_environment config)
+              with_toolchain ~workspace_root:(Config.toolchain_root config)
+                (process_environment config)
             in
             let run_spawn ~argv ~env ~enforcement =
               let result =

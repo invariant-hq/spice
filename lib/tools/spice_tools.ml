@@ -272,46 +272,39 @@ let edits ?(mutating = true) ?anchors ~editor ~fs ~workspace () =
     | None -> []
     | Some resolver -> [ Edit_lines.tool ~fs ~workspace ~resolver () ]
 
-let ocaml ?(mutating = true) ?project_source ?merlin_program ?watch ~sandbox ~fs
-    ~process_mgr ~clock ~cwd ~dune ~workspace () =
+let ocaml ?(mutating = true) ?(project_tools = true) ?project_source
+    ?merlin_program ?watch ~sandbox ~fs ~process_mgr ~clock ~cwd ~dune
+    ~workspace () =
   List.concat
     [
-      (if mutating then
+      (if mutating && project_tools then
          [
            Ocaml_eval.tool ~sandbox ~fs ~workspace
              ~config:(Ocaml_eval.Config.make ())
              ?watch ();
            Ocaml_rename.tool ~sandbox ?program:merlin_program ~fs ~workspace ();
-           Ocaml_replace_expressions.tool ~sandbox ~fs ~workspace ();
          ]
        else []);
-      [
-        Ocaml_dune_describe.tool ~sandbox ~process_mgr ~clock ~cwd ~workspace
-          ?project_source ();
-        Ocaml_dune_diagnostics.tool ~clock ~dune ();
-        Ocaml_docs.tool ~sandbox ?program:merlin_program ?project_source ~process_mgr
-          ~clock ~fs ~cwd ~workspace ();
-        Ocaml_find_definitions.tool ~sandbox ?program:merlin_program ~fs
-          ~workspace ();
-        Ocaml_find_references.tool ~sandbox ?program:merlin_program ~fs
-          ~workspace ();
-        Ocaml_search_expressions.tool ~sandbox ~fs ~workspace ();
-        Ocaml_type_at.tool ~sandbox ?program:merlin_program ~fs ~workspace ();
-      ];
+      (if mutating then
+         [ Ocaml_replace_expressions.tool ~sandbox ~fs ~workspace () ]
+       else []);
+      (if project_tools then
+         [
+           Ocaml_dune_describe.tool ~sandbox ~process_mgr ~clock ~cwd ~workspace
+             ?project_source ();
+           Ocaml_dune_diagnostics.tool ~clock ~dune ();
+           Ocaml_docs.tool ~sandbox ?program:merlin_program ?project_source
+             ~process_mgr ~clock ~fs ~cwd ~workspace ();
+           Ocaml_find_definitions.tool ~sandbox ?program:merlin_program ~fs
+             ~workspace ();
+           Ocaml_find_references.tool ~sandbox ?program:merlin_program ~fs
+             ~workspace ();
+         ]
+       else []);
+      [ Ocaml_search_expressions.tool ~sandbox ~fs ~workspace () ];
+      (if project_tools then
+         [ Ocaml_type_at.tool ~sandbox ?program:merlin_program ~fs ~workspace () ]
+       else []);
     ]
 
 let shell ~fs ~workspace ~config () = [ Shell.tool ~fs ~workspace ~config () ]
-
-let default ?(mutating = true) ?project_source ?merlin_program ?watch ?anchors
-    ~editor ~sandbox ~fs ~process_mgr ~clock ~cwd ~dune ~workspace
-    ~shell:shell_config ()
-    =
-  List.concat
-    [
-      files ?anchors ~fs ~workspace ();
-      search ?anchors ~sandbox ~fs ~workspace ();
-      edits ~mutating ?anchors ~editor ~fs ~workspace ();
-      ocaml ~mutating ?project_source ?merlin_program ?watch ~sandbox ~fs
-        ~process_mgr ~clock ~cwd ~dune ~workspace ();
-      shell ~fs ~workspace ~config:shell_config ();
-    ]

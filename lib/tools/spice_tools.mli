@@ -9,8 +9,8 @@
     intentionally keeps filesystem, process, permission, and stale-check
     evidence in each tool's typed output rather than extending {!Spice_tool}.
     Provider-facing code should use the erased tools from the family
-    constructors or {!default}; host and session code should prefer the typed
-    modules re-exported here. OCaml Dune support is split into one module per
+    constructors; host and session code should prefer the typed modules
+    re-exported here. OCaml Dune support is split into one module per
     model-facing tool: {!Ocaml_dune_describe} for one-shot project structure and
     {!Ocaml_dune_diagnostics} for current Dune RPC diagnostics. *)
 
@@ -245,6 +245,7 @@ val edits :
 
 val ocaml :
   ?mutating:bool ->
+  ?project_tools:bool ->
   ?project_source:Spice_ocaml_dune.Project_source.t ->
   ?merlin_program:string list ->
   ?watch:(unit -> string option) ->
@@ -257,17 +258,18 @@ val ocaml :
   workspace:Spice_workspace.t ->
   unit ->
   Spice_tool.t list
-(** [ocaml ~sandbox ~fs ~process_mgr ~clock ~cwd ~dune ~workspace ()] is the OCaml
-    support catalog: optional {!Ocaml_eval}, optional {!Ocaml_rename} and
-    {!Ocaml_replace_expressions}, {!Ocaml_dune_describe},
+(** [ocaml ~sandbox ~fs ~process_mgr ~clock ~cwd ~dune ~workspace ()] is the
+    OCaml catalog: optional {!Ocaml_eval} and {!Ocaml_rename}, structural
+    expression replacement, {!Ocaml_dune_describe},
     {!Ocaml_dune_diagnostics}, {!Ocaml_docs}, {!Ocaml_find_definitions},
-    {!Ocaml_find_references}, {!Ocaml_search_expressions}, and {!Ocaml_type_at},
-    in that order.
+    {!Ocaml_find_references}, structural expression search, and
+    {!Ocaml_type_at}, in that order.
 
-    [mutating] defaults to [true]. When [false], {!Ocaml_eval}, {!Ocaml_rename},
-    and {!Ocaml_replace_expressions} are omitted because they execute or mutate.
-    Structural OCaml editing belongs to {!edits} so {!default} can preserve the
-    historical tool order.
+    [mutating] defaults to [true]. When [false], eval and the two mutating tools
+    are omitted. [project_tools] defaults to [true].
+    When [false], every tool that runs project code or a project-selected
+    executable is omitted; the pure structural search and optional replacement
+    remain.
 
     [project_source] supplies a boot-captured Dune project description to
     {!Ocaml_dune_describe} and {!Ocaml_docs}, so those tools do not run a
@@ -287,52 +289,3 @@ val shell :
   Spice_tool.t list
 (** [shell ~fs ~workspace ~config ()] is the shell execution catalog containing
     {!Shell}. *)
-
-val default :
-  ?mutating:bool ->
-  ?project_source:Spice_ocaml_dune.Project_source.t ->
-  ?merlin_program:string list ->
-  ?watch:(unit -> string option) ->
-  ?anchors:Anchor.Resolver.t ->
-  editor:Editor.t ->
-  sandbox:Spice_sandbox.t ->
-  fs:_ Eio.Path.t ->
-  process_mgr:_ Eio.Process.mgr ->
-  clock:_ Eio.Time.clock ->
-  cwd:_ Eio.Path.t ->
-  dune:Spice_ocaml_dune.Rpc.Instance.t ->
-  workspace:Spice_workspace.t ->
-  shell:Shell.Config.t ->
-  unit ->
-  Spice_tool.t list
-(** [default ~sandbox ~fs ~process_mgr ~clock ~cwd ~dune ~workspace ~shell ()] is the
-    standard coding-session tool catalog.
-
-    The catalog contains file reads (including directory listings), writes, text
-    search, globbing, exact edits, patch application, structural OCaml AST
-    edits, OCaml eval, OCaml API docs, OCaml Dune inspection, Merlin
-    definition/reference lookup, and shell execution in that order. [shell] is
-    the host-selected shell execution policy. Filesystem tools derive their
-    authority from [fs] and [workspace]. [process_mgr], [clock], and [cwd] back
-    the bounded one-shot {!Ocaml_dune_describe} tool. [cwd] also supplies the
-    process directory for Merlin-backed lookups. [dune] backs
-    {!Ocaml_dune_diagnostics} and should be the same workspace-level
-    {!Spice_ocaml_dune.Rpc.Instance.t} used by host Dune diagnostic watchers.
-
-    This is a compatibility/convenience wrapper over
-    [files @ search @ edits @ ocaml @ shell]. Prefer the family constructors
-    when assembling a custom catalog.
-
-    [mutating] defaults to [true]. When [false], the catalog omits tools that
-    mutate the workspace or execute arbitrary user code ({!Write_file},
-    {!Edit_file}, {!Apply_patch}, {!Ocaml_ast_edit}, {!Edit_lines}, and
-    {!Ocaml_eval}): a read-only run never constructs what it must not call.
-
-    [editor] is threaded to {!edits} and selects the whole general mutation
-    surface (see {!edits}). [project_source], [merlin_program], and [watch] are
-    threaded to {!ocaml}; all absent means today's behavior.
-
-    [anchors] defaults to [None], today's catalog exactly. When supplied,
-    {!Read_file} and {!Search_text} render anchors from the resolver's source
-    and, in mutating catalogs, {!Edit_lines} joins the catalog after
-    {!Ocaml_ast_edit}. *)

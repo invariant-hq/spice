@@ -7,7 +7,7 @@
 
 (* The verb table is derived from the real toolset, matching each tool's name
    exactly as the host registers it: the executable tools assembled by
-   [Spice_tools.default]/[web]/[Skills.tools] under [Toolset.make]
+   [Spice_tools] families, [web], and [Skills.tools] under [Toolset.make]
    (lib/host/toolset.ml) and the host tools enumerated by
    [Spice_protocol.Call.Kind] (lib/protocol/call.ml). Re-audit this table
    whenever a tool is added, renamed, or removed. A name with no 02-tools verb

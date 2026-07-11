@@ -573,7 +573,7 @@ let%expect_test "permissions dry versus apply" =
   Printf.printf "apply: %d requests\n"
     (List.length (Tool.Call.permissions apply));
   [%expect {|
-    dry: 3 requests
-    apply: 4 requests |}]
+    dry: 2 requests
+    apply: 3 requests |}]
 
 [%%run_tests "spice.tools.ocaml_rename.expect"]

@@ -212,7 +212,7 @@ let%expect_test "ocaml_dune_describe runs dune describe for a tiny project" =
   [%expect
     {|
     tool: ocaml_dune_describe
-    permissions: 3
+    permissions: 1
     status: completed
     components: 1
     tests: 1
@@ -221,7 +221,7 @@ let%expect_test "ocaml_dune_describe runs dune describe for a tiny project" =
     line3: build_context: _build/default
     line4: components: 1 local=1 external=0 |}]
 
-let%expect_test "Dune command facts match sealed sandbox evidence" =
+let%expect_test "Dune implementation argv is not a permission fact" =
   with_project_clock @@ fun ~root:_ ~process_mgr ~clock ~cwd ~workspace ->
   let call sandbox =
     Describe.tool ~sandbox ~process_mgr ~clock ~cwd ~workspace ()
@@ -232,9 +232,9 @@ let%expect_test "Dune command facts match sealed sandbox evidence" =
   print_command_routes "enforced" (call enforced_sandbox);
   [%expect
     {|
-    unconfined: direct,direct
-    external: direct,direct
-    enforced: sandboxed,sandboxed |}]
+    unconfined:
+    external:
+    enforced: |}]
 
 let%expect_test
     "ocaml_dune_describe roots dune describe at a nested project cwd" =

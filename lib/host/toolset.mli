@@ -74,10 +74,12 @@ val make :
     Absent — the [spice debug tools] snapshot with no resolvable model — the
     string-replace family is used.
 
-    The catalog is {!Spice_tools.default} (filesystem, search, edits, OCaml, and
-    shell, with [mutating] set from {!Sandbox.mutating_tools} so a read-only
-    sandbox omits mutating tools) followed by {!Spice_tools.web} under the
-    host's resolved web policy, followed by {!Skills.tools}. [cwd] is the run
+    The catalog composes the filesystem, search, edit, OCaml syntax, trusted
+    OCaml project, and shell families, with [mutating] set from
+    {!Sandbox.mutating_tools} so a read-only sandbox omits mutating tools. The
+    web family under the host's resolved policy and {!Skills.tools} follow.
+    Project-executing OCaml tools and local-switch command lookup are omitted
+    unless the canonical workspace is trusted. [cwd] is the run
     directory Eio path (see {!Context.eio_cwd}); [http] and [fetch_https] are
     the HTTPS transport the host does not own — the TLS stack lives in the
     binary package, not this library.

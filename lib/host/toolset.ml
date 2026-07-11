@@ -62,6 +62,7 @@ let editor_decision host model =
 let make ~sw ~stdenv host ?model ~workspace ~sandbox ~skills ~cwd ~http
     ~fetch_https ?anchors ?dune ?project_source ?merlin_program () =
   let config = Host.config host in
+  let trusted = Trust.is_trusted (Config.workspace_trust config) in
   (* The shell tool cannot read the network posture back from the sealed
      sandbox, so pass it: a network-restricted confinement lets a failed
      command that looks network-blocked explain the policy to the model. *)
@@ -74,18 +75,22 @@ let make ~sw ~stdenv host ?model ~workspace ~sandbox ~skills ~cwd ~http
     Spice_tools.Shell.Config.make
       ~shell:(Config.Runtime.shell (Config.runtime config))
       ~sandbox:(Sandbox.Effective.sandbox sandbox)
+      ?toolchain_root:(if trusted then Some (Config.project_root config) else None)
       ~network_restricted ()
   in
+  let editor, _reason = editor_decision host model in
+  let mutating = Sandbox.mutating_tools sandbox in
+  let process_sandbox = Sandbox.Effective.sandbox sandbox in
+  let fs = Eio.Stdenv.fs stdenv in
   let dune =
     match dune with
     | Some dune -> dune
     | None ->
-        Spice_ocaml_dune.Rpc.Instance.create ~fs:(Eio.Stdenv.fs stdenv)
+        Spice_ocaml_dune.Rpc.Instance.create ~fs
           ~net:(Eio.Stdenv.net stdenv) ~workspace ()
   in
-  (* [ocaml_eval]'s watched-build probe: the current Dune RPC endpoint, if a
-     watch holds the lock. It reads the shared instance's registry status, not a
-     fresh poll, so it never engages the build engine. *)
+  (* [ocaml_eval]'s watched-build probe reads the shared endpoint status; it
+     never engages the build engine. *)
   let watch () =
     match Spice_ocaml_dune.Rpc.Instance.refresh_status dune with
     | Spice_ocaml_dune.Rpc.Instance.Found endpoint ->
@@ -94,14 +99,17 @@ let make ~sw ~stdenv host ?model ~workspace ~sandbox ~skills ~cwd ~http
     | Spice_ocaml_dune.Rpc.Instance.Lookup_failed _ ->
         None
   in
-  let editor, _reason = editor_decision host model in
-  Spice_tools.default
-    ~mutating:(Sandbox.mutating_tools sandbox)
-    ~editor ~sandbox:(Sandbox.Effective.sandbox sandbox) ?project_source
-    ?merlin_program ~watch ?anchors
-    ~fs:(Eio.Stdenv.fs stdenv)
-    ~process_mgr:(Eio.Stdenv.process_mgr stdenv)
-    ~clock:(Eio.Stdenv.clock stdenv) ~cwd ~dune ~workspace ~shell ()
+  List.concat
+    [
+      Spice_tools.files ?anchors ~fs ~workspace ();
+      Spice_tools.search ?anchors ~sandbox:process_sandbox ~fs ~workspace ();
+      Spice_tools.edits ~mutating ?anchors ~editor ~fs ~workspace ();
+      Spice_tools.ocaml ~mutating ~project_tools:trusted ?project_source
+        ?merlin_program ~watch ~sandbox:process_sandbox ~fs
+        ~process_mgr:(Eio.Stdenv.process_mgr stdenv)
+        ~clock:(Eio.Stdenv.clock stdenv) ~cwd ~dune ~workspace ();
+      Spice_tools.shell ~fs ~workspace ~config:shell ();
+    ]
   @ Spice_tools.web ~sw
       ~mono_clock:(Eio.Stdenv.mono_clock stdenv)
       ~net:(Eio.Stdenv.net stdenv) ~fetch_https ~http ~policy:(web_policy host)

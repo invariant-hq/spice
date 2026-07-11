@@ -39,13 +39,23 @@ let print_catalog label tools =
   Printf.printf "-- %s --\n" label;
   List.iter (fun tool -> Printf.printf "%s\n" (Tool.name tool)) tools
 
+let catalog ~editor ~fs ~process_mgr ~clock ~cwd ~dune ~workspace ~shell =
+  List.concat
+    [
+      Spice_tools.files ~fs ~workspace ();
+      Spice_tools.search ~sandbox ~fs ~workspace ();
+      Spice_tools.edits ~editor ~fs ~workspace ();
+      Spice_tools.ocaml ~sandbox ~fs ~process_mgr ~clock ~cwd ~dune ~workspace
+        ();
+      Spice_tools.shell ~fs ~workspace ~config:shell ();
+    ]
+
 let%expect_test "default catalog selects editor tools by family" =
   with_workspace @@ fun ~fs ~process_mgr ~clock ~cwd ~net ~workspace ->
   let dune = Dune.Rpc.Instance.create ~fs ~net ~workspace () in
   let shell = Shell.Config.make () in
   let default ~editor () =
-    Spice_tools.default ~editor ~sandbox ~fs ~process_mgr ~clock ~cwd ~dune
-      ~workspace ~shell ()
+    catalog ~editor ~fs ~process_mgr ~clock ~cwd ~dune ~workspace ~shell
   in
   (* The editor family owns the whole general mutation surface: exactly one
      family ships, and write_file rides with edit_file. *)
@@ -98,8 +108,8 @@ let%expect_test "tool names satisfy the strictest provider name dialect" =
   let dune = Dune.Rpc.Instance.create ~fs ~net ~workspace () in
   let shell = Shell.Config.make () in
   let tools =
-    Spice_tools.default ~editor:Editor.String_replace ~sandbox ~fs ~process_mgr
-      ~clock ~cwd ~dune ~workspace ~shell ()
+    catalog ~editor:Editor.String_replace ~fs ~process_mgr ~clock ~cwd ~dune
+      ~workspace ~shell
   in
   let valid_char = function
     | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '.' | '-' -> true

@@ -231,7 +231,7 @@ let%expect_test "tool adapter invokes backend and filters stale references" =
   end;
   [%expect
     {|
-    permissions: 3
+    permissions: 2
     status: completed
     argv_program: fake-ocamlmerlin
     argv_selector: single

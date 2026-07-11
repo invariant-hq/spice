@@ -164,24 +164,18 @@ module Output : sig
 end
 
 val permissions :
-  ?program:string list ->
-  sandbox:Spice_sandbox.t ->
   workspace:Spice_workspace.t ->
   Input.t ->
   Spice_permission.Request.t list
-(** [permissions ~sandbox ~workspace input] are the permissions required to run
-    [input]. Command execution identity is derived from [sandbox]'s sealed
-    evidence.
+(** [permissions ~workspace input] are the permissions required to run [input].
 
-    Both modes require workspace-root read, source-file read, and Merlin
-    execution (rename runs {!Ocaml_find_references} internally, so Merlin exec
-    is needed even for a dry run). A write ([dry_run] false) additionally
+    Both modes require workspace-root and source-file reads. A write
+    ([dry_run] false) additionally
     requires [Modify] scoped to the workspace root, because a rename's file set
     is discovered from Merlin rather than declared in the input and
     [permissions] cannot see it. Returns [[]] if [input]'s path cannot be
-    resolved. [program] defaults to {!default_program}. See family rule B in the
-    design note: the root-scoped [Modify] is the v1 shape; per-file [Modify] via
-    a discovery pass is deferred. *)
+    resolved. See family rule B in the design note: the root-scoped [Modify] is
+    the v1 shape; per-file [Modify] via a discovery pass is deferred. *)
 
 val run :
   sandbox:Spice_sandbox.t ->

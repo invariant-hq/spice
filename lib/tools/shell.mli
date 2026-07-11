@@ -133,6 +133,7 @@ module Config : sig
     ?max_timeout_ms:int ->
     ?max_output_bytes:int ->
     ?environment:(string * string option) list ->
+    ?toolchain_root:Spice_path.Abs.t ->
     unit ->
     t
   (** [make ()] is a shell execution policy.
@@ -150,6 +151,10 @@ module Config : sig
       host supplies it. [environment] is an overlay applied after the built-in
       deterministic non-interactive environment. A binding [(name, Some value)]
       sets [name]; [(name, None)] removes [name].
+
+      [toolchain_root] permits OCaml command lookup in that root's local
+      [_opam/bin] switch. When absent, shell command lookup uses only user-owned
+      environment roots. Hosts should provide it only after workspace trust.
 
       Raises [Invalid_argument] if [shell] or an environment name is empty, if
       an environment name contains ["="], if any string contains NUL, if timeout
