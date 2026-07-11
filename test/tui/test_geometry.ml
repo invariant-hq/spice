@@ -257,3 +257,45 @@ let%expect_test "a resize mid-turn reflows the in-flight frame" =
      contract, so the post-release settled frame is not duplicated here. *)
   Tui.release t "turn-1";
   Tui.settle t
+
+(* A shrink/grow cycle restores the composer rules at full width. The rules
+   are max-content text; a measurement clamped at the shrunken width never
+   recovered on growth before the mosaic text_surface fix — this frame then
+   showed the 40-column rules inside the 80-column window. KNOWN RESIDUAL,
+   pinned as-is: the restored stage sits one row lower than the steady 80x24
+   idle frame and the account line stays shed (the cycle retains one row of
+   shed state). When that heals, this golden collapses onto the steady frame
+   at the top of this file. *)
+let%expect_test "a shrink and grow cycle restores the composer rules" =
+  Tui.run ~name:"geometry-rules-cycle" @@ fun t ->
+  Tui.settle t;
+  Tui.resize t ~width:40 ~height:12;
+  Tui.settle t;
+  Tui.resize t ~width:80 ~height:24;
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 |
+02 |
+03 |
+04 |
+05 |                              ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·
+06 |                              ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂
+07 |
+08 |                            dev · openai/gpt-5.5 medium
+09 |
+10 |      ▎ welcome — and thanks for trying spice this early.
+11 |      ▎ it's experimental: sessions and config may change without migration.
+12 |
+13 |           ────────────────────────────────────────────────────────────
+14 |           ❯ message spice
+15 |           ────────────────────────────────────────────────────────────
+16 |
+17 |                      dune       ✗ · diagnostics unavailable
+18 |
+19 |                       sandbox: danger-full-access (config)
+20 |
+21 |
+22 |
+23 |
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]

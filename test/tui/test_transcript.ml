@@ -917,4 +917,66 @@ let%expect_test "thinking visibility hides reasoning and restores it" =
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗   ? for shortcuts|}]
 
+(* A latched box whose offset the grow-back clamp lands on the new bottom
+   re-engages following, so the next appended content pins the tail again.
+   The park happens in the shrunken view (one wheel notch above its much
+   deeper bottom); growing back clamps that offset onto the 80-column
+   maximum. Before the mosaic reengage fix the latch survived the clamp: the
+   transcript sat on the stale offset and the second answer grew in below
+   the viewport. *)
+let%expect_test "a resize cycle re-engages the transcript tail" =
+  let script =
+    [
+      Provider_script.message ~expect:[ "overflow" ] ~gate:"fin"
+        ~id:"resp-cycle-1" overflow_answer;
+      Provider_script.message ~expect:[ "appendix" ] ~gate:"fin2"
+        ~id:"resp-cycle-2" "The appendix closes the discussion.";
+    ]
+  in
+  Tui.run ~name:"transcript-resize-cycle" ~provider:script @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "overflow the viewport";
+  Tui.enter t;
+  ignore (Tui.await_request t 1 : string);
+  Tui.release t "fin";
+  Tui.settle t;
+  Tui.resize t ~width:40 ~height:12;
+  Tui.settle t;
+  Tui.keys t (wheel_up ~col:10 ~row:4);
+  Tui.settle t;
+  Tui.resize t ~width:80 ~height:24;
+  Tui.settle t;
+  Tui.keys t "the appendix now";
+  Tui.settle t;
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin2";
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 |   Idempotent requests retry safely.
+02 |
+03 |   Non-idempotent ones need an idempotency key.
+04 |
+05 |   The budget bounds the total attempts.
+06 |
+07 |   Giving up surfaces the last error.
+08 |
+09 |   Metrics record every retry attempt.
+10 |
+11 |   Backpressure slows the caller down.
+12 |
+13 |   Circuit breakers trip on sustained failure.
+14 |
+15 |   The final word is to cap the ceiling.
+16 |
+17 | ❯ the appendix now
+18 |
+19 | ⏺ The appendix closes the discussion.
+20 |
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ message spice
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
+
 [%%run_tests "spice.tui.transcript"]
