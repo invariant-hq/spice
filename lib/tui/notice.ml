@@ -131,11 +131,11 @@ let data ~source ~facts ~atom ~disclosable =
   let atom =
     match atom with None -> [] | Some a -> [ sep; seg Theme.atom a ]
   in
-  let disc =
-    if disclosable then [ seg Theme.faint (" " ^ Theme.disclosure_closed) ]
-    else []
-  in
-  row (head @ facts @ atom @ disc)
+  (* [disclosable] names hidden detail, but no glyph marks it: the notice
+     cannot expand in place, and its atom already names the real affordance
+     (a command). The [▸] returns with the disclosure mechanism. *)
+  let _ = disclosable in
+  row (head @ facts @ atom)
 
 let view = function
   | Event msg -> event msg

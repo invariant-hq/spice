@@ -1168,8 +1168,8 @@ let dispatch_command ?(argument = None) command t =
           | Chat chat ->
               let expanded = not chat.expanded in
               let outcome =
-                if expanded then "tool output expanded"
-                else "tool output collapsed"
+                if expanded then "reasoning detail expanded"
+                else "reasoning detail collapsed"
               in
               let transcript =
                 List.fold_left Transcript.append chat.transcript
@@ -1182,7 +1182,7 @@ let dispatch_command ?(argument = None) command t =
               in
               ({ t with phase = Chat { chat with expanded; transcript } }, [])
           | Prelude ->
-              ({ t with flash = Some "no tool output to expand yet" }, [])))
+              ({ t with flash = Some "no reasoning to expand yet" }, [])))
 
 (* A submitted draft routes by shape (03-composer.md, 10-commands.md): a known
    slash command dispatches through its catalog fate; a [!] command runs on the

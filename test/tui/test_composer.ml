@@ -305,7 +305,7 @@ let%expect_test
 17 | ────────────────────────────────────────────────────────────────────────────────
 18 |   composer       history                      controls
 19 |   /  commands    shift+enter  newline         ←                focus agents
-20 |   @  file paths  ↑ ↓          prompt history  ctrl+o           verbose output
+20 |   @  file paths  ↑ ↓          prompt history  ctrl+o           verbose reasoning
 21 |   !  shell mode  ctrl+r       search history  shift+tab        cycle approvals
 22 |   ?  this help   esc esc      interrupt turn  pageup pagedown  scroll
 23 |                                               ctrl+c ctrl+c    quit

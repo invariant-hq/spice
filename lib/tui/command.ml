@@ -60,7 +60,7 @@ let all =
       ~echoes:false ~fate:Open_model;
     entry "/thinking" "Thinking" "Toggle thinking summaries"
       ~availability:Anytime ~echoes:true ~fate:Toggle_thinking;
-    entry "/verbose" "Verbose" "Expand or collapse tool output (ctrl+o)"
+    entry "/verbose" "Verbose" "Expand or collapse reasoning detail (ctrl+o)"
       ~availability:Anytime ~echoes:true ~fate:Toggle_verbose;
     entry "/plan" "Plan" "Switch to plan mode: propose before building"
       ~availability:Anytime ~echoes:true

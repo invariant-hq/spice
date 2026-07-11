@@ -48,8 +48,9 @@ type t =
       disclosable : bool;
     }
       (** The world speaking ([⊙]): a watcher naming its [source], carrying
-          countable [facts], offering at most one slash [atom], and marking
-          itself expandable with a trailing [▸] when [disclosable]. *)
+          countable [facts], and offering at most one slash [atom].
+          [disclosable] names hidden detail; no glyph marks it until the
+          disclosure mechanism can actually expand a notice in place. *)
 
 val view : t -> _ Mosaic.t
 (** [view t] renders the notice in its class's committed form. *)

@@ -95,7 +95,7 @@ let%expect_test "an edit renders a real inline diff" =
 14 |
 15 | ⏺ Bumped y to three.
 16 |
-17 | ⊙ workspace changed · 1 files · +1 −1 · /review ▸
+17 | ⊙ workspace changed · 1 files · +1 −1 · /review
 18 |
 19 |
 20 |
@@ -140,11 +140,11 @@ let%expect_test "a write shows a capped content preview" =
 12 |       line2
 13 |       line3
 14 |       line4
-15 |       … +2 lines ▸
+15 |       … +2 lines
 16 |
 17 | ⏺ Wrote the scaffold.
 18 |
-19 | ⊙ workspace changed · 1 files · +6 −0 · /review ▸
+19 | ⊙ workspace changed · 1 files · +6 −0 · /review
 20 |
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ message spice
@@ -180,7 +180,7 @@ let%expect_test "a read shows a summary only" =
 07 | ❯ inspect the data
 08 |
 09 | ⏺ Read(data.txt)
-10 |   ⎿  Read 8 lines ▸
+10 |   ⎿  Read 8 lines
 11 |
 12 | ⏺ Read the data file.
 13 |
@@ -297,11 +297,11 @@ let%expect_test "todo boards land at their call sites" =
 11 |       ◻ write the tests
 12 |
 13 | ⏺ Read(data.txt)
-14 |   ⎿  Read 1 line ▸
+14 |   ⎿  Read 1 line
 15 |
 16 | ⏺ Todo(2 tasks · 1 done · 1 running)
 17 |       ◼ write the tests
-18 |       ⎿ … 1 done ▸
+18 |       ⎿ … 1 done
 19 |
 20 | ⏺ Planned and inspected.
 21 |
@@ -309,7 +309,7 @@ let%expect_test "todo boards land at their call sites" =
 23 | ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
 24 |   ◻ 2 tasks · 1 done · 1 running
 25 |   ◼ write the tests
-26 |   … 1 done ▸
+26 |   … 1 done
 27 | ────────────────────────────────────────────────────────────────────────────────
 28 | ❯ message spice
 29 | ────────────────────────────────────────────────────────────────────────────────
@@ -349,7 +349,7 @@ let%expect_test "consecutive todo writes fold to one board" =
 08 |
 09 | ⏺ Todo(2 tasks · 1 done · 1 running)
 10 |       ◼ write the tests
-11 |       ⎿ … 1 done ▸
+11 |       ⎿ … 1 done
 12 |
 13 | ⏺ Re-planned the work.
 14 |
@@ -358,7 +358,7 @@ let%expect_test "consecutive todo writes fold to one board" =
 17 | ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
 18 |   ◻ 2 tasks · 1 done · 1 running
 19 |   ◼ write the tests
-20 |   … 1 done ▸
+20 |   … 1 done
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ message spice
 23 | ────────────────────────────────────────────────────────────────────────────────
@@ -429,7 +429,7 @@ let%expect_test "a shell permission prompt gates the call and records it" =
 09 |   allowed once
 10 |
 11 | ⏺ Shell(echo recorded)
-12 |   ⎿  done · 0s ▸
+12 |   ⎿  done · 0s
 13 |
 14 | ⏺ Ran the command.
 15 |
@@ -536,7 +536,7 @@ let%expect_test "a failed shell humanizes the exit and shows the output tail" =
 14 |       OUT5
 15 |       OUT6
 16 |       OUT7
-17 |       … +2 lines ▸
+17 |       … +2 lines
 18 |
 19 | ⏺ The command failed.
 20 |
@@ -625,7 +625,7 @@ let%expect_test
 07 | ❯ search it
 08 |
 09 | ⏺ Search(List.map __ __)
-10 |   ⎿  Found 2 matches across 1 file ▸
+10 |   ⎿  Found 2 matches across 1 file
 11 |
 12 | ⏺ Searched the expressions.
 13 |

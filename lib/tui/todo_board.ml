@@ -43,13 +43,13 @@ let text_row style value =
     ~size:{ width = pct 100; height = px 1 }
     [ text ~style ~wrap:`None value ]
 
+(* Fold rows state the elision without a [▸]: the board cannot expand them,
+   and the glyph is reserved for a real disclosure affordance. *)
 let done_fold_row count =
-  text_row Theme.muted
-    (Printf.sprintf "… %d done %s" count Theme.disclosure_closed)
+  text_row Theme.muted (Printf.sprintf "… %d done" count)
 
 let pending_overflow_row count =
-  text_row Theme.faint
-    (Printf.sprintf "… +%d more %s" count Theme.disclosure_closed)
+  text_row Theme.faint (Printf.sprintf "… +%d more" count)
 
 (* The muted count header the mirror always leads with (02-tools.md §Todo block;
    §The task board carries the same "muted count header"): it holds the

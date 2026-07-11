@@ -78,7 +78,7 @@ The composer recognizes three prefixes:
 - `!` enters shell mode and runs the submitted command through the same
   permission and sandbox posture as agent shell commands.
 
-`ctrl+o` expands or collapses verbose tool and reasoning detail. `pageup` and
+`ctrl+o` expands or collapses verbose reasoning detail. `pageup` and
 `pagedown` scroll the transcript; it stays pinned to new output only while it
 is already at the bottom.
 

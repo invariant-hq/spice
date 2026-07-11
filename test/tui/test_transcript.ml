@@ -750,7 +750,7 @@ let%expect_test "the working line shows committed output tokens" =
 06 | ❯ read the notes
 07 |
 08 | ⏺ Read(notes.txt)
-09 |   ⎿  Read 1 line ▸
+09 |   ⎿  Read 1 line
 10 |
 11 | ⏺ The notes describe exponential backoff.
 12 |
@@ -778,7 +778,7 @@ let%expect_test "the working line shows committed output tokens" =
 06 | ❯ read the notes
 07 |
 08 | ⏺ Read(notes.txt)
-09 |   ⎿  Read 1 line ▸
+09 |   ⎿  Read 1 line
 10 |
 11 | ⏺ The notes describe exponential backoff.
 12 |

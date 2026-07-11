@@ -142,10 +142,11 @@ let header verb ~argument ~dot =
 let result ?(disclosable = false) ~summary ~facts () =
   let sep = seg Theme.muted Theme.separator in
   let facts = List.concat_map (fun f -> [ sep; seg Theme.muted f ]) facts in
-  let disc =
-    if disclosable then [ seg Theme.faint (" " ^ Theme.disclosure_closed) ]
-    else []
-  in
+  (* [disclosable] names hidden detail, but no glyph marks it: nothing can
+     expand a settled block today, and a [▸] would advertise an expansion
+     that does not exist. The marker returns with the disclosure mechanism. *)
+  let _ = disclosable in
+  let disc = [] in
   (* The summary wraps with a hanging indent under the [⎿] column so a long
      error message is never lost off the terminal edge (02-tools.md §Shell /
      §Header) — the same fixed-gutter + wrapping-body shape as a failure notice.
@@ -169,7 +170,7 @@ let preview ~take ~cap lines =
   let total = List.length lines in
   if total <= cap then Preview { lines; overflow = 0 }
   else
-    (* One line over the cap would hide behind a [… +1 lines ▸] row that costs
+    (* One line over the cap would hide behind a [… +1 lines] row that costs
        the same height as the line itself — so show it instead (02-tools.md
        §Truncation). *)
     let shown = if total = cap + 1 then cap + 1 else cap in
@@ -189,16 +190,12 @@ let preview_pad = padding_lrtb 6 0 0 0
 let diff_pad = padding_lrtb 4 0 0 0
 
 let more_row count =
-  (* The disclosure overflow marker (02-tools.md §File edits / §Shell): the
-     hidden lines sit behind the inert [▸]. The verbose-lens [(ctrl+o expands)]
-     wording is the same row's other face, deferred with the disclosure
-     mechanism it belongs to. *)
+  (* The overflow marker (02-tools.md §File edits / §Shell) states the elision
+     and nothing more: no [▸], because nothing can disclose the hidden lines
+     today. The affordance arrives with the disclosure mechanism. *)
   box ~flex_direction:Flex_direction.Row ~padding:preview_pad
     ~size:{ width = pct 100; height = px 1 }
-    [
-      seg Theme.faint
-        (Printf.sprintf "… +%d lines %s" count Theme.disclosure_closed);
-    ]
+    [ seg Theme.faint (Printf.sprintf "… +%d lines" count) ]
 
 let preview_view ~width lines overflow =
   (* Preview rows indent 6 columns and never wrap, so a long content line clips
@@ -284,8 +281,7 @@ let todo_view ~width items =
           ~size:{ width = pct 100; height = px 1 }
           [
             seg Theme.muted
-              (Printf.sprintf "%s … %d done %s" Theme.gutter done_count
-                 Theme.disclosure_closed);
+              (Printf.sprintf "%s … %d done" Theme.gutter done_count);
           ];
       ]
   in

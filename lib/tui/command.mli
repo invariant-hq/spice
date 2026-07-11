@@ -78,7 +78,7 @@ type fate =
           reached this way; [/review] opens a screen ({!Open_review}) rather
           than switching mode. *)
   | Toggle_thinking  (** Flip whether thinking summaries are shown. *)
-  | Toggle_verbose  (** Flip tool-output expansion (also [ctrl+o]). *)
+  | Toggle_verbose  (** Flip reasoning-detail expansion (also [ctrl+o]). *)
   | Quit  (** Request process exit; the footer carries the press-again guard. *)
 
 (** The type for a parsed command line (see {!parse}). *)

@@ -69,11 +69,11 @@ let%expect_test "wide: the board routes to the pane, not the strip" =
 07 |                                                                                 │   ◻ wire the shell
 08 | ⏺ Todo(7 tasks · 2 done · 1 running)                                            │   ◻ add the tests
 09 |       ◼ scaffold the module                                                     │   ◻ update the plan
-10 |       ◻ write the mli                                                           │   … 2 done ▸
+10 |       ◻ write the mli                                                           │   … 2 done
 11 |       ◻ wire the shell                                                          │
 12 |       ◻ add the tests                                                           │
 13 |       ◻ update the plan                                                         │
-14 |       ⎿ … 2 done ▸                                                              │
+14 |       ⎿ … 2 done                                                                │
 15 |                                                                                 │
 16 | ⠋ Working… (0s · esc to interrupt)                                              │
 17 |                                                                                 │
@@ -149,9 +149,9 @@ let%expect_test "wide short: the budget keeps workspace and folds the board" =
 02 |       ◻ wire the shell                                                          │   dune disconnected
 03 |       ◻ add the tests                                                           │
 04 |       ◻ update the plan                                                         │ tasks · 2 done · 1 running
-05 |       ⎿ … 2 done ▸                                                              │   ◼ scaffold the module
-06 |                                                                                 │   … +4 more ▸
-07 | ⠋ Working… (0s · esc to interrupt)                                              │   … 2 done ▸
+05 |       ⎿ … 2 done                                                                │   ◼ scaffold the module
+06 |                                                                                 │   … +4 more
+07 | ⠋ Working… (0s · esc to interrupt)                                              │   … 2 done
 08 |
 09 | ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 10 | ❯ queue a message — sends after this turn
@@ -181,7 +181,7 @@ let%expect_test "narrow: no pane, the board renders in the strip" =
 07 |       ◻ wire the shell
 08 |       ◻ add the tests
 09 |       ◻ update the plan
-10 |       ⎿ … 2 done ▸
+10 |       ⎿ … 2 done
 11 |
 12 | ⠋ Working… (0s · esc to interrupt)
 13 | ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
@@ -191,7 +191,7 @@ let%expect_test "narrow: no pane, the board renders in the strip" =
 17 |   ◻ wire the shell
 18 |   ◻ add the tests
 19 |   ◻ update the plan
-20 |   … 2 done ▸
+20 |   … 2 done
 21 | ────────────────────────────────────────────────────────────────────────────────────────────────────
 22 | ❯ queue a message — sends after this turn
 23 | ────────────────────────────────────────────────────────────────────────────────────────────────────

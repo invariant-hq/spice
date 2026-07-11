@@ -83,7 +83,7 @@ let%expect_test "the live board mirrors mid-flight and persists past settle" =
 07 |       ◻ wire the shell
 08 |       ◻ add the tests
 09 |       ◻ update the plan
-10 |       ⎿ … 2 done ▸
+10 |       ⎿ … 2 done
 11 |
 12 | ⠋ Working… (0s · esc to interrupt)
 13 | ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
@@ -93,7 +93,7 @@ let%expect_test "the live board mirrors mid-flight and persists past settle" =
 17 |   ◻ wire the shell
 18 |   ◻ add the tests
 19 |   ◻ update the plan
-20 |   … 2 done ▸
+20 |   … 2 done
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ queue a message — sends after this turn
 23 | ────────────────────────────────────────────────────────────────────────────────
@@ -113,7 +113,7 @@ let%expect_test "the live board mirrors mid-flight and persists past settle" =
 07 |       ◻ wire the shell
 08 |       ◻ add the tests
 09 |       ◻ update the plan
-10 |       ⎿ … 2 done ▸
+10 |       ⎿ … 2 done
 11 |
 12 | ⏺ Planned the work.
 13 | ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
@@ -123,7 +123,7 @@ let%expect_test "the live board mirrors mid-flight and persists past settle" =
 17 |   ◻ wire the shell
 18 |   ◻ add the tests
 19 |   ◻ update the plan
-20 |   … 2 done ▸
+20 |   … 2 done
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ message spice
 23 | ────────────────────────────────────────────────────────────────────────────────
@@ -154,14 +154,14 @@ let%expect_test "a short terminal folds the pending rows to an overflow row" =
     {|01 |       ◻ wire the shell
 02 |       ◻ add the tests
 03 |       ◻ update the plan
-04 |       ⎿ … 2 done ▸
+04 |       ⎿ … 2 done
 05 |
 06 | ⠋ Working… (0s · esc to interrupt)
 07 | ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
 08 |   ◻ 7 tasks · 2 done · 1 running
 09 |   ◼ scaffold the module
-10 |   … +4 more ▸
-11 |   … 2 done ▸
+10 |   … +4 more
+11 |   … 2 done
 12 | ────────────────────────────────────────────────────────────────────────────────
 13 | ❯ queue a message — sends after this turn
 14 | ────────────────────────────────────────────────────────────────────────────────
@@ -189,7 +189,7 @@ let%expect_test "a very short terminal collapses the board to a count line" =
     {|01 |       ◻ wire the shell
 02 |       ◻ add the tests
 03 |       ◻ update the plan
-04 |       ⎿ … 2 done ▸
+04 |       ⎿ … 2 done
 05 |
 06 | ⠋ Working… (0s · esc to interrupt)
 07 | ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
@@ -234,7 +234,7 @@ let%expect_test "a replacement todo_write re-renders the latest board" =
 07 |
 08 | ⏺ Todo(2 tasks · 1 done · 1 running)
 09 |       ◼ write the tests
-10 |       ⎿ … 1 done ▸
+10 |       ⎿ … 1 done
 11 |
 12 | ⠋ Working… (0s · esc to interrupt)
 13 |
@@ -244,7 +244,7 @@ let%expect_test "a replacement todo_write re-renders the latest board" =
 17 | ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
 18 |   ◻ 2 tasks · 1 done · 1 running
 19 |   ◼ write the tests
-20 |   … 1 done ▸
+20 |   … 1 done
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ queue a message — sends after this turn
 23 | ────────────────────────────────────────────────────────────────────────────────
@@ -285,7 +285,7 @@ let%expect_test "an interrupt keeps the board on screen while items are open" =
 07 |       ◻ wire the shell
 08 |       ◻ add the tests
 09 |       ◻ update the plan
-10 |       ⎿ … 2 done ▸
+10 |       ⎿ … 2 done
 11 |
 12 | ◌ Interrupted — tell spice what to do differently.
 13 | ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
@@ -295,7 +295,7 @@ let%expect_test "an interrupt keeps the board on screen while items are open" =
 17 |   ◻ wire the shell
 18 |   ◻ add the tests
 19 |   ◻ update the plan
-20 |   … 2 done ▸
+20 |   … 2 done
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ message spice
 23 | ────────────────────────────────────────────────────────────────────────────────
@@ -332,7 +332,7 @@ let%expect_test "a board with every item terminal leaves the strip" =
 06 | ❯ plan the work
 07 |
 08 | ⏺ Todo(2 tasks · 2 done · 0 running)
-09 |       ⎿ … 2 done ▸
+09 |       ⎿ … 2 done
 10 |
 11 | ⠋ Working… (0s · esc to interrupt)
 12 |
