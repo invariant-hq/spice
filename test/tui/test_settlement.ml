@@ -111,6 +111,58 @@ let is_cancelled = function
   | Host.Jobs.Failed_with _ | Host.Jobs.Wait_interrupted ->
       false
 
+let%expect_test "run construction does not read a workspace-sized review source"
+    =
+  Project.with_temp "bounded-review-start" @@ fun project ->
+  Project.write_scratch project "config/spice/config.json"
+    {|{"notices":{"fswatch":false,"cr_comments":true,"dune_diagnostics":false,"dune_build":false}}|};
+  let source = Project.path project "deep/review.ml" in
+  Project.write project "deep/review.ml" "";
+  Unix.truncate source (64 * 1024 * 1024);
+  let bindings = Project.bindings project in
+  Project.apply bindings;
+  let process_env = Project.env_snapshot bindings in
+  Eio_main.run @@ fun stdenv ->
+  Eio.Switch.run @@ fun sw ->
+  let config =
+    Host.Config.load ~stdenv ~process_env ~cwd:(Project.root project) ()
+    |> get_or_fail Host.Config.Error.pp
+  in
+  let host =
+    Host.Host.load ~stdenv ~registry:Spice_host_builtin.registry ~config ()
+    |> get_or_fail Host.Host.Error.pp
+  in
+  let workspace =
+    Spice_workspace.single (Spice_workspace.Root.make (Host.Config.cwd config))
+  in
+  let sandbox =
+    Host.Sandbox.resolve ~flag:Host.Sandbox.Mode.Danger_full_access ~stdenv
+      ~env:(Host.Env.get process_env) ~workspace ()
+  in
+  let plan =
+    Host.Run.plan ~workspace ~sandbox
+      ~permission:(Host.Config.permission_posture config)
+      ()
+    |> get_or_fail Host.Sandbox.Gate_error.pp
+  in
+  let store = Host.Session.store ~stdenv host in
+  Gc.full_major ();
+  let before = Gc.quick_stat () in
+  let run =
+    Host.Run.start ~sw ~stdenv host plan ~store
+      ~session:(Session.Id.of_string "session-bounded-review-start")
+      ~http:(Spice_host_builtin.web_http_client stdenv)
+      ~fetch_https:(Spice_host_builtin.web_fetch_https ())
+      ()
+    |> get_or_fail Host.Host.Error.pp
+  in
+  let after = Gc.quick_stat () in
+  Host.Run.stop run;
+  let major_words = after.Gc.major_words -. before.Gc.major_words in
+  Printf.printf "construction allocation bounded: %b\n"
+    (major_words < 4_000_000.);
+  [%expect {| construction allocation bounded: true |}]
+
 let%expect_test
     "a durable root settlement is published before unrelated child teardown" =
   Project.with_temp "settlement-owner" @@ fun project ->

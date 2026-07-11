@@ -58,25 +58,23 @@ module Cr_comments : sig
   (** [create ~fs ~root ~inbox ()] is a CR-comment observer for workspace root
       [root].
 
-      The observer performs a bounded initial scan of source files with known
-      comment syntaxes to seed duplicate-suppression state without enqueueing a
-      notice. It is then driven by filesystem change batches. It tracks open or
-      malformed [CR]/[XCR] comments per file, and enqueues notices when the
-      aggregate set changes after startup. A transition to no remaining comments
-      enqueues a clearing notice.
-
-      {b Note.} [fs] backs the incremental rescans driven by {!observe}. The
-      bounded startup walk reads the real filesystem under [root] directly, so a
-      mock [fs] does not intercept it. *)
+      Construction performs no workspace I/O. The observer discovers comments on
+      first creation or change through the run's existing filesystem event
+      stream, tracks open or malformed [CR]/[XCR] comments per file, and
+      enqueues notices when the known aggregate set changes. A transition to no
+      remaining known comments enqueues a clearing notice. *)
 
   val observe : t -> Spice_fswatch.Event.t list -> unit
   (** [observe t events] updates [t] from filesystem [events].
 
       Created and changed files are rescanned when their extension has a known
-      comment syntax. Deleted files clear any remembered comments for that path.
-      Resolved [XCR] comments are ignored; open [CR] and malformed CR-looking
-      comments are reported. Repeated observations of the same aggregate issue
-      set enqueue no new notice. *)
+      comment syntax. One batch examines at most 4,096 events, 128 source files,
+      4 MiB of aggregate source text, and 2 MiB per source. Exceeding a budget
+      preserves any previously known state for unscanned files and enqueues a
+      nonfatal warning. Deleted files clear any remembered comments for that
+      path. Resolved [XCR] comments are ignored; open [CR] and malformed
+      CR-looking comments are reported. Repeated observations of the same
+      aggregate issue set enqueue no new notice. *)
 end
 
 module Dune_diagnostics : sig

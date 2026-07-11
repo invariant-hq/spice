@@ -103,6 +103,11 @@ end
 module Cr_comments = struct
   module Cr = Spice_cr
 
+  let max_batch_events = 4_096
+  let max_batch_source_files = 128
+  let max_source_bytes = 2 * 1024 * 1024
+  let max_batch_source_bytes = 4 * 1024 * 1024
+
   type fs = Fs : _ Eio.Path.t -> fs
 
   type issue = {
@@ -158,76 +163,22 @@ module Cr_comments = struct
             severity = Notice.Severity.Warning;
           }
 
-  let read_text t rel =
+  type read_error = Input_limit | Unreadable
+
+  let read_text t ~max_bytes rel =
     let (Fs fs) = t.fs in
-    try Ok (Eio.Path.load (Eio.Path.( / ) fs (Filename.concat t.root rel)))
-    with exn -> Error exn
-
-  let scan_file t path =
-    let rel = Spice_path.Rel.to_string path in
-    (* Guard on [of_path] before reading so non-source files are never loaded. *)
-    if Option.is_none (Cr.Syntax.of_path path) then []
-    else
-      match read_text t rel with
-      | Error _ -> []
-      | Ok text ->
-          Cr.scan_file ~path ~text |> List.filter_map issue_of_occurrence
-
-  let max_initial_scan_entries = 50_000
-  let max_initial_scan_source_files = 5_000
-
-  let initial_scan_rel rel name =
-    if String.equal rel "" then name else Filename.concat rel name
-
-  let ignored_initial_scan_rel rel =
-    let path = if String.equal rel "" then "." else rel in
-    match Spice_path.Rel.of_string path with
-    | Error _ -> true
-    | Ok path -> Fswatch.default_ignore path
-
-  let sorted_readdir path =
-    try Sys.readdir path |> Array.to_list |> List.sort String.compare
-    with Sys_error _ -> []
-
-  let scan_initial t =
-    let entries_seen = ref 0 in
-    let source_files_seen = ref 0 in
-    let can_read_entry () = !entries_seen < max_initial_scan_entries in
-    let can_scan_source_file () =
-      !source_files_seen < max_initial_scan_source_files
-    in
-    let rec walk rel abs =
-      if can_read_entry () && not (ignored_initial_scan_rel rel) then
-        match Unix.lstat abs with
-        | exception Unix.Unix_error _ -> ()
-        | stats -> (
-            match stats.Unix.st_kind with
-            | Unix.S_DIR ->
-                sorted_readdir abs
-                |> List.iter (fun name ->
-                    if can_read_entry () then begin
-                      incr entries_seen;
-                      walk
-                        (initial_scan_rel rel name)
-                        (Filename.concat abs name)
-                    end)
-            | Unix.S_REG ->
-                if can_scan_source_file () then begin
-                  incr source_files_seen;
-                  (* [rel] is a raw readdir path; validate it before scanning. *)
-                  match Spice_path.Rel.of_string rel with
-                  | Error _ -> ()
-                  | Ok path -> (
-                      if Option.is_some (Cr.Syntax.of_path path) then
-                        match scan_file t path with
-                        | [] -> ()
-                        | issues -> Hashtbl.replace t.by_path rel issues)
-                end
-            | Unix.S_LNK | Unix.S_CHR | Unix.S_BLK | Unix.S_FIFO | Unix.S_SOCK
-              ->
-                ())
-    in
-    walk "" t.root
+    try
+      Ok
+        ( Eio.Path.with_open_in (Eio.Path.( / ) fs (Filename.concat t.root rel))
+        @@ fun flow ->
+          Eio.Buf_read.(
+            take_all
+              (of_flow ~initial_size:(min 65_536 max_bytes) ~max_size:max_bytes
+                 flow)) )
+    with
+    | Eio.Buf_read.Buffer_limit_exceeded -> Error Input_limit
+    | Eio.Cancel.Cancelled _ as exn -> raise exn
+    | Eio.Exn.Io _ | Sys_error _ | Unix.Unix_error _ -> Error Unreadable
 
   let issue_key issue =
     Printf.sprintf "%s:%d:%s:%s" issue.path issue.line issue.digest
@@ -286,33 +237,105 @@ module Cr_comments = struct
         ~body:(body issues) ~key:fingerprint
     end
 
-  let create ~fs ~root ~inbox () =
-    let t =
-      {
-        fs = Fs fs;
-        root;
-        inbox;
-        by_path = Hashtbl.create 16;
-        last_fingerprint = "cr-comments\000";
-      }
-    in
-    scan_initial t;
-    t.last_fingerprint <- fingerprint (all_issues t);
-    t
+  type scan_limit =
+    | Batch_events
+    | Batch_source_files
+    | Batch_source_bytes
+    | Source_bytes of string
 
-  let update_path t path kind =
+  let limit_key = function
+    | Batch_events -> "events"
+    | Batch_source_files -> "source-files"
+    | Batch_source_bytes -> "source-bytes"
+    | Source_bytes _ -> "source-size"
+
+  let limit_body = function
+    | Batch_events ->
+        Printf.sprintf
+          "A filesystem change batch contained more than %d events. \
+           Code-review discovery stopped at that event budget; later changes \
+           will still be observed."
+          max_batch_events
+    | Batch_source_files ->
+        Printf.sprintf
+          "A filesystem change batch contained more than %d OCaml source \
+           files. Code-review discovery stopped at that source-file budget; \
+           later changes will still be observed."
+          max_batch_source_files
+    | Batch_source_bytes ->
+        Printf.sprintf
+          "Changed OCaml sources exceeded the %d-byte aggregate code-review \
+           scan budget for one filesystem batch. Later changes will still be \
+           observed."
+          max_batch_source_bytes
+    | Source_bytes path ->
+        Printf.sprintf
+          "%s exceeds the %d-byte code-review source limit and was not scanned."
+          path max_source_bytes
+
+  let publish_limit t limit =
+    enqueue t.inbox ~source:"code-review-comments"
+      ~severity:Notice.Severity.Warning ~title:"Code review scan incomplete"
+      ~body:(limit_body limit)
+      ~key:("cr-comments-limit\000" ^ limit_key limit)
+
+  let create ~fs ~root ~inbox () =
+    {
+      fs = Fs fs;
+      root;
+      inbox;
+      by_path = Hashtbl.create 16;
+      last_fingerprint = fingerprint [];
+    }
+
+  let update_path t path text =
     let rel = Spice_path.Rel.to_string path in
-    match kind with
-    | Fsw.Event.Deleted -> Hashtbl.remove t.by_path rel
-    | Fsw.Event.Created | Fsw.Event.Changed ->
-        let issues = scan_file t path in
-        if issues = [] then Hashtbl.remove t.by_path rel
-        else Hashtbl.replace t.by_path rel issues
+    let issues =
+      Cr.scan_file ~path ~text |> List.filter_map issue_of_occurrence
+    in
+    if issues = [] then Hashtbl.remove t.by_path rel
+    else Hashtbl.replace t.by_path rel issues
 
   let observe t events =
-    List.iter
-      (fun event -> update_path t event.Fsw.Event.path event.Fsw.Event.kind)
-      events;
+    let rec loop event_count source_count source_bytes = function
+      | [] -> ()
+      | _ :: _ when event_count = max_batch_events ->
+          publish_limit t Batch_events
+      | event :: events -> (
+          let event_count = event_count + 1 in
+          let path = event.Fsw.Event.path in
+          let rel = Spice_path.Rel.to_string path in
+          match event.Fsw.Event.kind with
+          | Fsw.Event.Deleted ->
+              Hashtbl.remove t.by_path rel;
+              loop event_count source_count source_bytes events
+          | Fsw.Event.Created | Fsw.Event.Changed -> (
+              if Option.is_none (Cr.Syntax.of_path path) then
+                loop event_count source_count source_bytes events
+              else if source_count = max_batch_source_files then
+                publish_limit t Batch_source_files
+              else
+                let remaining = max_batch_source_bytes - source_bytes in
+                if remaining = 0 then publish_limit t Batch_source_bytes
+                else
+                  let read_limit = min max_source_bytes remaining in
+                  match read_text t ~max_bytes:read_limit rel with
+                  | Ok text ->
+                      update_path t path text;
+                      loop event_count (source_count + 1)
+                        (source_bytes + String.length text)
+                        events
+                  | Error Input_limit ->
+                      if read_limit < max_source_bytes then
+                        publish_limit t Batch_source_bytes
+                      else begin
+                        publish_limit t (Source_bytes rel);
+                        loop event_count (source_count + 1) source_bytes events
+                      end
+                  | Error Unreadable ->
+                      loop event_count (source_count + 1) source_bytes events))
+    in
+    loop 0 0 0 events;
     publish_if_changed t
 end
 
