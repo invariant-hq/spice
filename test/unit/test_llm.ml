@@ -696,11 +696,13 @@ let client_contracts () =
   let seen_cancelled = ref false in
   let client =
     Client.make ~provider:openai
-      ~run:(fun ~cancelled request ->
+      ~run:(fun ~cancelled ~on_event request ->
         seen_cancelled := cancelled ();
         equal model_value ~msg:"client receives request" gpt
           (Request.model request);
-        Ok (Stream.of_list [ Stream.Finished terminal ]))
+        Stream.iter_events
+          (Stream.of_list [ Stream.Finished terminal ])
+          ~f:on_event)
       ()
   in
   equal provider_value ~msg:"client provider" openai (Client.provider client);
@@ -718,15 +720,16 @@ let client_contracts () =
     collected;
   let streamed =
     Client.make ~provider:openai
-      ~run:(fun ~cancelled:_ _ ->
-        Ok
+      ~run:(fun ~cancelled:_ ~on_event _ ->
+        Stream.iter_events
           (Stream.of_list
              [
                Stream.Event (Stream.Event.text_delta "he");
                Stream.Event (Stream.Event.reasoning_summary_delta "why");
                Stream.Event (Stream.Event.text_delta "llo");
                Stream.Finished terminal;
-             ]))
+             ])
+          ~f:on_event)
       ()
   in
   let observed = ref [] in
@@ -755,7 +758,7 @@ let client_contracts () =
       ~model:(model ~provider:anthropic "claude")
       (ready_transcript ())
   in
-  expect_error "wrong provider rejected" (Client.stream client wrong_request)
+  expect_error "wrong provider rejected" (Client.response client wrong_request)
     (fun error ->
       equal string ~msg:"wrong provider error kind" "invalid_request"
         (Error.label (Error.kind error));
@@ -766,8 +769,10 @@ let client_contracts () =
       ~accepts:(fun model ->
         Provider.equal openai (Model.provider model)
         && Model.Api.equal responses (Model.api model))
-      ~run:(fun ~cancelled:_ _ ->
-        Ok (Stream.of_list [ Stream.Finished terminal ]))
+      ~run:(fun ~cancelled:_ ~on_event _ ->
+        Stream.iter_events
+          (Stream.of_list [ Stream.Finished terminal ])
+          ~f:on_event)
       ()
   in
   let wrong_api_request =
@@ -776,12 +781,12 @@ let client_contracts () =
       (ready_transcript ())
   in
   expect_error "wrong API rejected"
-    (Client.stream responses_only wrong_api_request) (fun error ->
+    (Client.response responses_only wrong_api_request) (fun error ->
       equal string ~msg:"wrong API error kind" "invalid_request"
         (Error.label (Error.kind error)));
   let cancelled_client =
     Client.make ~provider:openai
-      ~run:(fun ~cancelled:_ _ ->
+      ~run:(fun ~cancelled:_ ~on_event:_ _ ->
         Error (Error.make ~kind:Error.Cancelled "cancelled before startup"))
       ()
   in

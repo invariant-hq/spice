@@ -1315,7 +1315,7 @@ let client ~sw ~env ?http ?observe_download ?(config = Config.default) () =
     Llm.Provider.equal provider (Llm.Model.provider model)
     && Llm.Model.Api.equal api (Llm.Model.api model)
   in
-  let run ~cancelled request =
+  let run ~cancelled ~on_event request =
     if cancelled () then Error (cancelled_error ())
     else
       let model = Llm.Request.model request in
@@ -1343,12 +1343,17 @@ let client ~sw ~env ?http ?observe_download ?(config = Config.default) () =
             if cancelled () then Error (cancelled_error ())
             else startup_provider_error message
       in
+      Eio.Switch.run ~name:"local.request" @@ fun request_sw ->
       let api_client =
-        Api.Client.make ~base_url:(Server.base_url server) ~sw ~env ()
+        Api.Client.make ~base_url:(Server.base_url server) ~sw:request_sw ~env
+          ()
       in
       Log.info (fun m -> m "request started model=%s" id);
       match Api.Chat.create_stream api_client api_request with
       | Error error -> Error (api_error error)
-      | Ok api_stream -> Ok (stream_events ~cancelled model api_stream)
+      | Ok api_stream ->
+          Llm.Stream.iter_events
+            (stream_events ~cancelled model api_stream)
+            ~f:on_event
   in
   Llm.Client.make ~provider ~accepts ~run ()

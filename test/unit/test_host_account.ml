@@ -117,8 +117,10 @@ let model_artifact_preparation_is_single_flight () =
   in
   let client =
     Llm.Client.make ~provider:openai
-      ~run:(fun ~cancelled:_ _ ->
-        Ok (Llm.Stream.of_list [ Llm.Stream.Finished terminal ]))
+      ~run:(fun ~cancelled:_ ~on_event _ ->
+        Llm.Stream.iter_events
+          (Llm.Stream.of_list [ Llm.Stream.Finished terminal ])
+          ~f:on_event)
       ()
   in
   let adapter =
@@ -154,7 +156,7 @@ let model_artifact_preparation_is_single_flight () =
           Eio.Fiber.fork_promise ~sw (fun () ->
               Eio.Promise.await start;
               Eio.Promise.resolve attempted_resolver ();
-              Llm.Client.stream client (request ()))
+              Llm.Client.response client (request ()))
         in
         (attempted, result))
   in
@@ -166,10 +168,10 @@ let model_artifact_preparation_is_single_flight () =
   List.iter
     (fun (_, result) ->
       match Eio.Promise.await_exn result with
-      | Ok _stream -> ()
-      | Error error -> failf "stream: %a" Llm.Error.pp error)
+      | Ok _response -> ()
+      | Error error -> failf "response: %a" Llm.Error.pp error)
     attempts;
-  equal int ~msg:"concurrent first streams prepare once" 1 !starts
+  equal int ~msg:"concurrent first responses prepare once" 1 !starts
 
 let () =
   run "spice.host.account"

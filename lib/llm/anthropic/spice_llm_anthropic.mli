@@ -7,13 +7,12 @@
 
     This library translates checked {!Spice_llm.Request.t} values to the
     Anthropic Messages protocol and translates Anthropic responses back to
-    semantic {!Spice_llm.Stream.t} values.
+    semantic stream events and terminal responses.
 
     The adapter is intentionally a thin provider projection: construct a model
     with {!model}, make a client with {!client}, then use
-    {!Spice_llm.Client.stream} or {!Spice_llm.Client.response}. It accepts only
-    the Anthropic Messages API family and rejects unsupported request features
-    before opening transport.
+    {!Spice_llm.Client.response}. It accepts only the Anthropic Messages API
+    family and rejects unsupported request features before opening transport.
 
     Credentials, endpoint overrides, and HTTP policy are supplied explicitly.
     The library does not read process environment variables, choose CLI
@@ -85,22 +84,21 @@ val model : string -> Spice_llm.Model.t
 (** {1:clients Clients} *)
 
 val client :
-  sw:Eio.Switch.t ->
   env:Eio_unix.Stdenv.base ->
   ?config:Config.t ->
   credential:Credential.t ->
   unit ->
   Spice_llm.Client.t
-(** [client ~sw ~env ~credential ()] is an Anthropic Messages client.
+(** [client ~env ~credential ()] is an Anthropic Messages client.
 
     The returned client accepts requests whose model names {!provider} and
-    {!api}. Other models are rejected by {!Spice_llm.Client.stream} before the
+    {!api}. Other models are rejected by {!Spice_llm.Client.response} before the
     adapter opens transport.
 
-    The client borrows [sw] and [env] for HTTP calls, TLS, retries, timeouts,
-    and stream reads. Request startup failures are returned by
-    {!Spice_llm.Client.stream}; failures after a stream is returned are emitted
-    by the stream as {!Spice_llm.Stream.Failed}.
+    The client borrows [env] for HTTP calls, TLS, retries, timeouts, and stream
+    reads. Each response owns a request-local transport scope and releases it
+    before returning. Startup and stream failures are distinguished by
+    {!Spice_llm.Error.phase}.
 
     Startup errors include unsupported request features, cancellation observed
     before transport, non-2xx HTTP responses after retries, transport failures,
@@ -115,5 +113,5 @@ val client :
     provider stop label, merged usage, and retained reasoning parts. Malformed
     SSE JSON, invalid tool-call input, duplicate or late content-block events,
     EOF before [message_stop], cancellation during streaming, provider [error]
-    events, and streams with no assistant parts are emitted as stream-phase
+    events, and streams with no assistant parts are returned as stream-phase
     failures. *)

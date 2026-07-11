@@ -173,14 +173,15 @@ val client :
     retry one request once after a provider [Auth] failure when a forced refresh
     produced a replacement credential. A permanent forced-refresh rejection or
     replacement-client build failure supersedes the provider's stale auth error
-    and is returned from the stream with its host diagnostic and repair hint.
+    and is returned from the response with its host diagnostic and repair hint.
 
     If the adapter exposes a model-artifact preparation capability, the returned
-    client prepares [model] before the first stream and reports progress through
-    [observe_model_artifact] when supplied. Preparation failures are returned as
-    provider-boundary {!Spice_llm.Error.t} values from the stream call. Shared
-    callers prepare once: concurrent first streams wait for the same preparation
-    boundary, and a failed preparation leaves a later stream free to retry.
+    client prepares [model] before the first response and reports progress
+    through [observe_model_artifact] when supplied. Preparation failures are
+    returned as provider-boundary {!Spice_llm.Error.t} values from the response
+    call. Shared callers prepare once: concurrent first responses wait for the
+    same preparation boundary, and a failed preparation leaves a later response
+    free to retry.
 
     All failure modes are {!Host.Error.t}: {!Host.Error.Unknown_provider},
     {!Host.Error.Credentials}, {!Host.Error.Blocked_credential},
@@ -190,8 +191,11 @@ val client :
     builds a bare client — {!Host.Error.Unsupported_credential}, or
     {!Host.Error.Client}.
 
-    {b Warning.} The returned client holds credential material and borrows [sw]
-    and [stdenv] for transport. *)
+    {b Warning.} The returned client holds credential material and borrows
+    [stdenv]. Providers with client-lived local resources, such as a managed
+    model server or loaded engine, also borrow [sw]. Hosted HTTP connections and
+    Ollama daemon connections are scoped to one response and are released before
+    that response returns. *)
 
 val model_artifact_status :
   Host.t ->

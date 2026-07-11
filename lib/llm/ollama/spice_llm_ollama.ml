@@ -555,23 +555,27 @@ let stream_events ~cancelled requested_model api_stream =
   in
   Llm.Stream.make ~close:(fun () -> Api.Chat.close api_stream) next
 
-let client ~sw ~env ?(config = Config.default) ?credential () =
+let client ~env ?(config = Config.default) ?credential () =
   let accepts model =
     Llm.Provider.equal provider (Llm.Model.provider model)
     && Llm.Model.Api.equal api (Llm.Model.api model)
   in
   let headers = Option.map Credential.header credential |> Option.to_list in
-  let api_client =
-    Api.Client.make ~headers ~base_url:(Config.base_url config) ~sw ~env ()
-  in
-  let run ~cancelled request =
+  let run ~cancelled ~on_event request =
     if cancelled () then Error (cancelled_error ())
     else
+      Eio.Switch.run ~name:"ollama.request" @@ fun sw ->
+      let api_client =
+        Api.Client.make ~headers ~base_url:(Config.base_url config) ~sw ~env ()
+      in
       let model = Llm.Request.model request in
       let* api_request = encode_request request in
       Log.info (fun m -> m "request started model=%s" (Llm.Model.id model));
       match Api.Chat.create_stream api_client api_request with
       | Error error -> Error (api_error error)
-      | Ok api_stream -> Ok (stream_events ~cancelled model api_stream)
+      | Ok api_stream ->
+          Llm.Stream.iter_events
+            (stream_events ~cancelled model api_stream)
+            ~f:on_event
   in
   Llm.Client.make ~provider ~accepts ~run ()

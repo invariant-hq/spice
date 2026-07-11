@@ -271,6 +271,7 @@ let google_check ~sw ~stdenv ?base_url credential =
 let openai_adapter =
   Adapter.make ~check:openai_check ~refresh:openai_refresh ~revoke:openai_revoke
     ~build:(fun ~sw ~stdenv ?base_url credential ->
+      Eio.Switch.check sw;
       match credential with
       | None ->
           Error
@@ -278,7 +279,7 @@ let openai_adapter =
       | Some credential ->
           let api_route credential =
             let config = Spice_llm_openai.Config.make ?base_url () in
-            Ok (Spice_llm_openai.client ~sw ~env:stdenv ~config ~credential ())
+            Ok (Spice_llm_openai.client ~env:stdenv ~config ~credential ())
           in
           Secret.expose
             (Credential.secret credential)
@@ -297,7 +298,7 @@ let openai_adapter =
                   ()
               in
               Ok
-                (Spice_llm_openai.client ~sw ~env:stdenv ~config
+                (Spice_llm_openai.client ~env:stdenv ~config
                    ~credential:(Spice_llm_openai.Credential.bearer access_token)
                    ())))
     ()
@@ -309,6 +310,7 @@ let openai =
 let anthropic_adapter =
   Adapter.make ~check:anthropic_check
     ~build:(fun ~sw ~stdenv ?base_url credential ->
+      Eio.Switch.check sw;
       match credential with
       | None ->
           Error
@@ -343,9 +345,8 @@ let anthropic_adapter =
           | Error _ as error -> error
           | Ok credential ->
               let config = Spice_llm_anthropic.Config.make ?base_url () in
-              Ok
-                (Spice_llm_anthropic.client ~sw ~env:stdenv ~config ~credential
-                   ())))
+              Ok (Spice_llm_anthropic.client ~env:stdenv ~config ~credential ())
+          ))
     ()
 
 let anthropic =
@@ -355,6 +356,7 @@ let anthropic =
 let google_adapter =
   Adapter.make ~check:google_check
     ~build:(fun ~sw ~stdenv ?base_url credential ->
+      Eio.Switch.check sw;
       match credential with
       | None ->
           Error
@@ -382,9 +384,7 @@ let google_adapter =
           | Error _ as error -> error
           | Ok credential ->
               let config = Spice_llm_google.Config.make ?base_url () in
-              Ok
-                (Spice_llm_google.client ~sw ~env:stdenv ~config ~credential ())
-          ))
+              Ok (Spice_llm_google.client ~env:stdenv ~config ~credential ())))
     ()
 
 let google =
@@ -614,6 +614,7 @@ let local =
 let ollama_adapter =
   Adapter.make
     ~build:(fun ~sw ~stdenv ?base_url credential ->
+      Eio.Switch.check sw;
       let config =
         match base_url with
         | None -> Ok Spice_llm_ollama.Config.default
@@ -655,7 +656,7 @@ let ollama_adapter =
       match (config, credential) with
       | (Error _ as error), _ | _, (Error _ as error) -> error
       | Ok config, Ok credential ->
-          Ok (Spice_llm_ollama.client ~sw ~env:stdenv ~config ?credential ()))
+          Ok (Spice_llm_ollama.client ~env:stdenv ~config ?credential ()))
     ()
 
 let ollama =

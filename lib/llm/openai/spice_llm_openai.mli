@@ -6,13 +6,12 @@
 (** OpenAI Responses provider for [spice.llm].
 
     This library translates checked {!Spice_llm.Request.t} values to the OpenAI
-    Responses protocol and translates OpenAI responses back to semantic
-    {!Spice_llm.Stream.t} values.
+    Responses protocol and translates OpenAI responses back to semantic stream
+    events and terminal responses.
 
     The usual construction path is {!model}, one of the {!Credential}
     constructors, optional {!Config.make}, then {!client}. Run requests through
-    {!Spice_llm.Client.stream} for live events or {!Spice_llm.Client.response}
-    for a collected response.
+    {!Spice_llm.Client.response}; its [on_event] callback observes live events.
 
     Credentials, endpoint overrides, and HTTP policy are supplied explicitly.
     The library does not read process environment variables, choose CLI
@@ -94,25 +93,23 @@ val model : string -> Spice_llm.Model.t
 (** {1:clients Clients} *)
 
 val client :
-  sw:Eio.Switch.t ->
   env:Eio_unix.Stdenv.base ->
   ?config:Config.t ->
   credential:Credential.t ->
   unit ->
   Spice_llm.Client.t
-(** [client ~sw ~env ~credential ()] is an OpenAI Responses client.
+(** [client ~env ~credential ()] is an OpenAI Responses client.
 
     The returned client accepts requests whose model has {!provider} and {!api}.
-    Other models are rejected by {!Spice_llm.Client.stream} before the OpenAI
+    Other models are rejected by {!Spice_llm.Client.response} before the OpenAI
     adapter starts transport.
 
-    The client borrows [sw] and [env] for HTTP calls, TLS, retries, timeouts,
-    and stream reads. Request startup failures are returned by
-    {!Spice_llm.Client.stream}; failures after a stream is returned are emitted
-    by the stream as {!Spice_llm.Stream.Failed}. Cancellation observed before
-    startup returns an error with kind {!Spice_llm.Error.Cancelled};
-    cancellation observed while reading closes the raw stream and emits
-    {!Spice_llm.Stream.Failed}.
+    The client borrows [env] for HTTP calls, TLS, retries, timeouts, and stream
+    reads. Each response owns a request-local transport scope and releases it
+    before returning. Startup and stream failures are distinguished by
+    {!Spice_llm.Error.phase}. Cancellation observed before startup returns a
+    startup error with kind {!Spice_llm.Error.Cancelled}; cancellation observed
+    while reading returns a stream-phase error of the same kind.
 
     Startup errors include unsupported request features, cancellation observed
     before transport, unsupported model APIs, non-2xx HTTP responses after
@@ -129,4 +126,4 @@ val client :
     retained reasoning parts. Malformed SSE JSON, malformed tool-call input,
     provider [response.failed] or [error] events, terminal events without
     [response], EOF before a terminal event, cancellation during streaming, and
-    streams with no assistant parts are emitted as stream-phase failures. *)
+    streams with no assistant parts are returned as stream-phase failures. *)

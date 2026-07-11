@@ -57,13 +57,9 @@ let client_startup_error ?(cancelled = fun () -> false) ?config request =
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let client = Deepseek.client ~sw ~env ?config () in
-  match Llm.Client.stream ~cancelled client request with
+  match Llm.Client.response ~cancelled client request with
   | Error error -> error
-  | Ok stream -> (
-      match Llm.Stream.next stream with
-      | Some (Llm.Stream.Failed error) -> error
-      | Some (Llm.Stream.Event _) | Some (Llm.Stream.Finished _) | None ->
-          failf "expected startup error")
+  | Ok _ -> failf "expected startup error"
 
 let model_and_config_contracts () =
   let model = Deepseek.model "q2-imatrix" in

@@ -67,12 +67,12 @@ module Credential : sig
 end
 
 val client :
-  sw:Eio.Switch.t ->
   env:Eio_unix.Stdenv.base ->
   ?config:Config.t ->
   ?credential:Credential.t ->
   unit ->
   Spice_llm.Client.t
-(** [client ~sw ~env ()] is an Ollama client streaming over the daemon's
+(** [client ~env ()] is an Ollama client streaming over the daemon's
     chat-completions endpoint. Without [credential] requests carry no
-    authorization header — the bare local-daemon default. *)
+    authorization header — the bare local-daemon default. Each response closes
+    its daemon connection before returning. *)

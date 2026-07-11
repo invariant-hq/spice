@@ -63,39 +63,42 @@ let blocked_stream ~started ~model =
 let scripted_client ~child_started ~next_root_started =
   let provider = Llm.Provider.make "openai" in
   Llm.Client.make ~provider
-    ~run:(fun ~cancelled:_ request ->
+    ~run:(fun ~cancelled:_ ~on_event request ->
       let model = Llm.Request.model request in
-      if request_contains request "child never settles" then
-        Ok (blocked_stream ~started:child_started ~model)
-      else if request_contains request "root follow-up" then
-        Ok (blocked_stream ~started:next_root_started ~model)
-      else if request_contains request "launched" then
-        Ok
-          (Llm.Stream.of_list
-             [ Llm.Stream.Finished (response ~model "root settled") ])
-      else
-        Ok (Llm.Stream.of_list [ Llm.Stream.Finished (spawn_response ~model) ]))
+      let stream =
+        if request_contains request "child never settles" then
+          blocked_stream ~started:child_started ~model
+        else if request_contains request "root follow-up" then
+          blocked_stream ~started:next_root_started ~model
+        else if request_contains request "launched" then
+          Llm.Stream.of_list
+            [ Llm.Stream.Finished (response ~model "root settled") ]
+        else Llm.Stream.of_list [ Llm.Stream.Finished (spawn_response ~model) ]
+      in
+      Llm.Stream.iter_events stream ~f:on_event)
     ()
 
 let cancellation_client ~child_started =
   let provider = Llm.Provider.make "openai" in
   Llm.Client.make ~provider
-    ~run:(fun ~cancelled:_ request ->
+    ~run:(fun ~cancelled:_ ~on_event request ->
       let model = Llm.Request.model request in
-      if request_contains request "first child stalls" then
-        Ok (blocked_stream ~started:child_started ~model)
-      else
-        Ok
-          (Llm.Stream.of_list
-             [ Llm.Stream.Finished (response ~model "second child completed") ]))
+      let stream =
+        if request_contains request "first child stalls" then
+          blocked_stream ~started:child_started ~model
+        else
+          Llm.Stream.of_list
+            [ Llm.Stream.Finished (response ~model "second child completed") ]
+      in
+      Llm.Stream.iter_events stream ~f:on_event)
     ()
 
 let blocked_client ~started =
   let provider = Llm.Provider.make "openai" in
   Llm.Client.make ~provider
-    ~run:(fun ~cancelled:_ request ->
+    ~run:(fun ~cancelled:_ ~on_event request ->
       let model = Llm.Request.model request in
-      Ok (blocked_stream ~started ~model))
+      Llm.Stream.iter_events (blocked_stream ~started ~model) ~f:on_event)
     ()
 
 let get_or_fail pp = function

@@ -111,8 +111,10 @@ let notice_injection_uses_final_observer () =
   in
   let client =
     Llm.Client.make ~provider
-      ~run:(fun ~cancelled:_ _ ->
-        Ok (Llm.Stream.of_list [ Llm.Stream.Finished response ]))
+      ~run:(fun ~cancelled:_ ~on_event _ ->
+        Llm.Stream.iter_events
+          (Llm.Stream.of_list [ Llm.Stream.Finished response ])
+          ~f:on_event)
       ()
   in
   let injected = ref [] in
@@ -164,7 +166,7 @@ let raised_model_call_rolls_notices_back () =
   Notice_queue.publish queue (notice "durable" "durable");
   let client =
     Llm.Client.make ~provider
-      ~run:(fun ~cancelled:_ _request -> raise Model_failure)
+      ~run:(fun ~cancelled:_ ~on_event:_ _request -> raise Model_failure)
       ()
   in
   let run =

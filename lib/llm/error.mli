@@ -15,7 +15,7 @@ type phase =
   | Stream
       (** The type for provider failure phases.
 
-          [Startup] means the provider failed before returning a stream.
+          [Startup] means the provider failed before its semantic stream began.
           [Stream] means the provider failed after stream handoff. *)
 
 type kind =

@@ -50,17 +50,18 @@ let provider_error_of_host ~provider error =
 let with_refresh_retry ~rebuild ~refresh client =
   let provider = Spice_llm.Client.provider client in
   let current = ref client in
-  let run ~cancelled request =
-    match Spice_llm.Client.stream ~cancelled !current request with
+  let run ~cancelled ~on_event request =
+    match Spice_llm.Client.response ~cancelled ~on_event !current request with
     | Error error as result -> (
-        match Spice_llm.Error.kind error with
-        | Spice_llm.Error.Auth -> (
+        match (Spice_llm.Error.kind error, Spice_llm.Error.phase error) with
+        | Spice_llm.Error.Auth, Spice_llm.Error.Startup -> (
             match refresh () with
             | Ok (Some credential) -> (
                 match rebuild credential with
                 | Ok client ->
                     current := client;
-                    Spice_llm.Client.stream ~cancelled client request
+                    Spice_llm.Client.response ~cancelled ~on_event client
+                      request
                 | Error error -> Error (provider_error_of_host ~provider error))
             | Error error -> Error (provider_error_of_host ~provider error)
             | Ok None -> result)
@@ -79,7 +80,7 @@ let with_model_artifact_prepare ~sw ~stdenv ?observe_model_artifact adapter
       let observe =
         Option.value observe_model_artifact ~default:(fun _progress -> ())
       in
-      let run ~cancelled request =
+      let run ~cancelled ~on_event request =
         let preparation =
           if !prepared then Ok ()
           else
@@ -94,7 +95,7 @@ let with_model_artifact_prepare ~sw ~stdenv ?observe_model_artifact adapter
         in
         match preparation with
         | Error _ as error -> error
-        | Ok () -> Spice_llm.Client.stream ~cancelled client request
+        | Ok () -> Spice_llm.Client.response ~cancelled ~on_event client request
       in
       Spice_llm.Client.make ~provider:(Spice_llm.Client.provider client) ~run ()
 

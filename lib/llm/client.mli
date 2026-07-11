@@ -6,14 +6,15 @@
 (** Effectful provider interpreters.
 
     Clients are the effectful provider side of the [spice.llm] boundary. They
-    interpret checked {!Request.t} values, return semantic {!Stream.t} values,
-    and classify provider-boundary failures as {!Error.t}. Authentication,
-    transport, retries, provider protocol translation, and provider-owned replay
-    projection belong to concrete provider packages.
+    interpret checked {!Request.t} values, emit semantic {!Stream.Event.t}
+    values while producing a terminal {!Response.t}, and classify
+    provider-boundary failures as {!Error.t}. Authentication, transport,
+    retries, provider protocol translation, and provider-owned replay projection
+    belong to concrete provider packages.
 
-    Construct clients with {!make}. Use {!stream} when callers need live events
-    or early tool-call progress; use {!response} when they only need the
-    terminal {!Response.t}. *)
+    Construct clients with {!make} and consume them with {!response}. A client
+    never hands transport ownership to its caller: concrete providers consume
+    their protocol stream before the request returns. *)
 
 type cancellation = unit -> bool
 (** The type for cooperative cancellation checks.
@@ -28,13 +29,18 @@ type accepts = Model.t -> bool
     The predicate should be stable for the lifetime of the client. It is checked
     before {!run} is called. *)
 
-type run = cancelled:cancellation -> Request.t -> (Stream.t, Error.t) result
+type run =
+  cancelled:cancellation ->
+  on_event:(Stream.Event.t -> unit) ->
+  Request.t ->
+  (Response.t, Error.t) result
 (** The type for one-request provider interpreters.
 
-    A [run] callback receives requests accepted by the client. It reports
-    startup failures by returning [Error _]. Once a stream has been returned,
-    later provider failures are reported by the stream as {!Stream.Failed}. The
-    stream owns any transport resources until it is closed or consumed. *)
+    A [run] callback receives requests accepted by the client, calls [on_event]
+    for live semantic events in order, and returns the terminal response. It
+    must consume and close its provider stream before returning. Provider
+    failures remain structured by {!Error.phase}: {!Error.Startup} precedes
+    event delivery and {!Error.Stream} follows stream handoff. *)
 
 type t
 (** The type for provider clients. *)
@@ -51,34 +57,24 @@ val provider : t -> Provider.t
 val accepts : t -> Model.t -> bool
 (** [accepts t model] is [true] iff [t] can interpret [model]. *)
 
-val stream :
-  ?cancelled:cancellation -> t -> Request.t -> (Stream.t, Error.t) result
-(** [stream ?cancelled t request] starts one model request.
-
-    [cancelled] defaults to a function returning [false]. Providers should check
-    it before starting transport work and while pulling stream events where
-    feasible. A cancellation observed before startup may return an error with
-    kind {!Error.Cancelled}; a cancellation observed after startup may emit
-    {!Stream.Failed} with an error of the same kind.
-
-    Returns an error with kind {!Error.Invalid_request} if
-    [Request.model request] is not accepted by [t]. In that case [run] is not
-    called. *)
-
 val response :
   ?cancelled:cancellation ->
   ?on_event:(Stream.Event.t -> unit) ->
   t ->
   Request.t ->
   (Response.t, Error.t) result
-(** [response ?cancelled ?on_event t request] streams [request] with [t] and
-    collects the terminal provider response.
+(** [response ?cancelled ?on_event t request] interprets [request] with [t] and
+    returns the terminal provider response.
 
-    [response] returns startup errors from {!stream} directly. Once a stream has
-    started, it returns the result of {!Stream.collect}. The stream is closed
-    before [response] returns.
+    [cancelled] defaults to a function returning [false]. Providers should check
+    it before starting transport work and while pulling events where feasible.
+    Errors distinguish startup from post-handoff failures with {!Error.phase}.
 
     [on_event] observes each live {!Stream.Event.t} in stream order before the
     terminal response, for callers that render streaming progress. Omitting it
-    is exactly {!Stream.collect}: no event is observed and the collected
-    response is unchanged, so a non-observing caller sees identical behavior. *)
+    observes no events and does not change the response.
+
+    Returns an error with kind {!Error.Invalid_request} if
+    [Request.model request] is not accepted by [t]. In that case [run] is not
+    called. Provider transport resources are released before [response] returns,
+    including when [on_event] raises. *)

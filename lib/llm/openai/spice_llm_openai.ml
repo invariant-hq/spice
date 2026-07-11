@@ -902,9 +902,15 @@ let stream ~sw ~env config credential ~cancelled request =
         | Ok api_stream ->
             Ok (stream_events ~cancelled ~elapsed model api_stream))
 
-let client ~sw ~env ?(config = Config.default) ~credential () =
+let run ~env config credential ~cancelled ~on_event request =
+  Eio.Switch.run ~name:"openai.request" @@ fun sw ->
+  match stream ~sw ~env config credential ~cancelled request with
+  | Error _ as error -> error
+  | Ok stream -> Llm.Stream.iter_events stream ~f:on_event
+
+let client ~env ?(config = Config.default) ~credential () =
   let accepts model =
     Llm.Provider.equal provider (Llm.Model.provider model)
     && Llm.Model.Api.equal api (Llm.Model.api model)
   in
-  Llm.Client.make ~provider ~accepts ~run:(stream ~sw ~env config credential) ()
+  Llm.Client.make ~provider ~accepts ~run:(run ~env config credential) ()

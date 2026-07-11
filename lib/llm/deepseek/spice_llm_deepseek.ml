@@ -719,7 +719,7 @@ let client ~sw ~env ?http ?observe_download ?(config = Config.default) () =
     Llm.Provider.equal provider (Llm.Model.provider model)
     && Llm.Model.Api.equal api (Llm.Model.api model)
   in
-  let run ~cancelled request =
+  let run ~cancelled ~on_event request =
     if cancelled () then Error (cancelled_error ())
     else
       let* () = check_request request in
@@ -743,9 +743,10 @@ let client ~sw ~env ?http ?observe_download ?(config = Config.default) () =
             Hashtbl.add loaded_by_model id loaded;
             Ok loaded
       in
-      Ok
+      Llm.Stream.iter_events
         (stream_of_session ~cancelled ~config ~engine:loaded.engine
            ~session:(session loaded request) ~request ~mode ?reasoning_effort
            messages)
+        ~f:on_event
   in
   Llm.Client.make ~provider ~accepts ~run ()

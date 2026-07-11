@@ -263,30 +263,20 @@ let run_stream ?(cancelled = fun () -> false) ?config
     request =
   let base_url = "http://127.0.0.1:" ^ string_of_int port in
   Eio_main.run @@ fun env ->
-  Eio.Switch.run @@ fun sw ->
   let config =
     match config with
     | Some config -> config
     | None -> Google.Config.make ~base_url ~max_retries:0 ()
   in
-  let client = Google.client ~sw ~env ~config ~credential () in
-  match Llm.Client.stream ~cancelled client request with
-  | Error error -> Error ([], error)
-  | Ok stream ->
-      let rec loop events =
-        match Llm.Stream.next stream with
-        | None ->
-            Error
-              ( events,
-                Llm.Error.make ~kind:Llm.Error.Malformed_stream
-                  "stream ended without terminal item" )
-        | Some (Llm.Stream.Event event) ->
-            Option.iter (fun f -> f event) on_event;
-            loop (event :: events)
-        | Some (Llm.Stream.Finished response) -> Ok (List.rev events, response)
-        | Some (Llm.Stream.Failed error) -> Error (List.rev events, error)
-      in
-      loop []
+  let client = Google.client ~env ~config ~credential () in
+  let events = ref [] in
+  let observe event =
+    Option.iter (fun f -> f event) on_event;
+    events := event :: !events
+  in
+  match Llm.Client.response ~cancelled ~on_event:observe client request with
+  | Ok response -> Ok (List.rev !events, response)
+  | Error error -> Error (List.rev !events, error)
 
 let model_config_and_credentials () =
   let model = Google.model "gemini-test" in
