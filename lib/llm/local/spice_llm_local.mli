@@ -240,5 +240,7 @@ val client :
 
     The first request for a model prepares its weights (downloading with [http]
     when supplied), starts or reuses the managed server, and streams the
-    response. The managed server outlives this client value; it is stopped when
-    a different local model is requested or when the process exits. *)
+    response. The managed server can outlive this client value and be reused by
+    clients that borrow the same [sw]. It is stopped when residency pressure
+    evicts it or when [sw] is released. Servers are never reused across owner
+    switches. *)

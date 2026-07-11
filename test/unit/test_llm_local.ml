@@ -203,6 +203,50 @@ let fake_server_binary () =
   if Sys.file_exists path then path
   else failf "fake_llama_server.exe not found at %s" path
 
+let with_env bindings f =
+  let saved =
+    List.map (fun (name, _) -> (name, Sys.getenv_opt name)) bindings
+  in
+  List.iter (fun (name, value) -> Unix.putenv name value) bindings;
+  Fun.protect
+    ~finally:(fun () ->
+      List.iter
+        (fun (name, value) ->
+          Unix.putenv name (Option.value value ~default:""))
+        saved)
+    f
+
+let process_exists pid =
+  match Unix.kill pid 0 with
+  | () -> true
+  | exception Unix.Unix_error (Unix.ESRCH, _, _) -> false
+  | exception Unix.Unix_error _ -> true
+
+let await_file clock path =
+  Eio.Time.with_timeout_exn clock 2. (fun () ->
+      while not (Sys.file_exists path) do
+        Eio.Time.sleep clock 0.005
+      done)
+
+let await_gone clock pid =
+  Eio.Time.with_timeout_exn clock 2. (fun () ->
+      while process_exists pid do
+        Eio.Time.sleep clock 0.005
+      done)
+
+let pids path =
+  In_channel.with_open_text path In_channel.input_all
+  |> String.split_on_char '\n'
+  |> List.filter_map (fun value ->
+         let value = String.trim value in
+         if String.is_empty value then None else int_of_string_opt value)
+
+let one_pid path =
+  match pids path with
+  | [ pid ] -> pid
+  | values ->
+      failf "expected one server pid in %s, got %d" path (List.length values)
+
 let chat_sse chunks =
   String.concat ""
     (List.map (fun chunk -> "data: " ^ json_string chunk ^ "\n\n") chunks)
@@ -273,6 +317,25 @@ let scenario =
         ];
     ]
 
+let with_fake ?(startup_timeout_s = 2.) ?(env = []) f =
+  with_temp_dir @@ fun dir ->
+  let gguf = Filename.concat dir "lifecycle.gguf" in
+  Out_channel.with_open_bin gguf (fun output ->
+      Out_channel.output_string output "g");
+  let sse_path = Filename.concat dir "lifecycle.sse" in
+  Out_channel.with_open_bin sse_path (fun output ->
+      Out_channel.output_string output scenario);
+  with_env
+    (("SPICE_FAKE_LLAMA_SSE", sse_path)
+    :: ("SPICE_FAKE_LLAMA_DUMP", "")
+    :: env)
+  @@ fun () ->
+  let config =
+    Local.Config.make ~model_dir:dir ~server_binary:(fake_server_binary ())
+      ~ctx_size:4096 ~startup_timeout_s ()
+  in
+  f ~dir ~gguf ~config
+
 let schema =
   json_object
     [
@@ -286,10 +349,7 @@ let schema =
 
 let read_file_tool = Llm.Tool.make ~name:"read_file" ~input_schema:schema ()
 
-let run_stream ?(cancelled = fun () -> false) ~config request =
-  Eio_main.run @@ fun env ->
-  Eio.Switch.run @@ fun sw ->
-  let client = Local.client ~sw ~env ~config () in
+let run_stream ?(cancelled = fun () -> false) client request =
   let events = ref [] in
   let on_event event = events := event :: !events in
   match Llm.Client.response ~cancelled ~on_event client request with
@@ -313,14 +373,21 @@ let managed_server_round_trip () =
   Out_channel.with_open_bin sse_path (fun oc ->
       Out_channel.output_string oc scenario);
   let dump_path = Filename.concat dir "request.json" in
-  Unix.putenv "SPICE_FAKE_LLAMA_SSE" sse_path;
-  Unix.putenv "SPICE_FAKE_LLAMA_DUMP" dump_path;
   let config =
     Local.Config.make ~model_dir:dir ~server_binary:(fake_server_binary ())
       ~ctx_size:4096 ~startup_timeout_s:20. ()
   in
+  with_env
+    [
+      ("SPICE_FAKE_LLAMA_SSE", sse_path);
+      ("SPICE_FAKE_LLAMA_DUMP", dump_path);
+    ]
+  @@ fun () ->
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let client = Local.client ~sw ~env ~config () in
   let events, response =
-    expect_stream_ok "round trip" (run_stream ~config (request ~model_id:gguf))
+    expect_stream_ok "round trip" (run_stream client (request ~model_id:gguf))
   in
   let texts =
     List.filter_map
@@ -385,11 +452,136 @@ let managed_server_round_trip () =
   | tools -> failf "expected one tool, got %d" (List.length tools));
   (* A second request reuses the resident server. *)
   let _, response2 =
-    expect_stream_ok "server reuse"
-      (run_stream ~config (request ~model_id:gguf))
+    expect_stream_ok "server reuse" (run_stream client (request ~model_id:gguf))
   in
   equal string ~msg:"second round trip works" "Hello"
     (Llm.Response.text response2)
+
+let owner_switch_reaps_server () =
+  with_fake @@ fun ~dir ~gguf ~config ->
+  let pid_file = Filename.concat dir "owner.pid" in
+  with_env [ ("SPICE_FAKE_LLAMA_PID_FILE", pid_file) ] @@ fun () ->
+  let pid =
+    Eio_main.run @@ fun env ->
+    Eio.Switch.run @@ fun sw ->
+    let client = Local.client ~sw ~env ~config () in
+    ignore
+      (expect_stream_ok "owner response"
+         (run_stream client (request ~model_id:gguf)));
+    one_pid pid_file
+  in
+  check "owner release reaps its server" (not (process_exists pid))
+
+let readiness_result_cancellation_reaps_server () =
+  with_fake ~env:[ ("SPICE_FAKE_LLAMA_UNHEALTHY", "1") ]
+  @@ fun ~dir ~gguf ~config ->
+  let pid_file = Filename.concat dir "cancelled-result.pid" in
+  with_env [ ("SPICE_FAKE_LLAMA_PID_FILE", pid_file) ] @@ fun () ->
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let client = Local.client ~sw ~env ~config () in
+  let cancelled () = Sys.file_exists pid_file in
+  (match run_stream ~cancelled client (request ~model_id:gguf) with
+  | Ok _ -> failf "expected readiness cancellation"
+  | Error (_, error) ->
+      equal_error_kind "readiness cancellation" Llm.Error.Cancelled error);
+  let pid = one_pid pid_file in
+  await_gone (Eio.Stdenv.clock env) pid
+
+let readiness_exception_cancellation_reaps_server () =
+  with_fake
+    ~env:[ ("SPICE_FAKE_LLAMA_PARTIAL_HEALTH_COUNT", "1") ]
+  @@ fun ~dir ~gguf ~config ->
+  let pid_file = Filename.concat dir "cancelled-exception.pid" in
+  with_env [ ("SPICE_FAKE_LLAMA_PID_FILE", pid_file) ] @@ fun () ->
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let clock = Eio.Stdenv.clock env in
+  let client = Local.client ~sw ~env ~config () in
+  let cancel_context, cancel_context_resolver = Eio.Promise.create () in
+  let result =
+    Eio.Fiber.fork_promise ~sw (fun () ->
+        Eio.Cancel.sub @@ fun context ->
+        Eio.Promise.resolve cancel_context_resolver context;
+        run_stream client (request ~model_id:gguf))
+  in
+  await_file clock pid_file;
+  Eio.Cancel.cancel
+    (Eio.Promise.await cancel_context)
+    (Failure "cancel local readiness");
+  (match Eio.Promise.await_exn result with
+  | exception Eio.Cancel.Cancelled _ -> ()
+  | Ok _ -> failf "expected readiness to re-raise cancellation"
+  | Error (_, error) ->
+      failf "readiness cancellation became an LLM error: %a" Llm.Error.pp
+        error);
+  await_gone clock (one_pid pid_file)
+
+let failed_readiness_reaps_server () =
+  with_fake ~env:[ ("SPICE_FAKE_LLAMA_EXIT_BEFORE_BIND", "1") ]
+  @@ fun ~dir ~gguf ~config ->
+  let pid_file = Filename.concat dir "early-exit.pid" in
+  with_env [ ("SPICE_FAKE_LLAMA_PID_FILE", pid_file) ] @@ fun () ->
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let client = Local.client ~sw ~env ~config () in
+  (match run_stream client (request ~model_id:gguf) with
+  | Ok _ -> failf "expected early server exit"
+  | Error (_, error) ->
+      check "startup failure reports the server exit"
+        (String.includes ~affix:"exited during startup"
+           (Llm.Error.message error)));
+  await_gone (Eio.Stdenv.clock env) (one_pid pid_file)
+
+let term_ignoring_readiness_is_killed () =
+  with_fake ~startup_timeout_s:0.05
+    ~env:
+      [
+        ("SPICE_FAKE_LLAMA_UNHEALTHY", "1");
+        ("SPICE_FAKE_LLAMA_IGNORE_TERM", "1");
+      ]
+  @@ fun ~dir ~gguf ~config ->
+  let pid_file = Filename.concat dir "term-ignore.pid" in
+  let term_file = Filename.concat dir "term-observed" in
+  with_env
+    [
+      ("SPICE_FAKE_LLAMA_PID_FILE", pid_file);
+      ("SPICE_FAKE_LLAMA_TERM_FILE", term_file);
+    ]
+  @@ fun () ->
+  let started = Unix.gettimeofday () in
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let client = Local.client ~sw ~env ~config () in
+  (match run_stream client (request ~model_id:gguf) with
+  | Ok _ -> failf "expected readiness timeout"
+  | Error _ -> ());
+  check "SIGTERM reached the server" (Sys.file_exists term_file);
+  await_gone (Eio.Stdenv.clock env) (one_pid pid_file);
+  check "SIGKILL fallback is bounded" (Unix.gettimeofday () -. started < 2.)
+
+let spontaneous_exit_respawns_in_owner () =
+  with_fake ~env:[ ("SPICE_FAKE_LLAMA_EXIT_AFTER_CHAT", "1") ]
+  @@ fun ~dir ~gguf ~config ->
+  let pid_file = Filename.concat dir "respawn.pids" in
+  with_env [ ("SPICE_FAKE_LLAMA_PID_FILE", pid_file) ] @@ fun () ->
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let clock = Eio.Stdenv.clock env in
+  let client = Local.client ~sw ~env ~config () in
+  ignore
+    (expect_stream_ok "first transient server"
+       (run_stream client (request ~model_id:gguf)));
+  let first = one_pid pid_file in
+  await_gone clock first;
+  ignore
+    (expect_stream_ok "respawned server"
+       (run_stream client (request ~model_id:gguf)));
+  match pids pid_file with
+  | [ first_pid; second_pid ] ->
+      check "spontaneous exit starts a different process"
+        (not (Int.equal first_pid second_pid))
+  | values -> failf "expected two server starts, got %d" (List.length values)
 
 let health_timeout_releases_the_connection () =
   with_temp_dir @@ fun dir ->
@@ -413,9 +605,12 @@ let health_timeout_releases_the_connection () =
         Local.Config.make ~model_dir:dir ~server_binary:(fake_server_binary ())
           ~ctx_size:4096 ~startup_timeout_s:10. ()
       in
+      Eio_main.run @@ fun env ->
+      Eio.Switch.run @@ fun sw ->
+      let client = Local.client ~sw ~env ~config () in
       ignore
         (expect_stream_ok "partial health recovers"
-           (run_stream ~config (request ~model_id:gguf))));
+           (run_stream client (request ~model_id:gguf))));
   let requests =
     In_channel.with_open_bin health_dump In_channel.input_all
     |> String.split_on_char '\n'
@@ -462,12 +657,20 @@ let write_tiny_gguf path =
    server keeps dumping to the SPICE_FAKE_LLAMA_DUMP path it was spawned
    with, so a request that lands in a *new* dump file proves a fresh spawn,
    and one that does not proves reuse. *)
-let run_tagged ~config ~gguf dump =
+let run_tagged ~client ~gguf dump =
   Unix.putenv "SPICE_FAKE_LLAMA_DUMP" dump;
   let _, response =
-    expect_stream_ok "tagged run" (run_stream ~config (request ~model_id:gguf))
+    expect_stream_ok "tagged run" (run_stream client (request ~model_id:gguf))
   in
   equal string ~msg:"tagged run answers" "Hello" (Llm.Response.text response)
+
+type two_models = {
+  dir : string;
+  config : Local.Config.t;
+  client : Llm.Client.t;
+  gguf_a : string;
+  gguf_b : string;
+}
 
 let with_two_models budget f =
   with_temp_dir @@ fun dir ->
@@ -483,17 +686,20 @@ let with_two_models budget f =
     Local.Config.make ~model_dir:dir ~server_binary:(fake_server_binary ())
       ~ctx_size:4096 ~startup_timeout_s:20. ~memory_budget:budget ()
   in
-  f ~dir ~config ~gguf_a ~gguf_b
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let client = Local.client ~sw ~env ~config () in
+  f { dir; config; client; gguf_a; gguf_b }
 
 let co_resident_servers () =
   (* 4 GiB fits two ~1.7 GiB models side by side: the third request must
      reuse model A's server, not respawn it. *)
-  with_two_models (4 * gib) @@ fun ~dir ~config ~gguf_a ~gguf_b ->
-  run_tagged ~config ~gguf:gguf_a (Filename.concat dir "dump_a");
-  run_tagged ~config ~gguf:gguf_b (Filename.concat dir "dump_b");
+  with_two_models (4 * gib) @@ fun { dir; config; client; gguf_a; gguf_b } ->
+  run_tagged ~client ~gguf:gguf_a (Filename.concat dir "dump_a");
+  run_tagged ~client ~gguf:gguf_b (Filename.concat dir "dump_b");
   Unix.putenv "SPICE_FAKE_LLAMA_DUMP" (Filename.concat dir "dump_c");
   let _, response =
-    expect_stream_ok "reuse" (run_stream ~config (request ~model_id:gguf_a))
+    expect_stream_ok "reuse" (run_stream client (request ~model_id:gguf_a))
   in
   equal string ~msg:"reused server answers" "Hello" (Llm.Response.text response);
   check "model A's server was reused, not respawned"
@@ -511,12 +717,15 @@ let co_resident_servers () =
 let eviction_under_budget () =
   (* 2 GiB holds one ~1.7 GiB model: admitting B evicts A, so a later A
      request must spawn a fresh server. *)
-  with_two_models (2 * gib) @@ fun ~dir ~config ~gguf_a ~gguf_b ->
-  run_tagged ~config ~gguf:gguf_a (Filename.concat dir "dump_d");
-  run_tagged ~config ~gguf:gguf_b (Filename.concat dir "dump_e");
-  run_tagged ~config ~gguf:gguf_a (Filename.concat dir "dump_f");
+  with_two_models (2 * gib) @@ fun setup ->
+  run_tagged ~client:setup.client ~gguf:setup.gguf_a
+    (Filename.concat setup.dir "dump_d");
+  run_tagged ~client:setup.client ~gguf:setup.gguf_b
+    (Filename.concat setup.dir "dump_e");
+  run_tagged ~client:setup.client ~gguf:setup.gguf_a
+    (Filename.concat setup.dir "dump_f");
   check "model A was evicted and respawned"
-    (Sys.file_exists (Filename.concat dir "dump_f"))
+    (Sys.file_exists (Filename.concat setup.dir "dump_f"))
 
 let missing_binary_is_reported () =
   with_temp_dir @@ fun dir ->
@@ -526,7 +735,10 @@ let missing_binary_is_reported () =
     Local.Config.make ~model_dir:dir
       ~server_binary:"spice-test-no-such-llama-server" ()
   in
-  match run_stream ~config (request ~model_id:gguf) with
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let client = Local.client ~sw ~env ~config () in
+  match run_stream client (request ~model_id:gguf) with
   | Ok _ -> failf "expected a missing-binary error"
   | Error ((_ : Llm.Stream.Event.t list), error) ->
       check "error names PATH resolution"
@@ -541,6 +753,18 @@ let () =
       test "artifact status" artifact_status;
       test "artifact prepare cancellation" artifact_prepare_cancellation;
       test "managed server round trip" managed_server_round_trip;
+      test ~timeout:3. "owner switch reaps managed server"
+        owner_switch_reaps_server;
+      test ~timeout:3. "readiness result cancellation reaps server"
+        readiness_result_cancellation_reaps_server;
+      test ~timeout:3. "readiness exception cancellation reaps server"
+        readiness_exception_cancellation_reaps_server;
+      test ~timeout:3. "failed readiness reaps server"
+        failed_readiness_reaps_server;
+      test ~timeout:3. "TERM-ignoring readiness is killed"
+        term_ignoring_readiness_is_killed;
+      test ~timeout:3. "spontaneous server exit respawns within its owner"
+        spontaneous_exit_respawns_in_owner;
       test ~timeout:6. "health timeout releases the stalled connection"
         health_timeout_releases_the_connection;
       test "co-resident servers within budget" co_resident_servers;

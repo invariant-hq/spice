@@ -446,17 +446,18 @@ module Artifact = struct
          config id)
 end
 
-(* One managed server per process. The resident server intentionally
-   outlives client values: a client is rebuilt per turn, and reloading a
-   multi-gigabyte model per turn would be unusable. This is process-owned
-   runtime state, torn down at exit or when a different model is
-   requested. *)
+(* Managed servers outlive individual client values but never their owner
+   switch. Clients are rebuilt per turn, while the application switch spans
+   those turns; binding residency to that switch preserves model reuse without
+   detaching a child from structured cleanup. *)
 module Server = struct
   type t = {
     model_path : string;
     ctx : int;
     port : int;
-    pid : int;
+    process : Eio_unix.Process.ty Eio.Resource.t;
+    owner : Eio.Switch.t;
+    exited : Eio.Process.exit_status option Atomic.t;
     need_bytes : int option;
         (* Estimated memory need; [None] when the GGUF header could not be
            read, in which case the server gets exclusive residency. *)
@@ -466,27 +467,20 @@ module Server = struct
   let residents : t list ref = ref []
   let use_clock = ref 0
   let mutex = Eio.Mutex.create ()
-  let cleanup_installed = ref false
+  let shutdown_grace_s = 1.0
 
   let touch t =
     incr use_clock;
     t.last_used <- !use_clock
 
-  let install_cleanup () =
-    if not !cleanup_installed then begin
-      cleanup_installed := true;
-      at_exit (fun () ->
-          List.iter
-            (fun t ->
-              try Unix.kill t.pid Sys.sigterm with Unix.Unix_error _ -> ())
-            !residents)
-    end
+  let pid t = Eio.Process.pid t.process
+  let running t = Option.is_none (Atomic.get t.exited)
 
-  let alive t =
-    match Unix.waitpid [ Unix.WNOHANG ] t.pid with
-    | 0, _ -> true
-    | _ -> false
-    | exception Unix.Unix_error _ -> false
+  let remove t =
+    residents := List.filter (fun resident -> resident != t) !residents
+
+  let remove_safely t =
+    Eio.Mutex.use_rw ~protect:true mutex (fun () -> remove t)
 
   let base_url t = Printf.sprintf "http://127.0.0.1:%d" t.port
 
@@ -521,28 +515,34 @@ module Server = struct
              ^ " was not found on PATH; install llama.cpp (for example: brew \
                 install llama.cpp) or configure an explicit server binary"))
 
-  let stop ~clock t =
-    Log.info (fun m -> m "stopping llama-server pid=%d" t.pid);
-    (try Unix.kill t.pid Sys.sigterm with Unix.Unix_error _ -> ());
-    let deadline = Eio.Time.now clock +. 5.0 in
-    let rec wait () =
-      if alive t then
-        if Eio.Time.now clock >= deadline then begin
-          (try Unix.kill t.pid Sys.sigkill with Unix.Unix_error _ -> ());
-          try ignore (Unix.waitpid [] t.pid) with Unix.Unix_error _ -> ()
-        end
-        else begin
-          Eio.Time.sleep clock 0.05;
-          wait ()
-        end
-    in
-    wait ()
+  let record_exit t status =
+    Atomic.set t.exited (Some status);
+    remove_safely t
 
-  let start ~config ~model_path ~ctx ~need_bytes =
+  let await t =
+    let status = Eio.Process.await t.process in
+    Atomic.set t.exited (Some status);
+    status
+
+  let stop ~clock t =
+    Eio.Cancel.protect @@ fun () ->
+    Log.info (fun m -> m "stopping llama-server pid=%d" (pid t));
+    Eio.Process.signal t.process Sys.sigterm;
+    match
+      Eio.Time.with_timeout clock shutdown_grace_s (fun () -> Ok (await t))
+    with
+    | Ok _ -> ()
+    | Error `Timeout ->
+        Log.warn (fun m ->
+            m "llama-server ignored SIGTERM; killing pid=%d" (pid t));
+        Eio.Process.signal t.process Sys.sigkill;
+        ignore (await t : Eio.Process.exit_status)
+
+  let start ~sw ~env ~config ~model_path ~ctx ~need_bytes =
     let* binary = find_binary config.Config.server_binary in
     let port = free_port () in
     let argv =
-      [|
+      [
         binary;
         "-m";
         model_path;
@@ -553,26 +553,49 @@ module Server = struct
         "-c";
         string_of_int ctx;
         "--jinja";
-      |]
+      ]
     in
-    let null_in = Unix.openfile "/dev/null" [ Unix.O_RDONLY ] 0 in
-    let null_out = Unix.openfile "/dev/null" [ Unix.O_WRONLY ] 0 in
-    let close_fds () =
-      (try Unix.close null_in with Unix.Unix_error _ -> ());
-      try Unix.close null_out with Unix.Unix_error _ -> ()
+    let process_mgr = Eio.Stdenv.process_mgr env in
+    let fs, _ = Eio.Stdenv.fs env in
+    let null_path = (fs, "/dev/null") in
+    let spawn () =
+      Eio.Path.with_open_out ~create:`Never null_path (fun null ->
+          let stdin = Eio.Flow.string_source "" in
+          Eio.Process.spawn ~sw process_mgr ~stdin ~stdout:null ~stderr:null
+            ~executable:binary argv)
     in
-    match Unix.create_process binary argv null_in null_out null_out with
-    | pid ->
-        close_fds ();
+    match spawn () with
+    | process ->
+        let t =
+          {
+            model_path;
+            ctx;
+            port;
+            process;
+            owner = sw;
+            exited = Atomic.make None;
+            need_bytes;
+            last_used = 0;
+          }
+        in
+        (* The process itself is already attached to [sw]: Eio kills and reaps
+           it on release. This hook only removes the corresponding admission
+           record; explicit eviction and failed startup use graceful [stop]. *)
+        Eio.Switch.on_release sw (fun () -> remove_safely t);
+        Eio.Fiber.fork_daemon ~sw (fun () ->
+            let status = Eio.Process.await process in
+            record_exit t status;
+            `Stop_daemon);
+        Eio.Switch.check sw;
         Log.info (fun m ->
-            m "started llama-server pid=%d port=%d model=%s ctx=%d" pid port
+            m "started llama-server pid=%d port=%d model=%s ctx=%d" (pid t) port
               model_path ctx);
-        Ok { model_path; ctx; port; pid; need_bytes; last_used = 0 }
-    | exception Unix.Unix_error (code, _, _) ->
-        close_fds ();
+        Ok t
+    | exception (Eio.Cancel.Cancelled _ as ex) -> raise ex
+    | exception ex ->
         Error
           (Printf.sprintf "failed to start %s: %s" binary
-             (Unix.error_message code))
+             (Printexc.to_string ex))
 
   let wait_healthy ~sw ~env ~cancelled ~config t =
     let clock = Eio.Stdenv.clock env in
@@ -580,10 +603,13 @@ module Server = struct
     let deadline = Eio.Time.now clock +. config.Config.startup_timeout_s in
     let rec poll () =
       if cancelled () then Error "local server startup cancelled"
-      else if not (alive t) then
+      else if not (running t) then
+        let status = Option.get (Atomic.get t.exited) in
         Error
-          "llama-server exited during startup; run it by hand to see why (it \
-           may be out of memory or the GGUF may be unsupported)"
+          (Format.asprintf
+             "llama-server exited during startup (%a); run it by hand to see \
+              why (it may be out of memory or the GGUF may be unsupported)"
+             Eio.Process.pp_status status)
       else
         match Api.health api_client with
         | Ok () -> Ok ()
@@ -608,8 +634,7 @@ module Server = struct
            hosted small model or a larger memory budget)"
           victim.model_path admitting);
     stop ~clock victim;
-    residents :=
-      List.filter (fun t -> not (Int.equal t.pid victim.pid)) !residents
+    remove victim
 
   let lru () =
     match !residents with
@@ -647,41 +672,49 @@ module Server = struct
     loop ()
 
   let ensure ~sw ~env ~cancelled ~config ~model_path ~ctx ~need_bytes ~budget =
-    Eio.Mutex.use_rw ~protect:false mutex (fun () ->
-        install_cleanup ();
-        let clock = Eio.Stdenv.clock env in
-        residents := List.filter alive !residents;
-        match
-          List.find_opt
-            (fun t ->
-              String.equal t.model_path model_path && Int.equal t.ctx ctx)
-            !residents
-        with
-        | Some t ->
-            touch t;
+    Eio.Mutex.lock mutex;
+    Fun.protect ~finally:(fun () -> Eio.Mutex.unlock mutex) @@ fun () ->
+    let clock = Eio.Stdenv.clock env in
+    residents := List.filter running !residents;
+    match
+      List.find_opt
+        (fun t ->
+          t.owner == sw
+          && String.equal t.model_path model_path
+          && Int.equal t.ctx ctx)
+        !residents
+    with
+    | Some t ->
+        touch t;
+        Ok t
+    | None -> (
+        (* A same-model server with a different context is stale. *)
+        List.iter
+          (evict ~clock ~admitting:model_path)
+          (List.filter
+             (fun t -> t.owner == sw && String.equal t.model_path model_path)
+             !residents);
+        make_room ~clock ~budget ~model_path ~need_bytes;
+        let* t = start ~sw ~env ~config ~model_path ~ctx ~need_bytes in
+        residents := t :: !residents;
+        touch t;
+        let cleanup () =
+          remove t;
+          stop ~clock t
+        in
+        match wait_healthy ~sw ~env ~cancelled ~config t with
+        | Ok () ->
+            Log.info (fun m ->
+                m "llama-server ready pid=%d port=%d model=%s" (pid t) t.port
+                  t.model_path);
             Ok t
-        | None -> (
-            (* A same-model server with a different context is stale. *)
-            List.iter
-              (evict ~clock ~admitting:model_path)
-              (List.filter
-                 (fun t -> String.equal t.model_path model_path)
-                 !residents);
-            make_room ~clock ~budget ~model_path ~need_bytes;
-            let* t = start ~config ~model_path ~ctx ~need_bytes in
-            residents := t :: !residents;
-            touch t;
-            match wait_healthy ~sw ~env ~cancelled ~config t with
-            | Ok () ->
-                Log.info (fun m ->
-                    m "llama-server ready pid=%d port=%d model=%s" t.pid t.port
-                      t.model_path);
-                Ok t
-            | Error message ->
-                stop ~clock t;
-                residents :=
-                  List.filter (fun r -> not (Int.equal r.pid t.pid)) !residents;
-                Error message))
+        | Error message ->
+            cleanup ();
+            Error message
+        | exception ex ->
+            let bt = Printexc.get_raw_backtrace () in
+            Eio.Cancel.protect cleanup;
+            Printexc.raise_with_backtrace ex bt)
 end
 
 (* Request encoding: provider-neutral messages to chat-completions JSON. *)

@@ -86,6 +86,21 @@ let append_line path line =
   output_char output '\n';
   close_out_noerr output
 
+let getenv_nonempty name =
+  match Sys.getenv_opt name with
+  | Some value when not (String.is_empty value) -> Some value
+  | Some _ | None -> None
+
+let enabled name = Option.is_some (getenv_nonempty name)
+
+let record name value =
+  Option.iter (fun path -> append_line path value) (getenv_nonempty name)
+
+let rec accept socket =
+  match Unix.accept socket with
+  | client -> client
+  | exception Unix.Unix_error (Unix.EINTR, _, _) -> accept socket
+
 let file_contents path =
   let ic = open_in_bin path in
   Fun.protect
@@ -94,6 +109,12 @@ let file_contents path =
 
 let () =
   let port = port_of_argv () in
+  record "SPICE_FAKE_LLAMA_PID_FILE" (string_of_int (Unix.getpid ()));
+  if enabled "SPICE_FAKE_LLAMA_IGNORE_TERM" then
+    Sys.set_signal Sys.sigterm
+      (Sys.Signal_handle (fun _ ->
+           record "SPICE_FAKE_LLAMA_TERM_FILE" "term"));
+  if enabled "SPICE_FAKE_LLAMA_EXIT_BEFORE_BIND" then exit 23;
   let socket = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
   Unix.setsockopt socket Unix.SO_REUSEADDR true;
   Unix.bind socket (Unix.ADDR_INET (Unix.inet_addr_loopback, port));
@@ -105,7 +126,7 @@ let () =
     | Some value -> Option.value (int_of_string_opt value) ~default:0
   in
   while true do
-    let client, _ = Unix.accept socket in
+    let client, _ = accept socket in
     Fun.protect
       ~finally:(fun () -> try Unix.close client with Unix.Unix_error _ -> ())
       (fun () ->
@@ -120,7 +141,9 @@ let () =
                   if not (String.is_empty path) then
                     append_line path (string_of_int !health_requests))
                 (Sys.getenv_opt "SPICE_FAKE_LLAMA_HEALTH_DUMP");
-              if !health_requests <= partial_health_count then
+              if enabled "SPICE_FAKE_LLAMA_UNHEALTHY" then
+                respond client 503 {|{"status":"loading"}|}
+              else if !health_requests <= partial_health_count then
                 partial_health client
               else respond client 200 {|{"status":"ok"}|}
             end
@@ -134,12 +157,14 @@ let () =
                   output_string oc body;
                   close_out_noerr oc
               | Some _ | None -> ());
-              match Sys.getenv_opt "SPICE_FAKE_LLAMA_SSE" with
+              begin match Sys.getenv_opt "SPICE_FAKE_LLAMA_SSE" with
               | Some path when not (String.equal path "") ->
                   respond client ~content_type:"text/event-stream" 200
                     (file_contents path)
               | Some _ | None ->
                   respond client 500 {|{"error":{"message":"no scenario"}}|}
+              end;
+              if enabled "SPICE_FAKE_LLAMA_EXIT_AFTER_CHAT" then exit 0
             end
             else respond client 404 {|{"error":{"message":"not found"}}|})
   done
