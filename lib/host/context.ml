@@ -199,24 +199,9 @@ let read_file ~stdenv abs =
   | text -> Ok text
   | exception exn -> Error (Printexc.to_string exn)
 
-(* Workspace selection. The configured cwd may be relative; it is made
-   absolute lexically against the process working directory. Symlinks are
-   never resolved here: lexical paths are identity and display, and symlink
-   containment is an observation concern handled by [Fs]. *)
-
 let marker_exists stdenv dir =
   let path = Eio.Path.( / ) (fs_abs stdenv dir) ".git" in
   Eio.Path.is_file path || Eio.Path.is_directory path
-
-let find_root ~stdenv cwd =
-  let rec loop dir =
-    if marker_exists stdenv dir then Some dir
-    else
-      match Spice_path.Abs.parent dir with
-      | None -> None
-      | Some parent -> loop parent
-  in
-  loop cwd
 
 let project_dirs ~root_path cwd_rel =
   let step (dir, acc) component =
@@ -665,11 +650,8 @@ let warnings t =
 let load ~stdenv ?(nested_scan = false) config =
   let cwd = Config.cwd config in
   let cwd_text = Spice_path.Abs.to_string cwd in
-  let root, root_marker =
-    match find_root ~stdenv cwd with
-    | Some root -> (root, Some ".git")
-    | None -> (cwd, None)
-  in
+  let root = Config.project_root config in
+  let root_marker = if marker_exists stdenv root then Some ".git" else None in
   let ws_root = Spice_workspace.Root.make root in
   let cwd_rel =
     match Spice_path.Abs.relativize ~root cwd with

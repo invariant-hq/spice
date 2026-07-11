@@ -1301,13 +1301,21 @@ let resolve_under ~base ~name path =
   | Ok path -> Ok path
   | Error path_error -> error (name ^ ": " ^ Spice_path.Error.message path_error)
 
+let canonical_directory ~name path =
+  let raw = Spice_path.Abs.to_string path in
+  match Unix.realpath raw with
+  | canonical -> abs_path ~name canonical
+  | exception Unix.Unix_error (unix_error, _, _) ->
+      error (Printf.sprintf "%s: %s" name (Unix.error_message unix_error))
+
 let canonical_cwd env = function
   | "" -> error "cwd must not be empty"
   | cwd ->
       let path = fs_path env cwd in
       if Eio.Path.is_directory path then
         let* base = host_cwd env in
-        resolve_under ~base ~name:"cwd" (Eio.Path.native_exn path)
+        let* cwd = resolve_under ~base ~name:"cwd" (Eio.Path.native_exn path) in
+        canonical_directory ~name:"cwd" cwd
       else error ("cwd is not a directory: " ^ cwd)
 
 let fs_abs stdenv abs =
@@ -1960,7 +1968,10 @@ module Files = struct
       |> Result.map_error (fun error -> error_t (User_dirs.Error.message error))
     in
     let* user = resolve_under ~base ~name:"user config path" user_path in
-    let project_root = discover_project_root stdenv cwd in
+    let* project_root =
+      discover_project_root stdenv cwd
+      |> canonical_directory ~name:"project root"
+    in
     let* project =
       project_config_path project_root |> abs_path ~name:"project config path"
     in

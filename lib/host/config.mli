@@ -416,8 +416,8 @@ module Config_file : sig
   (** [user paths] is the user config path. *)
 
   val project_root : paths -> Spice_path.Abs.t
-  (** [project_root paths] is the discovered enclosing project root, or the
-      absolute invocation directory when no project marker exists. *)
+  (** [project_root paths] is the canonical discovered enclosing project root,
+      or the canonical invocation directory when no project marker exists. *)
 
   val project : paths -> Spice_path.Abs.t
   (** [project paths] is the shared project config path. *)
@@ -613,14 +613,14 @@ val load :
     read from a snapshot of the current process environment. *)
 
 val cwd : t -> Spice_path.Abs.t
-(** [cwd t] is [t]'s resolved working directory.
+(** [cwd t] is [t]'s canonical working directory.
 
     The directory existed when [t] was loaded. *)
 
 val project_root : t -> Spice_path.Abs.t
 (** [project_root t] is the nearest ancestor of {!cwd} containing a [.git]
-    marker, or {!cwd} when no marker exists. Project config and skills resolve
-    from this root. *)
+    marker, or {!cwd} when no marker exists. The path is canonical. Project
+    config, trust, context, and skills resolve from this root. *)
 
 val workspace_trust : t -> Trust.t
 (** [workspace_trust t] is the launch-time trust resolution for

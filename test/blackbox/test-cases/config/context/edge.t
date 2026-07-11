@@ -61,13 +61,14 @@ never read.
   $ rm AGENTS.md
   $ rm -r "$outside"
 
-A symlinked working directory keeps the configured spelling: paths are never
-canonicalized.
+A symlinked working directory converges on the canonical activation identity.
 
   $ mkdir realdir
   $ ln -s realdir linkdir
   $ spice debug prompt --cwd "$PWD/linkdir" | grep 'Current working directory'
-  Current working directory: $TESTCASE_ROOT/linkdir
+  Current working directory: $TESTCASE_ROOT/realdir
+  $ spice debug context --cwd "$PWD/linkdir" --json | grep -o '"root_path":"[^"]*"'
+  "root_path":"$TESTCASE_ROOT"
 
 Invalid UTF-8 is repaired to U+FFFD with a recorded fact.
 
@@ -137,12 +138,13 @@ Without a .git marker anywhere above the working directory, discovery
 considers only the working directory.
 
   $ work=$(mktemp -d)
+  $ canonical_work=$(realpath "$work")
   $ printf 'Tmp instruction.\n' > "$work/AGENTS.md"
   $ spice trust "$work" > /dev/null
-  $ spice debug context --cwd "$work" | sed "s#$work#WORK#g" | sed -n '2,4p'
+  $ spice debug context --cwd "$work" | sed "s#$canonical_work#WORK#g" | sed -n '2,4p'
     cwd: WORK
     root: WORK
     root marker: (none)
-  $ spice debug context --cwd "$work" | sed "s#$work#WORK#g" | grep '\[1\]'
+  $ spice debug context --cwd "$work" | sed "s#$canonical_work#WORK#g" | grep '\[1\]'
     [1] project AGENTS.md ./AGENTS.md
   $ rm -r "$work"
