@@ -587,7 +587,7 @@ not contact a provider or start project tooling.
 
 ### TUI status
 
-Replace the current `trust: not enforced` fact with the resolved state and
+Replace the former `trust: not enforced` fact with the resolved state and
 canonical root. The home/footer shows one concise restricted-workspace warning;
 it does not repeat one warning per disabled input.
 

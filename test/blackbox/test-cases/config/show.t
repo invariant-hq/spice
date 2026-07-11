@@ -178,8 +178,8 @@ JSON get emits JSON values.
   $ spice config get --json model
   null
 
-Project config applies without any trust decision, and a clean load carries
-no diagnostics.
+Project config applies in this explicitly trusted test workspace, and a clean
+load carries no diagnostics.
 
   $ spice config set --project model openai/gpt-5.4
   $ spice config get model
