@@ -46,7 +46,8 @@ val trust :
   (t, Error.t) result
 (** [trust ~stdenv ~root ()] persists [Trusted] for [root] and returns the
     canonical resolution. Concurrent updates are serialized and re-read the
-    latest store before replacement. *)
+    latest store before replacement. Replacement flushes the new file and its
+    containing directory on filesystems that support directory [fsync]. *)
 
 val untrust :
   stdenv:Eio_unix.Stdenv.base ->
@@ -55,7 +56,8 @@ val untrust :
   unit ->
   (t, Error.t) result
 (** [untrust ~stdenv ~root ()] persists [Untrusted] for [root] and returns the
-    canonical resolution. It does not remove the decision. *)
+    canonical resolution. It does not remove the decision and uses the same
+    durable replacement protocol as {!trust}. *)
 
 val is_trusted : t -> bool
 (** [is_trusted t] is [true] iff {!status}[ t] is [Trusted]. *)

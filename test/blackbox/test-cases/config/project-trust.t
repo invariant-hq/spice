@@ -145,6 +145,7 @@ snapshot with the other.
   $ find "$XDG_CONFIG_HOME/spice/trust.json" "$XDG_CONFIG_HOME/spice/trust.json.lock" -prune -perm 0600 -exec basename {} \; | sort
   trust.json
   trust.json.lock
+  $ find "$XDG_CONFIG_HOME/spice" -name 'trust.json.tmp.*'
 
 Unsupported store versions fail closed and leave the original bytes intact.
 

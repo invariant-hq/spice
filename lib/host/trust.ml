@@ -250,6 +250,19 @@ let cleanup_tmp stdenv tmp =
           m "trust store temp cleanup failed path=%s exn=%s" tmp
             (Printexc.to_string exn))
 
+let fsync_path ?(directory = false) path =
+  match Unix.openfile path [ Unix.O_RDONLY; Unix.O_CLOEXEC ] 0 with
+  | exception exn -> io_error Error.Write path exn
+  | fd ->
+      Fun.protect
+        ~finally:(fun () -> Unix.close fd)
+        (fun () ->
+          match Unix.fsync fd with
+          | () -> Ok ()
+          | exception Unix.Unix_error (Unix.EINVAL, _, _) when directory ->
+              Ok ()
+          | exception exn -> io_error Error.Write path exn)
+
 let write_store stdenv path store =
   match Jsont_bytesrw.encode_string Jsont.json (encode_store store) with
   | Error message -> store_error Error.Write path message
@@ -263,11 +276,18 @@ let write_store stdenv path store =
           cleanup_tmp stdenv tmp;
           io_error Error.Write tmp exn
       | () -> (
-          match Eio.Path.rename (fs_path stdenv tmp) (fs_path stdenv path) with
-          | () -> Ok ()
-          | exception exn ->
+          match fsync_path tmp with
+          | Error _ as error ->
               cleanup_tmp stdenv tmp;
-              io_error Error.Write path exn)
+              error
+          | Ok () -> (
+              match
+                Eio.Path.rename (fs_path stdenv tmp) (fs_path stdenv path)
+              with
+              | () -> fsync_path ~directory:true (Filename.dirname path)
+              | exception exn ->
+                  cleanup_tmp stdenv tmp;
+                  io_error Error.Write path exn))
       end
 
 let set ~stdenv ?process_env ~root status =
