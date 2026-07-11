@@ -29,11 +29,11 @@ module Error : sig
   (** [pp ppf e] formats {!message}[ e]. *)
 end
 
-val config_home : getenv -> string
+val config_home : getenv -> (string, Error.t) result
 (** [config_home getenv] is the directory for user-authored configuration and
     authority stores. It honors an absolute [SPICE_CONFIG_HOME], then the
-    platform config directory, then the existing HOME-relative fallback.
-    Relative config overrides retain the established fall-through behavior. *)
+    platform config directory, then [$HOME/.config/spice]. Relative overrides
+    and a missing fallback home are errors. *)
 
 val data_home : getenv -> (string, Error.t) result
 (** [data_home getenv] is the durable global data directory. It honors an
@@ -47,11 +47,11 @@ val state_home : getenv -> (string, Error.t) result
     [$HOME/.local/state/spice]. Relative overrides and a missing fallback home
     are errors. *)
 
-val config_path : getenv -> string
+val config_path : getenv -> (string, Error.t) result
 (** [config_path getenv] is [config.json] below {!config_home}. *)
 
-val auth_store_path : getenv -> string
+val auth_store_path : getenv -> (string, Error.t) result
 (** [auth_store_path getenv] is [auth.json] below {!config_home}. *)
 
-val trust_store_path : getenv -> string
+val trust_store_path : getenv -> (string, Error.t) result
 (** [trust_store_path getenv] is [trust.json] below {!config_home}. *)

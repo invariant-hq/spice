@@ -16,6 +16,7 @@ module Error = struct
 
   type t =
     | Invalid_root of { root : string; message : string }
+    | User_directory of User_dirs.Error.t
     | Store of { operation : operation; path : string; message : string }
 
   let operation = function
@@ -26,6 +27,7 @@ module Error = struct
 
   let message = function
     | Invalid_root { root; message } -> root ^ ": " ^ message
+    | User_directory error -> User_dirs.Error.message error
     | Store { operation = op; path; message } ->
         Printf.sprintf "%s workspace trust store %s: %s" (operation op) path
           message
@@ -79,6 +81,7 @@ let io_error operation path = function
 
 let store_path process_env =
   User_dirs.trust_store_path (Env.get process_env)
+  |> Result.map_error (fun error -> Error.User_directory error)
 
 let json_mem name = function
   | Jsont.Object (fields, _) -> Option.map snd (Jsont.Json.find_mem name fields)
@@ -152,7 +155,8 @@ let resolution root store =
 let find ~stdenv ?process_env ~root () =
   let process_env = Option.value process_env ~default:(Env.current ()) in
   let* root = canonical_root ~stdenv root in
-  let* store = load_store stdenv (store_path process_env) in
+  let* path = store_path process_env in
+  let* store = load_store stdenv path in
   Ok (resolution root store)
 
 let make_mem name value = Jsont.Json.mem (Jsont.Json.name name) value
@@ -269,7 +273,7 @@ let write_store stdenv path store =
 let set ~stdenv ?process_env ~root status =
   let process_env = Option.value process_env ~default:(Env.current ()) in
   let* root = canonical_root ~stdenv root in
-  let path = store_path process_env in
+  let* path = store_path process_env in
   with_store_lock stdenv path (fun () ->
       let* store = load_store stdenv path in
       let key = Spice_path.Abs.to_string root in

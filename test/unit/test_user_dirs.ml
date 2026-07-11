@@ -64,6 +64,19 @@ let overrides () =
   equal path_result ~msg:"state override" (Ok "/custom/state")
     (User_dirs.state_home env)
 
+let config_roots () =
+  let absolute = getenv [ ("SPICE_CONFIG_HOME", "/custom/config") ] in
+  equal path_result ~msg:"config override" (Ok "/custom/config")
+    (User_dirs.config_home absolute);
+  if not (String.equal Filename.dir_sep "\\") then begin
+    let xdg = getenv [ ("XDG_CONFIG_HOME", "/var/config") ] in
+    equal path_result ~msg:"XDG config" (Ok "/var/config/spice")
+      (User_dirs.config_home xdg);
+    let home = getenv [ ("HOME", "/home/test") ] in
+    equal path_result ~msg:"HOME config" (Ok "/home/test/.config/spice")
+      (User_dirs.config_home home)
+  end
+
 let relative_override_rejected () =
   let env = getenv [ ("SPICE_DATA_HOME", "relative") ] in
   match User_dirs.data_home env with
@@ -71,6 +84,30 @@ let relative_override_rejected () =
   | Error error ->
       equal string ~msg:"responsible variable" "SPICE_DATA_HOME"
         (User_dirs.Error.variable error)
+
+let relative_config_override_rejected () =
+  let env =
+    getenv
+      [
+        ("SPICE_CONFIG_HOME", "relative");
+        ("XDG_CONFIG_HOME", "/otherwise-valid");
+        ("HOME", "/home/test");
+      ]
+  in
+  match User_dirs.config_home env with
+  | Ok path -> failf "relative config override resolved to %S" path
+  | Error error ->
+      equal string ~msg:"responsible variable" "SPICE_CONFIG_HOME"
+        (User_dirs.Error.variable error)
+
+let missing_config_home_rejected () =
+  if String.equal Filename.dir_sep "\\" then ()
+  else
+    match User_dirs.config_home (getenv []) with
+    | Ok path -> failf "missing config HOME resolved to %S" path
+    | Error error ->
+        equal string ~msg:"responsible variable" "HOME"
+          (User_dirs.Error.variable error)
 
 let missing_home_rejected () =
   if String.equal Filename.dir_sep "\\" then ()
@@ -87,6 +124,10 @@ let () =
       test "Unix XDG roots" unix_xdg;
       test "HOME fallbacks" home_fallback;
       test "absolute Spice overrides" overrides;
+      test "config roots" config_roots;
       test "relative override is rejected" relative_override_rejected;
+      test "relative config override is rejected"
+        relative_config_override_rejected;
       test "missing fallback HOME is rejected" missing_home_rejected;
+      test "missing config HOME is rejected" missing_config_home_rejected;
     ]

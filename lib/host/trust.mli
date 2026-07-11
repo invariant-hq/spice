@@ -18,7 +18,8 @@ type t
 
 module Error : sig
   type t
-  (** A recoverable root-validation, store-read, decode, lock, or write error. *)
+  (** A recoverable user-directory, root-validation, store-read, decode, lock,
+      or write error. *)
 
   val message : t -> string
   (** [message e] is an actionable human-readable diagnostic. *)

@@ -24,24 +24,6 @@ let home getenv =
   | Some home when is_absolute home -> Some home
   | Some _ | None -> None
 
-let config_fallback getenv =
-  match home getenv with
-  | Some home -> spice (home / ".config")
-  | None -> "." / ".config" / "spice"
-
-let config_home getenv =
-  match getenv "SPICE_CONFIG_HOME" with
-  | Some path when is_absolute path -> path
-  | Some _ | None -> (
-      if String.equal Filename.dir_sep "\\" then
-        match getenv "APPDATA" with
-        | Some path when is_absolute path -> spice path
-        | Some _ | None -> config_fallback getenv
-      else
-        match getenv "XDG_CONFIG_HOME" with
-        | Some path when is_absolute path -> spice path
-        | Some _ | None -> config_fallback getenv)
-
 let invalid_override variable value =
   Error
     (Error.make ~variable ~value
@@ -53,6 +35,30 @@ let missing_home ~kind ~override =
        (Printf.sprintf
           "cannot determine Spice %s home; set %s or an absolute HOME" kind
           override))
+
+let config_home getenv =
+  match getenv "SPICE_CONFIG_HOME" with
+  | Some path when is_absolute path -> Ok path
+  | Some path -> invalid_override "SPICE_CONFIG_HOME" path
+  | None -> (
+      if String.equal Filename.dir_sep "\\" then
+        match getenv "APPDATA" with
+        | Some path when is_absolute path -> Ok (spice path)
+        | Some path -> invalid_override "APPDATA" path
+        | None -> (
+            match home getenv with
+            | Some home -> Ok (spice (home / ".config"))
+            | None ->
+                missing_home ~kind:"config" ~override:"SPICE_CONFIG_HOME")
+      else
+        match getenv "XDG_CONFIG_HOME" with
+        | Some path when is_absolute path -> Ok (spice path)
+        | Some path -> invalid_override "XDG_CONFIG_HOME" path
+        | None -> (
+            match home getenv with
+            | Some home -> Ok (spice (home / ".config"))
+            | None ->
+                missing_home ~kind:"config" ~override:"SPICE_CONFIG_HOME"))
 
 let data_home getenv =
   match getenv "SPICE_DATA_HOME" with
@@ -108,6 +114,7 @@ let state_home getenv =
             | Some home -> Ok (home / ".local" / "state" / "spice")
             | None -> missing_home ~kind:"state" ~override:"SPICE_STATE_HOME"))
 
-let config_path getenv = config_home getenv / "config.json"
-let auth_store_path getenv = config_home getenv / "auth.json"
-let trust_store_path getenv = config_home getenv / "trust.json"
+let below name = Result.map (fun home -> home / name)
+let config_path getenv = config_home getenv |> below "config.json"
+let auth_store_path getenv = config_home getenv |> below "auth.json"
+let trust_store_path getenv = config_home getenv |> below "trust.json"

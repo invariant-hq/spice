@@ -1955,10 +1955,11 @@ module Files = struct
     let cwd = Option.value cwd ~default:(cwd_default stdenv) in
     let* cwd = canonical_cwd stdenv cwd in
     let* base = host_cwd stdenv in
-    let* user =
-      resolve_under ~base ~name:"user config path"
-        (User_dirs.config_path getenv)
+    let* user_path =
+      User_dirs.config_path getenv
+      |> Result.map_error (fun error -> error_t (User_dirs.Error.message error))
     in
+    let* user = resolve_under ~base ~name:"user config path" user_path in
     let project_root = discover_project_root stdenv cwd in
     let* project =
       project_config_path project_root |> abs_path ~name:"project config path"
@@ -2585,8 +2586,11 @@ let load ~stdenv ?process_env ?cwd ?extra_config_file ?data_home
     | Error path_error -> error (User_dirs.Error.message path_error)
   in
   let* auth_store_path =
-    resolve_under ~base ~name:"auth_store_path"
-      (User_dirs.auth_store_path getenv)
+    let* path =
+      User_dirs.auth_store_path getenv
+      |> Result.map_error (fun error -> error_t (User_dirs.Error.message error))
+    in
+    resolve_under ~base ~name:"auth_store_path" path
   in
   let user_config_file = Files.user files in
   let* extra_config_file =

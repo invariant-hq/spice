@@ -80,52 +80,64 @@ let storage_check config =
   }
 
 let trust_check ~stdenv ~process_env ?cwd () =
-  let store =
-    Spice_host.User_dirs.trust_store_path (Spice_host.Env.get process_env)
-  in
-  let base details = ("store=" ^ store) :: details in
   match
-    Spice_host.Config.Config_file.discover ~stdenv ~process_env ?cwd ()
+    Spice_host.User_dirs.trust_store_path (Spice_host.Env.get process_env)
   with
   | Error error ->
       {
         name = "workspace trust";
         verdict = Fail;
         details =
-          base
-            [ "valid=not checked"; Spice_host.Config.Error.message error ];
+          [
+            "store=unresolved";
+            "valid=not checked";
+            Spice_host.User_dirs.Error.message error;
+          ];
       }
-  | Ok files ->
-      let root = Spice_host.Config.Config_file.project_root files in
-      let root_string = Spice_path.Abs.to_string root in
-      match Spice_host.Trust.find ~stdenv ~process_env ~root () with
+  | Ok store -> (
+      let base details = ("store=" ^ store) :: details in
+      match
+        Spice_host.Config.Config_file.discover ~stdenv ~process_env ?cwd ()
+      with
       | Error error ->
           {
             name = "workspace trust";
             verdict = Fail;
             details =
               base
-                [
-                  "valid=false";
-                  "root=" ^ root_string;
-                  Spice_host.Trust.Error.message error;
-                ];
+                [ "valid=not checked"; Spice_host.Config.Error.message error ];
           }
-      | Ok trust ->
-          {
-            name = "workspace trust";
-            verdict = Pass;
-            details =
-              base
-                [
-                  "valid=true";
-                  ("root="
-                  ^ Spice_path.Abs.to_string (Spice_host.Trust.root trust));
-                  ("status="
-                  ^ Spice_host.Trust.status_to_string
-                      (Spice_host.Trust.status trust));
-                ];
-          }
+      | Ok files ->
+          let root = Spice_host.Config.Config_file.project_root files in
+          let root_string = Spice_path.Abs.to_string root in
+          match Spice_host.Trust.find ~stdenv ~process_env ~root () with
+          | Error error ->
+              {
+                name = "workspace trust";
+                verdict = Fail;
+                details =
+                  base
+                    [
+                      "valid=false";
+                      "root=" ^ root_string;
+                      Spice_host.Trust.Error.message error;
+                    ];
+              }
+          | Ok trust ->
+              {
+                name = "workspace trust";
+                verdict = Pass;
+                details =
+                  base
+                    [
+                      "valid=true";
+                      ("root="
+                      ^ Spice_path.Abs.to_string (Spice_host.Trust.root trust));
+                      ("status="
+                      ^ Spice_host.Trust.status_to_string
+                          (Spice_host.Trust.status trust));
+                    ];
+              })
 
 (* Passive readiness only: no provider request. The run-blocking case is a
    missing or blocked credential for the provider of the selected main
