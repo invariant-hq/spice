@@ -93,3 +93,34 @@ Budget keys may tighten but not widen the non-workspace effective value.
 
   $ spice config get run.max_steps
   3
+
+Cross-field validation treats the two workspace layers as one activation
+unit. If their effective contribution contradicts valid user configuration,
+both workspace layers are dropped while the user-owned configuration keeps
+the host available.
+
+  $ cat > "$XDG_CONFIG_HOME/spice/config.json" <<'EOF'
+  > {"web":{"timeout_ms":30000}}
+  > EOF
+  $ cat > .spice/config.json <<'EOF'
+  > {"model":"openai/workspace-model","web":{"max_timeout_ms":20000}}
+  > EOF
+  $ cat > .spice/config.local.json <<'EOF'
+  > {"small_model":"openai/workspace-small"}
+  > EOF
+
+  $ spice config get web.timeout_ms
+  30000
+  $ spice config get web.max_timeout_ms
+  120000
+  $ spice config get model
+  spice: model is not set
+  [1]
+  $ spice config get small_model
+  spice: small_model is not set
+  [1]
+  $ spice config show --json --origins | grep -o '"kind":"invalid_project_config"' | awk 'END { print NR }'
+  2
+  $ spice config show --origins | grep 'effective workspace configuration is invalid'
+  diagnostic: workspace config file ignored: effective workspace configuration is invalid: web.timeout_ms must not exceed web.max_timeout_ms (project: $TESTCASE_ROOT/.spice/config.json)
+  diagnostic: workspace config file ignored: effective workspace configuration is invalid: web.timeout_ms must not exceed web.max_timeout_ms (project_local: $TESTCASE_ROOT/.spice/config.local.json)

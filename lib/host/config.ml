@@ -2647,6 +2647,14 @@ let load ~stdenv ?process_env ?cwd ?extra_config_file ?data_home
     match extra_source with None -> [] | Some source -> [ (source, extra) ]
   in
   let* env_layers = env_named_layers getenv in
+  let non_workspace_layers =
+    [ (user_source, user) ] @ extra_layers @ env_layers
+    @ List.map (fun layer -> (Source.Override, layer)) overrides
+  in
+  let* () =
+    non_workspace_layers |> List.map snd |> Layer.merge_all
+    |> validate_merged_layer
+  in
   (* Trusted workspace layers still pass through the shared-key filter, rule
      stripping, budget clamp, and byte cap. Unknown and untrusted workspaces do
      not open the files at all; their paths remain available to explicit config
@@ -2706,17 +2714,38 @@ let load ~stdenv ?process_env ?cwd ?extra_config_file ?data_home
         disabled_files;
       }
   in
-  let layers =
-    [
-      (user_source, user);
+  let layers_for workspace =
+    [ (user_source, user);
       (project_source, workspace.project);
-      (project_local_source, workspace.project_local);
-    ]
+      (project_local_source, workspace.project_local) ]
     @ extra_layers @ env_layers
     @ List.map (fun layer -> (Source.Override, layer)) overrides
   in
+  let layers = layers_for workspace in
   let layer = Layer.merge_all (List.map snd layers) in
-  let* () = validate_merged_layer layer in
+  let workspace, layers, layer =
+    match validate_merged_layer layer with
+    | Ok () -> (workspace, layers, layer)
+    | Error validation_error ->
+        let reason =
+          "effective workspace configuration is invalid: "
+          ^ Error.message validation_error
+        in
+        let invalid_files =
+          [ (project_source, workspace.project);
+            (project_local_source, workspace.project_local) ]
+          |> List.filter_map (fun (source, layer) ->
+              if Layer.is_empty layer then None else Some (source, reason))
+        in
+        let workspace =
+          { workspace with
+            project = Layer.empty;
+            project_local = Layer.empty;
+            invalid_files = workspace.invalid_files @ invalid_files }
+        in
+        let layers = layers_for workspace in
+        (workspace, layers, Layer.merge_all (List.map snd layers))
+  in
   let origins = origins_of_layers layers |> origin_with_defaults getenv in
   let permission_rules =
     (* Non-workspace file layers only, in descending precedence: env and

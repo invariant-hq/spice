@@ -593,10 +593,12 @@ val load :
     shared-key allowlist, [permission.rules] never load from the workspace,
     budget keys such as [run.max_steps] may tighten but not widen the value the
     non-workspace layers resolve to, files are byte-capped before parsing, and
-    an unreadable or invalid workspace file degrades to an empty layer. Every
-    disabled, dropped, or degraded workspace input is reported by {!warnings};
-    none of them fail the load. A trust-store read or decode error fails the
-    load before project input can activate.
+    an unreadable or invalid workspace file degrades to an empty layer. The two
+    workspace layers activate as one unit: if their merged contribution fails
+    a cross-field invariant, both are dropped while valid user-owned layers
+    remain active. Every disabled, dropped, or degraded workspace input is
+    reported by {!warnings}; none of them fail the load. A trust-store read or
+    decode error fails the load before project input can activate.
 
     The recognized environment settings are [SPICE_MODEL], [SPICE_SMALL_MODEL],
     [SPICE_REASONING], [SPICE_MAX_STEPS], [SPICE_PERMISSION_MODE] (which rejects
@@ -1026,8 +1028,9 @@ val warnings : t -> Warning.t list
 
     Warnings report workspace config inputs dropped at load: invalid or
     oversized workspace files, keys outside the shared allowlist, stripped
-    [permission.rules], and budget keys that tried to widen the non-workspace
-    effective value. The result is ordered for stable support output and derives
+    [permission.rules], budget keys that tried to widen the non-workspace
+    effective value, and workspace contributions that violate a cross-field
+    invariant. The result is ordered for stable support output and derives
     entirely from load-time facts. *)
 
 val pp : Format.formatter -> t -> unit
