@@ -28,10 +28,20 @@ val render : t -> string
 type 'a outcome = Continue of 'a | Exit_prompt
 (** The terminal driver's outcome. *)
 
+type failure =
+  | Save_failed of string
+  | Continue_failed of string
+  | Activation_failed of { message : string; rollback_error : string option }
+(** A rejected decision. [Save_failed] means no new decision was persisted.
+    [Continue_failed] means a restricted decision was saved but the host could
+    not reload. [Activation_failed] means trusted activation failed;
+    [rollback_error] is [None] when the decision was restored to untrusted. *)
+
 val run :
   root:Spice_path.Abs.t ->
-  decide:(choice -> ('a, string) result) ->
+  decide:(choice -> ('a, failure) result) ->
   'a outcome
 (** [run ~root ~decide] drives the prompt on the controlling terminal. A
-    rejected [decide] remains in the prompt with its error and permits retry.
+    rejected [decide] explains whether saving, restricted continuation, or
+    trusted activation failed, then remains in the prompt and permits retry.
     The terminal attributes are restored before return or exception. *)

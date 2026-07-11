@@ -2504,16 +2504,37 @@ let resolve_unknown_trust ~stdenv ~process_env startup host =
   let root = Spice_host.Trust.root trust in
   let decide = function
     | Trust_prompt.Exit -> assert false
-    | Trust_prompt.Untrusted | Trust_prompt.Trusted as choice ->
-        let update =
-          match choice with
-          | Trust_prompt.Untrusted -> Spice_host.Trust.untrust
-          | Trust_prompt.Trusted -> Spice_host.Trust.trust
-          | Trust_prompt.Exit -> assert false
-        in
-        match update ~stdenv ~process_env ~root () with
-        | Error error -> Error (Spice_host.Trust.Error.message error)
-        | Ok _ -> load_host ~stdenv ~process_env startup
+    | Trust_prompt.Untrusted -> (
+        match Spice_host.Trust.untrust ~stdenv ~process_env ~root () with
+        | Error error ->
+            Error
+              (Trust_prompt.Save_failed
+                 (Spice_host.Trust.Error.message error))
+        | Ok _ ->
+            load_host ~stdenv ~process_env startup
+            |> Result.map_error (fun message ->
+                Trust_prompt.Continue_failed message))
+    | Trust_prompt.Trusted -> (
+        match Spice_host.Trust.trust ~stdenv ~process_env ~root () with
+        | Error error ->
+            Error
+              (Trust_prompt.Save_failed
+                 (Spice_host.Trust.Error.message error))
+        | Ok _ -> (
+            match load_host ~stdenv ~process_env startup with
+            | Ok host -> Ok host
+            | Error message ->
+                let rollback_error =
+                  match
+                    Spice_host.Trust.untrust ~stdenv ~process_env ~root ()
+                  with
+                  | Ok _ -> None
+                  | Error error ->
+                      Some (Spice_host.Trust.Error.message error)
+                in
+                Error
+                  (Trust_prompt.Activation_failed
+                     { message; rollback_error })))
   in
   Trust_prompt.run ~root ~decide
 

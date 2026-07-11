@@ -59,6 +59,11 @@ let render t =
 
 type 'a outcome = Continue of 'a | Exit_prompt
 
+type failure =
+  | Save_failed of string
+  | Continue_failed of string
+  | Activation_failed of { message : string; rollback_error : string option }
+
 let write text =
   output_string stdout text;
   flush stdout
@@ -110,6 +115,17 @@ let with_raw_terminal f =
 
 let redraw t = write ("\r\027[2K" ^ selection_line t)
 
+let failure_message = function
+  | Save_failed message -> "Could not save the decision: " ^ message
+  | Continue_failed message ->
+      "Decision saved, but Spice could not continue: " ^ message
+  | Activation_failed { message; rollback_error = None } ->
+      "Project customization could not be activated: " ^ message
+      ^ "\nThe workspace was marked untrusted."
+  | Activation_failed { message; rollback_error = Some rollback_error } ->
+      "Project customization could not be activated: " ^ message
+      ^ "\nSpice also could not mark the workspace untrusted: " ^ rollback_error
+
 let run ~root ~decide =
   with_raw_terminal @@ fun () ->
   let rec loop t =
@@ -131,8 +147,8 @@ let run ~root ~decide =
             in
             write ("\nDecision saved. " ^ message ^ "\n");
             Continue value
-        | Error message ->
-            write ("\nCould not save the decision: " ^ message ^ "\n");
+        | Error failure ->
+            write ("\n" ^ failure_message failure ^ "\n");
             write (selection_line t);
             loop t)
   in

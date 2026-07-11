@@ -143,4 +143,27 @@ let%expect_test "a persistence failure stays in preflight and can retry" =
     normal app not started after failure: true
     retry stores trusted: true |}]
 
+let%expect_test "failed trusted activation rolls back and can retry" =
+  Project.with_temp "trust-activation-rollback" @@ fun project ->
+  run_unknown project @@ fun t ->
+  let config = Project.scratch project "config/spice" in
+  Unix.mkdir config 0o700;
+  Project.write_scratch project "config/spice/config.json"
+    "{\"web\":{\"timeout_ms\":2,\"max_timeout_ms\":1}}\n";
+  Pty.send t "2";
+  Pty.wait t (Screen.has "The workspace was marked untrusted");
+  print_fact "trusted activation rolled back" (store_has project "untrusted");
+  print_fact "normal app not started after activation failure"
+    (Screen.lacks "dune:" (Pty.screen t));
+  Unix.unlink (Project.scratch project "config/spice/config.json");
+  Pty.send t "2";
+  Pty.wait t (Screen.has "dune:");
+  print_fact "retry stores trusted" (store_has project "trusted");
+  Pty.quit t;
+  [%expect
+    {|
+    trusted activation rolled back: true
+    normal app not started after activation failure: true
+    retry stores trusted: true |}]
+
 [%%run_tests "spice.tui-pty.trust-prompt"]
