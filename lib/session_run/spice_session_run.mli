@@ -247,6 +247,26 @@ val interrupt : ?reason:string -> session -> (Step.t, Error.t) result
     Returns {!Error.No_active_turn} if [session] has no active turn. Raises
     [Invalid_argument] if [reason] is present and empty. *)
 
+val fail : message:string -> session -> (Step.t, Error.t) result
+(** [fail ~message session] finishes [session]'s active turn as failed.
+
+    A turn whose drive cannot continue — a terminal provider error, an
+    unexpected exception — must still reach a terminal event, or the turn stays
+    active in the saved session forever and every later command is refused
+    against it. The recorded outcome is {!Spice_session.Turn.Outcome.Failed}
+    carrying [message].
+
+    Like {!interrupt}, every unanswered assistant tool call first receives a
+    synthesized error tool result, so the saved transcript stays
+    provider-well-formed and the next turn's request is not rejected for
+    missing tool results.
+
+    This is not the cancellation path: a turn the user interrupted finishes
+    through {!interrupt} and records [Interrupted].
+
+    Returns {!Error.No_active_turn} if [session] has no active turn. Raises
+    [Invalid_argument] if [message] is empty. *)
+
 val accept_response :
   Config.t -> Spice_llm.Response.t -> session -> (Step.t, Error.t) result
 (** [accept_response config response session] records [response] and advances

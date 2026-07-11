@@ -54,7 +54,9 @@ let of_store (error : Spice_session_store.Error.t) : Spice_protocol.Error.t =
   | Spice_session_store.Error.Not_found id -> Spice_protocol.Error.Not_found id
   | Spice_session_store.Error.Conflict { id; expected; actual } ->
       Spice_protocol.Error.Conflict { id; expected; actual }
-  | Spice_session_store.Error.Corrupt { path; message }
+  | Spice_session_store.Error.Corrupt { path; reason } ->
+      Spice_protocol.Error.Storage
+        { path; message = Spice_session_store.Corruption.message reason }
   | Spice_session_store.Error.Io { path; message } ->
       Spice_protocol.Error.Storage { path; message }
   | Spice_session_store.Error.Already_exists _ ->
@@ -621,10 +623,83 @@ let execute ~store ~client ~host_tool ~resolve_plan ~turn_model ~turn_mode ~run
   let model ~on_event ~cancelled request =
     Spice_llm.Client.response ~on_event ~cancelled client request
   in
+  (* The document as of the last committed save. The drive threads its document
+     through [handle_step], but an [Error] discards it, and closing the turn
+     must append to the latest revision or the store rejects it as a conflict.
+     A drive whose first save never committed leaves this at the document we
+     entered with — which has no turn of ours to close. *)
+  let latest = ref document in
+  (* Chained, not replaced: the run installs its own [after_save] (the
+     workspace-tooling re-probe) and Live taps it too. *)
+  let hooks =
+    let prior = hooks.after_save in
+    {
+      hooks with
+      after_save =
+        (fun document events ->
+          latest := document;
+          prior document events);
+    }
+  in
+  (* Every turn that becomes durably active in this call reaches a terminal
+     event before this call returns — on the error and exception paths as much
+     as on the ordinary one. A turn left active is not merely untidy: it refuses
+     every later command against the session (a new prompt, a fork, a rewind, an
+     archive), and the frontend, whose own turn ended with the error, never
+     offers the interrupt that would close it.
+
+     This wraps the drive — the model/tool loop — and nothing else. The command
+     preambles stay outside it, so a stale or mismatched command (an answer to a
+     resolved permission, a start against a waiting turn) is refused without
+     destroying the healthy turn it was refused against. *)
+  let finalize_failed_turn ~message =
+    let session = Spice_session_store.Document.session !latest in
+    match Spice_session_run.fail ~message session with
+    | Error Spice_session_run.Error.No_active_turn ->
+        (* This drive left no turn open: it never started one, or a terminal
+           event was already saved. *)
+        ()
+    | Error error ->
+        (* Never silent: this is the repair path, and an error here means the
+           turn stays active and the session stays wedged. *)
+        Log.err (fun m ->
+            m "could not close the failed turn: %s"
+              (Spice_session_run.Error.message error))
+    | Ok step -> (
+        match save_step ~store projector hooks !latest step with
+        | Ok (_ : Spice_session_store.Document.t) -> ()
+        | Error error ->
+            Log.err (fun m ->
+                m "could not save the failed turn's terminal event: %s"
+                  (Spice_protocol.Error.message error)))
+  in
+  let drive f =
+    match f () with
+    | Ok _ as ok -> ok
+    (* A cancellation in flight surfaces as an ordinary provider [Error] value,
+       not an exception: the client polls [hooks.cancelled] mid-stream and
+       returns [Llm.Error.Cancelled]. That turn is not failed — it is being
+       interrupted, and Live keeps it active on purpose so the queued
+       [Command.Interrupt] behind this drain finishes it as [Interrupted].
+       Closing it here would both mislabel the outcome and strand that
+       interrupt, which no-ops against a turn that is already closed. *)
+    | Error _ as error when hooks.cancelled () -> error
+    | Error error ->
+        finalize_failed_turn ~message:(Spice_protocol.Error.message error);
+        Error error
+    (* A cancellation exception is the teardown path and travels on. *)
+    | exception (Eio.Cancel.Cancelled _ as exn) -> raise exn
+    | exception exn ->
+        let backtrace = Printexc.get_raw_backtrace () in
+        finalize_failed_turn
+          ~message:("the turn raised: " ^ Printexc.to_string exn);
+        Printexc.raise_with_backtrace exn backtrace
+  in
   let continue_step document step =
-    handle_step ~store ~projector ~pressure_compacted:false
-      ~overflow_compacted:false ~model ~host_tool hooks ?compaction run document
-      step
+    drive (fun () ->
+        handle_step ~store ~projector ~pressure_compacted:false
+          ~overflow_compacted:false ~model ~host_tool hooks ?compaction run
+          document step)
   in
   let session_id = document_id document in
   let started = Unix.gettimeofday () in
@@ -664,9 +739,10 @@ let execute ~store ~client ~host_tool ~resolve_plan ~turn_model ~turn_mode ~run
     | Spice_protocol.Command.Resume ->
         let* () = check_active_document session in
         let* () = require_active_turn session in
-        advance ~store ~projector ~pressure_compacted:false
-          ~overflow_compacted:false ~model ~host_tool hooks ?compaction run
-          document
+        drive (fun () ->
+            advance ~store ~projector ~pressure_compacted:false
+              ~overflow_compacted:false ~model ~host_tool hooks ?compaction run
+              document)
     | Spice_protocol.Command.Reply { permission; answer; via; message } ->
         let* () = check_active_document session in
         let* step =

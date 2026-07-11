@@ -234,14 +234,18 @@ let tool_result_text ?(error = false) call text =
   if String.is_empty text then Llm.Tool.Result.empty ~error call
   else Llm.Tool.Result.text ~error call text
 
-let interrupt ?reason session =
+(* Finish the active turn on a terminal outcome, answering every unanswered
+   assistant tool call first.
+
+   An interrupted turn — and a failed one — may leave assistant tool calls
+   unanswered: a settled host-tool question, or calls the drain had not
+   reached. Each must carry a result or the next request is rejected for
+   missing tool results. A planned-but-unrun executable claim is finished with
+   the terminal result (recording the claim outcome and its transcript
+   message); a host-tool or not-yet-claimed call gets a direct tool result. *)
+let terminate ~outcome ~result ~text session =
   let* turn = active_turn_id session in
-  let outcome = Turn.Outcome.interrupted ?reason ~cancelled:true () in
   let st = state session in
-  let reason_text = Option.value reason ~default:"interrupted" in
-  let interrupted =
-    Tool.Result.interrupted ~reason:reason_text ~cancelled:true ()
-  in
   let pending_claims = State.pending_tool_claims st in
   let claim_for call =
     List.find_opt
@@ -251,24 +255,17 @@ let interrupt ?reason session =
           (Llm.Tool.Call.id call))
       pending_claims
   in
-  (* An interrupted turn may leave assistant tool calls unanswered — a settled
-     host-tool question, or calls the drain had not reached. Each must carry a
-     result or the next request is rejected for missing tool results. A
-     planned-but-unrun executable claim is finished with the interrupted
-     result (recording the claim outcome and its transcript message); a
-     host-tool or not-yet-claimed call gets a direct interrupted tool result. *)
   let result_event call =
     match claim_for call with
     | Some execution ->
         Event.tool_claim_finished
           (Tool_claim.Finished.make
              ~id:(Tool_claim.Started.id execution)
-             ~output:(Tool.Result.output interrupted)
-             (tool_result_from_output call interrupted))
+             ~output:(Tool.Result.output result)
+             (tool_result_from_output call result))
     | None ->
         Event.message_appended
-          (Llm.Message.tool_result
-             (tool_result_text ~error:true call reason_text))
+          (Llm.Message.tool_result (tool_result_text ~error:true call text))
   in
   let result_events =
     List.map result_event (Llm.Transcript.pending (State.transcript st))
@@ -276,6 +273,23 @@ let interrupt ?reason session =
   Step.make ~session
     ~events:(result_events @ [ Event.turn_finished ~turn outcome ])
     ~next:(Step.Finished { turn; outcome })
+
+let interrupt ?reason session =
+  let text = Option.value reason ~default:"interrupted" in
+  terminate
+    ~outcome:(Turn.Outcome.interrupted ?reason ~cancelled:true ())
+    ~result:(Tool.Result.interrupted ~reason:text ~cancelled:true ())
+    ~text session
+
+(* The turn's drive could not continue and no other terminal event will be
+   recorded for it. Without this the turn stays active in the saved session and
+   every later command — a new prompt, a fork, a rewind, an archive — is refused
+   against it. *)
+let fail ~message session =
+  terminate
+    ~outcome:(Turn.Outcome.failed ~message)
+    ~result:(Tool.Result.failed `Failed message)
+    ~text:message session
 
 let decode_tool tools call =
   Tool.Catalog.decode tools ~name:(Llm.Tool.Call.name call)

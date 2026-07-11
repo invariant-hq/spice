@@ -181,6 +181,63 @@ let%expect_test "a 5xx is retried rather than failing the turn" =
   Tui.release t "fin";
   Tui.settle t
 
+(* A terminal provider failure must release the turn: the next submit starts
+   a fresh turn that reaches the provider. The guarded regression: the error
+   path returned without closing the started turn in the session document, so
+   every later submit was rejected with "session already has active turn"
+   while the composer sat idle — the session was unusable and the prompts were
+   lost. [await_request t 2] fails loudly if the second submit never becomes a
+   request. *)
+let%expect_test "a failed turn releases the session for the next submit" =
+  let script =
+    [
+      Provider_script.http ~expect:[ "first ask" ] ~gate:"fin" ~line:responses
+        ~status:400
+        {|{"error":{"message":"bad request","type":"invalid_request_error"}}|};
+      Provider_script.message ~expect:[ "second ask" ] ~gate:"fin2" ~id:"resp-2"
+        "Recovered on a fresh turn.";
+    ]
+  in
+  Tui.run ~name:"errors-release" ~provider:script @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "first ask";
+  Tui.enter t;
+  ignore (Tui.await_request t 1 : string);
+  Tui.release t "fin";
+  Tui.settle t;
+  Tui.keys t "second ask";
+  Tui.settle t;
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin2";
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ first ask
+07 |
+08 | ✗ bad request
+09 |   Tell spice how to proceed.
+10 |
+11 | ❯ second ask
+12 |
+13 | ⏺ Recovered on a fresh turn.
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ message spice
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗    ? for shortcuts|}]
+
 (* Submit validation: after one settled turn, an empty draft and a
    whitespace-only draft both leave the transcript unchanged — no second request
    is sent, no working line appears. The provider script carries exactly one
