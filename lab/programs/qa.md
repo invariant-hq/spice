@@ -18,8 +18,7 @@ Read this program in full before starting; it is self-contained.
 
 Agree with the launcher on a **target surface** — e.g. the review screen,
 resize/reflow, streaming liveness, panels and overlays — and a **tag**
-`qa-<surface>-<date>`, e.g. `qa-resize-jul12`. Confirm the budget: a cap on
-real-provider turns (they cost real money) and wall-clock.
+`qa-<surface>-<date>`, e.g. `qa-resize-jul12`. Agree a wall-clock stop.
 
 1. **Read the notes** — `_lab/notes/qa-general.md` (instrument artifacts and
    cross-surface knowledge) and `_lab/notes/qa-<surface>.md` if it exists:
@@ -90,10 +89,10 @@ Driver operating facts, paid for once already:
   there and logged as a driver note, never filed as a spice finding; after
   any driver change, re-verify candidates observed through the old behavior.
 - **Turns are props, not subjects.** A turn exists to put the UI in a state;
-  model quality is the eval suite's business, not yours. Prefer turnless
-  recipes — most UI defects need no provider at all. When a turn is needed,
-  keep prompts tiny and purposeful. For soak and stress that needs volume,
-  use the local model (ollama) unless provider identity is the point.
+  model quality is the eval suite's business, not yours. Keep prompts small and
+  purposeful, and drive as many turns as the hunt needs — mid-stream input,
+  queued messages, interrupts, tool-heavy turns, and long transcripts are
+  states worth reaching.
 
 ## What counts, and how much
 
@@ -180,8 +179,8 @@ LOOP until a cap is hit; never pause to ask whether to continue.
 5. Every candidate gets a log row, including withdrawals.
 
 **Caps.** The session ends cleanly at **8 reported findings** or the agreed
-budget, whichever comes first. Severity over count: do not spend the last
-hours of a budget padding with cosmetics when a freeze candidate is
+wall-clock stop, whichever comes first. Severity over count: do not spend the
+last hours padding with cosmetics when a freeze candidate is
 half-verified.
 
 ## The session log
