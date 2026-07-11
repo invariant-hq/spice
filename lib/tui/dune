@@ -45,6 +45,7 @@
   tool_block
   tool_distill
   transcript
+  trust_prompt
   turn
   workspace_glance)
  (private_modules
@@ -91,6 +92,7 @@
   tool_block
   tool_distill
   transcript
+  trust_prompt
   turn
   workspace_glance)
  (libraries

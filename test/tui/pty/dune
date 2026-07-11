@@ -1,8 +1,10 @@
 ; Process-boundary coverage only. Application behavior belongs in test/tui.
 
 (executables
- (names test_goodbye test_cli_launch test_terminal test_dune_live)
- (modules test_goodbye test_cli_launch test_terminal test_dune_live)
+ (names test_goodbye test_cli_launch test_terminal test_dune_live
+  test_trust_prompt)
+ (modules test_goodbye test_cli_launch test_terminal test_dune_live
+  test_trust_prompt)
  (libraries unix windtrap tui_harness)
  (preprocess
   (pps ppx_windtrap)))
@@ -68,3 +70,14 @@
      %{dep:../../blackbox/bin/spice_fake_provider_server.exe}
      (run ./test_dune_live.exe)))
    (diff? test_dune_live.ml test_dune_live.ml.corrected))))
+
+(rule
+ (alias runtest)
+ (deps %{bin:spice} test_trust_prompt.exe)
+ (action
+  (progn
+   (setenv
+    SPICE_BIN
+    %{bin:spice}
+    (run ./test_trust_prompt.exe))
+   (diff? test_trust_prompt.ml test_trust_prompt.ml.corrected))))

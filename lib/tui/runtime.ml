@@ -1159,15 +1159,8 @@ let auth_record_of_logout ~provider ~title
       base Auth_panel.Removed
   | Error message -> base (Auth_panel.Failed message)
 
-let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
-  (* A caller-supplied backend owns its own I/O, so the TTY gate only guards
-     the default terminal path. *)
-  if Option.is_none matrix && not (is_interactive ()) then Error `No_tty
-  else
-    Eio.Switch.run ~name:"spice-tui" @@ fun sw ->
-    match load_host ~stdenv ?process_env startup with
-    | Error message -> Error (`Runtime message)
-    | Ok host ->
+let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
+  Eio.Switch.run ~name:"spice-tui" @@ fun sw ->
         let clock =
           match clock with
           | Some clock -> clock
@@ -2517,3 +2510,55 @@ let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
         in
         Mosaic.run ~matrix ~process_perform ?probe app;
         Ok { last_session = !created_session }
+
+let resolve_unknown_trust ~stdenv ~process_env startup host =
+  let trust =
+    Spice_host.Config.workspace_trust (Spice_host.Host.config host)
+  in
+  let root = Spice_host.Trust.root trust in
+  let decide = function
+    | Trust_prompt.Exit -> assert false
+    | Trust_prompt.Untrusted | Trust_prompt.Trusted as choice ->
+        let update =
+          match choice with
+          | Trust_prompt.Untrusted -> Spice_host.Trust.untrust
+          | Trust_prompt.Trusted -> Spice_host.Trust.trust
+          | Trust_prompt.Exit -> assert false
+        in
+        match update ~stdenv ~process_env ~root () with
+        | Error error -> Error (Spice_host.Trust.Error.message error)
+        | Ok _ -> load_host ~stdenv ~process_env startup
+  in
+  Trust_prompt.run ~root ~decide
+
+let run ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe ?process_env () =
+  (* A caller-supplied backend owns its own I/O, so the TTY gate only guards
+     the default terminal path. *)
+  if Option.is_none matrix && not (is_interactive ()) then Error `No_tty
+  else
+    let process_env =
+      Option.value process_env ~default:(Spice_host.Env.current ())
+    in
+    match load_host ~stdenv ~process_env startup with
+    | Error message -> Error (`Runtime message)
+    | Ok host -> (
+        let trust =
+          Spice_host.Config.workspace_trust (Spice_host.Host.config host)
+        in
+        match Spice_host.Trust.status trust with
+        | Spice_host.Trust.Trusted | Spice_host.Trust.Untrusted ->
+            run_loaded ~stdenv ~startup ?clock ?matrix ?probe host
+        | Spice_host.Trust.Unknown -> (
+            match matrix with
+            | Some _ ->
+                Error
+                  (`Runtime
+                    "workspace trust must be seeded before using a supplied \
+                     TUI matrix")
+            | None -> (
+                match
+                  resolve_unknown_trust ~stdenv ~process_env startup host
+                with
+                | Trust_prompt.Exit_prompt -> Ok { last_session = None }
+                | Trust_prompt.Continue host ->
+                    run_loaded ~stdenv ~startup ?clock ?matrix ?probe host)))
