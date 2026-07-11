@@ -32,6 +32,28 @@ let%expect_test "a real dune watch connects while home is open" =
     home connects: true
     footer connects: true |}]
 
+let%expect_test "tooling engages when a dune project appears mid-session" =
+  Project.with_temp "dune-reprobe" @@ fun project ->
+  (* The scaffold flow: launch in a directory with NO dune marker — [auto]
+     must not engage at boot — then grow one mid-session. The footer heals
+     through the loaders' latching probe on the health tick; the external
+     watch stands in for the endpoint, as in the tests above. *)
+  Sys.remove (Filename.concat (Project.root project) "dune-project");
+  disable_internal_dune_watch project;
+  Pty.run project ~trust:true ~env:dune_environment ~rows:24 @@ fun t ->
+  Pty.wait t (Screen.has "diagnostics unavailable");
+  print_fact "marker-less boot is disconnected"
+    (Screen.has "dune: ✗" (Pty.screen t));
+  Project.write project "dune-project" "(lang dune 3.0)\n(name fixture)\n";
+  Project.with_external_dune_watch project @@ fun () ->
+  Pty.wait ~deadline:40.0 t (Screen.has "dune: ✓");
+  print_fact "footer heals after the marker appears"
+    (Screen.has "dune: ✓" (Pty.screen t));
+  [%expect
+    {|
+    marker-less boot is disconnected: true
+    footer heals after the marker appears: true |}]
+
 let%expect_test
     "a real dune watch connects during chat without a verdict notice" =
   Project.with_temp "dune-chat" @@ fun project ->

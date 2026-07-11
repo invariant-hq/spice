@@ -7,12 +7,25 @@ let log_src = Logs.Src.create "spice.host.producers" ~doc:"Run notice producers"
 
 module Log = (val Logs.src_log log_src : Logs.LOG)
 
+(* The engagement cell: one owner for everything the workspace.tooling switch
+   gates. Boot writes it when tooling engages at launch; {!reprobe} writes it
+   once, later, when an [auto] workspace grows its marker mid-session. The
+   per-turn tool assembly and the request-boundary hook read it live, so an
+   engagement reaches the next turn with no run rebuild. Engaging is a latch:
+   there is no mid-session disengage — the spawned watch lives until the run
+   closes either way. *)
+type engagement = {
+  mutable engaged : bool;
+  mutable merlin_program : string list;
+  mutable before_request : unit -> unit;
+}
+
 type t = {
-  dune : Spice_ocaml_dune.Rpc.Instance.t;
+  dune : Spice_ocaml_dune.Rpc.Instance.t ref;
   project_source : Spice_ocaml_dune.Project_source.t;
-  merlin_program : string list;
+  engagement : engagement;
+  reprobe : unit -> unit;
   stop_fswatch : unit -> unit;
-  before_request : unit -> unit;
 }
 
 (* A filesystem event that can change the Dune describe shape: a change to a
@@ -59,19 +72,25 @@ let start ~sw ~stdenv host ~inbox ~workspace ~sandbox ~cwd ~root () =
   let mutating = Sandbox.mutating_tools sandbox in
   let process_sandbox = Sandbox.Effective.sandbox sandbox in
   (* [workspace.tooling] gates the OCaml/Dune integration: when it does not
-     engage — [off], or [auto] outside a Dune workspace — the boot [dune
-     describe] capture, the Merlin resolution, and the [dune build --watch]
-     instance are skipped. Filesystem and CR-comment notices are general host
-     streams and remain governed by their own config flags. *)
-  let engaged =
+     engage — [off], or [auto] outside a Dune workspace — the [dune describe]
+     capture, the Merlin resolution, and the [dune build --watch] instance are
+     skipped. The probe re-reads the marker each call, so an [auto] workspace
+     that grows a [dune-project] mid-session engages at the next {!reprobe};
+     explicit [on]/[off] answer constantly. Filesystem and CR-comment notices
+     are general host streams and remain governed by their own config flags. *)
+  let tooling_engaged () =
     trusted
     && Config.Workspace.tooling_engaged (Config.workspace config) ~root
   in
-  let dune_diagnostics = engaged && Config.Notices.dune_diagnostics notices in
-  let dune_build = engaged && Config.Notices.dune_build notices in
-  let dune =
+  let dune_diagnostics = Config.Notices.dune_diagnostics notices in
+  let dune_build = Config.Notices.dune_build notices in
+  let make_instance ~engaged =
+    (* The lazy build-watch start hook is armed only on an engaged instance: a
+       disengaged one must stay a pure registry poller, because a diagnostics
+       tool call could otherwise fire the hook and spawn a watch in a
+       marker-less directory. *)
     let start =
-      if mutating && (dune_diagnostics || dune_build) then
+      if engaged && mutating && (dune_diagnostics || dune_build) then
         Some
           (Spice_ocaml_dune.Rpc.Instance.Start.dune_build_watch ~sw
              ~prepare:(prepare process_sandbox)
@@ -84,17 +103,12 @@ let start ~sw ~stdenv host ~inbox ~workspace ~sandbox ~cwd ~root () =
       ~sleep:(Eio.Time.sleep (Eio.Stdenv.clock stdenv))
       ()
   in
-  (* Boot lock-free window: capture the project-shape snapshot and resolve the
-     Merlin invocation to a lock-free argv here, BEFORE the Dune diagnostics
-     watcher is started below. That watcher lazily spawns [dune build --watch],
-     which takes the build lock; a one-shot [dune describe] or a [dune tools
-     exec] resolution engaged after the lock is held would fail fast. The [dune]
-     instance is already created but its lazy build-watch [start] hook has not
-     run yet — only the watcher's first poll triggers it. *)
+  let boot_engaged = tooling_engaged () in
+  let dune = ref (make_instance ~engaged:boot_engaged) in
   let project_source =
     Spice_ocaml_dune.Project_source.create
       ~refresh_status:(fun () ->
-        match Spice_ocaml_dune.Rpc.Instance.refresh_status dune with
+        match Spice_ocaml_dune.Rpc.Instance.refresh_status !dune with
         | Spice_ocaml_dune.Rpc.Instance.Found endpoint ->
             Spice_ocaml_dune.Project_source.Watch_endpoint
               (Spice_ocaml_dune.Rpc.Endpoint.to_string endpoint)
@@ -108,40 +122,68 @@ let start ~sw ~stdenv host ~inbox ~workspace ~sandbox ~cwd ~root () =
           ~clock:(Eio.Stdenv.clock stdenv) ~cwd ~workspace ~cancelled ())
       ()
   in
-  (if engaged then
-     match Spice_ocaml_dune.Project_source.capture project_source with
-     | Ok () -> ()
-     | Error error ->
-         (* Degrade honestly: no boot snapshot (for instance a user-owned watch
-            already held the lock at boot). Describe-backed tools then serve a
-            structured blocked result rather than a stale shape. Do not fail the
-            run. *)
-         Log.warn (fun m ->
-             m "project-shape boot capture failed: %s"
-               (Spice_ocaml_dune.Error.message error)));
-  let merlin_program =
-    if not engaged then Spice_tools.Ocaml_merlin.default_program
-    else
-      let configured = Config.Ocaml.merlin_program (Config.ocaml config) in
-      match
-        Spice_tools.Ocaml_merlin.resolve_program ~sandbox:process_sandbox
-          ~cwd:(Eio.Path.native_exn cwd) ~configured ()
-      with
-      | Ok argv -> argv
-      | Error error ->
-          (* Resolution is filesystem-first, so the default [ocamlmerlin] prefix
-             resolves to dune's already-built dev-tool binary without engaging
-             the engine; an [Error] is only reachable when an explicitly
-             configured [dune tools exec] prefix had to be warmed and that
-             warming failed. Fall back to plain [ocamlmerlin] on PATH —
-             lock-free and honest, even if PATH lacks it (the Merlin tools then
-             report Unavailable). *)
-          Log.warn (fun m ->
-              m "merlin program resolution failed: %s; falling back to %s"
-                (Spice_tools.Ocaml_merlin.resolution_error_message error)
-                (String.concat " " Spice_tools.Ocaml_merlin.default_program));
-          Spice_tools.Ocaml_merlin.default_program
+  let engagement =
+    {
+      engaged = false;
+      merlin_program = Spice_tools.Ocaml_merlin.default_program;
+      before_request = ignore;
+    }
   in
+  (* The engagement sequence, shared by boot and {!reprobe}. Lock-free window:
+     capture the project-shape snapshot and resolve the Merlin invocation to a
+     lock-free argv BEFORE the Dune diagnostics watcher starts. That watcher
+     lazily spawns [dune build --watch], which takes the build lock; a one-shot
+     [dune describe] or a [dune tools exec] resolution engaged after the lock
+     is held would fail fast. At boot the window is genuinely free; at a
+     mid-session reprobe an external process (a backgrounded shell build) may
+     already hold the lock, in which case capture degrades exactly like the
+     boot path below — a warning and a structured blocked result, never a
+     failed run. *)
+  let engage () =
+    (if not boot_engaged then
+       let previous = !dune in
+       dune := make_instance ~engaged:true;
+       Spice_ocaml_dune.Rpc.Instance.stop previous);
+    (match Spice_ocaml_dune.Project_source.capture project_source with
+    | Ok () -> ()
+    | Error error ->
+        (* Degrade honestly: no snapshot (for instance a user-owned watch
+           already held the lock). Describe-backed tools then serve a
+           structured blocked result rather than a stale shape. Do not fail
+           the run. *)
+        Log.warn (fun m ->
+            m "project-shape capture failed: %s"
+              (Spice_ocaml_dune.Error.message error)));
+    (engagement.merlin_program <-
+       (let configured = Config.Ocaml.merlin_program (Config.ocaml config) in
+        match
+          Spice_tools.Ocaml_merlin.resolve_program ~sandbox:process_sandbox
+            ~cwd:(Eio.Path.native_exn cwd) ~configured ()
+        with
+        | Ok argv -> argv
+        | Error error ->
+            (* Resolution is filesystem-first, so the default [ocamlmerlin]
+               prefix resolves to dune's already-built dev-tool binary without
+               engaging the engine; an [Error] is only reachable when an
+               explicitly configured [dune tools exec] prefix had to be warmed
+               and that warming failed. Fall back to plain [ocamlmerlin] on
+               PATH — lock-free and honest, even if PATH lacks it (the Merlin
+               tools then report Unavailable). *)
+            Log.warn (fun m ->
+                m "merlin program resolution failed: %s; falling back to %s"
+                  (Spice_tools.Ocaml_merlin.resolution_error_message error)
+                  (String.concat " " Spice_tools.Ocaml_merlin.default_program));
+            Spice_tools.Ocaml_merlin.default_program));
+    (engagement.before_request <-
+       (if dune_diagnostics || dune_build then
+          Watchers.Dune_diagnostics.start ~diagnostics:dune_diagnostics
+            ~build:dune_build ~sw
+            ~clock:(Eio.Stdenv.clock stdenv)
+            ~inbox ~dune:!dune
+        else ignore));
+    engagement.engaged <- true
+  in
+  if boot_engaged then engage ();
   let fswatch_notice = trusted && Config.Notices.fswatch notices in
   let cr_notice = trusted && Config.Notices.cr_comments notices in
   let stop_fswatch =
@@ -152,7 +194,7 @@ let start ~sw ~stdenv host ~inbox ~workspace ~sandbox ~cwd ~root () =
          never flagged and the boot snapshot serves without a [drifted] signal.
          Accepted v1 gap. *)
       let flag_drift events =
-        if engaged && List.exists is_shape_drift events then
+        if engagement.engaged && List.exists is_shape_drift events then
           Spice_ocaml_dune.Project_source.set_drifted project_source true
       in
       let on_events =
@@ -174,19 +216,24 @@ let start ~sw ~stdenv host ~inbox ~workspace ~sandbox ~cwd ~root () =
     end
     else ignore
   in
-  let before_request =
-    if dune_diagnostics || dune_build then
-      Watchers.Dune_diagnostics.start ~diagnostics:dune_diagnostics
-        ~build:dune_build ~sw ~clock:(Eio.Stdenv.clock stdenv) ~inbox ~dune
-    else ignore
+  (* Idempotent and latching: the first call that finds tooling engaged runs
+     the engagement sequence; every later call is two [Sys.file_exists] at
+     most, and a no-op once engaged. *)
+  let reprobe () =
+    if (not engagement.engaged) && tooling_engaged () then engage ()
   in
-  { dune; project_source; merlin_program; stop_fswatch; before_request }
+  { dune; project_source; engagement; reprobe; stop_fswatch }
 
-let dune t = t.dune
+let dune t = !(t.dune)
 let project_source t = t.project_source
-let merlin_program t = t.merlin_program
-let before_request t = t.before_request
+let merlin_program t = t.engagement.merlin_program
+
+(* The returned closure reads the cell at call time: the request-boundary hook
+   is captured once at run assembly, and must observe an engagement that
+   happens after that. *)
+let before_request t () = t.engagement.before_request ()
+let reprobe t = t.reprobe ()
 
 let stop t =
   t.stop_fswatch ();
-  Spice_ocaml_dune.Rpc.Instance.stop t.dune
+  Spice_ocaml_dune.Rpc.Instance.stop !(t.dune)

@@ -50,17 +50,29 @@ val dune : t -> Spice_ocaml_dune.Rpc.Instance.t
     same endpoint, diagnostic store, and build state. *)
 
 val project_source : t -> Spice_ocaml_dune.Project_source.t
-(** [project_source t] is the boot-captured project-shape source [t] owns,
-    captured in the lock-free window before the Dune watch took the build lock.
-    Pass it to {!Toolset.make} so the describe-backed OCaml tools serve the
-    snapshot under a held lock instead of failing a one-shot [dune describe].
-    Its drift flag is advanced from [t]'s filesystem watcher. *)
+(** [project_source t] is the project-shape source [t] owns, captured in the
+    lock-free window when tooling engaged (at boot, or at the {!reprobe} that
+    engaged it). Pass it to {!Toolset.make} so the describe-backed OCaml tools
+    serve the snapshot under a held lock instead of failing a one-shot
+    [dune describe]. Its drift flag is advanced from [t]'s filesystem
+    watcher. *)
 
 val merlin_program : t -> string list
 (** [merlin_program t] is the lock-free [ocamlmerlin] invocation prefix [t]
-    resolved once at boot from [ocaml.merlin_program]. Pass it to
-    {!Toolset.make} so the Merlin-backed tools exec a concrete binary without
-    re-engaging dune per query. *)
+    resolved from [ocaml.merlin_program] when tooling engaged; the default
+    prefix while disengaged. Pass it to {!Toolset.make} so the Merlin-backed
+    tools exec a concrete binary without re-engaging dune per query. *)
+
+val reprobe : t -> unit
+(** [reprobe t] re-evaluates the [workspace.tooling] decision. Idempotent and
+    latching: while tooling is disengaged it re-reads the marker (so an [auto]
+    workspace that gained a [dune-project] mid-session engages — capture,
+    Merlin resolution, watchers — exactly as a boot engagement would); once
+    engaged every call is a no-op, and explicit [on]/[off] never flip. Wire it
+    to the session's save boundary so the turn that scaffolds a project heals
+    the same session. A mid-session engagement whose lock-free window is
+    already held by an external build degrades exactly like boot: a warning
+    and structured blocked results, never a failed run. *)
 
 val before_request : t -> unit -> unit
 (** [before_request t] is the request-boundary refresh: it requests the current

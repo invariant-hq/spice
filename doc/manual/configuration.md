@@ -115,7 +115,7 @@ resolution.
 
 | Value | Behavior |
 | --- | --- |
-| `auto` | Default. Engage the tooling only when the working directory holds a `dune-project` or `dune-workspace` file. |
+| `auto` | Default. Engage the tooling when the working directory holds a `dune-project` or `dune-workspace` file — at launch, or as soon as one appears during the session (a scaffolded project heals the same session). Engagement latches: it is never withdrawn mid-session. |
 | `on` | Always engage the tooling. |
 | `off` | Never engage it. |
 

@@ -450,6 +450,13 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
          ~before_request:(Producers.before_request producers)
          notices
     |> Mutations.hook mutations
+    (* Each saved step re-evaluates the workspace-tooling latch, so a turn
+       that scaffolds a dune project (any tool — a shell [dune init] included,
+       its result is a saved step too) engages describe/Merlin/watch for its
+       own later steps and heals the frontend feeds. Latching: a no-op once
+       engaged. *)
+    |> Session.with_after_save (fun _document _events ->
+        Producers.reprobe producers)
   in
   (* The per-turn derivation: everything the turn's contract — mode, model,
      credentialed client — conditions is built here, over the assembled

@@ -181,27 +181,51 @@ let discover_repo ~run ~stdenv ~cwd =
       | Error _ -> None
       | Ok base -> Some (repo, base))
 
+(* Whether the workspace's Dune tooling engages, probed fresh per call and
+   latched on first engagement: [auto] notices a dune-project that appears
+   mid-session (a scaffold turn) at the next tick, while explicit on/off are
+   constant either way. Until the latch sets, a probe costs two
+   [Sys.file_exists]; after it, nothing. There is no mid-session disengage —
+   the run's own watch lives until exit, so the readers match it. *)
+let tooling_probe ~trusted ~host ~cwd =
+  let latched = ref false in
+  fun () ->
+    !latched
+    ||
+    let engaged =
+      trusted
+      && Spice_host.Config.Workspace.tooling_engaged
+           (Spice_host.Config.workspace (Spice_host.Host.config host))
+           ~root:(Spice_path.Abs.to_string cwd)
+    in
+    if engaged then latched := true;
+    engaged
+
 (* The brief loader: cheap host probes assembled into a {!Home.Brief.t}. The worktree
    glance short-circuits on an unchanged fingerprint so an idle worktree costs
    one probe per tick; the derived lines are cached against it. *)
-let make_brief_loader ?sandbox_flag ~git_run ~trusted ~engaged ~stdenv ~clock
-    ~host ~cwd () =
+let make_brief_loader ?sandbox_flag ~git_run ~trusted ~stdenv ~clock ~host ~cwd
+    () =
   let config = Spice_host.Host.config host in
   let warning = config_warning ?flag:sandbox_flag config in
   let workspace = Spice_workspace.single (Spice_workspace.Root.make cwd) in
   (* The Dune build-health probe reads a live watch's endpoint; it never spawns
-     one. When workspace tooling does not engage there is no watch to read, so
-     the probe is skipped and the footer reports [Disconnected] rather than
-     polling the registry each tick. *)
+     one ([build_health] never triggers a lazy starter). While tooling is
+     disengaged there is no watch to read, so the probe is skipped and the
+     footer reports [Disconnected] rather than polling the registry each
+     tick. *)
   let dune_health =
-    if engaged then
-      let dune =
-        Spice_ocaml_dune.Rpc.Instance.create ~fs:(Eio.Stdenv.fs stdenv)
-          ~net:(Eio.Stdenv.net stdenv) ~workspace ~sleep:(Eio.Time.sleep clock)
-          ()
-      in
-      fun () -> Spice_ocaml_dune.Rpc.Instance.build_health dune ~clock ()
-    else fun () -> Spice_ocaml_dune.Rpc.Instance.Health.Disconnected
+    let engaged = tooling_probe ~trusted ~host ~cwd in
+    let dune =
+      lazy
+        (Spice_ocaml_dune.Rpc.Instance.create ~fs:(Eio.Stdenv.fs stdenv)
+           ~net:(Eio.Stdenv.net stdenv) ~workspace
+           ~sleep:(Eio.Time.sleep clock) ())
+    in
+    fun () ->
+      if engaged () then
+        Spice_ocaml_dune.Rpc.Instance.build_health (Lazy.force dune) ~clock ()
+      else Spice_ocaml_dune.Rpc.Instance.Health.Disconnected
   in
   (* Lazy: the git spawn belongs to the first (asynchronous) brief load, not
      the boot critical path before the first frame. *)
@@ -335,18 +359,23 @@ let failing_file dune =
   | Some _ as file -> file
   | None -> List.find_map located entries
 
-let make_health_loader ~engaged ~stdenv ~clock ~cwd =
-  (* No watch runs when workspace tooling does not engage, so the chat-phase
-     poll reports [Disconnected] without touching the registry. *)
-  if not engaged then fun () ->
-    (Spice_ocaml_dune.Rpc.Instance.Health.Disconnected, None)
-  else
-    let workspace = Spice_workspace.single (Spice_workspace.Root.make cwd) in
-    let dune =
-      Spice_ocaml_dune.Rpc.Instance.create ~fs:(Eio.Stdenv.fs stdenv)
-        ~net:(Eio.Stdenv.net stdenv) ~workspace ~sleep:(Eio.Time.sleep clock) ()
-    in
-    fun () ->
+let make_health_loader ~trusted ~host ~stdenv ~clock ~cwd =
+  (* While workspace tooling is disengaged no watch runs, so the chat-phase
+     poll reports [Disconnected] without touching the registry; the latching
+     probe flips it live when tooling engages mid-session. *)
+  let engaged = tooling_probe ~trusted ~host ~cwd in
+  let workspace = Spice_workspace.single (Spice_workspace.Root.make cwd) in
+  let dune =
+    lazy
+      (Spice_ocaml_dune.Rpc.Instance.create ~fs:(Eio.Stdenv.fs stdenv)
+         ~net:(Eio.Stdenv.net stdenv) ~workspace ~sleep:(Eio.Time.sleep clock)
+         ())
+  in
+  fun () ->
+    if not (engaged ()) then
+      (Spice_ocaml_dune.Rpc.Instance.Health.Disconnected, None)
+    else
+      let dune = Lazy.force dune in
       let health = Spice_ocaml_dune.Rpc.Instance.build_health dune ~clock () in
       let file =
         match health with
@@ -1196,15 +1225,6 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
           Spice_host.Config.workspace_trust (Spice_host.Host.config host)
           |> Spice_host.Trust.is_trusted
         in
-        (* Whether the workspace's Dune tooling engages for this run; the brief
-           and health probes read a live watch that only [build_run] spawns, so
-           they skip the probe and report a degraded footer when it will not. *)
-        let tooling_engaged =
-          trusted
-          && Spice_host.Config.Workspace.tooling_engaged
-            (Spice_host.Config.workspace (Spice_host.Host.config host))
-            ~root:(Spice_path.Abs.to_string cwd)
-        in
         let sandbox_flag = startup.App.sandbox in
         let workspace =
           Spice_workspace.single (Spice_workspace.Root.make cwd)
@@ -1220,11 +1240,11 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
         in
         let snapshot = build_snapshot ?sandbox_flag ~stdenv host in
         let load_brief =
-          make_brief_loader ?sandbox_flag ~git_run ~trusted
-            ~engaged:tooling_engaged ~stdenv ~clock ~host ~cwd ()
+          make_brief_loader ?sandbox_flag ~git_run ~trusted ~stdenv ~clock
+            ~host ~cwd ()
         in
         let load_health =
-          make_health_loader ~engaged:tooling_engaged ~stdenv ~clock ~cwd
+          make_health_loader ~trusted ~host ~stdenv ~clock ~cwd
         in
         (* [start_idle]: the render cadence runs only while something animates
            (mosaic requests it for tick subscriptions). Without it the loop is
