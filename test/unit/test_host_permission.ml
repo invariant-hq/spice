@@ -68,7 +68,14 @@ let explicit_read_anywhere_opt_in () =
   |> expect_allowed "explicit ordinary sandboxed command";
   decide ~durable ~sandbox_backed:true Permission.Preset.Default
     [ Access.shell ~execution:sandboxed "rm -rf _build" ]
-  |> expect_review "destructive rule precedes sandboxed allow"
+  |> expect_review "destructive rule precedes sandboxed allow";
+  decide ~durable ~sandbox_backed:true Permission.Preset.Plan
+    [ Access.shell ~execution:sandboxed "cat ~/.config/raven/api.mli" ]
+  |> expect_denied "Plan command guard precedes durable sandboxed allow";
+  decide ~session:[ allow_sandboxed ] ~sandbox_backed:true
+    Permission.Preset.Plan
+    [ Access.shell ~execution:sandboxed "cat ~/.config/raven/api.mli" ]
+  |> expect_denied "Plan command guard precedes session sandboxed allow"
 
 let unproven_and_sensitive_commands_still_review () =
   decide ~sandbox_backed:true Permission.Preset.Default

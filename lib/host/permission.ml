@@ -144,10 +144,19 @@ module Run = struct
     check [] rows;
     rows
 
+  let plan_guards preset rows =
+    if Preset.equal preset Preset.Plan then
+      List.partition
+        (fun row ->
+          Spice_permission.Policy.Rule.equal row.rule plan_command_deny_rule)
+        rows
+    else ([], rows)
+
   let make ~preset:(preset_source, preset) ~durable () =
     let durable = List.concat_map layer_rows durable in
     let preset_rows = List.map (annotate preset_source) (Preset.rules preset) in
-    { preset; preset_source; rows = durable @ preset_rows }
+    let guards, preset_rows = plan_guards preset preset_rows in
+    { preset; preset_source; rows = guards @ durable @ preset_rows }
 
   (* Sandbox-backed rows evaluate after every existing row: durable config and
      the preset's own rules decide first, and the sandbox credit is the last
@@ -162,11 +171,13 @@ module Run = struct
       in
       { t with rows = t.rows @ extra }
 
-  (* Session rows prepend at the highest precedence — the reverse of the
-     sandbox-backed rows, which append as the last word — because an "always
-     allow" the reviewer just gave should win over the durable and preset rules
-     that raised the prompt. Duplicates (against existing rows or within the
-     added list) are skipped so re-installing a rule is idempotent. *)
+  (* Session rows prepend at the highest configurable precedence — the reverse
+     of sandbox-backed rows, which append as the last word — because an "always
+     allow" the reviewer just gave should win over the durable and ordinary
+     preset rules that raised the prompt. Plan's command guard stays first:
+     execution authority cannot carry into Plan. Duplicates (against existing
+     rows or within the added list) are skipped so re-installing a rule is
+     idempotent. *)
   let with_session_rules rules t =
     let rec add seen acc = function
       | [] -> List.rev acc
@@ -176,7 +187,9 @@ module Run = struct
           else add (row.id :: seen) (row :: acc) rest
     in
     let existing = List.map (fun row -> row.id) t.rows in
-    { t with rows = add existing [] rules @ t.rows }
+    let session_rows = add existing [] rules in
+    let guards, rows = plan_guards t.preset t.rows in
+    { t with rows = guards @ session_rows @ rows }
 
   (* The docs allowlist rows append after every existing row, so a durable
      [deny] of a listed host decides first; they are network-host allows, which

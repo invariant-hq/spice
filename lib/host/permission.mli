@@ -46,14 +46,16 @@ module Preset : sig
   val rules : t -> Spice_permission.Policy.Rule.t list
   (** [rules t] are [t]'s baseline policy rules in evaluation order.
 
-      Presets denote rule lists, not policies: {!Run.make} rows them after the
-      durable rules so explicit configuration always decides first, and
+      Presets denote rule lists, not policies: {!Run.make} normally rows them
+      after durable rules so explicit configuration decides first, and
       {!Run.policy} bridges to a pure policy. [Default] allows workspace reads.
       [Accept_edits] additionally allows workspace creates, modifies, and
       deletes. [Plan] allows workspace reads and denies workspace creates,
-      modifies, deletes, and {e commands} — the command denial steers headless
+      modifies, deletes, and {e commands}. Its command denial is an invariant
+      guard evaluated before durable and session rules; this steers headless
       planning toward the read-only tools instead of parking the session on a
-      review. [Bypass] is a single allow-all rule.
+      review or inheriting an execution grant. [Bypass] is a single allow-all
+      rule.
 
       Permission rules decide whether protected operations are allowed,
       reviewed, or denied; they are not sandboxes and grant no runtime
@@ -165,8 +167,9 @@ module Run : sig
     'src t
   (** [make ~preset ~durable ()] is a run posture whose rows are the [durable]
       layers in descending precedence followed by the selected preset's rules
-      ({!Preset.rules}). Each durable layer and the preset carry a provenance
-      annotation, propagated to every row it contributes.
+      ({!Preset.rules}). [Plan]'s command-deny guard is the one exception: it
+      precedes every configurable row. Each durable layer and the preset carry
+      a provenance annotation, propagated to every row it contributes.
 
       Raises [Invalid_argument] if a single [durable] layer names the same rule
       twice (equal {!rule_id}). Callers own user-input validation; the raise
@@ -187,8 +190,9 @@ module Run : sig
   val with_session_rules :
     Spice_permission.Policy.Rule.t list -> 'src t -> 'src t
   (** [with_session_rules rules t] is [t] with [rules] prepended as its
-      highest-precedence rows, deciding before every durable, preset, and
-      sandbox-backed row.
+      highest configurable-precedence rows, deciding before every durable,
+      ordinary preset, and sandbox-backed row, but after [Plan]'s command-deny
+      guard.
 
       These are a reviewer's in-session "always allow" grants: a session-scoped
       family rule takes effect for the rest of the run — including within the
