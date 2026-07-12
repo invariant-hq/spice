@@ -6,8 +6,8 @@
 open Tui_harness
 
 (* The model + effort panel (doc/ui-design/05-overlays-pickers.md §Model picker),
-   re-expressed as full-frame goldens. The panel runs no turns — it reads the
-   pure catalog and writes the user config — so there is no provider.
+   re-expressed as full-frame goldens. The panel itself runs no turns — it reads
+   the pure catalog and writes the user config — so most cases need no provider.
 
    OpenAI is authenticated ([OPENAI_API_KEY]) so the configured [openai/gpt-5.5]
    renders as a normal current row with its [✓] and a live effort line, while
@@ -31,6 +31,16 @@ let open_model t =
   Tui.settle t;
   Tui.enter t;
   Tui.settle t
+
+(* Drop into chat through the real provider boundary, then open [/model] over
+   that settled transcript. *)
+let open_model_over_turn t prompt =
+  Tui.keys t prompt;
+  Tui.enter t;
+  ignore (Tui.await_request t 1 : string);
+  Tui.release t "fin";
+  Tui.settle t;
+  open_model t
 
 (* The panel opens with the [model] chip, the provider groups (OpenAI unlocked,
    Anthropic locked), the current model's [✓], and the highlighted default's
@@ -327,5 +337,168 @@ let%expect_test "escape from a settings-opened model panel restores settings" =
 22 |     Project instructions     true
 23 |     Claude.md instructions   true
 24 |   … +12 more|}]
+
+(* A panel is pinned where the composer and footer were, leaving the transcript
+   as the growing region above it. At the baseline 80x24 geometry, even a short
+   transcript keeps its complete context while the panel is open; escape
+   restores the same transcript with the composer and footer. *)
+let%expect_test "panel preserves a short transcript and escape restores chat" =
+  let script =
+    [
+      Provider_script.message ~expect:[ "short panel" ] ~gate:"fin"
+        ~id:"resp-short-panel" "The panel should keep this answer visible.";
+    ]
+  in
+  Tui.run ~name:"model-panel-short-transcript" ~size:(80, 24) ~env
+    ~provider:script @@ fun t ->
+  Tui.settle t;
+  open_model_over_turn t "show a short panel transcript";
+  Tui.print t;
+  [%expect
+    {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ show a short panel transcript
+07 |
+08 | ⏺ The panel should keep this answer visible.
+09 |
+10 |
+11 |
+12 |
+13 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+14 |    model
+15 |
+16 |   ❯ Default (recommended)  GPT-5.5 · Default · 1.05M context · Best for eve… ✓
+17 |     OpenAI
+18 |     GPT-5.5         Default · 1.05M context · Best for everyday, complex tasks
+19 |     GPT-5.5 Pro               1.05M context · Best for everyday, complex tasks
+20 |   ↓ 36 more
+21 |
+22 |   ◐ Medium effort (default)  ← → to adjust
+23 |
+24 |   ↵ set default · ←→ effort · type to filter · ↑↓ select · esc close|}];
+  Tui.keys t Key.escape;
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ show a short panel transcript
+07 |
+08 | ⏺ The panel should keep this answer visible.
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ message spice
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
+
+let overflowing_answer =
+  List.init 20 (fun index ->
+      Printf.sprintf "Tail marker %02d keeps the overflowing transcript anchored."
+        (index + 1))
+  |> String.concat "\n\n"
+
+(* Wide chat mounts the side pane, exercising the pane-backed [chat_above]
+   branch as well as the bare 80-column branch above. Opening the panel at
+   120x32 keeps the overflowing transcript pinned to its newest rows immediately
+   above the panel; escape expands the viewport without moving away from the
+   tail. *)
+let%expect_test "panel keeps an overflowing wide transcript at the tail" =
+  let script =
+    [
+      Provider_script.message ~expect:[ "wide panel" ] ~gate:"fin"
+        ~id:"resp-wide-panel" overflowing_answer;
+    ]
+  in
+  Tui.run ~name:"model-panel-wide-overflow" ~size:(120, 32) ~env
+    ~provider:script @@ fun t ->
+  Tui.settle t;
+  open_model_over_turn t "show the wide panel over overflow";
+  Tui.print t;
+  [%expect
+    {|01 |                                                                                 │ workspace
+02 |   Tail marker 13 keeps the overflowing transcript anchored.                     │   dune disconnected
+03 |                                                                                 │
+04 |   Tail marker 14 keeps the overflowing transcript anchored.                     │
+05 |                                                                                 │
+06 |   Tail marker 15 keeps the overflowing transcript anchored.                     │
+07 |                                                                                 │
+08 |   Tail marker 16 keeps the overflowing transcript anchored.                     │
+09 |                                                                                 │
+10 |   Tail marker 17 keeps the overflowing transcript anchored.                     │
+11 |                                                                                 │
+12 |   Tail marker 18 keeps the overflowing transcript anchored.                     │
+13 |                                                                                 │
+14 |   Tail marker 19 keeps the overflowing transcript anchored.                     │
+15 |                                                                                 │
+16 |   Tail marker 20 keeps the overflowing transcript anchored.                     │
+17 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+18 |    model
+19 |
+20 |   ❯ Default (recommended)                       GPT-5.5 · Default · 1.05M context · Best for everyday, complex tasks ✓
+21 |     OpenAI
+22 |     GPT-5.5                                                 Default · 1.05M context · Best for everyday, complex tasks
+23 |     GPT-5.5 Pro                                                       1.05M context · Best for everyday, complex tasks
+24 |     GPT-5.4                                                           1.05M context · Best for everyday, complex tasks
+25 |     GPT-5.4 Pro                                                       1.05M context · Best for everyday, complex tasks
+26 |     GPT-5.4 mini                                                            400k context · Efficient for routine tasks
+27 |     GPT-5.4 nano                                                              400k context · Fastest for quick answers
+28 |   ↓ 32 more
+29 |
+30 |   ◐ Medium effort (default)  ← → to adjust
+31 |
+32 |   ↵ set default · ←→ effort · type to filter · ↑↓ select · esc close|}];
+  Tui.keys t Key.escape;
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 |   Tail marker 07 keeps the overflowing transcript anchored.                     │ workspace
+02 |                                                                                 │   dune disconnected
+03 |   Tail marker 08 keeps the overflowing transcript anchored.                     │
+04 |                                                                                 │
+05 |   Tail marker 09 keeps the overflowing transcript anchored.                     │
+06 |                                                                                 │
+07 |   Tail marker 10 keeps the overflowing transcript anchored.                     │
+08 |                                                                                 │
+09 |   Tail marker 11 keeps the overflowing transcript anchored.                     │
+10 |                                                                                 │
+11 |   Tail marker 12 keeps the overflowing transcript anchored.                     │
+12 |                                                                                 │
+13 |   Tail marker 13 keeps the overflowing transcript anchored.                     │
+14 |                                                                                 │
+15 |   Tail marker 14 keeps the overflowing transcript anchored.                     │
+16 |                                                                                 │
+17 |   Tail marker 15 keeps the overflowing transcript anchored.                     │
+18 |                                                                                 │
+19 |   Tail marker 16 keeps the overflowing transcript anchored.                     │
+20 |                                                                                 │
+21 |   Tail marker 17 keeps the overflowing transcript anchored.                     │
+22 |                                                                                 │
+23 |   Tail marker 18 keeps the overflowing transcript anchored.                     │
+24 |                                                                                 │
+25 |   Tail marker 19 keeps the overflowing transcript anchored.                     │
+26 |                                                                                 │
+27 |   Tail marker 20 keeps the overflowing transcript anchored.                     │
+28 |
+29 | ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+30 | ❯ message spice
+31 | ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+32 |   $PROJECT · gpt-5.5 medium · dune: ✗                          ? for shortcuts|}]
 
 [%%run_tests "spice.tui.model-panel"]
