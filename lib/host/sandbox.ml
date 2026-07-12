@@ -645,6 +645,41 @@ let path_roots ~scoped ~env ~workspace_roots =
   in
   loop 0 [] segments
 
+let executable_runtime_roots ~env ~scope_roots executable_roots =
+  List.concat_map
+    (fun executable_root ->
+      match
+        ( Spice_path.Abs.basename executable_root,
+          Spice_path.Abs.parent executable_root )
+      with
+      | Some ("bin" | "sbin"), Some prefix ->
+          let prefix_string = Spice_path.Abs.to_string prefix in
+          if
+            (not (broad_root ~env ~workspace_roots:scope_roots prefix))
+            && not
+                 (List.mem prefix_string
+                    [ "/usr"; "/usr/local"; "/opt/local" ])
+          then [ prefix ]
+          else
+            List.filter_map
+              (fun component ->
+                match Spice_path.Abs.add_component prefix component with
+                | Error _ -> None
+                | Ok candidate -> (
+                    match
+                      existing_auto_root (Spice_path.Abs.to_string candidate)
+                    with
+                    | Some root
+                      when not
+                             (broad_root ~env ~workspace_roots:scope_roots root)
+                      ->
+                        Some root
+                    | Some _ | None -> None))
+              [ "etc"; "lib"; "libexec"; "share" ]
+      | _ -> [])
+    executable_roots
+  |> root_paths
+
 let toolchain_roots ~env ~workspace_roots =
   let variables =
     [
@@ -895,6 +930,11 @@ let resolve ~sw ?flag ?config_mode ?(require = Require.Enforced) ?(protect = [])
     if scoped then path_roots ~scoped:true ~env ~workspace_roots:scope_roots
     else Ok []
   in
+  let executable_runtime_roots =
+    if scoped then
+      executable_runtime_roots ~env ~scope_roots executable_roots
+    else []
+  in
   let* toolchain_roots =
     if scoped then toolchain_roots ~env ~workspace_roots:scope_roots else Ok []
   in
@@ -919,8 +959,8 @@ let resolve ~sw ?flag ?config_mode ?(require = Require.Enforced) ?(protect = [])
     if scoped then
       root_paths
         ((project_root :: workspace_roots)
-        @ configured_reads @ platform_roots @ executable_roots @ toolchain_paths
-        @ git_roots)
+        @ configured_reads @ platform_roots @ executable_roots
+        @ executable_runtime_roots @ toolchain_paths @ git_roots)
     else []
   in
   let writable = workspace_roots @ configured_writes |> root_paths in
@@ -945,6 +985,9 @@ let resolve ~sw ?flag ?config_mode ?(require = Require.Enforced) ?(protect = [])
       @ List.map (fun path -> User_configured, path) configured_reads
       @ List.map (fun path -> Platform, path) platform_roots
       @ List.map (fun path -> Executable "PATH", path) executable_roots
+      @ List.map
+          (fun path -> Executable "PATH runtime", path)
+          executable_runtime_roots
       @ List.map (fun (name, path) -> Toolchain name, path) toolchain_roots
       @ List.map (fun path -> Git_worktree, path) git_roots
       @ [ Scratch, scratch ]

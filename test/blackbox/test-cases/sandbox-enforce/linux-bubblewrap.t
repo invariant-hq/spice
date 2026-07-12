@@ -54,7 +54,7 @@ Bubblewrap boundary.
   $ mkdir -p nested/work
   $ echo ancestor > ancestor-readable
   $ cat > nested.jsonl <<'JSONL'
-  > {"expect":{"body_contains":["nested prompt","\"name\":\"shell\""]},"response":{"id":"resp-nested-1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-n1","call_id":"call-n1","name":"shell","arguments":"{\"command\":\"GIT_CONFIG_NOSYSTEM=1 git --no-optional-locks status --short >/dev/null 2>&1; git_exit=$?; cat ../../ancestor-readable >/dev/null 2>&1; read_exit=$?; touch ../../ancestor-denied 2>/dev/null; write_exit=$?; touch local-write; echo git-exit=$git_exit read-exit=$read_exit write-exit=$write_exit\"}"}]}}
+  > {"expect":{"body_contains":["nested prompt","\"name\":\"shell\""]},"response":{"id":"resp-nested-1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-n1","call_id":"call-n1","name":"shell","arguments":"{\"command\":\"git --no-optional-locks status --short >/dev/null 2>&1; git_exit=$?; cat ../../ancestor-readable >/dev/null 2>&1; read_exit=$?; touch ../../ancestor-denied 2>/dev/null; write_exit=$?; touch local-write; echo git-exit=$git_exit read-exit=$read_exit write-exit=$write_exit\"}"}]}}
   > {"expect":{"body_contains":["call-n1","git-exit=0","read-exit=0","write-exit=1","exited 0","enforced backend=linux-bubblewrap"]},"response":{"id":"resp-nested-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"nested final"}]}]}}
   > JSONL
   $ start_fake_openai nested.jsonl nested-capture nested-port

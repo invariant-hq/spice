@@ -299,10 +299,13 @@ val resolve :
 
     [read] defaults to {!Read.All}. Under a confined {!Read.Project} mode,
     [project_root], workspace roots, [readable_roots], executable search roots,
-    OCaml toolchain roots, and the platform runtime profile form the complete
-    read allowlist. [project_root] identifies the enclosing project for reads,
-    linked Git metadata, and trusted local executables; only workspace roots
-    become automatically writable.
+    and non-system, non-broad installation prefixes containing [bin]/[sbin].
+    Conventional system prefixes contribute only existing [etc], [lib],
+    [libexec], and [share] siblings. OCaml toolchain roots and the platform
+    runtime profile complete the read allowlist.
+    [project_root] identifies the enclosing project for reads, linked Git
+    metadata, and trusted local executables; only workspace roots become
+    automatically writable.
     User roots must exist, resolve physically, and may not name filesystem root,
     the account home, or an ancestor of the account home. Direct and external
     modes do not resolve or validate confined read roots and preserve the
