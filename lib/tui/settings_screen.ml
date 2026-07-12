@@ -554,8 +554,9 @@ let config_row_view ~label_w ~selected ~editing (row : Config.row) =
     ~size:{ width = pct 100; height = px 1 }
     (cell cursor_cols cursor :: label :: value_children)
 
-(* Window the visible rows around the selection, summarizing any overflow past
-   the budget as a muted tail. *)
+(* Window the visible rows around the selection. Config and skills both use this
+   selection window; config separately chooses the largest item budget whose
+   rendered headers, gaps, rows, and overflow marker fit the visual budget. *)
 let window ~budget ~selected rows =
   let n = List.length rows in
   if n <= budget then (rows, 0)
@@ -572,17 +573,49 @@ let widest_config_label facts =
     (fun w (_, (row : Config.row)) -> max w (String.length row.Config.label))
     0 (config_flat facts)
 
-let config_body ~rows ready =
+let config_window_cost shown =
+  let _, cost =
+    List.fold_left
+      (fun (previous, cost) (title, _) ->
+        let chrome =
+          match previous with
+          | None -> 1
+          | Some previous when String.equal previous title -> 0
+          | Some _ -> 2
+        in
+        (Some title, cost + chrome + 1))
+      (None, 0) shown
+  in
+  cost
+
+(* Choose the largest slice the existing selection window can show while
+   charging every visual row it will render. The one tail marker summarizes all
+   hidden settings, including rows before a window that has followed the
+   selection downward. *)
+let config_window ~budget ~selected visible =
+  let count = List.length visible in
+  let rec choose item_budget best =
+    if item_budget > count then best
+    else
+      let shown, after = window ~budget:item_budget ~selected visible in
+      let shown_count = List.length shown in
+      let offset = count - shown_count - after in
+      let hidden = count - shown_count in
+      let cost = config_window_cost shown + if hidden > 0 then 1 else 0 in
+      let best =
+        if cost <= budget then Some (shown, hidden, offset) else best
+      in
+      choose (item_budget + 1) best
+  in
+  match choose 1 None with Some result -> result | None -> ([], count, 0)
+
+let config_body ~budget ready =
   match config_visible ready with
   | [] -> [ muted_line "No matching settings." ]
   | visible ->
-      (* Content budget: the terminal height less the screen and tab chrome,
-         floored so a short terminal still shows a few rows. Group headers and
-         inter-group blanks spend from the same height, so the floor is
-         conservative. *)
-      let budget = max 4 (rows - 12) in
-      let shown, older = window ~budget ~selected:ready.config_sel visible in
-      let offset = List.length visible - List.length shown - older in
+      let shown, hidden, offset =
+        config_window ~budget ~selected:ready.config_sel visible
+      in
       let label_w = 2 + widest_config_label ready.facts in
       let _, elements =
         List.fold_left
@@ -605,7 +638,8 @@ let config_body ~rows ready =
           (0, []) shown
       in
       let tail =
-        if older > 0 then [ muted_line (Printf.sprintf "… +%d more" older) ]
+        if hidden > 0 && budget > 0 then
+          [ muted_line (Printf.sprintf "… +%d more" hidden) ]
         else []
       in
       elements @ tail
@@ -724,7 +758,11 @@ let skills_body ~width ~rows ready =
 
 let body ~width ~rows ready =
   match ready.tab with
-  | Config -> config_body ~rows ready
+  | Config ->
+      (* Screen chrome costs four rows with a closed filter and five with an
+         open one; the tab row and its following blank cost two more. *)
+      let chrome = match ready.filter with Closed -> 6 | Open _ -> 7 in
+      config_body ~budget:(max 0 (rows - chrome)) ready
   | Status -> status_body ~width ready
   | Usage -> usage_body ~width ready
   | Skills -> skills_body ~width ~rows ready
@@ -791,4 +829,4 @@ let hint t =
 
 let view ~frame ~width ~rows t =
   Screen.view ~frame ~name:"settings" ~fact:(fact t) ~filter:(filter_line t)
-    ~hint:(hint t) ~width ~content:(content ~width ~rows t)
+    ~hint:(hint t) ~width ~rows ~content:(content ~width ~rows t)

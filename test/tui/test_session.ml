@@ -332,7 +332,7 @@ let%expect_test "tab promotes the panel to the browse screen" =
 07 |     review layer wiring                                    just now · 0 turns
 08 |     auth flow polish                                       just now · 0 turns
 09 |
-10 |   ↵ resume · f fork · r rename · d delete · / filter · esc back
+10 |
 11 |
 12 |
 13 |
@@ -346,7 +346,7 @@ let%expect_test "tab promotes the panel to the browse screen" =
 21 |
 22 |
 23 |
-24 ||}]
+24 |   ↵ resume · f fork · r rename · d delete · / filter · esc back|}]
 
 (* {2 Fork and rename} *)
 
@@ -617,7 +617,7 @@ let%expect_test "browse navigation, filtering, rename, and delete round trip" =
 07 |     review layer wiring                                    just now · 0 turns
 08 |     auth flow polish                                       just now · 0 turns
 09 |
-10 |   ↵ resume · f fork · r rename · d delete · / filter · esc back
+10 |
 11 |
 12 |
 13 |
@@ -631,7 +631,7 @@ let%expect_test "browse navigation, filtering, rename, and delete round trip" =
 21 |
 22 |
 23 |
-24 ||}];
+24 |   ↵ resume · f fork · r rename · d delete · / filter · esc back|}];
   Tui.keys t "/gadt";
   Tui.settle t;
   Tui.print t;
@@ -643,7 +643,7 @@ let%expect_test "browse navigation, filtering, rename, and delete round trip" =
 05 |   ❯ config gadt rework                                     just now · 0 turns
 06 |     $PROJECT
 07 |
-08 |   ↵ resume · ↑↓ select · esc clear filter
+08 |
 09 |
 10 |
 11 |
@@ -659,7 +659,7 @@ let%expect_test "browse navigation, filtering, rename, and delete round trip" =
 21 |
 22 |
 23 |
-24 ||}];
+24 |   ↵ resume · ↑↓ select · esc clear filter|}];
   Tui.keys t Key.escape;
   Tui.settle t;
   Tui.keys t "r";
@@ -678,34 +678,6 @@ let%expect_test "browse navigation, filtering, rename, and delete round trip" =
 07 |     review layer wiring                                    just now · 0 turns
 08 |     auth flow polish                                       just now · 0 turns
 09 |
-10 |   ↵ resume · f fork · r rename · d delete · / filter · esc back
-11 |
-12 |
-13 |
-14 |
-15 |
-16 |
-17 |
-18 |
-19 |
-20 |
-21 |
-22 |
-23 |
-24 ||}];
-  Tui.keys t "d";
-  Tui.settle t;
-  Tui.print t;
-  [%expect
-    {|01 | ──  sessions ──────────────────────────────────────────────────────4 sessions ──
-02 |
-03 |   today
-04 |   delete "parser streaming fix renamed"? press d again · esc cancel
-05 |     config gadt rework                                     just now · 0 turns
-06 |     review layer wiring                                    just now · 0 turns
-07 |     auth flow polish                                       just now · 0 turns
-08 |
-09 |   d delete · esc cancel
 10 |
 11 |
 12 |
@@ -720,7 +692,35 @@ let%expect_test "browse navigation, filtering, rename, and delete round trip" =
 21 |
 22 |
 23 |
-24 ||}];
+24 |   ↵ resume · f fork · r rename · d delete · / filter · esc back|}];
+  Tui.keys t "d";
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 | ──  sessions ──────────────────────────────────────────────────────4 sessions ──
+02 |
+03 |   today
+04 |   delete "parser streaming fix renamed"? press d again · esc cancel
+05 |     config gadt rework                                     just now · 0 turns
+06 |     review layer wiring                                    just now · 0 turns
+07 |     auth flow polish                                       just now · 0 turns
+08 |
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 |
+22 |
+23 |
+24 |   d delete · esc cancel|}];
   Tui.keys t Key.escape;
   Tui.settle t;
   Tui.keys t "d";
@@ -737,7 +737,7 @@ let%expect_test "browse navigation, filtering, rename, and delete round trip" =
 06 |     review layer wiring                                    just now · 0 turns
 07 |     auth flow polish                                       just now · 0 turns
 08 |
-09 |   ↵ resume · f fork · r rename · d delete · / filter · esc back
+09 |
 10 |
 11 |
 12 |
@@ -752,7 +752,7 @@ let%expect_test "browse navigation, filtering, rename, and delete round trip" =
 21 |
 22 |
 23 |
-24 ||}]
+24 |   ↵ resume · f fork · r rename · d delete · / filter · esc back|}]
 
 (* Tab promotes an empty panel to the screen's own empty state. A panel filter
    is otherwise carried into the screen and remains open for editing. *)
@@ -766,7 +766,7 @@ let%expect_test "browse empty state and panel filter carry-over" =
 02 |
 03 |   No sessions in this workspace.
 04 |
-05 |   ↵ resume · f fork · r rename · d delete · / filter · esc back
+05 |
 06 |
 07 |
 08 |
@@ -785,7 +785,7 @@ let%expect_test "browse empty state and panel filter carry-over" =
 21 |
 22 |
 23 |
-24 ||}]
+24 |   ↵ resume · f fork · r rename · d delete · / filter · esc back|}]
   );
   Tui.run ~name:"session-screen-carry" ~seed:seed_four @@ fun t ->
   Tui.settle t;
@@ -803,7 +803,7 @@ let%expect_test "browse empty state and panel filter carry-over" =
 05 |   ❯ config gadt rework                                     just now · 0 turns
 06 |     $PROJECT
 07 |
-08 |   ↵ resume · ↑↓ select · esc clear filter
+08 |
 09 |
 10 |
 11 |
@@ -819,7 +819,7 @@ let%expect_test "browse empty state and panel filter carry-over" =
 21 |
 22 |
 23 |
-24 ||}]
+24 |   ↵ resume · ↑↓ select · esc clear filter|}]
 
 (* /clear detaches the old transcript but preserves its document; the next
    prompt attaches a fresh session and runs normally. *)

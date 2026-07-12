@@ -415,4 +415,4 @@ let hint t =
 
 let view ~frame ~width ~rows t =
   Screen.view ~frame ~name:"sessions" ~fact:(fact t) ~filter:(filter_line t)
-    ~hint:(hint t) ~width ~content:(content ~width ~rows t)
+    ~hint:(hint t) ~width ~rows ~content:(content ~width ~rows t)

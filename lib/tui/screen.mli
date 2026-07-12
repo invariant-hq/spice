@@ -66,15 +66,18 @@ val view :
   filter:filter option ->
   hint:string list ->
   width:int ->
+  rows:int ->
   content:'a Mosaic.t list ->
   'a Mosaic.t
-(** [view ~frame ~name ~fact ~filter ~hint ~width ~content] is the screen shell.
-    The top rule spans [width] in [frame]: [── ] then the [name] as a filled
-    chip ({!Theme.chip}), dashes filling to a right-aligned muted [fact], then a
-    trailing [ ──] (the [── [sessions] ──…── 12 sessions ──] grammar). When
-    [filter] is [Some], a bare filter line follows — an accent ["/"], the
-    [query], then the [matches] count faint — with no rule, no cursor, and no
-    placeholder (03-ia §The filter law). The [content] rows and the [hint]
-    affordances (joined as the screen's footer row) close it. Every row spans
-    [width]. [hint] holds only affordances that work in the current build (the
-    honest-hint rule, doc/plans/tui-next.md). *)
+(** [view ~frame ~name ~fact ~filter ~hint ~width ~rows ~content] is the screen
+    shell occupying exactly [rows] rows. The top rule spans [width] in [frame]:
+    [── ] then the [name] as a filled chip ({!Theme.chip}), dashes filling to a
+    right-aligned muted [fact], then a trailing [ ──] (the
+    [── [sessions] ──…── 12 sessions ──] grammar). When [filter] is [Some], a
+    bare filter line follows — an accent ["/"], the [query], then the [matches]
+    count faint — with no rule, no cursor, and no placeholder (03-ia §The filter
+    law). The [content] rows and the [hint] affordances (joined as the screen's
+    pinned footer row) close it. The content body has the fixed height left by
+    that chrome and clips any dishonest overrun instead of displacing the
+    footer. Every row spans [width]. [hint] holds only affordances that work in
+    the current build (the honest-hint rule, doc/plans/tui-next.md). *)

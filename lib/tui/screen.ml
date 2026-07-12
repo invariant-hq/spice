@@ -118,15 +118,23 @@ let hint_row hints =
     pieces
 
 let blank_row = box ~flex_shrink:0. ~size:{ width = pct 100; height = px 1 } []
+let hidden_overflow = { x = Overflow.Hidden; y = Overflow.Hidden }
 
-let view ~frame ~name ~fact ~filter ~hint ~width ~content =
+let view ~frame ~name ~fact ~filter ~hint ~width ~rows ~content =
   let filter_rows =
     match filter with
     | Some f -> [ filter_row f; blank_row ]
     | None -> [ blank_row ]
   in
+  let body_rows = max 0 (rows - 3 - List.length filter_rows) in
+  let body =
+    box ~key:"screen.body" ~flex_direction:Flex_direction.Column ~flex_shrink:0.
+      ~overflow:hidden_overflow
+      ~size:{ width = pct 100; height = px body_rows }
+      content
+  in
   box ~key:"screen" ~flex_direction:Flex_direction.Column ~flex_shrink:0.
-    ~size:{ width = pct 100; height = auto }
+    ~overflow:hidden_overflow
+    ~size:{ width = pct 100; height = px (max 0 rows) }
     ((rule_row ~frame ~name ~fact ~width :: filter_rows)
-    @ content
-    @ [ blank_row; hint_row hint ])
+    @ [ body; blank_row; hint_row hint ])

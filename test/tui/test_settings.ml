@@ -26,6 +26,41 @@ let open_settings t =
   Tui.enter t;
   Tui.settle t
 
+let overflow_marker screen =
+  screen |> String.split_on_char '\n'
+  |> List.find_opt (String.includes ~affix:"… +")
+  |> Option.map String.trim
+  |> Option.value ~default:"all"
+
+(* The screen chrome pins its hint row while the config window spends the
+   remaining height on selectable rows, group headers, inter-group gaps, and —
+   when needed — the overflow marker itself. The seven QA heights cover every
+   boundary where a newly-affordable group changes the hidden-row count. *)
+let%expect_test
+    "config height sweep keeps its footer and reports every hidden row" =
+  Tui.run ~name:"settings-height-sweep" ~size:(120, 24) @@ fun t ->
+  Tui.settle t;
+  open_settings t;
+  List.iter
+    (fun height ->
+      Tui.resize t ~width:120 ~height;
+      Tui.settle t;
+      let screen = Tui.screen t in
+      Printf.printf "%d | footer=%b | %s | web-search=%b\n" height
+        (Screen.contains screen "↵ edit")
+        (overflow_marker screen)
+        (Screen.contains screen "Web search"))
+    [ 24; 28; 30; 32; 36; 40; 44 ];
+  [%expect
+    {|
+    24 | footer=true | … +14 more | web-search=false
+    28 | footer=true | … +12 more | web-search=false
+    30 | footer=true | … +10 more | web-search=false
+    32 | footer=true | … +8 more | web-search=false
+    36 | footer=true | … +6 more | web-search=false
+    40 | footer=true | … +4 more | web-search=false
+    44 | footer=true | all | web-search=true |}]
+
 (* The config tab opens with the four-tab row, the family groups windowed to the
    height, the [❯] cursor on the managed Model row, and — because the harness
    pins the dangerous sandbox mode — the in-place danger caution. *)
@@ -56,9 +91,9 @@ let%expect_test "settings opens on the config tab" =
 19 |
 20 |   Instructions
 21 |     Global instructions      true
-22 |     Project instructions     true
-23 |     Claude.md instructions   true
-24 |   … +12 more|}]
+22 |   … +14 more
+23 |
+24 |   ↵ edit · ↑↓ move · ←→ tab/value · / filter · esc back|}]
 
 (* [tab] switches to the status tab: a read-only fact sheet whose version and
    permission rows the config tab never shows. *)
@@ -85,7 +120,7 @@ let%expect_test "tab switches to the status fact sheet" =
 13 |   user config        $PROJECT.xdg/config/spice/…
 14 |   project config     $PROJECT/.spice/config.json
 15 |
-16 |   c copy id · ←→ tab · esc back
+16 |
 17 |
 18 |
 19 |
@@ -93,7 +128,7 @@ let%expect_test "tab switches to the status fact sheet" =
 21 |
 22 |
 23 |
-24 ||}]
+24 |   c copy id · ←→ tab · esc back|}]
 
 (* An enum row expands to the inline [●] radio on [→] and commits a Write_field
    the runtime persists. The Reasoning row is unset at launch, so committing it
@@ -131,9 +166,9 @@ let%expect_test "enum row expands to a radio and commits" =
 19 |
 20 |   Instructions
 21 |     Global instructions      true
-22 |     Project instructions     true
-23 |     Claude.md instructions   true
-24 |   … +12 more|}];
+22 |   … +14 more
+23 |
+24 |   ←→ choose · esc close|}];
   print_string
     (Printf.sprintf "reasoning written: %b\n"
        (Screen.contains (read_config t) "reasoning"));
@@ -192,11 +227,11 @@ let%expect_test "skills tab lists and toggles a skill" =
 17 |     ocaml-testing                               active    builtin   ~3,255 tok
 18 |     ocaml-tidy                                  active    builtin   ~3,948 tok
 19 |
-20 |   ↵ toggle · t sort · ↑↓ move · ←→ tab · / filter · esc back
+20 |
 21 |
 22 |
 23 |
-24 ||}];
+24 |   ↵ toggle · t sort · ↑↓ move · ←→ tab · / filter · esc back|}];
   print_string
     (Printf.sprintf "disabled written: %b\n"
        (Screen.contains (read_config t) "disabled"));
@@ -223,7 +258,7 @@ let%expect_test "filter narrows the config rows" =
 08 |     Sandbox required         enforced
 09 |     Sandbox reads            all
 10 |
-11 |   ↑↓ select · esc clear filter
+11 |
 12 |
 13 |
 14 |
@@ -236,7 +271,7 @@ let%expect_test "filter narrows the config rows" =
 21 |
 22 |
 23 |
-24 ||}]
+24 |   ↑↓ select · esc clear filter|}]
 
 (* The esc ladder: esc clears an open filter, a second esc closes the screen and
    restores the composer. *)
