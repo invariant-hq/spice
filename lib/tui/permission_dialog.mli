@@ -34,10 +34,10 @@ type outcome =
   | Deny  (** Deny with feedback: borrow the composer. *)
 
 val key : Matrix.Input.Key.event -> t -> t * outcome
-(** [key ev t] folds one key: [1]/[y] allow once, [2]/[a] allow the exact
-    accesses for the conversation, [3]/[d]/[n]/[esc] deny with feedback, arrows
-    move the cursor, [enter] confirms the selected option, and [ctrl+o] expands
-    the diff. *)
+(** [key ev t] folds one key: [1]/[2]/[3] select their numbered option, arrows
+    move the cursor, and [enter] confirms the selected option. The explicit
+    mnemonics [y]/[a] allow once or for the conversation immediately;
+    [d]/[n]/[esc] deny with feedback immediately. [ctrl+o] expands the diff. *)
 
 val summary : t -> string
 (** [summary t] is the one-line operation description the deny-feedback line

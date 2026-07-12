@@ -192,6 +192,42 @@ let%expect_test "the permission dialog renders and an approve runs the command"
   Tui.release t "fin";
   Tui.settle t
 
+(* A model response may leave several commands waiting for review. A numbered
+   shortcut selects within the visible dialog; only Enter confirms that dialog.
+   Therefore the common digit-then-Enter sequence may advance by one dialog,
+   but cannot spend the Enter on the next, unseen command. *)
+let%expect_test "digit then Enter cannot approve a stacked permission dialog" =
+  let script =
+    [
+      Provider_script.tool_calls ~expect:[ "run both" ] ~id:"resp-ps-1"
+        ~calls:
+          [
+            ("call-ps-1", "shell", {|{"command":"printf FIRST"}|});
+            ("call-ps-2", "shell", {|{"command":"printf SECOND"}|});
+          ]
+        ();
+      resume
+        ~expect:[ "call-ps-1"; "FIRST"; "call-ps-2"; "SECOND" ]
+        ~id:"resp-ps-2" "Ran both commands.";
+    ]
+  in
+  Tui.run ~name:"dialog-perm-stacked" ~provider:script @@ fun t ->
+  open_dialog t "run both";
+  Tui.keys t "2";
+  Tui.settle t;
+  Printf.printf "digit selects the visible row: %b\n"
+    (String.includes ~affix:"❯ 2. Yes" (Tui.screen t));
+  [%expect {| digit selects the visible row: true |}];
+  Tui.enter t;
+  Tui.settle t;
+  Printf.printf "second dialog still awaits confirmation: %b\n"
+    (String.includes ~affix:"$ printf SECOND" (Tui.screen t));
+  [%expect {| second dialog still awaits confirmation: true |}];
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin";
+  Tui.settle t
+
 (* A compound shell expression may normalize to several access facts, but it is
    still one model action and therefore one decision. The original expression
    is primary; normalized facts are available behind the details toggle. *)
