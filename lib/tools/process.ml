@@ -37,28 +37,20 @@ type shell_result = {
   shell_duration_ms : int;
 }
 
-let split_env binding =
-  match String.index_opt binding '=' with
-  | None -> (binding, "")
-  | Some index ->
-      ( String.sub binding 0 index,
-        String.sub binding (index + 1) (String.length binding - index - 1) )
-
 let environment_array bindings =
   bindings
   |> List.map (fun (name, value) -> name ^ "=" ^ value)
   |> Array.of_list
 
-let prepare ~sandbox ~env = function
+let prepare ~sandbox = function
   | [] -> Error (Spice_sandbox.Error.invalid_request "process argv is empty")
   | program :: args ->
       let argv = Spice_sandbox.Argv.make ~program args in
-      let env = Array.to_list env |> List.map split_env in
       Result.map
         (fun spawn ->
           ( Spice_sandbox.Spawn.argv spawn |> Spice_sandbox.Argv.to_list,
             Spice_sandbox.Spawn.env spawn |> environment_array ))
-        (Spice_sandbox.spawn sandbox ~argv ~env)
+        (Spice_sandbox.spawn sandbox ~argv)
 
 let default_stdout_limit = 1024 * 1024
 let default_stderr_limit = 64 * 1024
@@ -717,9 +709,9 @@ let run_shell_fd ~cwd ~env ~timeout_ms ~max_output_bytes ?stdin ~cancelled argv 
       run_shell_blocking ~working_directory:(Open_directory cwd) ~env
         ~timeout_ms ~max_output_bytes ?stdin ~cancelled argv)
 
-let run_sandboxed_shell ~sandbox ~cwd ~env ~timeout_ms ~max_output_bytes ?stdin
+let run_sandboxed_shell ~sandbox ~cwd ~timeout_ms ~max_output_bytes ?stdin
     ~cancelled argv =
-  match prepare ~sandbox ~env argv with
+  match prepare ~sandbox argv with
   | Error error ->
       {
         shell_status = Shell_refused error;
@@ -737,7 +729,7 @@ let run ?stdout_limit ?stderr_limit ~timeout_ms ~cancelled argv =
 
 let run_sandboxed ?stdout_limit ?stderr_limit ~sandbox ~timeout_ms ~cancelled
     argv =
-  match prepare ~sandbox ~env:(Unix.environment ()) argv with
+  match prepare ~sandbox argv with
   | Error error -> { status = Refused error; stdout = ""; stderr = "" }
   | Ok (argv, env) ->
       Eio_unix.run_in_systhread ~label:"spice-process" (fun () ->

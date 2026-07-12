@@ -99,11 +99,20 @@ let call ~fs ~workspace ~config input =
   | Ok call -> call
   | Error error -> failf "failed to decode shell call: %a" Tool.Error.pp error
 
+let environment ?(bindings = []) () =
+  let user_names = List.map fst bindings in
+  let launch name = List.assoc_opt name bindings in
+  Spice_sandbox.Environment.make ~path:"/usr/bin:/bin"
+    ~scratch:(Spice_path.Abs.of_string_exn "/tmp") ~user_names ~launch
+  |> Result.get_ok
+
 let unconfined ?default_timeout_ms ?max_timeout_ms ?max_output_bytes
-    ?(environment = []) () =
+    ?(bindings = []) () =
   Shell.Config.make ?default_timeout_ms ?max_timeout_ms ?max_output_bytes
-    ~sandbox:(Spice_sandbox.seal Spice_sandbox.Policy.direct)
-    ~environment ()
+    ~sandbox:
+      (Spice_sandbox.seal
+         (Spice_sandbox.Policy.direct ~environment:(environment ~bindings ())))
+    ()
 
 let normalize_paths ?root ?outside message =
   let replace_one ~by pattern message =
@@ -368,10 +377,6 @@ let%expect_test "input and config validation" =
   print_input_error "empty description"
     (Shell.Input.make ~description:"" "pwd");
   print_invalid "empty shell" (fun () -> Shell.Config.make ~shell:"" ());
-  print_invalid "bad env name" (fun () ->
-      Shell.Config.make ~environment:[ ("BAD=NAME", Some "1") ] ());
-  print_invalid "bad env value" (fun () ->
-      Shell.Config.make ~environment:[ ("BAD", Some "x\000y") ] ());
   print_invalid "bad timeout bounds" (fun () ->
       Shell.Config.make ~default_timeout_ms:20 ~max_timeout_ms:10 ());
   print_invalid "bad output bound" (fun () ->
@@ -391,8 +396,6 @@ let%expect_test "input and config validation" =
     zero timeout: non_positive_timeout(0): timeout_ms must be positive, got 0
     empty description: empty(description): description must not be empty
     empty shell: invalid shell must not be empty
-    bad env name: invalid environment name must not contain =
-    bad env value: invalid environment value must not contain NUL
     bad timeout bounds: invalid default_timeout_ms must be <= max_timeout_ms
     bad output bound: invalid max_output_bytes must be non-negative
     default timeout: ok 10
@@ -428,7 +431,7 @@ let fake_backend =
 let confined ?(writable_roots = []) () =
   Spice_sandbox.Policy.confined ~reads:Spice_sandbox.Policy.All
     ~writable_roots ~protected_meta:[] ~protected_paths:[]
-    ~network:Spice_sandbox.Policy.Network.Restricted
+    ~network:Spice_sandbox.Policy.Network.Restricted ~environment:(environment ())
 
 let%expect_test "confined command reports enforced evidence and strips env" =
   with_fixture @@ fun ~root ~outside ~fs ~workspace ->
@@ -469,7 +472,9 @@ let%expect_test "permission command routes match exact shell execution" =
   let workspace_write = workspace_write_config ~root in
   let external_config =
     Shell.Config.make
-      ~sandbox:(Spice_sandbox.seal Spice_sandbox.Policy.external_)
+      ~sandbox:
+        (Spice_sandbox.seal
+           (Spice_sandbox.Policy.external_ ~environment:(environment ())))
       ()
   in
   print_permission_routes "workspace-write ordinary" ~config:workspace_write
@@ -547,11 +552,9 @@ let%expect_test "spoofable command syntax degrades to a coarse shell match" =
     source: shell
     access: shell cwd=. command="~/bin/tool run" |}]
 
-(* Escalation drops the sandbox's filesystem confinement but not its credential
-   strip: a workspace-write escalation runs unconfined yet still passes through
-   [Env.partition], so secrets and loader-injection variables are removed. Only
-   danger-full-access (Unconfined) passes the environment verbatim. *)
-let%expect_test "approved escalation runs unconfined but still strips secrets" =
+(* Escalation drops filesystem and network confinement, but it keeps the exact
+   environment sealed into the policy. *)
+let%expect_test "approved escalation keeps the exact environment" =
   with_fixture @@ fun ~root ~outside ~fs ~workspace ->
   Unix.putenv "SPICE_EXPECT_FAKE_TOKEN" "tok-value";
   let config = workspace_write_config ~root in
@@ -576,12 +579,13 @@ let%expect_test "read-only refuses escalation without spawning" =
     failed invalid_input: escalation is not available in a read-only sandbox: read-only runs do not mutate; rerun with --sandbox workspace-write for mutating work
     output: none |}]
 
-let%expect_test
-    "declared external command inherits env and reports the\n\
-    \                 declaration" =
+let%expect_test "declared external command keeps the exact environment" =
   with_fixture @@ fun ~root ~outside ~fs ~workspace ->
   Unix.putenv "SPICE_EXPECT_FAKE_TOKEN" "tok-value";
-  let sandbox = Spice_sandbox.seal Spice_sandbox.Policy.external_ in
+  let sandbox =
+    Spice_sandbox.seal
+      (Spice_sandbox.Policy.external_ ~environment:(environment ()))
+  in
   let config = Shell.Config.make ~sandbox () in
   run ~root ~outside ~fs ~workspace ~config
     (input "echo ${SPICE_EXPECT_FAKE_TOKEN:-stripped}");
@@ -592,16 +596,14 @@ let%expect_test
     workdir: .
     limits: timeout=60000 max_output=65536 description=-
     sandbox: declared_external
-    stdout: complete "tok-value\n"
+    stdout: complete "stripped\n"
     stderr: complete "" |}]
 
-let%expect_test
-    "unconfined command uses workdir env overlay and deterministic env" =
+let%expect_test "direct command uses its exact environment and workdir" =
   with_fixture @@ fun ~root ~outside ~fs ~workspace ->
   let config =
     unconfined ~default_timeout_ms:1_000
-      ~environment:[ ("SPICE_SHELL_TEST", Some "from-config") ]
-      ()
+      ~bindings:[ ("SPICE_SHELL_TEST", "from-policy") ] ()
   in
   run ~root ~outside ~fs ~workspace ~config
     (input ~workdir:"subject/nested"
@@ -614,7 +616,7 @@ let%expect_test
     workdir: subject/nested
     limits: timeout=1000 max_output=65536 description=-
     sandbox: not_requested
-    stdout: complete "cwd=<root>/subject/nested\nvar=from-config\npager=cat\n"
+    stdout: complete "cwd=<root>/subject/nested\nvar=from-policy\npager=cat\n"
     stderr: complete "" |}]
 
 let%expect_test "non-zero exit carries stdout and stderr evidence" =

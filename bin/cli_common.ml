@@ -463,7 +463,7 @@ type sandbox_args = {
 (* One resolution feeds exec, debug, and the sandbox status surfaces. The
    require gate is separate so surfaces that only describe the posture can
    resolve without failing on unavailable backends. *)
-let resolve_sandbox ~stdenv host ~workspace args =
+let resolve_sandbox ~sw ~stdenv host ~workspace args =
   let process_env = Spice_host.Env.current () in
   let config = Spice_host.Host.config host in
   let sandbox_config = Spice_host.Config.sandbox config in
@@ -471,7 +471,7 @@ let resolve_sandbox ~stdenv host ~workspace args =
     if args.require_sandbox then Spice_host.Sandbox.Require.Enforced
     else Spice_host.Config.Sandbox.require sandbox_config
   in
-  Spice_host.Sandbox.resolve ?flag:args.sandbox_flag
+  Spice_host.Sandbox.resolve ~sw ?flag:args.sandbox_flag
     ?config_mode:(Spice_host.Config.Sandbox.mode sandbox_config)
     ~require
     ~protect:(Spice_host.Config.sandbox_protected_roots config)

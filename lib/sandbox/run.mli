@@ -6,8 +6,8 @@
 (** Internal sealed sandbox implementation.
 
     This module backs {!type:Spice_sandbox.t}, the host-sealed answer to "what
-    does this sandbox do to a spawned command": how argv is wrapped, how the
-    environment is filtered, what evidence is reported, and whether per-command
+    does this sandbox do to a spawned command": how argv is wrapped, which exact
+    environment is used, what evidence is reported, and whether per-command
     escalation is available. It composes a sandbox posture with a {!Backend.t}
     once, at resolve time -- the same moment the host's require gate runs.
 
@@ -55,17 +55,22 @@ val seal : ?backend:Backend.t -> Policy.t -> t
 val policy : t -> Policy.t
 (** [policy t] is the exact policy sealed in [t]. *)
 
-val spawn :
-  t -> argv:Argv.t -> env:(string * string) list -> (Spawn.t, Error.t) result
-(** [spawn t ~argv ~env] is the complete spawn decision for one command.
+val spawn : t -> argv:Argv.t -> (Spawn.t, Error.t) result
+(** [spawn t ~argv] is the complete spawn decision for one command.
 
-    [Ok spawn] carries the argv to spawn, the filtered environment, and the
+    [Ok spawn] carries the argv to spawn, the policy's exact environment, and the
     evidence the result must report. [Error refusal] is a structured refusal
     error: the command must not be spawned, and the result reports
     {!Evidence.refused}[ refusal].
 
     The returned [Spawn.t] is a plan only; this module never starts a process.
 *)
+
+val spawn_escalated : t -> argv:Argv.t -> (Spawn.t, Error.t) result
+(** [spawn_escalated t ~argv] drops filesystem and network confinement only
+    when {!escalation}[ t] is {!Available}. The returned spawn still uses the
+    policy's exact environment. Denied and nonsensical escalation requests are
+    structured errors and start no process. *)
 
 val escalation : t -> escalation
 (** [escalation t] is the sealed escalation stance. *)

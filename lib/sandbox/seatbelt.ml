@@ -174,7 +174,11 @@ let excluded_param index excluded_index =
   Printf.sprintf "WRITABLE_ROOT_%d_EXCLUDED_%d" index excluded_index
 
 let file_write_policy policy =
-  match Policy.writable_roots policy with
+  let roots =
+    Environment.scratch (Policy.environment policy)
+    :: Policy.writable_roots policy
+  in
+  match roots with
   | [] -> ("", [])
   | roots ->
       let carveouts = Policy.write_carveouts policy in

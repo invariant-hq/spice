@@ -127,17 +127,7 @@ let mutations_recorder ~stdenv ~store ~sandbox ~trusted ~workspace_root =
     | [] -> Error "git process argv is empty"
     | program :: args -> (
         let argv = Spice_sandbox.Argv.make ~program args in
-        let env =
-          Unix.environment () |> Array.to_list
-          |> List.map (fun binding ->
-              match String.index_opt binding '=' with
-              | None -> (binding, "")
-              | Some index ->
-                  ( String.sub binding 0 index,
-                    String.sub binding (index + 1)
-                      (String.length binding - index - 1) ))
-        in
-        match Spice_sandbox.spawn sandbox ~argv ~env with
+        match Spice_sandbox.spawn sandbox ~argv with
         | Error error -> Error (Spice_sandbox.Error.message error)
         | Ok spawn -> (
             let argv =

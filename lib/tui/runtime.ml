@@ -696,11 +696,11 @@ let save_model_selection ~stdenv host ~selector ~effort =
 (* The effective sandbox for a run: the [--sandbox] flag over the config mode,
    gated, protecting the same host authority roots as the headless CLI so the
    frontends confine identically. *)
-let resolve_sandbox ?flag ~stdenv host ~workspace =
+let resolve_sandbox ?flag ~sw ~stdenv host ~workspace =
   let process_env = Spice_host.Env.current () in
   let config = Spice_host.Host.config host in
   let sandbox_config = Spice_host.Config.sandbox config in
-  Spice_host.Sandbox.resolve ?flag
+  Spice_host.Sandbox.resolve ~sw ?flag
     ?config_mode:(Spice_host.Config.Sandbox.mode sandbox_config)
     ~require:(Spice_host.Config.Sandbox.require sandbox_config)
     ~protect:(Spice_host.Config.sandbox_protected_roots config)
@@ -712,12 +712,9 @@ let resolve_sandbox ?flag ~stdenv host ~workspace =
     ~env:(Spice_host.Env.get process_env)
     ~workspace ()
 
-let git_runner ~stdenv ~process_env ~sandbox ~cwd args =
+let git_runner ~stdenv ~sandbox ~cwd args =
   let argv = Spice_sandbox.Argv.make ~program:"git" ("-C" :: cwd :: args) in
-  match
-    Spice_sandbox.spawn sandbox ~argv
-      ~env:(Spice_host.Env.to_list process_env)
-  with
+  match Spice_sandbox.spawn sandbox ~argv with
   | Error error -> Error (Spice_sandbox.Error.message error)
   | Ok spawn ->
       let argv =
@@ -753,7 +750,10 @@ let build_run ?sandbox_flag ~sw ~stdenv ~host ~session_id () =
     Spice_workspace.single
       (Spice_workspace.Root.make (Spice_host.Config.cwd config))
   in
-  let sandbox = resolve_sandbox ?flag:sandbox_flag ~stdenv host ~workspace in
+  let* sandbox =
+    resolve_sandbox ?flag:sandbox_flag ~sw ~stdenv host ~workspace
+    |> Result.map_error Spice_host.Sandbox.Resolve_error.message
+  in
   let permission = Spice_host.Config.permission_posture config in
   let* plan =
     Spice_host.Run.plan ~workspace ~sandbox ~permission ()
@@ -943,13 +943,15 @@ let append_prompt_history ~stdenv ~clock host ~session entry =
    session drain — ephemeral, never persisted to the session
    (doc/plans/tui-next-composer.md §Host seams). *)
 let run_user_shell ?sandbox_flag ~stdenv ~host ~cancelled input =
+  Eio.Switch.run @@ fun sw ->
   let config = Spice_host.Host.config host in
   let workspace =
     Spice_workspace.single
       (Spice_workspace.Root.make (Spice_host.Config.cwd config))
   in
-  let sandbox = resolve_sandbox ?flag:sandbox_flag ~stdenv host ~workspace in
-  match Spice_host.Sandbox.gate sandbox with
+  match resolve_sandbox ?flag:sandbox_flag ~sw ~stdenv host ~workspace with
+  | Error error -> Error (Spice_host.Sandbox.Resolve_error.message error)
+  | Ok sandbox -> (match Spice_host.Sandbox.gate sandbox with
   | Error error -> Error (Spice_host.Sandbox.Gate_error.message error)
   | Ok () ->
       let shell =
@@ -967,7 +969,7 @@ let run_user_shell ?sandbox_flag ~stdenv ~host ~cancelled input =
       Spice_tool.Call.decode [ tool ] ~name:Spice_tools.Shell.name
         ~input:encoded ()
       |> Result.map_error (Format.asprintf "%a" Spice_tool.Error.pp)
-      |> Result.map (fun call -> Spice_tool.Call.run call ~cancelled ())
+      |> Result.map (fun call -> Spice_tool.Call.run call ~cancelled ()))
 
 (* Distill a shell result into the settled transcript block: the first output
    line as the [⎿] summary, the exit shape and remaining line count as facts.
@@ -1230,12 +1232,15 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
           Spice_workspace.single (Spice_workspace.Root.make cwd)
         in
         let effective_sandbox =
-          resolve_sandbox ?flag:sandbox_flag ~stdenv host ~workspace
+          match
+            resolve_sandbox ?flag:sandbox_flag ~sw ~stdenv host ~workspace
+          with
+          | Ok sandbox -> sandbox
+          | Error error ->
+              failwith (Spice_host.Sandbox.Resolve_error.message error)
         in
         let git_run =
           git_runner ~stdenv
-            ~process_env:
-              (Spice_host.Config.process_env (Spice_host.Host.config host))
             ~sandbox:(Spice_host.Sandbox.Effective.sandbox effective_sandbox)
         in
         let snapshot = build_snapshot ?sandbox_flag ~stdenv host in

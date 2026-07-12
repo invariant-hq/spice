@@ -220,7 +220,7 @@ let local_engine_check () =
 (* The posture the next run would resolve, gated exactly like a run: a
    restricted requirement without an enforceable backend is the failure a
    user wants surfaced before they lose a prompt to it. *)
-let sandbox_check ~stdenv host =
+let sandbox_check ~sw ~stdenv host =
   match Spice_host.workspace host with
   | Error error ->
       {
@@ -229,10 +229,17 @@ let sandbox_check ~stdenv host =
         details = [ Spice_host.Host.Error.message error ];
       }
   | Ok workspace -> (
-      let effective =
-        resolve_sandbox ~stdenv host ~workspace
+      match
+        resolve_sandbox ~sw ~stdenv host ~workspace
           { sandbox_flag = None; require_sandbox = false }
-      in
+      with
+      | Error error ->
+          {
+            name = "sandbox";
+            verdict = Fail;
+            details = [ Spice_host.Sandbox.Resolve_error.message error ];
+          }
+      | Ok effective ->
       let module Effective = Spice_host.Sandbox.Effective in
       let module Status = Spice_host.Sandbox.Status in
       let status = Effective.status effective in
@@ -389,7 +396,7 @@ let doctor json cwd =
           auth_check ~sw ~stdenv host;
           local_engine_check ();
           toolchain_check host;
-          sandbox_check ~stdenv host;
+          sandbox_check ~sw ~stdenv host;
           sessions_check ~stdenv host;
           project_config_check host;
         ]

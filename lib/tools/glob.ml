@@ -452,7 +452,7 @@ let run_rg_command ~sandbox ~cancelled root args =
     Spice_path.Abs.to_string (Workspace.Root.dir (Workspace.Path.root root))
   in
   let result =
-    Process.run_sandboxed_shell ~sandbox ~cwd ~env:(Unix.environment ())
+    Process.run_sandboxed_shell ~sandbox ~cwd
       ~timeout_ms:max_rg_timeout_ms ~max_output_bytes:max_rg_stdout_bytes
       ~cancelled args
   in

@@ -491,12 +491,8 @@ let run ~sandbox ~fs ~workspace ~config ?watch
                          (Spice_path.Abs.to_string
                             (Workspace.Path.abs (Workspace.root_path workspace))))
                 in
-                let env =
-                  Spice_ocaml_toolchain.env toolchain
-                    ~program:(Config.ocaml config)
-                in
                 let dune_result =
-                  Process.run_sandboxed_shell ~sandbox ~cwd ~env ~timeout_ms
+                  Process.run_sandboxed_shell ~sandbox ~cwd ~timeout_ms
                     ~max_output_bytes ~cancelled
                     [
                       program_path toolchain (Config.dune config);
@@ -535,7 +531,7 @@ let run ~sandbox ~fs ~workspace ~config ?watch
                                  timeout_ms)
                         | Some eval_timeout_ms ->
                             let eval_result =
-                              Process.run_sandboxed_shell ~sandbox ~cwd ~env
+                              Process.run_sandboxed_shell ~sandbox ~cwd
                                 ~timeout_ms:eval_timeout_ms ~max_output_bytes
                                 ~stdin:
                                   (init_text ~directives

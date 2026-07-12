@@ -26,14 +26,8 @@ module Error = Error
 module Policy = Policy
 (** Pure command sandbox policies. *)
 
-module Env = Env
-(** Diagnostic environment filtering policy.
-
-    This module is for sandbox status and explain surfaces that need to describe
-    the filtering policy without spawning. Common spawn callers should use
-    {!spawn}; the resulting {!Spawn.t} carries the filtered environment and
-    sandbox evidence for the actual command. Call {!Env.partition} directly when
-    a diagnostic surface needs stripped names. *)
+module Environment = Environment
+(** Exact child environments owned by sandbox policies. *)
 
 module Evidence = Evidence
 (** Sandbox enforcement evidence. *)
@@ -64,19 +58,20 @@ type escalation = Run.escalation =
           command may run without the sealed confinement after separate
           permission review. *)
 
-val spawn :
-  t -> argv:Argv.t -> env:(string * string) list -> (Spawn.t, Error.t) result
-(** [spawn t ~argv ~env] is the complete spawn decision for one command.
+val spawn : t -> argv:Argv.t -> (Spawn.t, Error.t) result
+(** [spawn t ~argv] is the complete spawn decision for one command.
 
     [Ok spawn] carries the argv to execute, the environment to pass to the
-    process, and the evidence that the command result must report. For confined
-    sandboxes the argv may be wrapped by the prepared backend and [env] is
-    filtered with {!Env.partition}; for unconfined and declared-external
-    sandboxes both pass through unchanged.
+    process, and the evidence that the command result must report. Every route
+    uses the exact environment carried by the sealed policy.
 
     [Error error] is a structured sandbox refusal. The command must not be
     spawned; callers that produce command output should report
     {!Evidence.refused}[ error]. *)
+
+val spawn_escalated : t -> argv:Argv.t -> (Spawn.t, Error.t) result
+(** [spawn_escalated t ~argv] prepares an approved escape from confined
+    execution without escaping [t]'s exact child environment. *)
 
 val escalation : t -> escalation
 (** [escalation t] is the sealed escalation stance. *)

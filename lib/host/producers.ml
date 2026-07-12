@@ -44,20 +44,12 @@ let is_shape_drift (event : Spice_fswatch.Event.t) =
       | _ -> false)
   | None -> false
 
-let split_env binding =
-  match String.index_opt binding '=' with
-  | None -> (binding, "")
-  | Some index ->
-      ( String.sub binding 0 index,
-        String.sub binding (index + 1) (String.length binding - index - 1) )
-
-let prepare sandbox ~argv ~env =
+let prepare sandbox ~argv =
   match argv with
   | [] -> Error "process argv is empty"
   | program :: args ->
       let argv = Spice_sandbox.Argv.make ~program args in
-      let env = Array.to_list env |> List.map split_env in
-      Spice_sandbox.spawn sandbox ~argv ~env
+      Spice_sandbox.spawn sandbox ~argv
       |> Result.map (fun spawn ->
           ( Spice_sandbox.Spawn.argv spawn |> Spice_sandbox.Argv.to_list,
             Spice_sandbox.Spawn.env spawn

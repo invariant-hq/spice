@@ -11,12 +11,20 @@ module Json = Jsont.Json
 module Tool = Spice_tool
 module Workspace = Spice_workspace
 
-let sandbox = Spice_sandbox.seal Spice_sandbox.Policy.direct
+let environment =
+  Spice_sandbox.Environment.make
+    ~path:(Option.value (Sys.getenv_opt "PATH") ~default:"/usr/bin:/bin")
+    ~scratch:(Spice_path.Abs.of_string_exn "/tmp") ~user_names:[]
+    ~launch:Sys.getenv_opt
+  |> Result.get_ok
+
+let sandbox =
+  Spice_sandbox.seal (Spice_sandbox.Policy.direct ~environment)
 
 let confined () =
   Spice_sandbox.Policy.confined ~reads:Spice_sandbox.Policy.All
     ~writable_roots:[] ~protected_meta:[] ~protected_paths:[]
-    ~network:Spice_sandbox.Policy.Network.Restricted
+    ~network:Spice_sandbox.Policy.Network.Restricted ~environment
 
 let fake_backend =
   Spice_sandbox.Backend.make ~id:"fake"
@@ -31,9 +39,9 @@ let enforced_sandbox =
   Spice_sandbox.seal ~backend:fake_backend (confined ())
 
 let external_sandbox =
-  Spice_sandbox.seal Spice_sandbox.Policy.external_
+  Spice_sandbox.seal (Spice_sandbox.Policy.external_ ~environment)
 
-let prepare ~argv ~env = Ok (argv, env)
+let prepare ~argv = Ok (argv, Unix.environment ())
 
 let json_obj fields =
   Json.object'

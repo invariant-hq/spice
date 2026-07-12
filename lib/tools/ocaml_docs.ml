@@ -1851,8 +1851,8 @@ let blocked_message endpoint =
        the build lock and no boot snapshot is available; run `dune describe` \
        yourself or stop the build"
 
-let prepare sandbox ~argv ~env =
-  Process.prepare ~sandbox ~env argv
+let prepare sandbox ~argv =
+  Process.prepare ~sandbox argv
   |> Result.map_error Spice_sandbox.Error.message
 
 (* Resolve the describe-backed project universe, routing through the boot

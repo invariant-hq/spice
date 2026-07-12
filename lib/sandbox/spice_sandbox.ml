@@ -5,7 +5,7 @@
 
 module Error = Error
 module Policy = Policy
-module Env = Env
+module Environment = Environment
 module Evidence = Evidence
 module Argv = Argv
 module Backend = Backend
@@ -19,6 +19,7 @@ module Bubblewrap = Bubblewrap
 type escalation = Run.escalation = Available | Denied of Error.t | Ignored
 
 let spawn = Run.spawn
+let spawn_escalated = Run.spawn_escalated
 let policy = Run.policy
 let escalation = Run.escalation
 let evidence = Run.evidence

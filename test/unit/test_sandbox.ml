@@ -31,11 +31,20 @@ let json_obj fields =
 
 let policy_value = testable ~pp:Policy.pp ~equal:Policy.equal ()
 
+let environment ?(path = "/usr/bin:/bin") ?(user_names = [])
+    ?(launch = fun _ -> None) () =
+  match
+    Sandbox.Environment.make ~path ~scratch:(abs "/scratch") ~user_names
+      ~launch
+  with
+  | Ok environment -> environment
+  | Error error -> fail (Sandbox.Environment.Error.message error)
+
 let confined ?(reads = Policy.All) ?(writable_roots = [])
     ?(protected_meta = []) ?(protected_paths = [])
     ?(network = Policy.Network.Restricted) () =
   Policy.confined ~reads ~writable_roots ~protected_meta ~protected_paths
-    ~network
+    ~network ~environment:(environment ())
 
 let evidence_value =
   testable ~pp:Sandbox.Evidence.pp ~equal:Sandbox.Evidence.equal ()
@@ -93,63 +102,81 @@ let policy_write_carveouts_are_backend_independent () =
     ]
     (Policy.write_carveouts policy)
 
-(* Env *)
+(* Environment *)
 
-let env_partition_strips_credentials () =
-  let backend =
-    Sandbox.Backend.make ~id:"fake"
-      ~available:(fun () -> Ok ())
-      ~prepare:(fun _policy ->
-        Ok (Sandbox.Backend.prepared ~prefix:[] ~profile:(Digest.string "env")))
-      ()
+let environment_is_exact () =
+  let launch = function
+    | "LANG" -> Some "en_US.UTF-8"
+    | "SPICE_TEST" -> Some "allowed"
+    | "ANTHROPIC_API_KEY" -> Some "secret"
+    | _ -> None
   in
-  let sandbox =
-    Sandbox.seal ~backend
-      (confined ~writable_roots:[ abs "/work" ] ())
-  in
-  let bindings =
+  let environment = environment ~user_names:[ "SPICE_TEST" ] ~launch () in
+  equal (list string) ~msg:"only admitted names are observable"
     [
-      ("PATH", "/usr/bin");
-      ("ANTHROPIC_API_KEY", "sk-secret");
-      ("GITHUB_TOKEN", "ghp_secret");
-      ("openai_api_key", "lowercase-secret");
-      ("SSH_AUTH_SOCK", "/tmp/agent.sock");
-      ("GPG_AGENT_INFO", "/tmp/gpg.sock:123:1");
-      ("DYLD_INSERT_LIBRARIES", "/tmp/evil.dylib");
-      ("BASH_ENV", "/tmp/evil.sh");
-      ("HOME", "/home/user");
-      ("TMPDIR", "/tmp");
+      "CLICOLOR";
+      "CLICOLOR_FORCE";
+      "GIT_PAGER";
+      "HOME";
+      "LANG";
+      "LESS";
+      "NO_COLOR";
+      "PAGER";
+      "PATH";
+      "SPICE_TEST";
+      "TEMP";
+      "TERM";
+      "TMP";
+      "TMPDIR";
     ]
+    (Sandbox.Environment.names environment);
+  equal
+    (list (pair string string))
+    ~msg:"scratch bindings and allowed values are exact"
+    [
+      ("CLICOLOR", "0");
+      ("CLICOLOR_FORCE", "0");
+      ("GIT_PAGER", "cat");
+      ("HOME", "/scratch");
+      ("LANG", "en_US.UTF-8");
+      ("LESS", "-FRX");
+      ("NO_COLOR", "1");
+      ("PAGER", "cat");
+      ("PATH", "/usr/bin:/bin");
+      ("SPICE_TEST", "allowed");
+      ("TEMP", "/scratch");
+      ("TERM", "dumb");
+      ("TMP", "/scratch");
+      ("TMPDIR", "/scratch");
+    ]
+    (Sandbox.Environment.bindings environment)
+
+let environment_rejects_unsafe_shapes () =
+  let rejects path user_names launch =
+    Result.is_error
+      (Sandbox.Environment.make ~path ~scratch:(abs "/scratch") ~user_names
+         ~launch)
   in
-  match
-    Sandbox.spawn sandbox
-      ~argv:(Sandbox.Argv.make ~program:"true" [])
-      ~env:bindings
-  with
-  | Ok spawn ->
-      equal
-        (list (pair string string))
-        ~msg:"benign bindings survive in order"
-        [ ("PATH", "/usr/bin"); ("HOME", "/home/user"); ("TMPDIR", "/tmp") ]
-        (Sandbox.Spawn.env spawn);
-      let _kept, stripped = Sandbox.Env.partition bindings in
-      equal (list string) ~msg:"stripped names only, in order"
-        [
-          "ANTHROPIC_API_KEY";
-          "GITHUB_TOKEN";
-          "openai_api_key";
-          "SSH_AUTH_SOCK";
-          "GPG_AGENT_INFO";
-          "DYLD_INSERT_LIBRARIES";
-          "BASH_ENV";
-        ]
-        stripped;
-      List.iter
-        (fun name ->
-          is_false ~msg:"no stripped value leaks through names"
-            (String.length name > 0 && String.contains name '-'))
-        stripped
-  | Error error -> fail (Sandbox.Error.message error)
+  is_true ~msg:"relative PATH entry rejected"
+    (rejects "/bin:relative" [] (fun _ -> None));
+  is_true ~msg:"duplicate user name rejected"
+    (rejects "/bin" [ "A"; "A" ] (fun _ -> None));
+  is_true ~msg:"reserved user name rejected"
+    (rejects "/bin" [ "PATH" ] (fun _ -> None));
+  is_true ~msg:"NUL value rejected"
+    (rejects "/bin" [ "A" ] (function "A" -> Some "x\000y" | _ -> None))
+
+let environment_omits_invalid_optional_inheritance () =
+  let launch = function
+    | "OCAML_TOPLEVEL_PATH" -> Some "relative"
+    | "LANG" -> Some "bad\000locale"
+    | _ -> None
+  in
+  let names = Sandbox.Environment.names (environment ~launch ()) in
+  is_false ~msg:"relative optional toolchain path is omitted"
+    (List.mem "OCAML_TOPLEVEL_PATH" names);
+  is_false ~msg:"NUL-containing optional locale is omitted"
+    (List.mem "LANG" names)
 
 (* Backend *)
 
@@ -367,10 +394,10 @@ let workspace_policy =
   confined ~writable_roots:[ abs "/work" ] ()
 
 let exec_passes_unconfined () =
-  let exec = Sandbox.seal Policy.direct in
-  let bindings = [ ("ANTHROPIC_API_KEY", "sk") ] in
+  let environment = environment () in
+  let exec = Sandbox.seal (Policy.direct ~environment) in
   (match
-     Sandbox.spawn exec ~argv:(argv "sh" [ "-c"; "true" ]) ~env:bindings
+     Sandbox.spawn exec ~argv:(argv "sh" [ "-c"; "true" ])
    with
   | Ok spawn ->
       equal (list string) ~msg:"argv passes through" [ "sh"; "-c"; "true" ]
@@ -380,7 +407,8 @@ let exec_passes_unconfined () =
         (Sandbox.Spawn.evidence spawn);
       equal
         (list (pair string string))
-        ~msg:"unconfined inherits the full environment" bindings
+        ~msg:"direct execution uses the exact environment"
+        (Sandbox.Environment.bindings environment)
         (Sandbox.Spawn.env spawn)
   | Error error -> fail (Sandbox.Error.message error));
   is_true ~msg:"unconfined ignores escalation"
@@ -389,8 +417,9 @@ let exec_passes_unconfined () =
     | Sandbox.Available | Sandbox.Denied _ -> false)
 
 let exec_passes_external () =
-  let exec = Sandbox.seal Policy.external_ in
-  match Sandbox.spawn exec ~argv:(argv "true" []) ~env:[] with
+  let environment = environment () in
+  let exec = Sandbox.seal (Policy.external_ ~environment) in
+  match Sandbox.spawn exec ~argv:(argv "true" []) with
   | Ok spawn ->
       equal (list string) ~msg:"argv passes through" [ "true" ]
         (Sandbox.Spawn.argv spawn |> argv_list);
@@ -402,14 +431,13 @@ let exec_passes_external () =
 let exec_fails_closed_by_default () =
   let exec = Sandbox.seal workspace_policy in
   is_true ~msg:"confined without a backend refuses"
-    (Result.is_error (Sandbox.spawn exec ~argv:(argv "true" []) ~env:[]))
+    (Result.is_error (Sandbox.spawn exec ~argv:(argv "true" [])))
 
 let exec_seals_confined () =
   let exec =
     Sandbox.seal ~backend:fake_backend workspace_policy
   in
-  let bindings = [ ("PATH", "/usr/bin"); ("AWS_SECRET", "x") ] in
-  match Sandbox.spawn exec ~argv:(argv "sh" [ "-c"; "true" ]) ~env:bindings with
+  match Sandbox.spawn exec ~argv:(argv "sh" [ "-c"; "true" ]) with
   | Ok spawn ->
       equal (list string) ~msg:"argv is wrapped"
         [ "fake-wrap"; "sh"; "-c"; "true" ]
@@ -420,12 +448,9 @@ let exec_seals_confined () =
         (Sandbox.Spawn.evidence spawn);
       equal
         (list (pair string string))
-        ~msg:"confined strips credentials"
-        [ ("PATH", "/usr/bin") ]
-        (Sandbox.Spawn.env spawn);
-      let _kept, stripped = Sandbox.Env.partition bindings in
-      equal (list string) ~msg:"confined reports stripped names"
-        [ "AWS_SECRET" ] stripped
+        ~msg:"confined execution uses the exact environment"
+        (Sandbox.Environment.bindings (Policy.environment workspace_policy))
+        (Sandbox.Spawn.env spawn)
   | Error error -> fail (Sandbox.Error.message error)
 
 let exec_escalation_stances () =
@@ -436,6 +461,14 @@ let exec_escalation_stances () =
     (match Sandbox.escalation workspace_write with
     | Sandbox.Available -> true
     | Sandbox.Denied _ | Sandbox.Ignored -> false);
+  (match Sandbox.spawn_escalated workspace_write ~argv:(argv "true" []) with
+  | Error error -> fail (Sandbox.Error.message error)
+  | Ok spawn ->
+      equal
+        (list (pair string string))
+        ~msg:"escalation keeps the exact environment"
+        (Sandbox.Environment.bindings (Policy.environment workspace_policy))
+        (Sandbox.Spawn.env spawn));
   let read_only =
     Sandbox.seal ~backend:fake_backend (confined ())
   in
@@ -455,7 +488,7 @@ let exec_refuses_unavailable_backend_before_preparing () =
       ()
   in
   let exec = Sandbox.seal ~backend workspace_policy in
-  match Sandbox.spawn exec ~argv:(argv "true" []) ~env:[] with
+  match Sandbox.spawn exec ~argv:(argv "true" []) with
   | Error error ->
       equal error_value ~msg:"availability error"
         (Sandbox.Error.unavailable "not available")
@@ -464,7 +497,7 @@ let exec_refuses_unavailable_backend_before_preparing () =
 
 let exec_refusal_evidence () =
   let exec = Sandbox.seal workspace_policy in
-  match Sandbox.spawn exec ~argv:(argv "true" []) ~env:[] with
+  match Sandbox.spawn exec ~argv:(argv "true" []) with
   | Error error ->
       begin match Sandbox.Evidence.refused error with
       | Sandbox.Evidence.Refused refused ->
@@ -557,22 +590,23 @@ let seatbelt_profile_shapes () =
     (String.includes ~affix:"(allow file-write*" profile);
   is_true ~msg:"carveouts use literal and subpath"
     (String.includes
-       ~affix:"(require-not (literal (param \"WRITABLE_ROOT_1_EXCLUDED_0\")))"
+       ~affix:"(require-not (literal (param \"WRITABLE_ROOT_2_EXCLUDED_0\")))"
        profile
     && String.includes
-         ~affix:"(require-not (subpath (param \"WRITABLE_ROOT_1_EXCLUDED_0\")))"
+         ~affix:"(require-not (subpath (param \"WRITABLE_ROOT_2_EXCLUDED_0\")))"
          profile);
   equal
     (list (pair string string))
     ~msg:"params bind roots and all carveouts beneath each root"
     [
-      ("WRITABLE_ROOT_0", "/private/tmp");
-      ("WRITABLE_ROOT_0_EXCLUDED_0", "/private/tmp/.git");
-      ("WRITABLE_ROOT_0_EXCLUDED_1", "/private/tmp/.spice");
-      ("WRITABLE_ROOT_1", "/work");
-      ("WRITABLE_ROOT_1_EXCLUDED_0", "/work/.git");
-      ("WRITABLE_ROOT_1_EXCLUDED_1", "/work/.spice");
-      ("WRITABLE_ROOT_1_EXCLUDED_2", "/work/.spice/store");
+      ("WRITABLE_ROOT_0", "/scratch");
+      ("WRITABLE_ROOT_1", "/private/tmp");
+      ("WRITABLE_ROOT_1_EXCLUDED_0", "/private/tmp/.git");
+      ("WRITABLE_ROOT_1_EXCLUDED_1", "/private/tmp/.spice");
+      ("WRITABLE_ROOT_2", "/work");
+      ("WRITABLE_ROOT_2_EXCLUDED_0", "/work/.git");
+      ("WRITABLE_ROOT_2_EXCLUDED_1", "/work/.spice");
+      ("WRITABLE_ROOT_2_EXCLUDED_2", "/work/.spice/store");
     ]
     params;
   is_false ~msg:"restricted network adds no network section"
@@ -592,14 +626,15 @@ let seatbelt_nested_roots_share_carveouts () =
        (fun (key, value) ->
          String.equal value "/private/tmp/ws/.git"
          && String.length key >= 15
-         && String.equal (String.sub key 0 15) "WRITABLE_ROOT_0")
+         && String.equal (String.sub key 0 15) "WRITABLE_ROOT_1")
        params)
 
 let seatbelt_read_only_profile () =
   let profile, params = Seatbelt.profile (confined ()) in
-  is_false ~msg:"read-only has no write allowance section"
+  is_true ~msg:"read-only permits its private scratch"
     (String.includes ~affix:"(allow file-write*\n" profile);
-  equal (list (pair string string)) ~msg:"read-only binds no params" [] params
+  equal (list (pair string string)) ~msg:"read-only binds only scratch"
+    [ ("WRITABLE_ROOT_0", "/scratch") ] params
 
 let seatbelt_network_enabled () =
   let policy = confined ~network:Policy.Network.Enabled () in
@@ -662,8 +697,10 @@ let () =
       test "policy distinguishes network state" policy_distinguishes_network;
       test "policy computes write carveouts once"
         policy_write_carveouts_are_backend_independent;
-      test "env partition strips credential shapes"
-        env_partition_strips_credentials;
+      test "environment admits an exact name set" environment_is_exact;
+      test "environment rejects unsafe shapes" environment_rejects_unsafe_shapes;
+      test "environment omits invalid optional inheritance"
+        environment_omits_invalid_optional_inheritance;
       test "refusing backend fails closed" backend_none_refuses;
       test "backend validates identity" backend_validates;
       test "backend validates wrapper prefix program"
@@ -699,7 +736,8 @@ let () =
       test "seatbelt profile encodes the policy" seatbelt_profile_shapes;
       test "seatbelt nested roots share carveouts"
         seatbelt_nested_roots_share_carveouts;
-      test "seatbelt read-only allows no writes" seatbelt_read_only_profile;
+      test "seatbelt read-only writes only private scratch"
+        seatbelt_read_only_profile;
       test "seatbelt enabled network opens platform services"
         seatbelt_network_enabled;
       test "seatbelt profile hash is canonical" seatbelt_hash_is_stable;

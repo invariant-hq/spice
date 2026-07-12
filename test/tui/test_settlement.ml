@@ -155,8 +155,9 @@ let%expect_test "run construction does not read a workspace-sized review source"
     Spice_workspace.single (Spice_workspace.Root.make (Host.Config.cwd config))
   in
   let sandbox =
-    Host.Sandbox.resolve ~flag:Host.Sandbox.Mode.Danger_full_access ~stdenv
+    Host.Sandbox.resolve ~sw ~flag:Host.Sandbox.Mode.Danger_full_access ~stdenv
       ~env:(Host.Env.get process_env) ~workspace ()
+    |> get_or_fail Host.Sandbox.Resolve_error.pp
   in
   let plan =
     Host.Run.plan ~workspace ~sandbox
@@ -215,8 +216,9 @@ let%expect_test "an oversized watcher snapshot warns and run close stays bounded
     Spice_workspace.single (Spice_workspace.Root.make (Host.Config.cwd config))
   in
   let sandbox =
-    Host.Sandbox.resolve ~flag:Host.Sandbox.Mode.Danger_full_access ~stdenv
+    Host.Sandbox.resolve ~sw ~flag:Host.Sandbox.Mode.Danger_full_access ~stdenv
       ~env:(Host.Env.get process_env) ~workspace ()
+    |> get_or_fail Host.Sandbox.Resolve_error.pp
   in
   let plan =
     Host.Run.plan ~workspace ~sandbox
@@ -279,8 +281,9 @@ let%expect_test
     Spice_workspace.single (Spice_workspace.Root.make (Host.Config.cwd config))
   in
   let sandbox =
-    Host.Sandbox.resolve ~flag:Host.Sandbox.Mode.Danger_full_access ~stdenv
+    Host.Sandbox.resolve ~sw ~flag:Host.Sandbox.Mode.Danger_full_access ~stdenv
       ~env:(Host.Env.get process_env) ~workspace ()
+    |> get_or_fail Host.Sandbox.Resolve_error.pp
   in
   let plan =
     Host.Run.plan ~workspace ~sandbox
@@ -399,8 +402,9 @@ let%expect_test
     Spice_workspace.single (Spice_workspace.Root.make (Host.Config.cwd config))
   in
   let sandbox =
-    Host.Sandbox.resolve ~flag:Host.Sandbox.Mode.Danger_full_access ~stdenv
+    Host.Sandbox.resolve ~sw ~flag:Host.Sandbox.Mode.Danger_full_access ~stdenv
       ~env:(Host.Env.get process_env) ~workspace ()
+    |> get_or_fail Host.Sandbox.Resolve_error.pp
   in
   let plan =
     Host.Run.plan ~workspace ~sandbox
@@ -571,8 +575,9 @@ let%expect_test "closing a live session interrupts and joins its blocked turn" =
     Spice_workspace.single (Spice_workspace.Root.make (Host.Config.cwd config))
   in
   let sandbox =
-    Host.Sandbox.resolve ~flag:Host.Sandbox.Mode.Danger_full_access
+    Host.Sandbox.resolve ~sw ~flag:Host.Sandbox.Mode.Danger_full_access
       ~stdenv ~env:(Host.Env.get process_env) ~workspace ()
+    |> get_or_fail Host.Sandbox.Resolve_error.pp
   in
   let plan =
     Host.Run.plan ~workspace ~sandbox

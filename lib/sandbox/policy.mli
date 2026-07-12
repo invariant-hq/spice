@@ -47,9 +47,10 @@ type t = private
       protected_meta : string list;
       protected_paths : Spice_path.Abs.t list;
       network : Network.t;
+      environment : Environment.t;
     }
-  | Direct
-  | External
+  | Direct of Environment.t
+  | External of Environment.t
       (** The type for command sandbox policies.
 
           [Direct] requests no Spice filesystem or network confinement.
@@ -61,6 +62,7 @@ val confined :
   protected_meta:string list ->
   protected_paths:Spice_path.Abs.t list ->
   network:Network.t ->
+  environment:Environment.t ->
   t
 (** [confined ~reads ~writable_roots ~protected_meta ~protected_paths ~network]
     is a confined policy with normalized lists.
@@ -71,13 +73,17 @@ val confined :
     Raises [Invalid_argument] if an element of [protected_meta] is not a single
     valid path component. *)
 
-val direct : t
-(** [direct] requests direct execution without Spice filesystem or network
+val direct : environment:Environment.t -> t
+(** [direct ~environment] requests direct execution without Spice filesystem or network
     confinement. *)
 
-val external_ : t
-(** [external_] declares an external confinement boundary that Spice does not
+val external_ : environment:Environment.t -> t
+(** [external_ ~environment] declares an external confinement boundary that Spice does not
     verify. *)
+
+val environment : t -> Environment.t
+(** [environment t] is the exact child environment shared by every execution
+    route for [t]. *)
 
 val reads : t -> reads option
 (** [reads t] is [Some reads] for a confined policy and [None] for direct and

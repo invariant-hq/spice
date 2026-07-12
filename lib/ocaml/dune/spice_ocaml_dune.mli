@@ -67,10 +67,11 @@ module Describe : sig
 
   type prepare =
     argv:string list ->
-    env:string array ->
     (string list * string array, string) result
   (** A host-supplied process preparation boundary. [Ok (argv, env)] is the
-      exact invocation to execute; [Error message] refuses the spawn. *)
+      exact invocation and environment to execute; [Error message] refuses the
+      spawn. The preparation boundary owns the child environment rather than
+      receiving an ambient candidate from the adapter. *)
 
   val workspace_args : ?with_deps:bool -> ?recursive:bool -> unit -> string list
   (** [workspace_args ()] is the [dune describe workspace] argv used by the

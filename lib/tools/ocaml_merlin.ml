@@ -13,27 +13,6 @@ let default_max_output_bytes = 1024 * 1024
    truncated so a single failing query cannot flood the tool result. *)
 let max_detail_bytes = 4096
 
-(* Non-interactive child environment: keep the OCaml driver and merlin from
-   colourising stderr regardless of the inherited [TERM]. Defence in depth —
-   the child's stderr is already a pipe — paired with {!strip_detail}. *)
-let non_interactive_names = [ "TERM"; "NO_COLOR"; "CLICOLOR"; "CLICOLOR_FORCE" ]
-
-let non_interactive_overlay =
-  [| "TERM=dumb"; "NO_COLOR=1"; "CLICOLOR=0"; "CLICOLOR_FORCE=0" |]
-
-let env_binding_name binding =
-  match String.index_opt binding '=' with
-  | Some i -> String.sub binding 0 i
-  | None -> binding
-
-let with_non_interactive_env env =
-  let kept =
-    Array.to_list env
-    |> List.filter (fun binding ->
-        not (List.mem (env_binding_name binding) non_interactive_names))
-  in
-  Array.append (Array.of_list kept) non_interactive_overlay
-
 (* Strip CSI escapes from model-facing subprocess text. Mirrors the decode-
    boundary strip in {!Spice_tool.Input}; the shared home is a deferred infra
    text module. *)
@@ -182,7 +161,7 @@ let warm_dev_tool ~sandbox ~cwd ~env ~timeout_ms ~tool ~configured =
     | [] -> configured
   in
   let warm =
-    Process.run_sandboxed_shell ~sandbox ~cwd ~env ~timeout_ms
+    Process.run_sandboxed_shell ~sandbox ~cwd ~timeout_ms
       ~max_output_bytes:default_max_output_bytes
       ~cancelled:(fun () -> false)
       configured
@@ -318,7 +297,7 @@ let run ~sandbox ~program ~cwd ?(env = Unix.environment ())
     ~cancelled () =
   (* [program] is usually already an absolute path from {!resolve_program}; pin
      it here too so a direct bare call still bypasses the process-[PATH] search. *)
-  let env, program =
+  let program =
     match program with
     | head :: rest -> (
         let toolchain =
@@ -326,14 +305,13 @@ let run ~sandbox ~program ~cwd ?(env = Unix.environment ())
         in
         match Spice_ocaml_toolchain.find toolchain head with
         | Some (exe, _) ->
-            (Spice_ocaml_toolchain.env toolchain ~program:head, exe :: rest)
-        | None -> (env, program))
-    | [] -> (env, program)
+            exe :: rest
+        | None -> program)
+    | [] -> program
   in
   let command_argv = argv ~program ~command ~args in
-  let env = with_non_interactive_env env in
   let result =
-    Process.run_sandboxed_shell ~sandbox ~cwd ~env ~timeout_ms ~max_output_bytes
+    Process.run_sandboxed_shell ~sandbox ~cwd ~timeout_ms ~max_output_bytes
       ~stdin:source ~cancelled command_argv
   in
   match result.Process.shell_status with

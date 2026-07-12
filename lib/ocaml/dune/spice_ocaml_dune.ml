@@ -173,7 +173,6 @@ module Describe = struct
 
   type prepare =
     argv:string list ->
-    env:string array ->
     (string list * string array, string) result
 
   let log_src =
@@ -751,9 +750,8 @@ module Describe = struct
              })
     | Some (executable, _) -> (
         try
-          let env = Spice_ocaml_toolchain.env toolchain ~program:"dune" in
           let command = executable :: List.tl argv in
-          match prepare ~argv:command ~env with
+          match prepare ~argv:command with
           | Error message ->
               Error
                 (Error.Command_failed
@@ -1496,7 +1494,6 @@ module Rpc = struct
             | Some (exe, _) -> exe
             | None -> "dune"
           in
-          let env = Spice_ocaml_toolchain.env toolchain ~program:"dune" in
           let command =
             [
               "/bin/sh";
@@ -1509,7 +1506,7 @@ module Rpc = struct
           in
           try
             let command, env =
-              match prepare ~argv:command ~env with
+              match prepare ~argv:command with
               | Ok prepared -> prepared
               | Error message -> failwith message
             in

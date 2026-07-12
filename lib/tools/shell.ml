@@ -163,34 +163,34 @@ module Config = struct
     default_timeout_ms : int;
     max_timeout_ms : int;
     max_output_bytes : int;
-    environment : (string * string option) list;
     toolchain_root : Spice_path.Abs.t option;
   }
 
   let default_shell =
     if String.equal Sys.os_type "Win32" then "cmd.exe" else "/bin/sh"
 
-  let validate_env_binding = function
-    | "", _ -> invalid_arg "environment name must not be empty"
-    | name, _ when contains_nul name ->
-        invalid_arg "environment name must not contain NUL"
-    | name, _ when String.contains name '=' ->
-        invalid_arg "environment name must not contain ="
-    | _, Some value when contains_nul value ->
-        invalid_arg "environment value must not contain NUL"
-    | _, None | _, Some _ -> ()
-
   (* Fail closed: a confined request sealed without a backend refuses every
      command. The host passes real authority in. *)
   let default_sandbox () =
+    let scratch = Spice_path.Abs.of_string_exn "/tmp" in
+    let path = Option.value (Sys.getenv_opt "PATH") ~default:"/usr/bin:/bin" in
+    let environment =
+      match
+        Spice_sandbox.Environment.make ~path ~scratch ~user_names:[]
+          ~launch:Sys.getenv_opt
+      with
+      | Ok environment -> environment
+      | Error error ->
+          invalid_arg (Spice_sandbox.Environment.Error.message error)
+    in
     Spice_sandbox.seal
       (Spice_sandbox.Policy.confined ~reads:Spice_sandbox.Policy.All
          ~writable_roots:[] ~protected_meta:[] ~protected_paths:[]
-         ~network:Spice_sandbox.Policy.Network.Restricted)
+         ~network:Spice_sandbox.Policy.Network.Restricted ~environment)
 
   let make ?(shell = default_shell) ?sandbox ?(network_restricted = false)
       ?(default_timeout_ms = 60_000) ?(max_timeout_ms = 600_000)
-      ?(max_output_bytes = 65_536) ?(environment = []) ?toolchain_root () =
+      ?(max_output_bytes = 65_536) ?toolchain_root () =
     let sandbox =
       match sandbox with Some sandbox -> sandbox | None -> default_sandbox ()
     in
@@ -203,7 +203,6 @@ module Config = struct
       invalid_arg "default_timeout_ms must be <= max_timeout_ms";
     if max_output_bytes < 0 then
       invalid_arg "max_output_bytes must be non-negative";
-    List.iter validate_env_binding environment;
     {
       shell;
       sandbox;
@@ -211,7 +210,6 @@ module Config = struct
       default_timeout_ms;
       max_timeout_ms;
       max_output_bytes;
-      environment;
       toolchain_root;
     }
 
@@ -221,7 +219,6 @@ module Config = struct
   let default_timeout_ms t = t.default_timeout_ms
   let max_timeout_ms t = t.max_timeout_ms
   let max_output_bytes t = t.max_output_bytes
-  let environment t = t.environment
   let toolchain_root t = t.toolchain_root
 
   let resolve_timeout_ms t = function
@@ -750,77 +747,18 @@ let shell_command shell command =
   | [] -> invalid_arg "shell command argv must not be empty"
   | program :: args -> Spice_sandbox.Argv.make ~program args
 
-module String_map = Map.Make (String)
-
-let split_env binding =
-  match String.split_first ~sep:"=" binding with
-  | None -> (binding, Some "")
-  | Some (name, value) -> (name, Some value)
-
-let deterministic_overlay =
-  [
-    ("TERM", Some "dumb");
-    ("NO_COLOR", Some "1");
-    ("CLICOLOR", Some "0");
-    ("CLICOLOR_FORCE", Some "0");
-    ("PAGER", Some "cat");
-    ("GIT_PAGER", Some "cat");
-    ("LESS", Some "-FRX");
-  ]
-
-let apply_env_overlay env overlay =
-  List.fold_left
-    (fun env -> function
-      | name, Some value -> String_map.add name value env
-      | name, None -> String_map.remove name env)
-    env overlay
-
-let process_environment config =
-  let inherited =
-    Array.fold_left
-      (fun env binding ->
-        match split_env binding with
-        | "", _ -> env
-        | name, None -> String_map.remove name env
-        | name, Some value -> String_map.add name value env)
-      String_map.empty (Unix.environment ())
-  in
-  let with_defaults = apply_env_overlay inherited deterministic_overlay in
-  let with_config =
-    apply_env_overlay with_defaults (Config.environment config)
-  in
-  String_map.bindings with_config
-
 let environment_array bindings =
   bindings
   |> List.map (fun (name, value) -> name ^ "=" ^ value)
   |> Array.of_list
 
-(* The inner [/bin/sh] resolves a bare program against this environment's
-   [PATH]. Recover the OCaml toolchain the way every direct OCaml spawn does —
-   a no-op when [dune] already resolves — so a session launched without the
-   switch on [PATH] still runs [dune] from the shell tool. The adjustment
-   precedes the sandbox partition, which never strips [PATH]; the search space
-   is also what the exit-127 note consults. *)
-let with_toolchain ~workspace_root bindings =
+(* Diagnose exit-127 against the same exact environment the child receives.
+   Discovery may explain a trusted workspace toolchain, but it does not mutate
+   [PATH]; admitting additional executable roots belongs to host resolution. *)
+let discover_toolchain ~workspace_root bindings =
   let env = environment_array bindings in
-  let toolchain =
-    Spice_ocaml_toolchain.discover ~env
-      ~workspace_root:(Option.map Spice_path.Abs.to_string workspace_root)
-  in
-  let adjusted = Spice_ocaml_toolchain.env toolchain ~program:"dune" in
-  let bindings =
-    if adjusted == env then bindings
-    else
-      Array.to_list adjusted
-      |> List.map (fun binding ->
-          match String.index_opt binding '=' with
-          | Some i ->
-              ( String.sub binding 0 i,
-                String.sub binding (i + 1) (String.length binding - i - 1) )
-          | None -> (binding, ""))
-  in
-  (toolchain, bindings)
+  Spice_ocaml_toolchain.discover ~env
+    ~workspace_root:(Option.map Spice_path.Abs.to_string workspace_root)
 
 let status_of_process : Process.shell_status -> Output.status = function
   | Process.Shell_exited code -> Output.Exited code
@@ -1021,9 +959,14 @@ let run ~fs ~workspace ~config ?(cancelled = default_cancelled) input =
             let argv =
               shell_command (Config.shell config) (Input.command input)
             in
-            let toolchain, base_env =
-              with_toolchain ~workspace_root:(Config.toolchain_root config)
-                (process_environment config)
+            let exact_env =
+              Spice_sandbox.Policy.environment
+                (Spice_sandbox.policy (Config.sandbox config))
+              |> Spice_sandbox.Environment.bindings
+            in
+            let toolchain =
+              discover_toolchain ~workspace_root:(Config.toolchain_root config)
+                exact_env
             in
             let run_spawn ~argv ~env ~enforcement =
               let result =
@@ -1055,19 +998,24 @@ let run ~fs ~workspace ~config ?(cancelled = default_cancelled) input =
                 in
                 Tool.Result.failed ~output `Unavailable message
             | Escalated ->
-                (* Reaching execution means the escalation access was
-                   approved by policy or reviewer. Escalation drops the
-                   filesystem confinement, not the credential strip: a command
-                   run outside the sandbox still must not inherit secrets or
-                   loader-injection variables. Only danger-full-access
-                   (Unconfined) passes the environment verbatim, deliberately. *)
-                let env, _stripped = Spice_sandbox.Env.partition base_env in
-                run_spawn ~argv ~env
-                  ~enforcement:Spice_sandbox.Evidence.not_requested
+                (* Reaching execution means the escalation access was approved
+                   by policy or reviewer. The sealed sandbox drops filesystem
+                   and network confinement while retaining its exact child
+                   environment. *)
+                (match
+                   Spice_sandbox.spawn_escalated (Config.sandbox config) ~argv
+                 with
+                | Error error ->
+                    Tool.Result.failed `Invalid_input
+                      (Spice_sandbox.Error.message error)
+                | Ok spawn ->
+                    run_spawn
+                      ~argv:(Spice_sandbox.Spawn.argv spawn)
+                      ~env:(Spice_sandbox.Spawn.env spawn)
+                      ~enforcement:(Spice_sandbox.Spawn.evidence spawn))
             | Enforced | External | Direct -> (
                 match
                   Spice_sandbox.spawn (Config.sandbox config) ~argv
-                    ~env:base_env
                 with
                 | Error error ->
                     let message = Spice_sandbox.Error.message error in

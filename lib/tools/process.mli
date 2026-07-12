@@ -127,10 +127,9 @@ val run_shell_fd :
 
 val prepare :
   sandbox:Spice_sandbox.t ->
-  env:string array ->
   string list ->
   (string list * string array, Spice_sandbox.Error.t) Stdlib.result
-(** [prepare ~sandbox ~env argv] is the exact argv and environment selected by
+(** [prepare ~sandbox argv] is the exact argv and environment selected by
     [sandbox] for [argv]. An empty argv and a sandbox refusal are errors. *)
 
 val run_sandboxed :
@@ -148,14 +147,13 @@ val run_sandboxed :
 val run_sandboxed_shell :
   sandbox:Spice_sandbox.t ->
   cwd:string ->
-  env:string array ->
   timeout_ms:int ->
   max_output_bytes:int ->
   ?stdin:string ->
   cancelled:(unit -> bool) ->
   string list ->
   shell_result
-(** [run_sandboxed_shell ~sandbox ~cwd ~env argv] prepares [argv] and the exact
-    [env] through [sandbox] before executing it with {!run_shell}'s timeout,
+(** [run_sandboxed_shell ~sandbox ~cwd argv] prepares [argv] and the policy's
+    exact environment before executing it with {!run_shell}'s timeout,
     cancellation, process-group, and bounded-output semantics. A refusal is
     returned as [Shell_refused] and starts no process. *)

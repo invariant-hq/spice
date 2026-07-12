@@ -282,8 +282,8 @@ let blocked_message endpoint =
        and no boot snapshot is available; run `dune describe` yourself or stop \
        the build"
 
-let prepare sandbox ~argv ~env =
-  Process.prepare ~sandbox ~env argv
+let prepare sandbox ~argv =
+  Process.prepare ~sandbox argv
   |> Result.map_error Spice_sandbox.Error.message
 
 let run ~sandbox ~process_mgr ~clock ~cwd ~workspace ?project_source ctx () =

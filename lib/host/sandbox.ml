@@ -85,6 +85,23 @@ module Gate_error = struct
   let pp ppf t = Format.pp_print_string ppf (message t)
 end
 
+module Resolve_error = struct
+  type t =
+    | Invalid_scratch_base of Spice_path.Error.t
+    | Scratch_creation_failed of string
+    | Invalid_environment of Spice_sandbox.Environment.Error.t
+
+  let message = function
+    | Invalid_scratch_base error ->
+        "invalid TMPDIR for sandbox scratch: " ^ Spice_path.Error.message error
+    | Scratch_creation_failed message ->
+        "could not create sandbox scratch directory: " ^ message
+    | Invalid_environment error ->
+        Spice_sandbox.Environment.Error.message error
+
+  let pp ppf t = Format.pp_print_string ppf (message t)
+end
+
 module Status = struct
   type origin = Flag | Config | Default
   type network = Restricted | Enabled | External
@@ -132,16 +149,17 @@ let protected_meta_names = Spice_workspace_fs.protected_meta_names
 (* Network applies to both confined modes: read-only and workspace-write can
    each opt into outbound access without becoming unconfined. Unconfined and
    declared-external already own network by construction. *)
-let sandbox_of_mode ~writable ~protect ~network = function
+let sandbox_of_mode ~environment ~writable ~protect ~network = function
   | Mode.Read_only ->
       Spice_sandbox.Policy.confined ~reads:Spice_sandbox.Policy.All
         ~writable_roots:[] ~protected_meta:[] ~protected_paths:[] ~network
+        ~environment
   | Mode.Workspace_write ->
       Spice_sandbox.Policy.confined ~reads:Spice_sandbox.Policy.All
         ~writable_roots:writable ~protected_meta:protected_meta_names
-        ~protected_paths:protect ~network
-  | Mode.Danger_full_access -> Spice_sandbox.Policy.direct
-  | Mode.External_sandbox -> Spice_sandbox.Policy.external_
+        ~protected_paths:protect ~network ~environment
+  | Mode.Danger_full_access -> Spice_sandbox.Policy.direct ~environment
+  | Mode.External_sandbox -> Spice_sandbox.Policy.external_ ~environment
 
 module Effective = struct
   type t = {
@@ -168,8 +186,8 @@ module Effective = struct
 
   let network t =
     match t.policy with
-    | Spice_sandbox.Policy.Direct -> Status.Enabled
-    | Spice_sandbox.Policy.External -> Status.External
+    | Spice_sandbox.Policy.Direct _ -> Status.Enabled
+    | Spice_sandbox.Policy.External _ -> Status.External
     | Spice_sandbox.Policy.Confined policy -> (
         match policy.network with
         | Spice_sandbox.Policy.Network.Restricted -> Status.Restricted
@@ -179,8 +197,8 @@ module Effective = struct
      the platform's candidate would be misleading and platform-dependent. *)
   let backend_display t =
     match t.policy with
-    | Spice_sandbox.Policy.Direct -> "none"
-    | Spice_sandbox.Policy.External -> "external"
+    | Spice_sandbox.Policy.Direct _ -> "none"
+    | Spice_sandbox.Policy.External _ -> "external"
     | Spice_sandbox.Policy.Confined _ -> Spice_sandbox.Backend.id t.backend
 
   let status t =
@@ -204,20 +222,6 @@ let canonical path =
       | Ok real -> real
       | Error _ -> path)
   | exception Unix.Unix_error _ -> path
-
-let temp_dirs ~env =
-  let tmpdir =
-    match env "TMPDIR" with
-    | None -> []
-    | Some value -> (
-        match Spice_path.Abs.of_string value with
-        | Ok path -> [ path ]
-        | Error _ -> [])
-  in
-  (match Spice_path.Abs.of_string "/tmp" with
-    | Ok tmp when Sys.file_exists "/tmp" -> [ tmp ]
-    | Ok _ | Error _ -> [])
-  @ tmpdir
 
 (* Expand a leading [~] against [$HOME] and parse to an absolute path. A bare
    relative spelling has no unambiguous meaning for a writable root, so only
@@ -358,9 +362,52 @@ let host_backend ~stdenv ~env =
           Spice_sandbox.Backend.none
             ~reason:"no supported sandbox backend on this platform")
 
-let resolve ?flag ?config_mode ?(require = Require.Enforced) ?(protect = [])
+let ( let* ) = Result.bind
+
+let scratch_base ~env =
+  match env "TMPDIR" with
+  | None -> Ok (Spice_path.Abs.of_string_exn "/tmp")
+  | Some path ->
+      Spice_path.Abs.of_string path
+      |> Result.map_error (fun error -> Resolve_error.Invalid_scratch_base error)
+
+let create_scratch ~sw ~stdenv ~env =
+  let* base = scratch_base ~env in
+  let base = Spice_path.Abs.to_string base in
+  match Filename.temp_dir ~temp_dir:base "spice-sandbox-" "" with
+  | path -> (
+      match Unix.chmod path 0o700 with
+      | () -> (
+          match Spice_path.Abs.of_string path with
+          | Error error ->
+              Error
+                (Resolve_error.Scratch_creation_failed
+                   (Spice_path.Error.message error))
+          | Ok scratch ->
+              let scratch = canonical scratch in
+              let fs = Eio.Stdenv.fs stdenv in
+              Eio.Switch.on_release sw (fun () ->
+                  let ( / ) = Eio.Path.( / ) in
+                  Eio.Path.rmtree ~missing_ok:true
+                    (fs / Spice_path.Abs.to_string scratch));
+              Ok scratch)
+      | exception Unix.Unix_error (error, fn, arg) ->
+          Error
+            (Resolve_error.Scratch_creation_failed
+               (Printf.sprintf "%s in %s(%s)" (Unix.error_message error) fn arg)))
+  | exception exn ->
+      Error (Resolve_error.Scratch_creation_failed (Printexc.to_string exn))
+
+let resolve ~sw ?flag ?config_mode ?(require = Require.Enforced) ?(protect = [])
     ?(writable_roots = []) ?(network = Network.Restricted)
     ?(toolchain_caches = true) ~stdenv ~env ~workspace () =
+  let* scratch = create_scratch ~sw ~stdenv ~env in
+  let* environment =
+    Spice_sandbox.Environment.make
+      ~path:(Option.value (env "PATH") ~default:"")
+      ~scratch ~user_names:[] ~launch:env
+    |> Result.map_error (fun error -> Resolve_error.Invalid_environment error)
+  in
   let mode, origin =
     match (flag, config_mode) with
     | Some mode, _ -> (mode, Status.Flag)
@@ -374,24 +421,23 @@ let resolve ?flag ?config_mode ?(require = Require.Enforced) ?(protect = [])
     List.map
       (fun root -> canonical (Spice_workspace.Root.dir root))
       (Spice_workspace.roots workspace)
-    @ List.map canonical (temp_dirs ~env)
     @ List.map canonical (config_writable_roots ~env writable_roots)
     @ List.map canonical preset_roots
   in
   let protect = List.map canonical protect in
-  let policy = sandbox_of_mode ~writable ~protect ~network mode in
+  let policy = sandbox_of_mode ~environment ~writable ~protect ~network mode in
   let backend = host_backend ~stdenv ~env in
   let sandbox = Spice_sandbox.seal ~backend policy in
-  { Effective.mode; origin; require; policy; backend; sandbox }
+  Ok { Effective.mode; origin; require; policy; backend; sandbox }
 
 let gate effective =
   match
     (Effective.policy effective, (effective.Effective.require : Require.t))
   with
   | _, Require.Off -> Ok ()
-  | Spice_sandbox.Policy.Direct, _ -> Ok ()
-  | Spice_sandbox.Policy.External, Require.Enforced_or_external -> Ok ()
-  | Spice_sandbox.Policy.External, Require.Enforced ->
+  | Spice_sandbox.Policy.Direct _, _ -> Ok ()
+  | Spice_sandbox.Policy.External _, Require.Enforced_or_external -> Ok ()
+  | Spice_sandbox.Policy.External _, Require.Enforced ->
       Error Gate_error.External_not_enforced
   | Spice_sandbox.Policy.Confined _, _ -> (
       match Effective.backend_available effective with

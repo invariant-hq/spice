@@ -97,7 +97,12 @@ let existing root = Sys.file_exists (path root)
    a required toolchain binary has to be a readable root, or confined commands
    lose the toolchain. *)
 let filesystem_args policy =
-  let roots = List.filter existing (Policy.writable_roots policy) in
+  let scratch =
+    Policy.environment policy |> Environment.scratch
+  in
+  let roots =
+    List.filter existing (scratch :: Policy.writable_roots policy)
+  in
   let carveouts = Policy.write_carveouts policy in
   [ "--ro-bind"; "/"; "/"; "--dev"; "/dev" ]
   @ List.concat_map bind_writable roots

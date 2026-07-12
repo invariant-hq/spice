@@ -98,6 +98,18 @@ module Gate_error : sig
   (** [pp ppf t] formats [t]'s {!message}. *)
 end
 
+module Resolve_error : sig
+  (** Recoverable failures while constructing run-owned sandbox resources. *)
+
+  type t =
+    | Invalid_scratch_base of Spice_path.Error.t
+    | Scratch_creation_failed of string
+    | Invalid_environment of Spice_sandbox.Environment.Error.t
+
+  val message : t -> string
+  val pp : Format.formatter -> t -> unit
+end
+
 (** {1:status Display posture} *)
 
 module Status : sig
@@ -192,6 +204,7 @@ end
 (** {1:resolution Resolution and gating} *)
 
 val resolve :
+  sw:Eio.Switch.t ->
   ?flag:Mode.t ->
   ?config_mode:Mode.t ->
   ?require:Require.t ->
@@ -203,17 +216,18 @@ val resolve :
   env:(string -> string option) ->
   workspace:Spice_workspace.t ->
   unit ->
-  Effective.t
-(** [resolve ~stdenv ~env ~workspace ()] resolves the effective posture.
+  (Effective.t, Resolve_error.t) result
+(** [resolve ~sw ~stdenv ~env ~workspace ()] resolves the effective posture.
 
     [flag] is the per-run CLI override and wins over [config_mode], which wins
     over the built-in default {!Mode.Workspace_write}. [require] defaults to
     {!Require.Enforced}. [protect] are additional protected absolute paths
     (Spice's own store paths); it defaults to none.
 
-    Confined modes make the workspace roots (workspace-write only), [/tmp], and
-    [$TMPDIR] writable, canonicalized with [realpath] where they exist so the
-    described confinement matches the enforced one. [stdenv] supplies the
+    Resolution creates a mode-[0700] scratch directory owned by [sw]. Every
+    child route receives it as [HOME], [TMPDIR], [TMP], and [TEMP], and confined
+    backends make only that private temporary directory writable. Workspace
+    roots remain writable in workspace-write mode. [stdenv] supplies the
     process and clock capabilities for a bounded platform availability probe.
     [env] supplies [$TMPDIR] and the private deterministic host test seam:
     [_SPICE_TEST_SANDBOX_UNAVAILABLE=1] forces the refusing backend, while

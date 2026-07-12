@@ -10,7 +10,14 @@ module Shell = Spice_tools.Shell
 module Tool = Spice_tool
 module Workspace = Spice_workspace
 
-let sandbox = Spice_sandbox.seal Spice_sandbox.Policy.direct
+let environment =
+  Spice_sandbox.Environment.make ~path:"/usr/bin:/bin"
+    ~scratch:(Spice_path.Abs.of_string_exn "/tmp") ~user_names:[]
+    ~launch:(Fun.const None)
+  |> Result.get_ok
+
+let sandbox =
+  Spice_sandbox.seal (Spice_sandbox.Policy.direct ~environment)
 
 let abs path =
   match Spice_path.Abs.of_string path with

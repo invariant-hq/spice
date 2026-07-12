@@ -9,7 +9,14 @@ module Json = Jsont.Json
 module Tool = Spice_tool
 module Workspace = Spice_workspace
 
-let sandbox = Spice_sandbox.seal Spice_sandbox.Policy.direct
+let environment =
+  Spice_sandbox.Environment.make ~path:"/usr/bin:/bin"
+    ~scratch:(Spice_path.Abs.of_string_exn "/tmp") ~user_names:[]
+    ~launch:(Fun.const None)
+  |> Result.get_ok
+
+let sandbox =
+  Spice_sandbox.seal (Spice_sandbox.Policy.direct ~environment)
 
 let json_obj fields =
   Json.object'
@@ -430,7 +437,7 @@ let%expect_test "sandbox refusal prevents ripgrep spawn" =
     Spice_sandbox.seal
       (Spice_sandbox.Policy.confined ~reads:Spice_sandbox.Policy.All
          ~writable_roots:[] ~protected_meta:[] ~protected_paths:[]
-         ~network:Spice_sandbox.Policy.Network.Restricted)
+         ~network:Spice_sandbox.Policy.Network.Restricted ~environment)
   in
   Glob.run ~sandbox:refusing ~fs ~workspace (Glob.Input.make "**/*.ml")
   |> print_result;

@@ -9,7 +9,15 @@ module Json = Jsont.Json
 module Tool = Spice_tool
 module Workspace = Spice_workspace
 
-let sandbox = Spice_sandbox.seal Spice_sandbox.Policy.direct
+let environment =
+  Spice_sandbox.Environment.make
+    ~path:(Option.value (Sys.getenv_opt "PATH") ~default:"/usr/bin:/bin")
+    ~scratch:(Spice_path.Abs.of_string_exn "/tmp") ~user_names:[]
+    ~launch:Sys.getenv_opt
+  |> Result.get_ok
+
+let sandbox =
+  Spice_sandbox.seal (Spice_sandbox.Policy.direct ~environment)
 
 let json_obj fields =
   Json.object'

@@ -30,16 +30,18 @@ let platform_facts () =
   else ("unix", false)
 
 (* One resolution feeds both status and explain. *)
-let resolve_posture ~stdenv host =
+let resolve_posture ~sw ~stdenv host =
   let open Result.Syntax in
   let* workspace =
     Spice_host.workspace host
     |> Result.map_error (fun error ->
         `Runtime (Spice_host.Host.Error.message error))
   in
-  let effective =
-    resolve_sandbox ~stdenv host ~workspace
+  let* effective =
+    resolve_sandbox ~sw ~stdenv host ~workspace
       { sandbox_flag = None; require_sandbox = false }
+    |> Result.map_error (fun error ->
+        `Runtime (Host_sandbox.Resolve_error.message error))
   in
   Ok (workspace, effective)
 
@@ -142,7 +144,8 @@ let status_json host effective =
 
 let status json verbose overrides cwd =
   with_loaded_host ?cwd ~overrides @@ fun ~stdenv host ->
-  match resolve_posture ~stdenv host with
+  Eio.Switch.run @@ fun sw ->
+  match resolve_posture ~sw ~stdenv host with
   | Error (`Runtime message) -> Runtime_error message
   | Ok (_workspace, effective) ->
       if json then
@@ -174,18 +177,14 @@ let display_path ~workspace path =
     | Some rel -> "./" ^ Spice_path.Rel.to_string rel
     | None -> Spice_path.Abs.to_string path
 
-let environment_counts effective =
-  match Effective.policy effective with
-  | Sandbox.Policy.Direct | Sandbox.Policy.External -> None
-  | Sandbox.Policy.Confined _ ->
-      let bindings = Spice_host.Env.current () |> Spice_host.Env.to_list in
-      let kept, stripped = Sandbox.Env.partition bindings in
-      Some (List.length kept, List.length stripped)
+let environment_names effective =
+  Effective.policy effective |> Sandbox.Policy.environment
+  |> Sandbox.Environment.names
 
 let policy_facts effective =
   match Effective.policy effective with
   | Sandbox.Policy.Confined _ as policy -> Some policy
-  | Sandbox.Policy.Direct | Sandbox.Policy.External -> None
+  | Sandbox.Policy.Direct _ | Sandbox.Policy.External _ -> None
 
 (* The confined mount keeps the whole host readable (see [readable=] below), so
    a missing toolchain is never the sandbox's doing; this line shows where
@@ -235,10 +234,8 @@ let explain_text host workspace effective =
            (Sandbox.Policy.protected_meta policy
            @ List.map (display_path ~workspace)
                (Sandbox.Policy.protected_paths policy))));
-  (match environment_counts effective with
-  | None -> ()
-  | Some (kept, stripped) ->
-      stdout_printf "environment=inherited %d, stripped %d\n" kept stripped);
+  stdout_printf "environment=%s\n"
+    (String.concat "," (environment_names effective));
   stdout_printf "toolchain=%s\n" (toolchain_status host workspace);
   stdout_printf "origin sandbox.mode=%s\n" (mode_origin_detail host effective)
 
@@ -296,19 +293,14 @@ let explain_json host workspace effective =
                 (fun path -> Jsont.Json.string (Spice_path.Abs.to_string path))
                 (Sandbox.Policy.protected_paths policy)) );
       ( "environment",
-        match environment_counts effective with
-        | None -> json_null
-        | Some (kept, stripped) ->
-            json_obj
-              [
-                ("inherited_count", Jsont.Json.int kept);
-                ("stripped_count", Jsont.Json.int stripped);
-                ( "stripped_patterns",
-                  json_list
-                    (List.map
-                       (fun value -> Jsont.Json.string value)
-                       Sandbox.Env.stripped_patterns) );
-              ] );
+        json_obj
+          [
+            ( "names",
+              json_list
+                (List.map
+                   (fun value -> Jsont.Json.string value)
+                   (environment_names effective)) );
+          ] );
       ("toolchain", Jsont.Json.string (toolchain_status host workspace));
       ( "origins",
         json_obj
@@ -320,7 +312,8 @@ let explain_json host workspace effective =
 
 let explain json overrides cwd =
   with_loaded_host ?cwd ~overrides @@ fun ~stdenv host ->
-  match resolve_posture ~stdenv host with
+  Eio.Switch.run @@ fun sw ->
+  match resolve_posture ~sw ~stdenv host with
   | Error (`Runtime message) -> Runtime_error message
   | Ok (workspace, effective) ->
       if json then

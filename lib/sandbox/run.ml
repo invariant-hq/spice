@@ -95,49 +95,63 @@ let confined ?backend policy =
 
 let seal ?backend policy =
   match policy with
-  | Policy.Direct -> { policy; decision = Unconfined; escalation = Ignored }
-  | Policy.External ->
+  | Policy.Direct _ -> { policy; decision = Unconfined; escalation = Ignored }
+  | Policy.External _ ->
       { policy; decision = Declared_external; escalation = Ignored }
   | Policy.Confined _ -> confined ?backend policy
 
 let policy t = t.policy
 
-let spawn t ~argv:command_argv ~env:bindings =
+let spawn t ~argv:command_argv =
+  let environment = Environment.bindings (Policy.environment t.policy) in
   match t.decision with
   | Unconfined ->
       Ok
         Spawn.
           {
             argv = command_argv;
-            env = bindings;
+            env = environment;
             evidence = Evidence.not_requested;
           }
+
   | Declared_external ->
       Ok
         Spawn.
           {
             argv = command_argv;
-            env = bindings;
+            env = environment;
             evidence = Evidence.declared_external;
           }
   | Refuse error -> Error error
   | Confine { prepared; evidence = command_evidence } ->
-      let filtered_env, stripped = Env.partition bindings in
       let wrapped_argv = Backend.wrap prepared ~argv:command_argv in
       Log.debug (fun m ->
-          m "confined spawn program=%s stripped %d env var(s)%s"
+          m "confined spawn program=%s environment_names=%d"
             (Argv.program command_argv)
-            (List.length stripped)
-            (match stripped with
-            | [] -> ""
-            | names -> ": " ^ String.concat ", " names));
+            (List.length (Environment.names (Policy.environment t.policy))));
       Ok
         Spawn.
           {
             argv = wrapped_argv;
-            env = filtered_env;
+            env = environment;
             evidence = command_evidence;
           }
+
+let spawn_escalated t ~argv:command_argv =
+  match t.escalation with
+  | Available ->
+      Ok
+        Spawn.
+          {
+            argv = command_argv;
+            env = Environment.bindings (Policy.environment t.policy);
+            evidence = Evidence.not_requested;
+          }
+  | Denied error -> Error error
+  | Ignored ->
+      Error
+        (Error.invalid_request
+           "sandbox escalation is not meaningful for this execution route")
 
 let escalation t = t.escalation
 
