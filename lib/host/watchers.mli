@@ -85,6 +85,9 @@ module Dune_diagnostics : sig
   type refresh = unit -> unit
   (** The type for a request-boundary diagnostic refresh. *)
 
+  type t
+  (** A stoppable Dune diagnostics producer. *)
+
   val start :
     ?diagnostics:bool ->
     ?build:bool ->
@@ -92,10 +95,11 @@ module Dune_diagnostics : sig
     clock:_ Eio.Time.clock ->
     inbox:Notice_queue.t ->
     dune:Spice_ocaml_dune.Rpc.Instance.t ->
-    refresh
-  (** [start ?diagnostics ?build ~sw ~clock ~inbox ~dune] starts a reconnecting
-      Dune RPC watcher when at least one Dune notice producer is enabled, and
-      returns a refresh function for model-request boundaries.
+    unit ->
+    t
+  (** [start ?diagnostics ?build ~sw ~clock ~inbox ~dune ()] starts a
+      reconnecting Dune RPC watcher when at least one Dune notice producer is
+      enabled.
 
       The watcher shares the workspace-level [dune] instance with OCaml Dune
       tools, so tool calls and watcher events observe the same latest endpoint,
@@ -106,7 +110,7 @@ module Dune_diagnostics : sig
       clearing notice when the set becomes empty. Terminal build-progress events
       enqueue build-status notices for success, failure, and interruption.
 
-      The returned refresh function requests the current diagnostic set once and
+      {!refresh} requests the current diagnostic set once and
       publishes a notice if it changed, but only after endpoint discovery has
       already found a matching Dune RPC server. Hosts should call it immediately
       before draining notices for an ordinary model request so proactive
@@ -122,4 +126,12 @@ module Dune_diagnostics : sig
       and retries until [sw] is released. Repeated failures with the same
       diagnostic message enqueue no additional notice until the watcher observes
       a successful Dune event. *)
+
+  val refresh : t -> unit
+  (** [refresh t] performs the bounded request-boundary refresh while [t] is
+      active and is a no-op after {!stop}. *)
+
+  val stop : t -> unit
+  (** [stop t] prevents further polling or refreshes and stops the shared Dune
+      instance's host-owned starter. It is idempotent. *)
 end

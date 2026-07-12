@@ -358,6 +358,12 @@ sandbox continues to bound filesystem and network access. Headless commands
 never prompt or infer consent: they continue restricted and explain how to run
 `spice trust`. Permission bypass does not bypass workspace trust.
 
+Activation makes repository execution eligible; workflow still owns its
+lifetime. Build engages configured Dune/Merlin producers when a turn binds.
+Plan and Review start none, and switching away from Build stops the current
+project watcher, clears its captured project snapshot, and resets Merlin
+resolution before the new runner is installed.
+
 Once trusted, project config (`.spice/config.json`) and project-local config
 (`.spice/config.local.json`) are reduced to this shared allowlist:
 

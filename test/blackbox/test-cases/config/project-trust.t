@@ -119,6 +119,17 @@ fields outside the workspace allowlist.
   $ wait_fake_server
   $ test -e "$LOCAL_SWITCH_MARKER" && echo local-switch-process-started
   local-switch-process-started
+  $ rm "$LOCAL_SWITCH_MARKER"
+  $ cat > trusted-plan.jsonl <<'EOF'
+  > {"expect":{"body_contains":["plan without executing"],"body_not_contains":["\"name\":\"shell\"","\"name\":\"ocaml_eval\"","\"name\":\"ocaml_dune_describe\""]},"response":{"id":"resp-trusted-plan","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"trusted plan answer"}]}]}}
+  > EOF
+  $ start_fake_openai trusted-plan.jsonl trusted-plan-capture trusted-plan-port
+  $ spice run --ephemeral --mode plan --permission-mode bypass "plan without executing" > trusted-plan.out 2> trusted-plan.err
+  $ test ! -e "$LOCAL_SWITCH_MARKER" && echo plan-started-no-project-process
+  plan-started-no-project-process
+  $ grep 'trusted plan answer' trusted-plan.out
+  trusted plan answer
+  $ wait_fake_server
   $ cat > trusted-run.jsonl <<'EOF'
   > {"expect":{"body_contains":["trusted prompt","REPOSITORY INSTRUCTION","project-only","relative-only"]},"response":{"id":"resp-trusted","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"trusted answer"}]}]}}
   > EOF

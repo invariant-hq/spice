@@ -63,6 +63,10 @@ available; `/sessions` opens the session browser.
 corresponding startup choices. A resumed transcript is rebuilt from durable
 session facts; live and replayed turns use the same rendering path.
 
+Repository activation does not make Plan or Review execute project tooling.
+Build owns configured Dune/Merlin producers; switching away from Build stops
+the live project watcher before installing the read-only runner.
+
 ## Composer and transcript
 
 `enter` submits the composer. `shift+enter` inserts a newline. While a turn is

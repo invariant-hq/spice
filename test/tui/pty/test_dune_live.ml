@@ -14,6 +14,25 @@ let disable_internal_dune_watch project =
   Project.write_scratch project "config/spice/config.json"
     {|{"notices":{"dune_diagnostics":false,"dune_build":false}}|}
 
+let process_alive pid =
+  match Unix.kill pid 0 with
+  | () -> true
+  | exception Unix.Unix_error (Unix.ESRCH, _, _) -> false
+  | exception Unix.Unix_error _ -> true
+
+let fake_watching_dune project =
+  let bin = Project.path project "fake-bin" in
+  let pid_file = Project.scratch project "dune-watch.pid" in
+  Unix.mkdir bin 0o700;
+  let dune = Filename.concat bin "dune" in
+  Project.write_path dune
+    (Printf.sprintf
+       "#!/bin/sh\nif [ \"$1\" = describe ]; then exit 1; fi\nprintf '%%s' \
+        \"$$\" > %s\nwhile :; do sleep 1; done\n"
+       (Filename.quote pid_file));
+  Unix.chmod dune 0o700;
+  (pid_file, ("PATH", bin ^ ":" ^ Sys.getenv "PATH") :: dune_environment)
+
 let%expect_test "a real dune watch connects while home is open" =
   Project.with_git_fixture "dune-home" @@ fun project ->
   Project.write project "lib/code.ml" "let alpha = 1\nlet beta = 20\n";
@@ -82,5 +101,32 @@ let%expect_test
     chat starts disconnected: true
     chat connects: true
     no unknown-verdict notice: true |}]
+
+let%expect_test "switching from Build to Plan stops project execution" =
+  Project.with_temp "dune-mode-owner" @@ fun project ->
+  let pid_file, env = fake_watching_dune project in
+  Provider_process.with_openai project ~answer:"Build turn complete."
+    ~expect:[ "start project tooling" ]
+  @@ fun provider ->
+  Pty.run project ~trust:true ~provider ~env ~rows:24 ~cols:80 @@ fun t ->
+  Pty.send t "start project tooling";
+  Pty.send t Key.enter;
+  Pty.wait t (fun screen ->
+      Screen.has "Build turn complete." screen && Sys.file_exists pid_file);
+  let pid =
+    Project.read_scratch project "dune-watch.pid" |> String.trim
+    |> int_of_string
+  in
+  print_fact "Build starts the project watcher" (process_alive pid);
+  Pty.send t "/plan";
+  Pty.send t Key.enter;
+  Pty.wait t (fun screen ->
+      Screen.has "plan mode on" screen && not (process_alive pid));
+  print_fact "Plan stops the project watcher" (not (process_alive pid));
+  Pty.quit t;
+  [%expect
+    {|
+    Build starts the project watcher: true
+    Plan stops the project watcher: true |}]
 
 [%%run_tests "spice.tui-pty.dune-live"]

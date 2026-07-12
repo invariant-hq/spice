@@ -481,7 +481,7 @@ module Dune_diagnostics = struct
             publish_failure_if_changed inbox last_failure error;
           Error error
 
-  type t = {
+  type state = {
     diagnostics : bool;
     build : bool;
     inbox : Notice_queue.t;
@@ -490,6 +490,7 @@ module Dune_diagnostics = struct
     last_build : string option ref;
     last_failure : string option ref;
     connected_once : bool ref;
+    stopped : bool Atomic.t;
   }
 
   let make ?(diagnostics = true) ?(build = true) ~inbox ~dune () =
@@ -502,6 +503,7 @@ module Dune_diagnostics = struct
       last_build = ref None;
       last_failure = ref None;
       connected_once = ref false;
+      stopped = Atomic.make false;
     }
 
   let refresh_current t =
@@ -523,8 +525,16 @@ module Dune_diagnostics = struct
              t.last_failure
             : (unit, Dune.Error.t) result)
 
-  let start ?(diagnostics = true) ?(build = true) ~sw ~clock ~inbox ~dune =
-    let t = make ~diagnostics ~build ~inbox ~dune () in
+  type t = { refresh : refresh; stop : unit -> unit }
+
+  exception Stopped
+
+  let refresh t = t.refresh ()
+  let stop t = t.stop ()
+
+  let start ?(diagnostics = true) ?(build = true) ~sw ~clock ~inbox ~dune () =
+    let state = make ~diagnostics ~build ~inbox ~dune () in
+    let watcher_switch = ref None in
     let bounded timeout_s f =
       match Eio.Time.with_timeout_exn clock timeout_s f with
       | () -> ()
@@ -538,46 +548,68 @@ module Dune_diagnostics = struct
               m "dune diagnostics probe raised, ignored: %s"
                 (Printexc.to_string exn))
     in
-    if t.diagnostics || t.build then
+    if state.diagnostics || state.build then
       Eio.Fiber.fork_daemon ~sw (fun () ->
-          if t.diagnostics then
-            Eio.Fiber.fork_daemon ~sw (fun () ->
-                let rec loop () =
-                  bounded 5.0 (fun () -> refresh_current t);
-                  Eio.Time.sleep clock 0.25;
-                  loop ()
-                in
-                loop ());
-          let rec loop () =
-            begin match Dune.Rpc.Instance.refresh t.dune with
-            | Ok None | Error _ -> ()
-            | Ok (Some _) -> (
-                match
-                  Dune.Rpc.Instance.run t.dune ~on_event:(function
-                    | Dune.Rpc.Diagnostics _ ->
-                        t.connected_once := true;
-                        t.last_failure := None;
-                        if t.diagnostics then
-                          publish_diagnostics_if_changed t.inbox t.dune
-                            t.last_diagnostics
-                    | Dune.Rpc.Build_progress progress ->
-                        t.connected_once := true;
-                        t.last_failure := None;
-                        if t.build then
-                          publish_build_if_changed t.inbox t.last_build progress
-                    | Dune.Rpc.Disconnected _ ->
-                        if t.diagnostics then
-                          publish_diagnostics_if_changed t.inbox t.dune
-                            t.last_diagnostics)
-                with
-                | Ok () -> ()
-                | Error error ->
-                    if !(t.connected_once) then
-                      publish_failure_if_changed t.inbox t.last_failure error)
-            end;
-            Eio.Time.sleep clock 2.0;
-            loop ()
-          in
-          loop ());
-    fun () -> bounded 1.0 (fun () -> refresh_visible t)
+          (try
+             Fun.protect
+               ~finally:(fun () -> watcher_switch := None)
+               (fun () ->
+                 Eio.Switch.run ~name:"spice-dune-diagnostics"
+                 @@ fun watcher_sw ->
+                 watcher_switch := Some watcher_sw;
+                 if Atomic.get state.stopped then raise Stopped;
+                 if state.diagnostics then
+                   Eio.Fiber.fork_daemon ~sw:watcher_sw (fun () ->
+                       let rec loop () =
+                         bounded 5.0 (fun () -> refresh_current state);
+                         Eio.Time.sleep clock 0.25;
+                         loop ()
+                       in
+                       loop ());
+                 let rec loop () =
+                   begin match Dune.Rpc.Instance.refresh state.dune with
+                   | Ok None | Error _ -> ()
+                   | Ok (Some _) -> (
+                       match
+                         Dune.Rpc.Instance.run state.dune ~on_event:(function
+                         | Dune.Rpc.Diagnostics _ ->
+                             state.connected_once := true;
+                             state.last_failure := None;
+                             if state.diagnostics then
+                               publish_diagnostics_if_changed state.inbox
+                                 state.dune state.last_diagnostics
+                         | Dune.Rpc.Build_progress progress ->
+                             state.connected_once := true;
+                             state.last_failure := None;
+                             if state.build then
+                               publish_build_if_changed state.inbox
+                                 state.last_build progress
+                         | Dune.Rpc.Disconnected _ ->
+                             if state.diagnostics then
+                               publish_diagnostics_if_changed state.inbox
+                                 state.dune state.last_diagnostics)
+                       with
+                       | Ok () -> ()
+                       | Error error ->
+                           if !(state.connected_once) then
+                             publish_failure_if_changed state.inbox
+                               state.last_failure error)
+                   end;
+                   Eio.Time.sleep clock 2.0;
+                   loop ()
+                 in
+                 loop ())
+           with Stopped -> ());
+          `Stop_daemon);
+    {
+      refresh =
+        (fun () ->
+          if not (Atomic.get state.stopped) then
+            bounded 1.0 (fun () -> refresh_visible state));
+      stop =
+        (fun () ->
+          Atomic.set state.stopped true;
+          Option.iter (fun sw -> Eio.Switch.fail sw Stopped) !watcher_switch;
+          Dune.Rpc.Instance.stop state.dune);
+    }
 end

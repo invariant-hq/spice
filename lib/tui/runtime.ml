@@ -2309,9 +2309,10 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
                   (* An existing attachment's runner carries the old contract:
                      re-derive under the new mode and swap (live.mli set_runner
                      — queued commands drain with the new runner). The assembly
-                     — producers, jobs registry — is mode-free and stays put; a
-                     derivation failure surfaces as the failure notice, the
-                     declared mode stands, and the next binding retries. *)
+                     — producers, jobs registry — stays put; binding transfers
+                     project-producer ownership to or from Build. A derivation
+                     failure surfaces as the failure notice, the declared mode
+                     stands, and the next binding retries. *)
                   match !attachment with
                   | Some (live, run) -> (
                       match bind_runner run with

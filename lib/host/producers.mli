@@ -40,9 +40,9 @@ val start :
     [workspace] backs Dune RPC endpoint discovery. [sandbox] confines every
     automatic Dune or Merlin process and prevents a read-only run from starting
     the mutating build watcher. Unknown and untrusted workspaces start no
-    project producer. All producers run until [sw]
-    is released or {!stop} is called; startup failures degrade to warning
-    notices rather than failing the run. *)
+    project producer. Repository-executing producers begin disabled and run
+    only while {!set_build_enabled} owns them for a Build workflow. Startup
+    failures degrade to warning notices rather than failing the run. *)
 
 val dune : t -> Spice_ocaml_dune.Rpc.Instance.t
 (** [dune t] is the shared workspace Dune RPC instance [t] owns. Pass it to
@@ -63,16 +63,18 @@ val merlin_program : t -> string list
     prefix while disengaged. Pass it to {!Toolset.make} so the Merlin-backed
     tools exec a concrete binary without re-engaging dune per query. *)
 
+val set_build_enabled : t -> bool -> unit
+(** [set_build_enabled t true] engages trusted configured project tooling for
+    Build. [set_build_enabled t false] stops its Dune watcher, clears the
+    project snapshot and Merlin resolution, and prevents later watcher polling
+    from restarting a child. Idempotent for the current state. *)
+
 val reprobe : t -> unit
-(** [reprobe t] re-evaluates the [workspace.tooling] decision. Idempotent and
-    latching: while tooling is disengaged it re-reads the marker (so an [auto]
-    workspace that gained a [dune-project] mid-session engages — capture,
-    Merlin resolution, watchers — exactly as a boot engagement would); once
-    engaged every call is a no-op, and explicit [on]/[off] never flip. Wire it
-    to the session's save boundary so the turn that scaffolds a project heals
-    the same session. A mid-session engagement whose lock-free window is
-    already held by an external build degrades exactly like boot: a warning
-    and structured blocked results, never a failed run. *)
+(** [reprobe t] re-evaluates [workspace.tooling] while Build is enabled. An
+    [auto] workspace that gained a [dune-project] during the turn engages at the
+    next save boundary. Outside Build it is a no-op. A capture whose lock-free
+    window is already held by an external build degrades to a warning and
+    structured blocked results, never a failed run. *)
 
 val before_request : t -> unit -> unit
 (** [before_request t] is the request-boundary refresh: it requests the current

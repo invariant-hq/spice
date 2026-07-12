@@ -60,7 +60,8 @@ let editor_decision host model =
   | other -> invalid_arg ("unknown tools.editor in resolved config: " ^ other)
 
 let make ~sw ~stdenv host ?model ~workspace ~sandbox ~skills ~cwd ~http
-    ~fetch_https ?anchors ?dune ?project_source ?merlin_program () =
+    ~fetch_https ?anchors ?dune ?project_source ?merlin_program
+    ?(project_execution = true) () =
   let config = Host.config host in
   let trusted = Trust.is_trusted (Config.workspace_trust config) in
   (* The shell tool cannot read the network posture back from the sealed
@@ -80,6 +81,7 @@ let make ~sw ~stdenv host ?model ~workspace ~sandbox ~skills ~cwd ~http
   in
   let editor, _reason = editor_decision host model in
   let mutating = Sandbox.mutating_tools sandbox in
+  let project_tools = trusted && project_execution in
   let process_sandbox = Sandbox.Effective.sandbox sandbox in
   let fs = Eio.Stdenv.fs stdenv in
   let dune =
@@ -104,11 +106,12 @@ let make ~sw ~stdenv host ?model ~workspace ~sandbox ~skills ~cwd ~http
       Spice_tools.files ?anchors ~fs ~workspace ();
       Spice_tools.search ?anchors ~sandbox:process_sandbox ~fs ~workspace ();
       Spice_tools.edits ~mutating ?anchors ~editor ~fs ~workspace ();
-      Spice_tools.ocaml ~mutating ~project_tools:trusted ?project_source
+      Spice_tools.ocaml ~mutating ~project_tools ?project_source
         ?merlin_program ~watch ~sandbox:process_sandbox ~fs
         ~process_mgr:(Eio.Stdenv.process_mgr stdenv)
         ~clock:(Eio.Stdenv.clock stdenv) ~cwd ~dune ~workspace ();
-      (if trusted then Spice_tools.shell ~fs ~workspace ~config:shell () else []);
+      (if project_tools then Spice_tools.shell ~fs ~workspace ~config:shell ()
+       else []);
     ]
   @ Spice_tools.web ~sw
       ~mono_clock:(Eio.Stdenv.mono_clock stdenv)

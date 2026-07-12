@@ -468,12 +468,17 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
       Context.extend_prelude context (Spice_protocol.Mode.prelude_messages mode)
       |> Result.map_error (fun error -> Host.Error.Instructions error)
     in
+    let project_execution =
+      Spice_protocol.Mode.equal mode Spice_protocol.Mode.Build
+    in
+    Producers.set_build_enabled producers project_execution;
     let tools =
       Toolset.make ~sw ~stdenv host ?model:(Some model) ~workspace ~sandbox
         ~skills ~cwd:cwd_eio ~http ~fetch_https ?anchors
         ~dune:(Producers.dune producers)
         ~project_source:(Producers.project_source producers)
         ~merlin_program:(Producers.merlin_program producers)
+        ~project_execution
         ()
       |> Spice_protocol.Contract.filter_tools
            (Spice_protocol.Mode.contract mode)

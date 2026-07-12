@@ -1448,6 +1448,8 @@ module Rpc = struct
         run : unit -> (unit, Error.t) result;
         status : unit -> string option;
         stop : unit -> unit;
+        mutex : Eio.Mutex.t;
+        mutable stopped : bool;
       }
 
       let make ?status ?stop run =
@@ -1455,11 +1457,26 @@ module Rpc = struct
           run;
           status = Option.value status ~default:(fun () -> None);
           stop = Option.value stop ~default:ignore;
+          mutex = Eio.Mutex.create ();
+          stopped = false;
         }
 
-      let run t = t.run ()
+      let run t =
+        Eio.Mutex.use_rw ~protect:true t.mutex (fun () ->
+            if t.stopped then
+              Error
+                (Error.Invalid_state
+                   { expected = "active start hook"; actual = "stopped" })
+            else t.run ())
+
       let status t = t.status ()
-      let stop t = t.stop ()
+
+      let stop t =
+        Eio.Mutex.use_rw ~protect:true t.mutex (fun () ->
+            if not t.stopped then begin
+              t.stopped <- true;
+              t.stop ()
+            end)
 
       let process_status status =
         Format.asprintf "dune build --root <cwd> --watch @all exited with %a"
@@ -1580,7 +1597,9 @@ module Rpc = struct
     let workspace t = t.workspace
     let endpoint t = with_lock t (fun () -> t.endpoint)
     let diagnostics t = with_lock t (fun () -> t.diagnostics)
-    let stop t = Option.iter Start.stop t.start
+    let stop t =
+      with_lock t (fun () -> t.start_attempted <- true);
+      Option.iter Start.stop t.start
 
     let workspace_root_strings workspace =
       List.map
@@ -1927,6 +1946,11 @@ module Project_source = struct
     | Error _ as error -> error
 
   let set_drifted t drifted = with_lock t (fun () -> t.drifted <- drifted)
+
+  let clear t =
+    with_lock t (fun () ->
+        t.snapshot <- None;
+        t.drifted <- false)
 
   (* Dune's build lock is advisory and non-blocking: a one-shot [dune describe]
      under a held lock fails fast with this stable [User_error] fragment. It is

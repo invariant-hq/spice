@@ -7,23 +7,21 @@ let log_src = Logs.Src.create "spice.host.producers" ~doc:"Run notice producers"
 
 module Log = (val Logs.src_log log_src : Logs.LOG)
 
-(* The engagement cell: one owner for everything the workspace.tooling switch
-   gates. Boot writes it when tooling engages at launch; {!reprobe} writes it
-   once, later, when an [auto] workspace grows its marker mid-session. The
-   per-turn tool assembly and the request-boundary hook read it live, so an
-   engagement reaches the next turn with no run rebuild. Engaging is a latch:
-   there is no mid-session disengage — the spawned watch lives until the run
-   closes either way. *)
+(* One cell owns all repository-executing producer state. Workflow changes can
+   enable or disable it without rebuilding the rest of the run. *)
 type engagement = {
+  mutable build_enabled : bool;
   mutable engaged : bool;
   mutable merlin_program : string list;
   mutable before_request : unit -> unit;
+  mutable stop_dune_watcher : unit -> unit;
 }
 
 type t = {
   dune : Spice_ocaml_dune.Rpc.Instance.t ref;
   project_source : Spice_ocaml_dune.Project_source.t;
   engagement : engagement;
+  set_build_enabled : bool -> unit;
   reprobe : unit -> unit;
   stop_fswatch : unit -> unit;
 }
@@ -95,8 +93,7 @@ let start ~sw ~stdenv host ~inbox ~workspace ~sandbox ~cwd ~root () =
       ~sleep:(Eio.Time.sleep (Eio.Stdenv.clock stdenv))
       ()
   in
-  let boot_engaged = tooling_engaged () in
-  let dune = ref (make_instance ~engaged:boot_engaged) in
+  let dune = ref (make_instance ~engaged:false) in
   let project_source =
     Spice_ocaml_dune.Project_source.create
       ~refresh_status:(fun () ->
@@ -116,12 +113,15 @@ let start ~sw ~stdenv host ~inbox ~workspace ~sandbox ~cwd ~root () =
   in
   let engagement =
     {
+      build_enabled = false;
       engaged = false;
       merlin_program = Spice_tools.Ocaml_merlin.default_program;
       before_request = ignore;
+      stop_dune_watcher = ignore;
     }
   in
-  (* The engagement sequence, shared by boot and {!reprobe}. Lock-free window:
+  (* The engagement sequence, shared by Build binding and {!reprobe}.
+     Lock-free window:
      capture the project-shape snapshot and resolve the Merlin invocation to a
      lock-free argv BEFORE the Dune diagnostics watcher starts. That watcher
      lazily spawns [dune build --watch], which takes the build lock; a one-shot
@@ -132,10 +132,9 @@ let start ~sw ~stdenv host ~inbox ~workspace ~sandbox ~cwd ~root () =
      boot path below — a warning and a structured blocked result, never a
      failed run. *)
   let engage () =
-    (if not boot_engaged then
-       let previous = !dune in
-       dune := make_instance ~engaged:true;
-       Spice_ocaml_dune.Rpc.Instance.stop previous);
+    let previous = !dune in
+    dune := make_instance ~engaged:true;
+    Spice_ocaml_dune.Rpc.Instance.stop previous;
     (match Spice_ocaml_dune.Project_source.capture project_source with
     | Ok () -> ()
     | Error error ->
@@ -166,16 +165,40 @@ let start ~sw ~stdenv host ~inbox ~workspace ~sandbox ~cwd ~root () =
                   (Spice_tools.Ocaml_merlin.resolution_error_message error)
                   (String.concat " " Spice_tools.Ocaml_merlin.default_program));
             Spice_tools.Ocaml_merlin.default_program));
-    (engagement.before_request <-
-       (if dune_diagnostics || dune_build then
-          Watchers.Dune_diagnostics.start ~diagnostics:dune_diagnostics
-            ~build:dune_build ~sw
-            ~clock:(Eio.Stdenv.clock stdenv)
-            ~inbox ~dune:!dune
-        else ignore));
+    (if dune_diagnostics || dune_build then
+       let watcher =
+         Watchers.Dune_diagnostics.start ~diagnostics:dune_diagnostics
+           ~build:dune_build ~sw ~clock:(Eio.Stdenv.clock stdenv) ~inbox
+           ~dune:!dune ()
+       in
+       engagement.before_request <- (fun () ->
+         Watchers.Dune_diagnostics.refresh watcher);
+       engagement.stop_dune_watcher <- (fun () ->
+         Watchers.Dune_diagnostics.stop watcher));
     engagement.engaged <- true
   in
-  if boot_engaged then engage ();
+  let disengage () =
+    if engagement.engaged then begin
+      engagement.before_request <- ignore;
+      engagement.stop_dune_watcher ();
+      engagement.stop_dune_watcher <- ignore;
+      Spice_ocaml_dune.Rpc.Instance.stop !dune;
+      dune := make_instance ~engaged:false;
+      Spice_ocaml_dune.Project_source.clear project_source;
+      engagement.merlin_program <- Spice_tools.Ocaml_merlin.default_program;
+      engagement.engaged <- false
+    end
+  in
+  let set_build_enabled enabled =
+    if Bool.equal engagement.build_enabled enabled then ()
+    else begin
+      engagement.build_enabled <- enabled;
+      if enabled then begin
+        if tooling_engaged () then engage ()
+      end
+      else disengage ()
+    end
+  in
   let fswatch_notice = trusted && Config.Notices.fswatch notices in
   let cr_notice = trusted && Config.Notices.cr_comments notices in
   let stop_fswatch =
@@ -208,13 +231,21 @@ let start ~sw ~stdenv host ~inbox ~workspace ~sandbox ~cwd ~root () =
     end
     else ignore
   in
-  (* Idempotent and latching: the first call that finds tooling engaged runs
-     the engagement sequence; every later call is two [Sys.file_exists] at
-     most, and a no-op once engaged. *)
+  (* Reprobe can engage only while Build owns repository execution. *)
   let reprobe () =
-    if (not engagement.engaged) && tooling_engaged () then engage ()
+    if
+      engagement.build_enabled && (not engagement.engaged)
+      && tooling_engaged ()
+    then engage ()
   in
-  { dune; project_source; engagement; reprobe; stop_fswatch }
+  {
+    dune;
+    project_source;
+    engagement;
+    set_build_enabled;
+    reprobe;
+    stop_fswatch;
+  }
 
 let dune t = !(t.dune)
 let project_source t = t.project_source
@@ -224,8 +255,10 @@ let merlin_program t = t.engagement.merlin_program
    is captured once at run assembly, and must observe an engagement that
    happens after that. *)
 let before_request t () = t.engagement.before_request ()
+let set_build_enabled t enabled = t.set_build_enabled enabled
 let reprobe t = t.reprobe ()
 
 let stop t =
+  set_build_enabled t false;
   t.stop_fswatch ();
   Spice_ocaml_dune.Rpc.Instance.stop !(t.dune)

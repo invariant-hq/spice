@@ -374,12 +374,13 @@ module Rpc : sig
           resources owned by a successful [run]. *)
 
       val run : t -> (unit, Error.t) result
-      (** [run t] starts the hook. Callers should arrange their own one-shot
+      (** [run t] starts the hook. It errors without calling the backing
+          function after {!stop}. Callers should arrange their own one-shot
           policy if they invoke this directly. *)
 
       val stop : t -> unit
-      (** [stop t] stops resources owned by a successful {!run}. It is
-          idempotent and has no effect if [t] has not started anything. *)
+      (** [stop t] permanently disables startup and stops resources owned by a
+          successful {!run}. It is idempotent. *)
 
       val dune_build_watch :
         sw:Eio.Switch.t ->
@@ -616,6 +617,11 @@ module Project_source : sig
       since the snapshot was captured. The host flips this from its filesystem
       watch; {!get} reads it when serving from the snapshot. A fresh describe in
       {!get} resets it to [false]. *)
+
+  val clear : t -> unit
+  (** [clear t] removes the captured snapshot and resets drift. Hosts call it
+      when a workflow disables project execution so later consumers cannot
+      observe Build-mode project state. *)
 
   val get :
     t ->

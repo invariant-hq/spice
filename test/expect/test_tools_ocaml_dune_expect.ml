@@ -362,6 +362,25 @@ let%expect_test "ocaml_dune_diagnostics does not start the shared Dune instance"
     status: failed unavailable
     starts: 0 |}]
 
+let%expect_test "a stopped Dune starter cannot run later" =
+  Eio_main.run @@ fun stdenv ->
+  Eio.Time.sleep (Eio.Stdenv.clock stdenv) 0.0;
+  let starts = ref 0 in
+  let start =
+    Spice_ocaml_dune.Rpc.Instance.Start.make (fun () ->
+        incr starts;
+        Ok ())
+  in
+  Spice_ocaml_dune.Rpc.Instance.Start.stop start;
+  Spice_ocaml_dune.Rpc.Instance.Start.stop start;
+  Printf.printf "run refused: %b\n"
+    (Result.is_error (Spice_ocaml_dune.Rpc.Instance.Start.run start));
+  Printf.printf "starts: %d\n" !starts;
+  [%expect
+    {|
+    run refused: true
+    starts: 0 |}]
+
 (* ------------------------------------------------------------------ *)
 (* Project_source: fresh-or-snapshot logic with injected fakes         *)
 (* ------------------------------------------------------------------ *)
