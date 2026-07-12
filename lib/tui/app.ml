@@ -3240,14 +3240,11 @@ let surface_view t panel =
   match t.phase with
   | Prelude -> [ stage ~composer:None t; pinned ]
   | Chat chat ->
-      (* Wrap the transcript in a grow:1 region so it fills the space above the
-         pinned panel regardless of the scrollport's own flex. *)
-      [
-        box ~key:"surface.transcript" ~flex_grow:1. ~flex_shrink:1.
-          ~size:{ width = pct 100; height = px 0 }
-          (chat_above t chat ~right:(pane_right ~now:(now_of chat) t chat));
-        pinned;
-      ]
+      (* [chat_above]'s scrollport (or pane frame) already grows vertically.
+         Keeping it as the direct sibling of the pinned panel preserves that
+         contract; an intervening default-Row box constrains the scrollport's
+         zero height on its cross axis and hides the waiting turn. *)
+      chat_above t chat ~right:(pane_right ~now:(now_of chat) t chat) @ [ pinned ]
 
 (* A screen owns the whole region — no stage, transcript, composer, or footer
    beneath it (03-ia §The three forms). It fills the height so its hint row sits

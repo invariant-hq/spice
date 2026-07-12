@@ -159,14 +159,14 @@ let%expect_test "esc on the question dialog borrows the composer" =
   Tui.settle t;
   Tui.print t;
   [%expect
-    {|01 | ⋯ Waiting for your answer
-02 |
-03 |
-04 |
+    {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
 05 |
-06 |
+06 | ❯ which runner
 07 |
-08 |
+08 | ⋯ Waiting for your answer
 09 |
 10 |
 11 |
@@ -361,12 +361,12 @@ let%expect_test "a compound command is presented as one atomic action" =
   Tui.settle t;
   Tui.print t;
   [%expect
-    {|01 | ⋯ Waiting for your answer
+    {|01 | ❯ inspect workspace
 02 |
-03 |
-04 |
+03 | ⏺ Shell(git status --short && test ! -e .probe-one && test ! -e .probe-two)
+04 |   ⎿  ⋯ waiting on permission
 05 |
-06 |
+06 | ⋯ Waiting for your answer
 07 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 08 |    permission
 09 |
@@ -445,17 +445,17 @@ let%expect_test "the permission dialog denies and resumes without running" =
   Tui.settle t;
   Tui.print t;
   [%expect
-    {|01 | ⋯ Waiting for your answer
-02 |
-03 |
-04 |
+    {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
 05 |
-06 |
+06 | ❯ run it
 07 |
-08 |
-09 |
+08 | ⏺ Shell(echo recorded)
+09 |   ⎿  ⋯ waiting on permission
 10 |
-11 |
+11 | ⋯ Waiting for your answer
 12 |
 13 |
 14 |
