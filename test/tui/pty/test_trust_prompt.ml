@@ -5,7 +5,7 @@
 
 open Tui_harness
 
-let prompt_ready = Screen.has "Spice workspace trust"
+let prompt_ready = Screen.has "Spice repository activation"
 let print_fact label value = Printf.printf "%s: %b\n" label value
 let trust_store project = Project.scratch project "config/spice/trust.json"
 
@@ -24,25 +24,26 @@ let fake_dune_environment project =
   Unix.mkdir bin 0o700;
   let dune = Filename.concat bin "dune" in
   Project.write_path dune
-    "#!/bin/sh\nprintf spawned > \"$DUNE_MARKER\"\nexit 1\n";
+    (Printf.sprintf "#!/bin/sh\nprintf spawned > %s\nexit 1\n"
+       (Filename.quote marker));
   Unix.chmod dune 0o700;
   ( marker,
     [
       ("PATH", bin ^ ":" ^ Sys.getenv "PATH");
-      ("DUNE_MARKER", marker);
       ("SPICE_WORKSPACE_TOOLING", "auto");
     ] )
 
 let%expect_test "Enter accepts the safe restricted default" =
   Project.with_temp "trust-default" @@ fun project ->
   run_unknown project @@ fun t ->
+  Pty.wait t (Screen.has "Selection: 1");
   print_fact "safe choice selected"
     (Screen.has "Selection: 1" (Pty.screen t));
   Pty.send t "\r";
   Pty.wait t (Screen.has "dune:");
   print_fact "explicit untrusted stored" (store_has project "untrusted");
   print_fact "decision remains in scrollback"
-    (Screen.contains (Pty.raw t) "Project customization remains disabled");
+    (Screen.contains (Pty.raw t) "Repository remains restricted");
   Pty.quit t;
   [%expect
     {|
@@ -75,7 +76,7 @@ let%expect_test "arrow navigation can trust and continue" =
   print_fact "trusted stored" (store_has project "trusted");
   print_fact "project process starts under first turn" (Sys.file_exists marker);
   print_fact "trusted decision remains in scrollback"
-    (Screen.contains (Pty.raw t) "Project customization is enabled");
+    (Screen.contains (Pty.raw t) "Repository activation is enabled");
   Pty.quit t;
   [%expect
     {|
@@ -151,7 +152,7 @@ let%expect_test "failed trusted activation rolls back and can retry" =
   Project.write_scratch project "config/spice/config.json"
     "{\"web\":{\"timeout_ms\":2,\"max_timeout_ms\":1}}\n";
   Pty.send t "2";
-  Pty.wait t (Screen.has "The workspace was marked untrusted");
+  Pty.wait t (Screen.has "returned to restricted mode");
   print_fact "trusted activation rolled back" (store_has project "untrusted");
   print_fact "normal app not started after activation failure"
     (Screen.lacks "dune:" (Pty.screen t));

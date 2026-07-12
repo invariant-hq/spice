@@ -1,8 +1,8 @@
 # Security
 
-Spice keeps three policy questions separate: whether ambient project
-customization may activate, whether a described operation is approved, and
-what operating-system authority the operation receives. They reinforce one
+Spice keeps three policy questions separate: whether repository-controlled
+inputs and processes may activate, whether a described operation is approved,
+and what operating-system authority the operation receives. They reinforce one
 another, but none substitutes for another.
 
 The default posture is:
@@ -27,7 +27,7 @@ before provider credentials are loaded or a session is created.
 
 | Boundary | What it decides | What it does not do |
 | --- | --- | --- |
-| Workspace trust | Whether ambient project configuration, instructions, skills, notices, and built-in tooling may activate. | It does not approve tools or grant file, command, or network authority. |
+| Repository activation | Whether repository configuration, instructions, skills, executable tools, and project processes may activate. | It does not approve an operation or widen the selected sandbox. |
 | Permission policy | Whether a host-described operation is allowed, denied, or requires review. | It does not confine a process or grant an OS capability. |
 | Runtime confinement | What an approved native tool or spawned process may access. | It does not approve the operation or activate project inputs. |
 
@@ -214,10 +214,10 @@ confinement.
 
 | Mode | Command behavior |
 | --- | --- |
-| `read-only` | Reads are allowed across the host filesystem; writes and network are denied. Native mutation and auxiliary execution tools are omitted from the catalog; `shell` remains and is confined. Shell escalation is unavailable. |
+| `read-only` | Reads are allowed across the host filesystem; writes are limited to a private run scratch directory and network is denied. Native mutation and auxiliary execution tools are omitted from the catalog; an activated repository retains confined `shell`. Shell escalation is unavailable. |
 | `workspace-write` | Reads are allowed across the host filesystem. Writes are allowed only under resolved writable roots, with protected carve-outs. Network is restricted by default. |
-| `danger-full-access` | Commands run without Spice confinement. The child inherits the unfiltered process environment. |
-| `external-sandbox` | Spice records that an external boundary owns confinement. Commands are not wrapped and the environment is not filtered by Spice. |
+| `danger-full-access` | Commands run without Spice filesystem or network confinement. They still receive the exact host-constructed child environment. |
+| `external-sandbox` | Spice records that an external boundary owns confinement. Commands are not wrapped, but still receive the exact host-constructed child environment. |
 
 The mode precedence is the `--sandbox` flag, then `sandbox.mode`, then the
 built-in `workspace-write` default.
@@ -225,12 +225,12 @@ built-in `workspace-write` default.
 **The confined modes are not confidentiality boundaries.** They deliberately
 allow reads of the whole host filesystem so developer toolchains remain
 available. A confined shell command can read files outside the workspace if
-ordinary filesystem permissions allow it. Environment filtering removes many
-ambient credentials, and restricted network reduces command-side exfiltration,
-but neither prevents a command from returning readable file contents in its
-tool output. Use an external isolation boundary when host-file confidentiality
-is required. If read-anywhere is deliberate—for example with a local
-model—use the ordered opt-in in
+ordinary filesystem permissions allow it. Exact environment reconstruction
+withholds ambient credentials, and restricted network reduces command-side
+exfiltration, but neither prevents a command from returning readable file
+contents in its tool output. Use an external isolation boundary when host-file
+confidentiality is required. If read-anywhere is deliberate—for example with a
+local model—use the ordered opt-in in
 [Permission rules](permission-rules.md#prompt-free-confined-shell-for-a-local-model).
 
 Native file tools have a narrower boundary: they accept workspace paths, check
@@ -242,7 +242,7 @@ not expose arbitrary host-file reads.
 `workspace-write` makes these roots writable:
 
 - every workspace root;
-- `/tmp` when present and `$TMPDIR` when valid;
+- a private mode-`0700` home and temporary directory owned by the run;
 - absolute or `~`-relative paths in `sandbox.writable_roots`;
 - the Dune cache for a workspace containing `dune-project`, when
   `sandbox.toolchain_caches=true`.
@@ -275,23 +275,24 @@ This setting does not authorize a command under the permission policy and does
 not control provider calls or web tools. Web fetching has separate enablement,
 private-network checks, URL policy, and permission facts.
 
-### Environment filtering
+### Exact child environments
 
-Confined commands do not inherit environment variables whose names look like:
+Every spawned route—confined, direct, externally sandboxed, and approved
+escalation—receives one exact environment constructed when the run resolves its
+sandbox. Tools cannot add per-call overlays and no route inherits the ambient
+process environment.
 
-- credentials (`*TOKEN*`, `*SECRET*`, API-key forms, and provider prefixes);
-- credential-agent handles such as `SSH_AUTH_SOCK` and `GPG_AGENT_INFO`;
-- loader injection such as `LD_*` and `DYLD_*`;
-- shell-startup overrides such as `BASH_ENV`.
+The child environment contains:
 
-Matching is case-insensitive by variable name. Values are never included in
-sandbox diagnostics. `PATH`, `OPAM_SWITCH_PREFIX`, `OCAMLPATH`, and `CAML_*`
-toolchain variables are retained so commands can locate the developer
-toolchain.
+- `PATH`, validated as absolute non-empty entries;
+- private run-owned `HOME`, `TMPDIR`, `TMP`, and `TEMP`;
+- deterministic non-interactive pager, terminal, and color settings;
+- valid locale and OCaml toolchain path variables from a fixed allowlist.
 
-`danger-full-access` and `external-sandbox` pass the environment through
-unchanged. An approved per-command escalation drops filesystem and network
-confinement but still applies the credential and loader-variable filter.
+Optional inherited values that are malformed are omitted. Values are never
+included in sandbox diagnostics. After repository activation, an existing
+canonical workspace-local `_opam/bin` leads `PATH`; a restricted repository
+cannot contribute executable roots.
 
 ### Enforcement requirements and backends
 
@@ -320,7 +321,7 @@ access and the escalation access were allowed by policy or reviewer.
 An approved escalation:
 
 - runs that one command without filesystem or network confinement;
-- retains the credential and loader-variable environment filter;
+- retains the policy's exact child environment;
 - records `not_requested` sandbox evidence;
 - does not broaden to another command, even after an exact-conversation answer.
 
@@ -328,29 +329,34 @@ Read-only mode refuses escalation without opening a permission review. In
 `danger-full-access` and `external-sandbox`, escalation is ignored because the
 requested lack of Spice confinement is already the current posture.
 
-## Workspace config and trust
+## Repository activation and trust
 
-Workspace trust is persistent consent for ambient project customization. The
-decision is stored user-side for the canonical project root and has three
-states:
+Workspace trust is persistent consent to activate repository-controlled inputs
+and processes. The decision is stored user-side for the canonical project root
+and has three states:
 
 - `unknown`: no decision has been stored;
 - `untrusted`: the user explicitly chose restricted operation;
-- `trusted`: project customization may activate.
+- `trusted`: repository config, instructions, skills, and project processes may
+  activate after reload.
 
 Unknown and untrusted workspaces have identical runtime capabilities. Spice
-does not open project config, scan project instructions or skills, start
-project notices, or run automatic Dune/Merlin/Git discovery. Ordinary source
-inspection and user-owned config, instructions, and skills remain available.
-Directly reading or editing `.spice/config.json` is also allowed; its values do
-not become effective until the workspace is trusted.
+does not open project config, scan project instructions or skills, offer the
+generic shell or evaluator, start project notices, or run automatic
+Dune/Merlin/Git discovery. Native source inspection, search, and structural
+edits remain available according to workflow, permission, and sandbox policy,
+as do user-owned config, instructions, and skills. Directly reading or editing
+`.spice/config.json` is also allowed; its values do not become effective until
+the workspace is trusted and Spice reloads. Files edited while restricted may
+therefore execute after later activation.
 
 In an interactive TUI, an unknown workspace gets a preflight before the normal
-app, session creation, or project process startup. Continuing without
-customization is selected by default and remembers `untrusted`; trusting
-remembers `trusted`; exiting stores nothing. Headless commands never prompt or
-infer consent: they continue restricted and explain how to run `spice trust`.
-Permission bypass does not bypass workspace trust.
+app, session creation, or project process startup. Continuing restricted is
+selected by default and remembers `untrusted`; trusting activates only after a
+clean host reload and remembers `trusted`; exiting stores nothing. The selected
+sandbox continues to bound filesystem and network access. Headless commands
+never prompt or infer consent: they continue restricted and explain how to run
+`spice trust`. Permission bypass does not bypass workspace trust.
 
 Once trusted, project config (`.spice/config.json`) and project-local config
 (`.spice/config.local.json`) are reduced to this shared allowlist:

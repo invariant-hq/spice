@@ -45,33 +45,34 @@ with `PROMPT` it starts a new turn on the saved session, without it it
 advances a blocked or interrupted turn. To reopen a session interactively,
 use `spice resume` instead.
 
-## Workspace trust
+## Repository activation
 
 Headless runs never prompt for or infer workspace trust. An unknown or
-explicitly untrusted workspace remains useful, but ambient project config,
-instructions, skills, notices, and automatic Dune/Merlin/Git integration stay
-disabled. Project-executing Dune/Merlin/eval tools and project-local `_opam`
-lookup are omitted too; pure syntax/search/edit tools remain. Spice prints one
-diagnostic with the canonical root and current state, then continues with
-user-owned inputs and the restricted catalog.
+explicitly untrusted repository remains useful, but repository config,
+instructions, skills, the generic shell and evaluator, project-executing
+Dune/Merlin tools, automatic project processes, and project-local `_opam`
+lookup stay disabled. Native reads, searches, edits, and structural OCaml tools
+remain according to workflow and sandbox policy. Spice prints one diagnostic
+with the canonical root and current state, then continues with user-owned
+inputs and the restricted catalog.
 
-Automation that wants project customization must establish the durable decision
-explicitly before the run:
+Automation that wants repository-controlled inputs or processes must establish
+the durable decision explicitly before the run:
 
 ```sh
 spice trust /path/to/project
 spice run --cwd /path/to/project "PROMPT"
 ```
 
-`--permission-mode bypass` does not activate project customization, and there
-is no per-run trust shortcut. `spice untrust` records a persistent restricted
-choice rather than returning the workspace to the interactive unknown state.
+`--permission-mode bypass` and `--sandbox danger-full-access` do not activate a
+repository, and there is no per-run trust shortcut. `spice untrust` records a
+persistent restricted choice rather than returning the repository to the
+interactive unknown state.
 
-Under the default permission preset, a model-authored shell command parks for
-review even when `workspace-write` will confine it. The sandbox bounds writes;
-it does not approve the command's read access. Users who deliberately accept
-read-anywhere confined commands can install the ordered rules in
-[Permission rules](permission-rules.md#prompt-free-confined-shell-for-a-local-model).
+In an activated repository, a model-authored shell command still follows the
+permission policy even when `workspace-write` will confine it. Activation makes
+the execution surface available; it does not itself approve a command or widen
+the sandbox.
 
 ## Exit codes
 

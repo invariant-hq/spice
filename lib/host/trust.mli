@@ -3,12 +3,13 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-(** Persistent workspace trust decisions.
+(** Persistent repository activation decisions.
 
     A value resolves one canonical workspace root to its current trust status.
-    Trust controls ambient project customization; it does not grant permission
-    or operating-system authority. Decisions live in the user configuration
-    home and never in the workspace. *)
+    Trust activates repository-controlled config, instructions, skills, and
+    project processes. It does not grant filesystem or network authority and
+    does not change the selected sandbox. Decisions live in the user
+    configuration home and never in the workspace. *)
 
 type status = Unknown | Untrusted | Trusted
 (** The trust status of a workspace root. [Unknown] is never persisted. *)

@@ -43,36 +43,37 @@ let untrust workspace =
 
 let trust_command =
   CCmd.v
-    (CCmd.info "trust" ~doc:"Enable project customization for a workspace."
+    (CCmd.info "trust" ~doc:"Activate repository-controlled inputs and tools."
        ~docs:s_config_commands
        ~man:
          [
            `S CManpage.s_description;
            `P
-             "Records a workspace trust decision user-side, never in the \
-              workspace. Trust enables ambient project configuration, \
-              instructions, skills, notices, and built-in tooling without \
-              changing permission or sandbox posture. $(b,untrust) records an \
-              explicit refusal. The nearest enclosing project root is used, \
-              so invoking the command from a project subdirectory updates the \
-              same decision.";
+             "Records a repository activation decision user-side, never in \
+              the repository. Activation enables repository configuration, \
+              instructions, skills, Dune rules, local tools, evaluator, and \
+              project processes after a clean reload. The selected sandbox \
+              still bounds filesystem and network access. $(b,untrust) records \
+              an explicit restricted decision. The nearest enclosing project \
+              root is used, so invoking the command from a project \
+              subdirectory updates the same decision.";
          ]
        ~exits)
     (exit_term CTerm.(const trust $ workspace))
 
 let untrust_command =
   CCmd.v
-    (CCmd.info "untrust" ~doc:"Disable project customization for a workspace."
+    (CCmd.info "untrust" ~doc:"Keep a repository in restricted mode."
        ~docs:s_config_commands
        ~man:
          [
            `S CManpage.s_description;
            `P
-             "Records an explicit untrusted decision for the nearest enclosing \
-              canonical project root. Later TUI launches continue without a \
-              prompt, and ambient project configuration, instructions, skills, \
-              notices, and built-in tooling remain disabled. Permission and \
-              sandbox posture do not change.";
+             "Records an explicit restricted decision for the nearest \
+              enclosing canonical project root. Later launches continue \
+              without a prompt, and repository configuration, instructions, \
+              skills, shell/evaluator access, and project processes remain \
+              disabled. The selected sandbox does not change.";
          ]
        ~exits)
     (exit_term CTerm.(const untrust $ workspace))

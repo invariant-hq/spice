@@ -3,7 +3,7 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-(** Startup consent for ambient project customization. *)
+(** Startup consent for repository-controlled inputs and processes. *)
 
 type choice = Untrusted | Trusted | Exit
 (** The three user decisions. [Exit] never writes the trust store. *)
@@ -15,7 +15,7 @@ type t
 (** The pure prompt selection. *)
 
 val make : root:Spice_path.Abs.t -> t
-(** [make ~root] selects [Untrusted], the safe continuation. *)
+(** [make ~root] selects [Untrusted], the restricted continuation. *)
 
 val update : input -> t -> t * choice option
 (** [update input t] moves the selection or resolves a choice. Digits resolve

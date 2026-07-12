@@ -34,7 +34,7 @@ module Workspace_state = Workspace_state
 (** Global checkpoint and review state keyed by canonical workspace root. *)
 
 module Trust = Trust
-(** Persistent consent for ambient project customization. *)
+(** Persistent consent for repository-controlled inputs and processes. *)
 
 module Host = Host
 (** Loaded host values: the error taxonomy, the provider adapter and registry,

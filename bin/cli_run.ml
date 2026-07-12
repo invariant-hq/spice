@@ -620,8 +620,8 @@ let workspace_trust_warning host =
       Spice_host.Trust.root trust |> Spice_path.Abs.to_string
     in
     Cli_common.stderr_printf
-      "warning: project customization disabled for %s (workspace trust: %s); \
-       run `spice trust %s` and restart to enable it\n"
+      "warning: repository restricted for %s (activation state: %s); run \
+       `spice trust %s` and restart to activate repository inputs and tools\n"
       root
       (Spice_host.Trust.status_to_string (Spice_host.Trust.status trust))
       (Filename.quote root)

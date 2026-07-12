@@ -13,24 +13,24 @@ Press `?` on an empty composer to see the shortcuts available in the current
 surface. That sheet is authoritative for individual keys; this guide explains
 the workflows behind them.
 
-## Workspace trust preflight
+## Repository activation preflight
 
 Before opening the normal TUI in an unknown workspace, Spice names the
-canonical project root and asks whether to activate ambient project config,
-instructions, skills, notices, and built-in tooling. This preflight runs before
-session creation, alternate-screen ownership, home-brief construction, or any
-project process.
+canonical repository root and asks whether to activate repository config,
+instructions, skills, Dune rules, local tools, evaluator access, and Build-mode
+project processes. This preflight runs before session creation,
+alternate-screen ownership, home-brief construction, or any project process.
 
 The choices are:
 
-1. continue without project customization and remember `untrusted`;
-2. trust the workspace and enable project customization;
+1. continue restricted and remember `untrusted`;
+2. trust and activate the repository;
 3. exit without saving a decision.
 
 The restricted choice is selected by default. Use `1`–`3` or arrows and Enter;
 Escape, Ctrl+C, and EOF exit without writing. A persistence error remains in the
-preflight for retry. Trust does not grant file, command, or network permission
-and does not weaken the selected sandbox.
+preflight for retry. Activation does not approve operations or weaken the
+selected sandbox.
 
 Choosing trust saves the decision and reloads the host once. If project
 activation fails, Spice restores the workspace to `untrusted` and keeps the
@@ -54,8 +54,8 @@ A workspace already recorded as trusted or untrusted skips the preflight. Run
 | `spice review [BASE]` | Open the worktree review screen directly. |
 
 The home stage shows the effective model, workspace health, account state,
-sandbox posture, workspace trust, and recent work. A concise warning replaces
-project customization details while restricted. Type a prompt to start a new
+sandbox posture, activation state, and recent work. A concise warning replaces
+repository-controlled details while restricted. Type a prompt to start a new
 session. With an empty composer, `enter` resumes the newest session when one is
 available; `/sessions` opens the session browser.
 

@@ -105,7 +105,7 @@ let config_warning ?flag config =
   let trust = Spice_host.Config.workspace_trust config in
   if not (Spice_host.Trust.is_trusted trust) then
     Some
-      ("project customization disabled: workspace trust is "
+      ("repository restricted: activation state is "
       ^ Spice_host.Trust.status_to_string (Spice_host.Trust.status trust))
   else
     match sandbox_mode ?flag config with

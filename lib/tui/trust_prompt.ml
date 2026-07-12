@@ -27,35 +27,33 @@ let update input t =
 
 let selection_line t =
   match t.selected with
-  | 0 -> "Selection: 1 — continue without project customization"
-  | 1 -> "Selection: 2 — trust and enable project customization"
+  | 0 -> "Selection: 1 — continue restricted"
+  | 1 -> "Selection: 2 — trust and activate this repository"
   | _ -> "Selection: 3 — exit without saving a decision"
 
 let render t =
   String.concat "\n"
     ([
-       "Spice workspace trust";
+       "Spice repository activation";
        "";
-       "Workspace: " ^ Spice_path.Abs.to_string t.root;
+       "Repository root: " ^ Spice_path.Abs.to_string t.root;
+       selection_line t;
        "";
-       "This repository can provide project configuration, instructions, \
-        skills,";
-       "project notices, and built-in Dune/Merlin integration. Trust enables";
-       "those inputs. It does not grant file, command, or network permission,";
-       "and it does not weaken the sandbox.";
+       "This repository can control config, instructions, skills, Dune rules,";
+       "local tools, evaluator, and Build-mode project processes.";
+       "Activation does not approve operations or widen the selected sandbox.";
        "";
-       "  1. Continue without project customization (remember this choice)";
-       "     Project config, instructions, skills, notices, and tooling stay \
-        disabled.";
-       "  2. Trust and enable project customization (remember this choice)";
-       "     Trusted project inputs activate under the current permission and \
-        sandbox posture.";
+       "  1. Continue restricted (remember this choice)";
+       "     Native reads, searches, and sandboxed edits remain available.";
+       "     Repository-controlled code will not run.";
+       "     Files edited now may execute if you activate the repository later.";
+       "  2. Trust and activate this repository (remember this choice)";
+       "     Repository inputs and Build processes activate after reload.";
        "  3. Exit";
        "     Save nothing and start no project process.";
        "";
        "Use ↑/↓ and Enter, or press 1–3. Escape or Ctrl+C exits.";
-     ]
-    @ [ ""; selection_line t ])
+     ])
 
 type 'a outcome = Continue of 'a | Exit_prompt
 
@@ -120,11 +118,11 @@ let failure_message = function
   | Continue_failed message ->
       "Decision saved, but Spice could not continue: " ^ message
   | Activation_failed { message; rollback_error = None } ->
-      "Project customization could not be activated: " ^ message
-      ^ "\nThe workspace was marked untrusted."
+      "Repository activation failed: " ^ message
+      ^ "\nThe repository was returned to restricted mode."
   | Activation_failed { message; rollback_error = Some rollback_error } ->
-      "Project customization could not be activated: " ^ message
-      ^ "\nSpice also could not mark the workspace untrusted: " ^ rollback_error
+      "Repository activation failed: " ^ message
+      ^ "\nSpice also could not restore restricted mode: " ^ rollback_error
 
 let run ~root ~decide =
   with_raw_terminal @@ fun () ->
@@ -141,8 +139,8 @@ let run ~root ~decide =
         | Ok value ->
             let message =
               match choice with
-              | Untrusted -> "Project customization remains disabled."
-              | Trusted -> "Project customization is enabled."
+              | Untrusted -> "Repository remains restricted."
+              | Trusted -> "Repository activation is enabled."
               | Exit -> assert false
             in
             write ("\nDecision saved. " ^ message ^ "\n");
