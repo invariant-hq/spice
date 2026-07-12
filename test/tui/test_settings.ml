@@ -46,10 +46,10 @@ let%expect_test "settings opens on the config tab" =
 09 |     Thinking summaries       true
 10 |
 11 |   Permissions & sandbox
-12 |     Permission mode          default
-13 |     Unattended permission    block
-14 |     Sandbox mode             danger-full-access  — no filesystem confinement
-15 |     Sandbox required         enforced
+12 |     Unattended permission    block
+13 |     Sandbox mode             danger-full-access  — no filesystem confinement
+14 |     Sandbox required         enforced
+15 |     Sandbox reads            all
 16 |
 17 |   Context
 18 |     Auto compact             true
@@ -74,16 +74,16 @@ let%expect_test "tab switches to the status fact sheet" =
 02 |
 03 |   config · status · usage · skills
 04 |
-05 |   version         dev
-06 |   session         none
-07 |   cwd             $PROJECT
-08 |   account         not connected · /login
-09 |   model           openai/gpt-5.5 · stable
-10 |   permission      default
-11 |   sandbox         danger-full-access
-12 |   trust           trusted · $PROJECT
-13 |   user config     $PROJECT.xdg/config/spice/con…
-14 |   project config  $PROJECT/.spice/config.json
+05 |   version            dev
+06 |   session            none
+07 |   cwd                $PROJECT
+08 |   account            not connected · /login
+09 |   model              openai/gpt-5.5 · stable
+10 |   permission review  default
+11 |   sandbox            danger-full-access
+12 |   trust              trusted · $PROJECT
+13 |   user config        $PROJECT.xdg/config/spice/…
+14 |   project config     $PROJECT/.spice/config.json
 15 |
 16 |   c copy id · ←→ tab · esc back
 17 |
@@ -121,10 +121,10 @@ let%expect_test "enum row expands to a radio and commits" =
 09 |     Thinking summaries       true
 10 |
 11 |   Permissions & sandbox
-12 |     Permission mode          default
-13 |     Unattended permission    block
-14 |     Sandbox mode             danger-full-access  — no filesystem confinement
-15 |     Sandbox required         enforced
+12 |     Unattended permission    block
+13 |     Sandbox mode             danger-full-access  — no filesystem confinement
+14 |     Sandbox required         enforced
+15 |     Sandbox reads            all
 16 |
 17 |   Context
 18 |     Auto compact             true
@@ -214,16 +214,16 @@ let%expect_test "filter narrows the config rows" =
   Tui.print t;
   [%expect
     {|01 | ──  settings ─────────────────────────────────────────────────────────────env ──
-02 |   /sandbox  2 matches
+02 |   /sandbox  3 matches
 03 |
 04 |   config · status · usage · skills
 05 |
 06 |   Permissions & sandbox
 07 |   ❯ Sandbox mode             danger-full-access  — no filesystem confinement
 08 |     Sandbox required         enforced
-09 |
-10 |   ↑↓ select · esc clear filter
-11 |
+09 |     Sandbox reads            all
+10 |
+11 |   ↑↓ select · esc clear filter
 12 |
 13 |
 14 |

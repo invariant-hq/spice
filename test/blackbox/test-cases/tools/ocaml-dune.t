@@ -42,7 +42,7 @@ to the model.
   > {"expect":{"body_contains":["function_call_output","call-describe","fixture_lib"],"body_not_contains":["path is outside workspace"]},"response":{"id":"resp-describe-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"describe final"}]}]}}
   > JSONL
   $ start_fake_openai describe.jsonl describe-capture describe-port
-  $ spice run --cwd fixture --json --permission-mode bypass --sandbox danger-full-access --id ocaml-dune-describe "describe the dune project" | grep -oE '"tool":"ocaml_dune_describe"|"final_text":"describe final"|"tool_calls_by_name":\[\{"name":"ocaml_dune_describe","count":1\}\]'
+  $ spice run --cwd fixture --json --permission bypass --sandbox danger-full-access --id ocaml-dune-describe "describe the dune project" | grep -oE '"tool":"ocaml_dune_describe"|"final_text":"describe final"|"tool_calls_by_name":\[\{"name":"ocaml_dune_describe","count":1\}\]'
   spice: session saved; resume with: spice resume 'ocaml-dune-describe'
   "tool":"ocaml_dune_describe"
   "tool":"ocaml_dune_describe"
@@ -61,7 +61,7 @@ unavailable tool result and lets the model continue.
   > JSONL
   $ export SPICE_FAKE_PROVIDER_ACCEPT_TIMEOUT=10
   $ start_fake_openai diagnostics.jsonl diagnostics-capture diagnostics-port
-  $ spice run --cwd fixture --json --permission-mode bypass --sandbox danger-full-access --id ocaml-dune-diagnostics "show dune diagnostics" | grep -oE '"tool":"ocaml_dune_diagnostics"|"final_text":"diagnostics final"|"tool_calls_by_name":\[\{"name":"ocaml_dune_diagnostics","count":1\}\]'
+  $ spice run --cwd fixture --json --permission bypass --sandbox danger-full-access --id ocaml-dune-diagnostics "show dune diagnostics" | grep -oE '"tool":"ocaml_dune_diagnostics"|"final_text":"diagnostics final"|"tool_calls_by_name":\[\{"name":"ocaml_dune_diagnostics","count":1\}\]'
   spice: session saved; resume with: spice resume 'ocaml-dune-diagnostics'
   "tool":"ocaml_dune_diagnostics"
   "tool":"ocaml_dune_diagnostics"

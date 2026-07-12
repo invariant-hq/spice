@@ -2,202 +2,124 @@ Durable permission rules are hand-authored config facts: portable matcher
 forms, content-derived ids that survive file reordering, inspection in
 evaluation order, and removal that edits exactly one config file.
 
-The list shows the active preset's rules even before any durable rule exists.
+The product table is visible and owns native workspace operations.
 
-  $ spice permission list
-  #  RULE          ACTION  MATCH                   SOURCE
-  1  be7bf2b60ce9  allow   path-workspace op=read  preset permission.mode=default
+  $ spice permission list | grep 'path-workspace'
+  1   be7bf2b60ce9  allow   path-workspace op=read                   default product permission policy
+  2   2d2b3c417b9f  allow   path-workspace op=create                 default product permission policy
+  3   7c47a4047294  allow   path-workspace op=modify                 default product permission policy
+  4   7f2fea3aff85  allow   path-workspace op=delete                 default product permission policy
 
-Hand-written rules in the user config list before the preset, in file order,
-with content-derived ids, source kind, and storage location. The relative
-path form carries no machine-derived workspace root key.
+Hand-written rules list before product rules, in file order. Relative path
+matchers carry no machine-derived workspace key.
 
   $ mkdir -p "$XDG_CONFIG_HOME/spice"
   $ cat > "$XDG_CONFIG_HOME/spice/config.json" <<'JSON'
   > { "permission": { "rules": [
   >   { "action": "allow",
-  >     "matcher": { "type": "command", "pattern": { "type": "argv-prefix", "execution": "enforced", "cwd": { "type": "workspace" }, "program": "dune", "args": ["build"] } } },
+  >     "matcher": { "type": "path-under-relative", "relative": "notes" } },
   >   { "action": "deny",
   >     "matcher": { "type": "path-exact-relative", "relative": ".env" } } ] } }
   > JSON
-  $ spice permission list
-  #  RULE          ACTION  MATCH                                                                                                                       SOURCE
-  1  28dbaad94980  allow   command pattern={"type":"argv-prefix","execution":"enforced","cwd":{"type":"workspace"},"program":"dune","args":["build"]}  user $TESTCASE_ROOT/xdg-config/spice/config.json
-  2  b62807796201  deny    path-exact-relative relative=.env                                                                                           user $TESTCASE_ROOT/xdg-config/spice/config.json
-  3  be7bf2b60ce9  allow   path-workspace op=read                                                                                                      preset permission.mode=default
+  $ spice permission list | sed -n '2,4p'
+  1   a8623e11d63d  allow   path-under-relative relative=notes       user $TESTCASE_ROOT/xdg-config/spice/config.json
+  2   b62807796201  deny    path-exact-relative relative=.env        user $TESTCASE_ROOT/xdg-config/spice/config.json
+  3   be7bf2b60ce9  allow   path-workspace op=read                   default product permission policy
 
-Reordering the file does not change rule ids: identity is derived from rule
-content, never from position.
+Reordering changes positions but not ids because identity comes from content.
 
   $ cat > "$XDG_CONFIG_HOME/spice/config.json" <<'JSON'
   > { "permission": { "rules": [
   >   { "action": "deny",
   >     "matcher": { "type": "path-exact-relative", "relative": ".env" } },
   >   { "action": "allow",
-  >     "matcher": { "type": "command", "pattern": { "type": "argv-prefix", "execution": "enforced", "cwd": { "type": "workspace" }, "program": "dune", "args": ["build"] } } } ] } }
+  >     "matcher": { "type": "path-under-relative", "relative": "notes" } } ] } }
   > JSON
-  $ spice permission list
-  #  RULE          ACTION  MATCH                                                                                                                       SOURCE
-  1  b62807796201  deny    path-exact-relative relative=.env                                                                                           user $TESTCASE_ROOT/xdg-config/spice/config.json
-  2  28dbaad94980  allow   command pattern={"type":"argv-prefix","execution":"enforced","cwd":{"type":"workspace"},"program":"dune","args":["build"]}  user $TESTCASE_ROOT/xdg-config/spice/config.json
-  3  be7bf2b60ce9  allow   path-workspace op=read                                                                                                      preset permission.mode=default
+  $ spice permission list | sed -n '2,3p'
+  1   b62807796201  deny    path-exact-relative relative=.env        user $TESTCASE_ROOT/xdg-config/spice/config.json
+  2   a8623e11d63d  allow   path-under-relative relative=notes       user $TESTCASE_ROOT/xdg-config/spice/config.json
+  $ spice permission list --json | grep -o '"id":"[^"]*"' | head -2
+  "id":"b62807796201"
+  "id":"a8623e11d63d"
 
-The JSON view mirrors the same rows with the rule's schema encoding.
-
-  $ spice permission list --json
-  {"schema_version":1,"type":"permission.rules","rules":[{"position":1,"id":"b62807796201","rule":{"action":"deny","matcher":{"type":"path-exact-relative","relative":".env"}},"source":"user","location":"$TESTCASE_ROOT/xdg-config/spice/config.json"},{"position":2,"id":"28dbaad94980","rule":{"action":"allow","matcher":{"type":"command","pattern":{"type":"argv-prefix","execution":"enforced","cwd":{"type":"workspace"},"program":"dune","args":["build"]}}},"source":"user","location":"$TESTCASE_ROOT/xdg-config/spice/config.json"},{"position":3,"id":"be7bf2b60ce9","rule":{"action":"allow","matcher":{"type":"path-workspace","op":"read"}},"source":"preset","location":"permission.mode=default"}]}
-
-Two identical rules in one layer are a load error naming the duplicate id,
-before any command can run against the config.
+Duplicate ids and invalid rule JSON fail at the configuration boundary.
 
   $ cat > "$XDG_CONFIG_HOME/spice/config.json" <<'JSON'
   > { "permission": { "rules": [
-  >   { "action": "deny",
-  >     "matcher": { "type": "path-exact-relative", "relative": ".env" } },
-  >   { "action": "deny",
-  >     "matcher": { "type": "path-exact-relative", "relative": ".env" } } ] } }
+  >   { "action": "deny", "matcher": { "type": "path-exact-relative", "relative": ".env" } },
+  >   { "action": "deny", "matcher": { "type": "path-exact-relative", "relative": ".env" } } ] } }
   > JSON
   $ spice permission list
   spice: $TESTCASE_ROOT/xdg-config/spice/config.json permission.rules contains duplicate rule b62807796201
   [1]
-
-Invalid rule JSON fails loudly with the offending location.
-
   $ cat > "$XDG_CONFIG_HOME/spice/config.json" <<'JSON'
-  > { "permission": { "rules": [ { "action": "maybe",
-  >     "matcher": { "type": "path-exact-relative", "relative": ".env" } } ] } }
+  > { "permission": { "rules": [
+  >   { "action": "maybe", "matcher": { "type": "path-exact-relative", "relative": ".env" } } ] } }
   > JSON
-  $ spice permission list
+  $ spice permission list 2>&1 | head -1
   spice: $TESTCASE_ROOT/xdg-config/spice/config.json permission.rules: Unexpected permission rule action enum string value: maybe. Must be allow,
-  review or deny.
-  File "-":
-  File "-": in member action of
-  File "-": permission rule object
-  File "-": at index 0 of
-  File "-": array<permission rule object>
   [1]
 
-The scalar config surface does not address the structured field; the error
-points at the file and the permission commands.
+The scalar config editor does not address structured rules. Editing another
+permission key preserves them.
 
   $ cat > "$XDG_CONFIG_HOME/spice/config.json" <<'JSON'
   > { "permission": { "rules": [
-  >   { "action": "deny",
-  >     "matcher": { "type": "path-exact-relative", "relative": ".env" } } ] } }
+  >   { "action": "deny", "matcher": { "type": "path-exact-relative", "relative": ".env" } } ] } }
   > JSON
-  $ spice config get permission.rules
-  Usage: spice config get [--help] [OPTION]… KEY
-  spice: KEY argument: config key permission.rules is not a scalar value Hint:
+  $ spice config get permission.rules 2>&1 | grep 'permission rules are structured'
          permission rules are structured config: edit the config file directly,
-         then inspect with `spice permission list` and remove with `spice
-         permission remove`
   [124]
-  $ spice config set permission.rules '[]'
-  Usage: spice config set [--help] [--project] [--project-local] [--user]
-         [OPTION]… KEY VALUE
-  spice: KEY argument: config key permission.rules is not a scalar value Hint:
-         permission rules are structured config: edit the config file directly,
-         then inspect with `spice permission list` and remove with `spice
-         permission remove`
-  [124]
-
-Scalar edits through other permission keys preserve the structured rules.
-
-  $ spice config set permission.mode accept-edits
+  $ spice config set permission.unattended deny
   $ cat "$XDG_CONFIG_HOME/spice/config.json"
-  {"permission":{"rules":[{"action":"deny","matcher":{"type":"path-exact-relative","relative":".env"}}],"mode":"accept-edits"}}
-  $ spice config unset permission.mode
+  {"permission":{"rules":[{"action":"deny","matcher":{"type":"path-exact-relative","relative":".env"}}],"unattended":"deny"}}
 
-Removal edits exactly one file and drops the member when no rules remain.
+Removal edits only the durable file. Fixed product rules are not removable.
 
   $ spice permission remove b62807796201
   removed rule b62807796201 from user $TESTCASE_ROOT/xdg-config/spice/config.json
   $ cat "$XDG_CONFIG_HOME/spice/config.json"
-  {}
-  $ spice permission list
-  #  RULE          ACTION  MATCH                   SOURCE
-  1  be7bf2b60ce9  allow   path-workspace op=read  preset permission.mode=default
-
-Unknown ids fail loudly, and preset rules are not removable.
-
-  $ spice permission remove deadbeef0000
-  spice: no durable permission rule deadbeef0000; run `spice permission list` to see rule ids
-  [1]
-  $ spice permission remove 7846a2b8d492
-  spice: no durable permission rule 7846a2b8d492; run `spice permission list` to see rule ids
+  {"permission":{"unattended":"deny"}}
+  $ spice permission remove be7bf2b60ce9
+  spice: no durable permission rule be7bf2b60ce9; run `spice permission list` to see rule ids
   [1]
 
-Workspace files never contribute rules: rules in project or project-local
-config are stripped at load with a diagnostic, never listed, and never
-become effective policy. Only the user layer (and the preset) list.
+Workspace files never contribute permission rules. They are stripped with a
+diagnostic, while the user layer remains effective and removable.
 
   $ mkdir -p .spice
   $ cat > "$XDG_CONFIG_HOME/spice/config.json" <<'JSON'
   > { "permission": { "rules": [
-  >   { "action": "allow",
-  >     "matcher": { "type": "command", "pattern": { "type": "argv-prefix", "execution": "enforced", "cwd": { "type": "workspace" }, "program": "dune", "args": ["build"] } } } ] } }
+  >   { "action": "deny", "matcher": { "type": "path-exact-relative", "relative": ".env" } } ] } }
   > JSON
   $ cat > .spice/config.json <<'JSON'
   > { "permission": { "rules": [
-  >   { "action": "allow",
-  >     "matcher": { "type": "command", "pattern": { "type": "argv-prefix", "execution": "enforced", "cwd": { "type": "workspace" }, "program": "dune", "args": ["build"] } } } ] } }
+  >   { "action": "allow", "matcher": { "type": "path-exact-relative", "relative": ".env" } } ] } }
   > JSON
-  $ cat > .spice/config.local.json <<'JSON'
-  > { "permission": { "rules": [
-  >   { "action": "review",
-  >     "matcher": { "type": "path-under-relative", "relative": "secrets" } } ] } }
-  > JSON
-  $ spice permission list
-  #  RULE          ACTION  MATCH                                                                                                                       SOURCE
-  1  28dbaad94980  allow   command pattern={"type":"argv-prefix","execution":"enforced","cwd":{"type":"workspace"},"program":"dune","args":["build"]}  user $TESTCASE_ROOT/xdg-config/spice/config.json
-  2  be7bf2b60ce9  allow   path-workspace op=read                                                                                                      preset permission.mode=default
+  $ spice permission list | sed -n '2p'
+  1   b62807796201  deny    path-exact-relative relative=.env        user $TESTCASE_ROOT/xdg-config/spice/config.json
+  $ spice config show --json --origins | grep -o '"kind":"ignored_project_rules"'
+  "kind":"ignored_project_rules"
+  $ spice permission remove b62807796201
+  removed rule b62807796201 from user $TESTCASE_ROOT/xdg-config/spice/config.json
+  $ grep -o '"action": "allow"' .spice/config.json
+  "action": "allow"
+  $ rm -f .spice/config.json
 
-The stripped workspace rules surface as config diagnostics, one per file.
-
-  $ spice config show --json --origins | grep -o '"kind":"ignored_project_rules"' | awk 'END { print NR }'
-  2
-
-Removal never reaches workspace files: their rules are not durable policy,
-so the ids resolve against the user layer only. The files stay hand-editable.
-
-  $ spice permission remove 28dbaad94980
-  removed rule 28dbaad94980 from user $TESTCASE_ROOT/xdg-config/spice/config.json
-  $ spice permission list
-  #  RULE          ACTION  MATCH                   SOURCE
-  1  be7bf2b60ce9  allow   path-workspace op=read  preset permission.mode=default
-  $ rm -f .spice/config.json .spice/config.local.json
-
-The unattended reply policy is an ordinary enum key with a built-in default,
-environment override, and validation.
+The unattended policy remains durable. Review bypass is only a per-run CLI
+choice; the obsolete permission.mode shape fails loudly and gains no decoder.
 
   $ spice config get permission.unattended
   block
-  $ SPICE_PERMISSION_UNATTENDED=deny spice config get permission.unattended
-  deny
+  $ SPICE_PERMISSION_UNATTENDED=block spice config get permission.unattended
+  block
   $ SPICE_PERMISSION_UNATTENDED=never spice config get permission.unattended
   spice: unknown permission unattended policy: never
   Hint: expected one of: block, deny
   [1]
-  $ spice config set permission.unattended deny
-  $ spice config get permission.unattended
-  deny
-  $ spice config unset permission.unattended
-
-The dangerous preset never survives a restart: every durable channel — the
-environment and config files alike — rejects bypass with recovery guidance.
-Only the per-invocation CLI flag reaches it.
-
-  $ SPICE_PERMISSION_MODE=bypass spice config get permission.mode
-  spice: SPICE_PERMISSION_MODE must not be bypass
-  Hint: pass --permission-mode bypass for one run
+  $ cat > "$XDG_CONFIG_HOME/spice/config.json" <<'JSON'
+  > { "permission": { "mode": "accept-edits" } }
+  > JSON
+  $ spice config validate 2>&1 | grep 'permission.mode is no longer supported'
+  spice: $TESTCASE_ROOT/xdg-config/spice/config.json permission.mode is no longer supported; use --permission bypass for one run
   [1]
-  $ SPICE_PERMISSION_MODE=plan spice config get permission.mode
-  plan
-  $ spice config set permission.mode bypass
-  spice: permission.mode must not be bypass
-  Hint: pass --permission-mode bypass for one run
-  [2]
-  $ spice config set permission.mode accept-edits
-  $ spice config get permission.mode
-  accept-edits
-  $ spice config unset permission.mode

@@ -885,7 +885,7 @@ let spice_run ~bin ~model ctx ~prompt =
       "--json";
       "--cwd";
       ctx.Agent.workspace;
-      "--permission-mode";
+      "--permission";
       "bypass";
       "--sandbox";
       "danger-full-access";

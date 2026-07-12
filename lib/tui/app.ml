@@ -171,10 +171,6 @@ type t = {
   (* The declared turn mode (10-commands.md §Mode switches): the composer frame
      wears it; /plan and /build set it for the next turn. *)
   mode : Spice_protocol.Mode.t;
-  (* The approval posture the shift+tab pill reads (04-header-footer.md §4). A
-     TUI-local gate this iteration — it reaches the host when the dialogs wave
-     lands auto-answering (doc/plans/tui-next-composer.md §Host seams). *)
-  posture : Footer.posture;
   (* Whether the composer is borrowed to collect a dialog's feedback answer
      ([For_answer] while a deny/adjust/custom-answer composer is open). *)
   borrow : borrow;
@@ -306,7 +302,6 @@ type msg =
     }
   | Prompt_history_appended of History.Entry.t
   | Ctrl_r
-  | Shift_tab
   (* A key routed to an open decision dialog while it owns the keyboard, and the
      esc that steps back from a borrowed feedback composer to the dialog. *)
   | Dialog_key of Matrix.Input.Key.event
@@ -575,7 +570,6 @@ let init_model ~snapshot ~reduced_motion =
     session_id = None;
     queued = [];
     mode = Spice_protocol.Mode.default;
-    posture = Footer.Ask;
     borrow = Free;
     shell = None;
     cols = 80;
@@ -1237,25 +1231,17 @@ let command_of_resolution boundary (resolution : Dialog.resolution) =
       ( Spice_protocol.Pending.Question { turn; call_id; _ }
       | Spice_protocol.Pending.Host_tool { turn; call_id; _ } ) ) ->
       Some (Answer_tool { turn; call_id; answer = text })
-  | ( Dialog.Resolve_plan { decision; _ },
+  | ( Dialog.Resolve_plan { decision },
       Spice_protocol.Pending.Plan { turn; call_id; _ } ) ->
       Some (Resolve_plan { turn; call_id; decision })
   | _ -> None
 
 (* Close a resolved dialog: append its echo as an event notice under the tool
-   call, apply the accept-edits posture in the same stroke when a plan approval
-   asked for it, and hand back the continuation command. Dialogs only open in
-   chat, so the echo always has a transcript to land in. *)
+   call and hand back the continuation command. Dialogs only open in chat, so
+   the echo always has a transcript to land in. *)
 let resolve_dialog ~resolution ~echo dialog t =
   let boundary = (Dialog.pending dialog).Dialog.boundary in
   let commands = Option.to_list (command_of_resolution boundary resolution) in
-  let t =
-    match resolution with
-    | Dialog.Resolve_plan { accept_edits = true; _ } ->
-        { t with posture = Footer.Accept_edits }
-    | Dialog.Reply _ | Dialog.Answer _ | Dialog.Resolve_plan _ ->
-        t
-  in
   let t =
     match t.phase with
     | Chat chat ->
@@ -2681,16 +2667,6 @@ let update msg t =
             | Some Clear_armed | Some Interrupt_armed | None ->
                 ({ t with armed = Some Quit_armed }, [])))
   | Armed_expired -> ({ t with armed = None }, [])
-  | Shift_tab ->
-      (* Cycle the approval posture (04-header-footer.md §4): the pill is the
-         readout; the gate itself bites when the dialogs wave lands. *)
-      let posture =
-        match t.posture with
-        | Footer.Ask -> Footer.Accept_edits
-        | Footer.Accept_edits -> Footer.Never_ask
-        | Footer.Never_ask -> Footer.Ask
-      in
-      ({ t with posture }, [])
   | Shell_finished block -> (
       (* The shell result settles as one durable tool block; the turn boundary
          then drains the queue exactly as a finished turn does (03-composer.md
@@ -2813,7 +2789,7 @@ let footer t =
         | Composer.Input_mode.Shell -> Some Footer.Shell
         | Composer.Input_mode.History_search -> Some Footer.History_search
       in
-      Footer.view ~posture:t.posture ?input_mode ?agents:(agents_active t)
+      Footer.view ?input_mode ?agents:(agents_active t)
         ~account_absent:(account_absent t) t.snapshot ~dune:(dune t)
         ~width:t.cols
 
@@ -3170,7 +3146,7 @@ let thread_footer t id =
                 (Spice_protocol.Subagent_run.role run)
         | None -> "@agent"
       in
-      Footer.view ~posture:t.posture ?agents:(agents_active t)
+      Footer.view ?agents:(agents_active t)
         ~home_badge:("⏴ " ^ handle ^ " · esc for main")
         ~account_absent:(account_absent t) t.snapshot ~dune:(dune t)
         ~width:t.cols
@@ -3443,14 +3419,8 @@ let key_msg t ev =
         Mosaic.Event.Key.prevent_default ev;
         Option.map (fun m -> Review_msg m) (Spice_tui_review.key review data)
     | Conversing ->
-        let is_shift_tab =
-          match data.Key.key with
-          | Key.Tab -> data.Key.modifier.Modifier.shift
-          | _ -> false
-        in
         if in_chat && ctrl 'o' then emit Toggle_expanded
         else if ctrl 'r' && not (completion_open t) then emit Ctrl_r
-        else if is_shift_tab && not (completion_open t) then emit Shift_tab
         else if is_escape then emit Escape
         else if in_chat && is_page_up then emit (Transcript_paged `Up)
         else if in_chat && is_page_down then emit (Transcript_paged `Down)

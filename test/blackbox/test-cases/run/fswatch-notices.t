@@ -21,7 +21,7 @@ the notice before the follow-up request is prepared.
   > {"expect":{"body_contains":["function_call_output","call-fswatch","source: fswatch","severity: info","title: Workspace files changed","created watched.txt"]},"response":{"id":"resp-fswatch-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"noticed filesystem change"}]}]}}
   > JSONL
   $ SPICE_FAKE_PROVIDER_ACCEPT_TIMEOUT=12 start_fake_openai fswatch.jsonl fswatch-capture fswatch-port
-  $ spice run --cwd "$PWD" --json --permission-mode bypass --id fswatch-live "watch workspace changes" | grep -oE '"tool":"shell"|"final_text":"noticed filesystem change"'
+  $ spice run --cwd "$PWD" --json --permission bypass --id fswatch-live "watch workspace changes" | grep -oE '"tool":"shell"|"final_text":"noticed filesystem change"'
   spice: session saved; resume with: spice resume 'fswatch-live'
   "tool":"shell"
   "tool":"shell"

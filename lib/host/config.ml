@@ -51,24 +51,6 @@ let decode_enum ~what ~all ~to_string of_string value =
           :: Spice_diagnostic.did_you_mean value ~candidates:allowed)
         ("unknown " ^ what ^ ": " ^ value)
 
-let permission_mode_of_string =
-  decode_enum ~what:"permission mode" ~all:Permission.Preset.all
-    ~to_string:Permission.Preset.to_string Permission.Preset.of_string
-
-(* Bypass is a per-invocation flag: no durable channel (config file or
-   environment) may set it, or an escalation would survive restarts. Only the
-   [--permission-mode] CLI flag reaches [Preset.Bypass]. *)
-let durable_permission_mode_of_string name value =
-  let* mode = permission_mode_of_string value in
-  match mode with
-  | Permission.Preset.Bypass ->
-      error
-        ~hints:[ "pass --permission-mode bypass for one run" ]
-        (name ^ " must not be bypass")
-  | Permission.Preset.Default | Permission.Preset.Accept_edits
-  | Permission.Preset.Plan ->
-      Ok mode
-
 let permission_unattended_of_string =
   decode_enum ~what:"permission unattended policy"
     ~all:Permission.Unattended.all ~to_string:Permission.Unattended.to_string
@@ -163,7 +145,7 @@ module Source = struct
     | Extra_file _ -> "extra"
     | Env _ -> "env"
     | Override -> "override"
-    | Default _ -> "preset"
+    | Default _ -> "default"
 
   (* The single-[path] cases; [enc_case] routes each to its own encoder, so the
      other constructors are unreachable. *)
@@ -421,7 +403,6 @@ let string_id : string Type.Id.t = Type.Id.make ()
 let bool_id : bool Type.Id.t = Type.Id.make ()
 let int_id : int Type.Id.t = Type.Id.make ()
 let reasoning_id : Reasoning_effort.t Type.Id.t = Type.Id.make ()
-let preset_id : Permission.Preset.t Type.Id.t = Type.Id.make ()
 let unattended_id : Permission.Unattended.t Type.Id.t = Type.Id.make ()
 let mode_id : Sandbox.Mode.t Type.Id.t = Type.Id.make ()
 let require_id : Sandbox.Require.t Type.Id.t = Type.Id.make ()
@@ -595,36 +576,6 @@ let sandbox_network_codec =
     ~to_text:Sandbox.Network.to_string ~all:Sandbox.Network.all
     ~of_text:sandbox_network_of_string
 
-(* The presets [permission.mode] accepts on a durable channel, in preset
-   order: exactly those {!durable_permission_mode_of_string} does not reject,
-   so the exposed vocabulary can never claim a spelling the parser refuses
-   (bypass is per-invocation only). *)
-let durable_preset_spellings =
-  List.filter_map
-    (fun preset ->
-      let spelling = Permission.Preset.to_string preset in
-      match durable_permission_mode_of_string "permission.mode" spelling with
-      | Ok _ -> Some spelling
-      | Error _ -> None)
-    Permission.Preset.all
-
-(* [permission.mode] rejects the bypass preset on every durable channel and
-   names the channel in the message, so its text parser and file decoder both
-   thread the label through {!durable_permission_mode_of_string}. *)
-let permission_mode_codec =
-  {
-    type_id = preset_id;
-    equal = Permission.Preset.equal;
-    to_text = Permission.Preset.to_string;
-    parse_text = (fun ~label raw -> durable_permission_mode_of_string label raw);
-    encode_json =
-      (fun value -> Jsont.Json.string (Permission.Preset.to_string value));
-    decode_json =
-      (fun ~label leaf ->
-        decode_vocab_leaf label (durable_permission_mode_of_string label) leaf);
-    values = Some durable_preset_spellings;
-  }
-
 (* A closed enum kept as a validated string, with no dedicated domain type.
    [spellings] is both the accepted set and the exposed vocabulary. *)
 let string_enum_codec ~spellings of_text =
@@ -661,7 +612,6 @@ module Field = struct
     | Run_subagent_max_depth : int t
     | Run_subagent_wake : bool t
     | Run_subagent_max_exchanges : int t
-    | Permission_mode : Permission.Preset.t t
     | Permission_unattended : Permission.Unattended.t t
     | Sandbox_mode : Sandbox.Mode.t t
     | Sandbox_require : Sandbox.Require.t t
@@ -710,7 +660,6 @@ module Field = struct
   let run_subagent_max_depth = Run_subagent_max_depth
   let run_subagent_wake = Run_subagent_wake
   let run_subagent_max_exchanges = Run_subagent_max_exchanges
-  let permission_mode = Permission_mode
   let permission_unattended = Permission_unattended
   let sandbox_mode = Sandbox_mode
   let sandbox_require = Sandbox_require
@@ -759,7 +708,6 @@ module Field = struct
     | Run_subagent_max_depth -> "run.subagent_max_depth"
     | Run_subagent_wake -> "run.subagent_wake"
     | Run_subagent_max_exchanges -> "run.subagent_max_exchanges"
-    | Permission_mode -> "permission.mode"
     | Permission_unattended -> "permission.unattended"
     | Sandbox_mode -> "sandbox.mode"
     | Sandbox_require -> "sandbox.require"
@@ -812,7 +760,6 @@ module Field = struct
       Any Run_subagent_max_depth;
       Any Run_subagent_wake;
       Any Run_subagent_max_exchanges;
-      Any Permission_mode;
       Any Permission_unattended;
       Any Sandbox_mode;
       Any Sandbox_require;
@@ -876,7 +823,6 @@ module Field = struct
     | Skills_paths ->
         string_list_codec.values
     | Ocaml_merlin_program -> merlin_codec.values
-    | Permission_mode -> permission_mode_codec.values
     | Permission_unattended -> unattended_codec.values
     | Sandbox_mode -> sandbox_mode_codec.values
     | Sandbox_require -> sandbox_require_codec.values
@@ -910,7 +856,6 @@ module Field = struct
     | "run.subagent_max_depth" -> Ok (Any Run_subagent_max_depth)
     | "run.subagent_wake" -> Ok (Any Run_subagent_wake)
     | "run.subagent_max_exchanges" -> Ok (Any Run_subagent_max_exchanges)
-    | "permission.mode" -> Ok (Any Permission_mode)
     | "permission.unattended" -> Ok (Any Permission_unattended)
     | "permission.rules" ->
         error
@@ -1041,12 +986,6 @@ let field_spec : type a. a Field.t -> a spec =
       make_spec bool_codec ~default:(builtin field true)
   | Field.Run_subagent_max_exchanges ->
       make_spec int_codec ~default:(builtin field 8)
-  | Field.Permission_mode ->
-      make_spec permission_mode_codec
-        ~default:(builtin field Permission.Preset.Default)
-        ~env:
-          ( "SPICE_PERMISSION_MODE",
-            durable_permission_mode_of_string "SPICE_PERMISSION_MODE" )
   | Field.Permission_unattended ->
       make_spec unattended_codec ~shared:true
         ~default:(builtin field Permission.Unattended.Block)
@@ -1499,8 +1438,23 @@ let decode_permission_rules source json layer =
               let* () = check_duplicate_rule_ids label rules in
               Ok (Layer.set_permission_rules rules layer)))
 
+let reject_obsolete_permission_mode source json =
+  match json_mem "permission" json with
+  | Some (Jsont.Object _ as permission)
+    when Option.is_some (json_mem "mode" permission) ->
+      error
+        (source
+       ^ " permission.mode is no longer supported; use --permission bypass \
+          for one run")
+  | None
+  | Some
+      ( Jsont.Null _ | Jsont.Bool _ | Jsont.Number _ | Jsont.String _
+      | Jsont.Array _ | Jsont.Object _ ) ->
+      Ok ()
+
 let layer_of_json source = function
   | Jsont.Object _ as json ->
+      let* () = reject_obsolete_permission_mode source json in
       let* layer =
         List.fold_left
           (fun acc unit ->
@@ -1588,7 +1542,8 @@ let validate_layer_json source ?(strict = false) json =
         errors_of_result (decode_file_key source json key Layer.empty)
       in
       let supported_errors =
-        List.concat_map
+        errors_of_result (reject_obsolete_permission_mode source json)
+        @ List.concat_map
           (function
             | Key key -> key_errors key
             | Providers -> validate_providers source json
@@ -1623,7 +1578,7 @@ let validate_layer_json source ?(strict = false) json =
                         (* Structured fields live outside the scalar key
                            system but are supported file members. *)
                         match head with
-                        | "permission" -> [ "rules" ]
+                        | "permission" -> [ "rules"; "mode" ]
                         | _ -> []
                       in
                       unknown_object_field_errors
@@ -2267,7 +2222,6 @@ end
 module Permissions = struct
   type nonrec t = t
 
-  let mode t = value Field.permission_mode t
   let unattended t = value Field.permission_unattended t
   let rules t = t.permission_rules
 end
@@ -2363,14 +2317,11 @@ let runtime t = t
 let tui t = t
 let permissions t = t
 
-let permission_posture ?preset t =
+let permission_posture ?(review = Permission.Review_behavior.Default) t =
   let permissions = permissions t in
-  let preset = Option.value preset ~default:(Permissions.mode permissions) in
   Permission.Run.make
-    ~preset:
-      ( Source.Default
-          { reason = "permission.mode=" ^ Permission.Preset.to_string preset },
-        preset )
+    ~review
+    ~product:(Source.Default { reason = "product permission policy" })
     ~durable:(Permissions.rules permissions)
     ()
 
@@ -2661,17 +2612,15 @@ let validate_merged_layer layer =
   else Ok ()
 
 let pp ppf t =
-  let permissions = permissions t in
   let runtime = runtime t in
   Format.fprintf ppf
     "@[<v>{ cwd = %S; project_root = %S; data_home = %S; state_home = %S; \
-     auth_store_path = %S; permission_mode = %S; shell = %S }@]"
+     auth_store_path = %S; shell = %S }@]"
     (Spice_path.Abs.to_string t.cwd)
     (Spice_path.Abs.to_string t.project_root)
     (Spice_path.Abs.to_string t.data_home)
     (Spice_path.Abs.to_string t.state_home)
     (Spice_path.Abs.to_string t.auth_store_path)
-    (Permission.Preset.to_string (Permissions.mode permissions))
     (Runtime.shell runtime)
 
 let load ~stdenv ?process_env ?cwd ?extra_config_file ?data_home

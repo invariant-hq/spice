@@ -9,7 +9,7 @@ tool result, so it must not block unattended exec runs.
   > JSONL
   $ start_fake_openai todo.jsonl todo-capture todo-port
 
-  $ spice run --json --cwd "$PWD" --permission-mode bypass --id todo-run "track the work" 2>&1 | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/; s/"duration_ms":[0-9]+/"duration_ms":$TIME/'
+  $ spice run --json --cwd "$PWD" --permission bypass --id todo-run "track the work" 2>&1 | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/; s/"duration_ms":[0-9]+/"duration_ms":$TIME/'
   {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"danger-full-access","read":"all","origin":"config","require":"enforced","network":"enabled","backend":"none","enforcement":"not_requested"}}
   {"schema_version":1,"type":"session.started","session_id":"todo-run","revision":"sha256:$HASH"}
   {"schema_version":1,"type":"turn.started","session_id":"todo-run","revision":"sha256:$HASH","turn_id":"turn_$ID","workflow_mode":"build","projection_digest":"sha256:$HASH","context_warnings":[]}
@@ -39,7 +39,7 @@ arrives with the plan continuation flags in a later step.
   > JSONL
   $ start_fake_openai plan.jsonl plan-capture plan-port
 
-  $ spice run --json --cwd "$PWD" --permission-mode bypass --mode plan --id plan-run "plan the work" 2>&1 | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/; s/"turn":"turn_[^"]+"/"turn":"turn_$ID"/; s/"duration_ms":[0-9]+/"duration_ms":$TIME/'
+  $ spice run --json --cwd "$PWD" --permission bypass --mode plan --id plan-run "plan the work" 2>&1 | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/; s/"turn":"turn_[^"]+"/"turn":"turn_$ID"/; s/"duration_ms":[0-9]+/"duration_ms":$TIME/'
   {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"danger-full-access","read":"all","origin":"config","require":"enforced","network":"enabled","backend":"none","enforcement":"not_requested"}}
   {"schema_version":1,"type":"session.started","session_id":"plan-run","revision":"sha256:$HASH"}
   {"schema_version":1,"type":"turn.started","session_id":"plan-run","revision":"sha256:$HASH","turn_id":"turn_$ID","workflow_mode":"plan","projection_digest":"sha256:$HASH","context_warnings":[]}
@@ -62,7 +62,7 @@ the same model-authored id without conflicting with the first session's plan.
   > JSONL
   $ start_fake_openai plan-two.jsonl plan-two-capture plan-two-port
 
-  $ spice run --json --cwd "$PWD" --permission-mode bypass --mode plan --id plan-run-two "plan other work" 2>&1 | grep -o '"type":"session.waiting"'
+  $ spice run --json --cwd "$PWD" --permission bypass --mode plan --id plan-run-two "plan other work" 2>&1 | grep -o '"type":"session.waiting"'
   "type":"session.waiting"
   [3]
   $ wait_fake_server
@@ -110,7 +110,7 @@ first request, so the fake server matches script items by content.
   > JSONL
   $ SPICE_FAKE_PROVIDER_UNORDERED=1 start_fake_openai subagent.jsonl subagent-capture subagent-port
 
-  $ spice run --json --cwd "$PWD" --permission-mode bypass --id subagent-run "delegate exploration" 2>&1 | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/; s/"duration_ms":[0-9]+/"duration_ms":$TIME/'
+  $ spice run --json --cwd "$PWD" --permission bypass --id subagent-run "delegate exploration" 2>&1 | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/; s/"duration_ms":[0-9]+/"duration_ms":$TIME/'
   {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"danger-full-access","read":"all","origin":"config","require":"enforced","network":"enabled","backend":"none","enforcement":"not_requested"}}
   {"schema_version":1,"type":"session.started","session_id":"subagent-run","revision":"sha256:$HASH"}
   {"schema_version":1,"type":"turn.started","session_id":"subagent-run","revision":"sha256:$HASH","turn_id":"turn_$ID","workflow_mode":"build","projection_digest":"sha256:$HASH","context_warnings":[]}
@@ -142,7 +142,7 @@ escaped parent and child run paths in the real store.
   > JSONL
   $ SPICE_FAKE_PROVIDER_UNORDERED=1 start_fake_openai subagent-identities.jsonl subagent-identities-capture subagent-identities-port
 
-  $ spice run --json --cwd "$PWD" --permission-mode bypass --id 'team/a' "delegate twice" 2>&1 | grep -o '"final_text":"Distinct children launched."'
+  $ spice run --json --cwd "$PWD" --permission bypass --id 'team/a' "delegate twice" 2>&1 | grep -o '"final_text":"Distinct children launched."'
   "final_text":"Distinct children launched."
   $ wait_fake_server
   $ spice session show --json 'team/a' | grep -o '"role":"explore"' | wc -l | tr -d ' '
@@ -162,7 +162,7 @@ child's findings in the same turn.
   > JSONL
   $ SPICE_FAKE_PROVIDER_UNORDERED=1 start_fake_openai subagent-wait.jsonl wait-capture wait-port
 
-  $ spice run --json --cwd "$PWD" --permission-mode bypass --id wait-run "delegate then wait" 2>&1 | grep -o '"outcome":"completed","final_text":"Waited."'
+  $ spice run --json --cwd "$PWD" --permission bypass --id wait-run "delegate then wait" 2>&1 | grep -o '"outcome":"completed","final_text":"Waited."'
   "outcome":"completed","final_text":"Waited."
   $ wait_fake_server
   $ grep -o 'ledger survey findings' wait-capture/request-4.json | head -1
@@ -184,7 +184,7 @@ and a second wait collects the completed run.
   > JSONL
   $ SPICE_FAKE_PROVIDER_UNORDERED=1 start_fake_openai subagent-ask.jsonl ask-capture ask-port
 
-  $ spice run --json --cwd "$PWD" --permission-mode bypass --id ask-run "delegate and answer" 2>&1 | grep -o '"outcome":"completed","final_text":"Answered."'
+  $ spice run --json --cwd "$PWD" --permission bypass --id ask-run "delegate and answer" 2>&1 | grep -o '"outcome":"completed","final_text":"Answered."'
   "outcome":"completed","final_text":"Answered."
   $ wait_fake_server
 

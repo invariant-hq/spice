@@ -15,7 +15,7 @@ to the direct parent rather than leaking into the root session's notices.
   > JSONL
   $ SPICE_FAKE_PROVIDER_UNORDERED=1 start_fake_openai recursive.jsonl recursive-capture recursive-port
 
-  $ spice run --json --cwd "$PWD" --permission-mode bypass --id recursive-root "delegate recursively" 2>&1 | grep -o '"final_text":"Recursive delegation completed."'
+  $ spice run --json --cwd "$PWD" --permission bypass --id recursive-root "delegate recursively" 2>&1 | grep -o '"final_text":"Recursive delegation completed."'
   "final_text":"Recursive delegation completed."
   $ wait_fake_server
 
@@ -49,7 +49,7 @@ that tree.
   > {"expect":{"body_contains":["function_call_output","foreign-nested","is not a descendant of session foreign-root"]},"response":{"id":"resp-rec-foreign-done","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Foreign run rejected."}]}]}}
   > JSONL
   $ start_fake_openai reject-foreign.jsonl reject-foreign-capture reject-foreign-port
-  $ spice run --json --cwd "$PWD" --permission-mode bypass --id foreign-root "target a foreign nested run" 2>&1 | grep -o '"final_text":"Foreign run rejected."'
+  $ spice run --json --cwd "$PWD" --permission bypass --id foreign-root "target a foreign nested run" 2>&1 | grep -o '"final_text":"Foreign run rejected."'
   "final_text":"Foreign run rejected."
   $ wait_fake_server
 
@@ -65,7 +65,7 @@ The depth bound is checked before a grandchild session or ledger is minted.
   > JSONL
   $ SPICE_FAKE_PROVIDER_UNORDERED=1 start_fake_openai depth-limit.jsonl depth-limit-capture depth-limit-port
 
-  $ spice run --json --cwd "$PWD" --permission-mode bypass --id depth-root "exercise depth limit" 2>&1 | grep -o '"final_text":"Depth limit enforced."'
+  $ spice run --json --cwd "$PWD" --permission bypass --id depth-root "exercise depth limit" 2>&1 | grep -o '"final_text":"Depth limit enforced."'
   "final_text":"Depth limit enforced."
   $ wait_fake_server
   $ test ! -e $SPICE_TEST_DATA_HOME/sessions/depth-root-sub-depth-a-sub-too-deep/session.json && echo no-grandchild

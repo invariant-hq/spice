@@ -1,4 +1,4 @@
-Blocked permission prompts carry the full review contract: the active preset,
+Blocked permission prompts carry the full review contract: review behavior,
 each reviewed access with render-time policy provenance, and host-computed
 planned-change evidence — in the human text, the status JSON, and the JSONL
 events, from the same projection.
@@ -9,6 +9,13 @@ string-replace family explicitly; the model stays gpt-5.5 for the fake
 OpenAI-Responses backend.
 
   $ spice config set tools.editor string-replace
+  $ mkdir -p "$XDG_CONFIG_HOME/spice"
+  $ cat > "$XDG_CONFIG_HOME/spice/config.json" <<'JSON'
+  > { "permission": { "rules": [
+  >   { "action": "review",
+  >     "matcher": { "type": "path-workspace", "op": "create" } } ] } }
+  > JSON
+  $ spice config set tools.editor string-replace
 
   $ cat > block.jsonl <<'JSONL'
   > {"expect":{"body_contains":["\"name\":\"write_file\""]},"response":{"id":"resp-1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-1","call_id":"call-write","name":"write_file","arguments":"{\"path\":\"notes.txt\",\"contents\":\"first line\\nsecond line\\n\"}"}]}}
@@ -17,15 +24,15 @@ OpenAI-Responses backend.
   $ spice run --cwd "$PWD" --id blocked-detail "write notes.txt" >block.out 2>&1; echo exit:$?
   exit:3
   $ sed -E "s/perm:[^ ']+/perm:\$ID/g; s/turn=turn_[^ ]+/turn=turn_\$ID/g" block.out
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
   warning: command sandbox disabled by explicit user choice
   spice: session blocked-detail waiting: permission perm:$ID tool=write_file turn=turn_$ID call=call-write
-  mode: default
+  review: default
   accesses:
-  - write create $TESTCASE_ROOT/notes.txt  [review: no rule or grant]
+  - write create $TESTCASE_ROOT/notes.txt  [review: rule a893d6c9785e (user)]
   change:
   - write create $TESTCASE_ROOT/notes.txt (+2 -0)
       --- /dev/null
@@ -39,14 +46,14 @@ OpenAI-Responses backend.
   deny with message: spice run reply 'blocked-detail' --deny 'perm:$ID' --message TEXT|-
   $ wait_fake_server
 
-The status JSON exposes the same prompt detail structurally: mode, reviewed
+The status JSON exposes the same prompt detail structurally: review behavior,
 accesses with explanations, and evidence — enough to render a prompt without
 exporting the session.
 
-  $ spice session show --json blocked-detail | grep -o '"mode":"default"'
-  "mode":"default"
-  $ spice session show --json blocked-detail | grep -o '"kind":"needs_review"'
-  "kind":"needs_review"
+  $ spice session show --json blocked-detail | grep -o '"review":"default"'
+  "review":"default"
+  $ spice session show --json blocked-detail | grep -o '"kind":"needs_review_by_rule"'
+  "kind":"needs_review_by_rule"
   $ spice session show --json blocked-detail | grep -o '"additions":2'
   "additions":2
   $ spice session show --json blocked-detail | grep -o '"removals":0'
@@ -63,15 +70,15 @@ session.blocked agrees with status on the blocker.
   $ start_fake_openai block-json.jsonl capture-json port-json
   $ spice run --cwd "$PWD" --json --id blocked-json "write notes.txt" >events.jsonl 2>err.txt; echo exit:$?
   exit:3
-  $ grep '"type":"permission.requested"' events.jsonl | grep -o '"mode":"default"'
-  "mode":"default"
-  $ grep '"type":"permission.requested"' events.jsonl | grep -o '"explanation":{"kind":"needs_review"}'
-  "explanation":{"kind":"needs_review"}
+  $ grep '"type":"permission.requested"' events.jsonl | grep -o '"review":"default"'
+  "review":"default"
+  $ grep '"type":"permission.requested"' events.jsonl | grep -o '"explanation":{"kind":"needs_review_by_rule"[^}]*}'
+  "explanation":{"kind":"needs_review_by_rule","rule_id":"a893d6c9785e","rule_source":"user"}
   $ grep '"type":"permission.requested"' events.jsonl | grep -o '"additions":2'
   "additions":2
   "additions":2
-  $ grep '"type":"session.waiting"' events.jsonl | grep -o '"mode":"default"'
-  "mode":"default"
+  $ grep '"type":"session.waiting"' events.jsonl | grep -o '"review":"default"'
+  "review":"default"
   $ wait_fake_server
 
 Unattended runs never park: a needed review is denied with stable
@@ -169,15 +176,17 @@ before it starts the operation.
   exit:3
   $ wait_fake_server
   $ spice session show render-time | grep '^- '
-  - write create $TESTCASE_ROOT/render.txt  [review: no rule or grant]
+  - write create $TESTCASE_ROOT/render.txt  [review: rule a893d6c9785e (user)]
   - write create $TESTCASE_ROOT/render.txt (+1 -0)
   $ mkdir -p "$XDG_CONFIG_HOME/spice"
   $ cat > "$XDG_CONFIG_HOME/spice/config.json" <<'JSON'
   > { "permission": { "rules": [
   >   { "action": "allow",
-  >     "matcher": { "type": "path-exact-relative", "relative": "render.txt" } } ] } }
+  >     "matcher": { "type": "path-exact-relative", "relative": "render.txt" } },
+  >   { "action": "review",
+  >     "matcher": { "type": "path-workspace", "op": "create" } } ] } }
   > JSON
   $ spice session show render-time | grep '^- '
-  - write create $TESTCASE_ROOT/render.txt  [review: no rule or grant]
+  - write create $TESTCASE_ROOT/render.txt  [review: rule a893d6c9785e (user)]
   - write create $TESTCASE_ROOT/render.txt (+1 -0)
   $ rm -f "$XDG_CONFIG_HOME/spice/config.json"

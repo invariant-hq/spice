@@ -16,7 +16,7 @@ Text output reports paths, selectors, and endpoints only.
   model=openai/gpt-5.5
   tui.thinking=true
   providers.openai.base_url=https://api.openai.example/v1
-  permission.mode=default
+  permission.unattended=block
   shell=/bin/sh
   notices.fswatch=true
   notices.cr_comments=true

@@ -22,7 +22,7 @@ every command names the backend.
   > JSONL
 
   $ start_fake_openai enforce.jsonl bubblewrap-capture bubblewrap-port
-  $ spice run --cwd "$PWD" --json --permission-mode bypass --id bubblewrap-run "enforce prompt" | grep -oE '"outcome":"completed"|"sandbox":\{"mode":"workspace-write","read":"project","origin":"default","require":"enforced","network":"restricted","backend":"linux-bubblewrap","enforcement":"enforceable"\}|"sandbox":\{"kind":"enforced","backend":"linux-bubblewrap"'
+  $ spice run --cwd "$PWD" --json --permission bypass --id bubblewrap-run "enforce prompt" | grep -oE '"outcome":"completed"|"sandbox":\{"mode":"workspace-write","read":"project","origin":"default","require":"enforced","network":"restricted","backend":"linux-bubblewrap","enforcement":"enforceable"\}|"sandbox":\{"kind":"enforced","backend":"linux-bubblewrap"'
   spice: session saved; resume with: spice resume 'bubblewrap-run'
   "sandbox":{"mode":"workspace-write","read":"project","origin":"default","require":"enforced","network":"restricted","backend":"linux-bubblewrap","enforcement":"enforceable"}
   "sandbox":{"kind":"enforced","backend":"linux-bubblewrap"

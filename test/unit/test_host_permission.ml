@@ -11,14 +11,16 @@ module Permission = Spice_host.Permission
 
 let request accesses = Spice_permission.Request.of_accesses accesses
 
-let decide ?(durable = []) ?(conversation = []) ~sandbox_backed preset accesses =
-  let run =
-    Permission.Run.make ~preset:(`Preset, preset)
-      ~durable:(List.map (fun rules -> (`Durable, rules)) durable)
-      ()
-    |> Permission.Run.with_sandbox_backing ~sandbox_backed
-  in
-  Policy.decide (Permission.Run.policy ~conversation run) (request accesses)
+let make_run ?(review = Permission.Review_behavior.Default) ?(durable = []) () =
+  Permission.Run.make ~review ~product:`Product
+    ~durable:(List.map (fun rules -> (`Durable, rules)) durable)
+    ()
+
+let decide ?review ?durable ?(conversation = []) accesses =
+  let run = make_run ?review ?durable () in
+  Policy.decide ~on_review:(Permission.Run.on_review run)
+    (Permission.Run.policy ~conversation run)
+    (request accesses)
 
 let expect_allowed message = function
   | Policy.Decision.Allowed -> ()
@@ -40,101 +42,61 @@ let cwd = Access.Path_scope.unknown "test-cwd"
 let command ?(execution = Access.Command.Direct) program args =
   Access.argv ~cwd ~execution ~program args
 
-let enforced = Access.Command.Enforced
-
-let sealed_commands_review_by_default () =
-  List.iter
-    (fun (label, access) ->
-      decide ~sandbox_backed:true Permission.Preset.Default [ access ]
-      |> expect_review label)
-    [
-      ("Dune", command ~execution:enforced "dune" [ "build" ]);
-      ("Merlin", command ~execution:enforced "ocamlmerlin" [ "type-enclosing" ]);
-      ("shell", Access.shell ~cwd ~execution:enforced "printf ok");
-    ];
-  decide ~sandbox_backed:true Permission.Preset.Accept_edits
-    [ command ~execution:enforced "dune" [ "runtest" ] ]
-  |> expect_review "accept-edits sealed command"
-
-let explicit_read_anywhere_opt_in () =
-  let review_destructive =
-    Policy.Rule.review (Policy.Match.command Policy.Match.Command.destructive)
-  in
-  let allow_enforced =
-    Policy.Rule.allow
-      (Policy.Match.command
-         (Policy.Match.Command.execution Access.Command.Enforced))
-  in
-  let durable = [ [ review_destructive; allow_enforced ] ] in
-  decide ~durable ~sandbox_backed:true Permission.Preset.Default
-    [ Access.shell ~cwd ~execution:enforced "cat ~/.config/raven/api.mli" ]
-  |> expect_allowed "explicit ordinary sandboxed command";
-  decide ~durable ~sandbox_backed:true Permission.Preset.Default
-    [ Access.shell ~cwd ~execution:enforced "rm -rf _build" ]
-  |> expect_review "destructive rule precedes sandboxed allow";
-  decide ~durable ~sandbox_backed:true Permission.Preset.Plan
-    [ Access.shell ~cwd ~execution:enforced "cat ~/.config/raven/api.mli" ]
-  |> expect_denied "Plan command guard precedes durable sandboxed allow";
-  decide ~conversation:[ allow_enforced ] ~sandbox_backed:true
-    Permission.Preset.Plan
-    [ Access.shell ~cwd ~execution:enforced "cat ~/.config/raven/api.mli" ]
-  |> expect_denied "Plan command guard precedes session sandboxed allow"
-
-let unproven_and_sensitive_commands_still_review () =
-  decide ~sandbox_backed:true Permission.Preset.Default
-    [ command "dune" [ "build" ] ]
+let default_reviews_commands () =
+  decide [ command ~execution:Access.Command.Enforced "dune" [ "build" ] ]
+  |> expect_review "enforced command";
+  decide [ Access.shell ~cwd ~execution:Access.Command.Direct "git status" ]
   |> expect_review "direct command";
-  decide ~sandbox_backed:true Permission.Preset.Default
-    [ command ~execution:enforced "rm" [ "-rf"; "_build" ] ]
-  |> expect_review "destructive sealed command";
-  decide ~sandbox_backed:true Permission.Preset.Default
-    [
-      Access.shell ~cwd ~execution:Access.Command.Direct "dune build";
-      Access.custom ~subject:"dune build" "shell.escalate";
-    ]
-  |> expect_review "shell escalation"
+  decide
+    [ Access.code ~cwd ~execution:Access.Command.Enforced ~language:"ocaml" "1" ]
+  |> expect_review "code evaluation"
 
-let posture_and_rule_precedence_are_preserved () =
-  List.iter
-    (fun posture ->
-      decide ~sandbox_backed:false Permission.Preset.Default
-        [ command ~execution:enforced "dune" [ "build" ] ]
-      |> expect_review posture)
-    [ "read-only"; "danger-full-access"; "external-sandbox" ];
-  decide ~sandbox_backed:true Permission.Preset.Plan
-    [ command ~execution:enforced "dune" [ "build" ] ]
-  |> expect_denied "Plan";
-  let durable_review =
-    Policy.Rule.review (Policy.Match.kind `Command)
-  in
-  decide ~durable:[ [ durable_review ] ] ~sandbox_backed:true
-    Permission.Preset.Default
-    [ command ~execution:enforced "dune" [ "build" ] ]
-  |> expect_review "durable review"
+let bypass_allows_review_but_not_deny () =
+  let commands = Policy.Match.kind `Command in
+  decide ~review:Permission.Review_behavior.Bypass
+    ~durable:[ [ Policy.Rule.review commands ] ]
+    [ command "dune" [ "build" ] ]
+  |> expect_allowed "explicit review";
+  decide ~review:Permission.Review_behavior.Bypass
+    [ Access.custom "unmatched" ]
+  |> expect_allowed "unmatched access";
+  decide ~review:Permission.Review_behavior.Bypass
+    ~durable:[ [ Policy.Rule.deny commands ] ]
+    [ command "dune" [ "build" ] ]
+  |> expect_denied "explicit deny"
 
-let conversation_rules_have_explicit_precedence () =
+let durable_rules_precede_conversation_and_product () =
   let commands = Policy.Match.kind `Command in
   let allow = Policy.Rule.allow commands in
   let review = Policy.Rule.review commands in
-  decide ~conversation:[ allow ] ~sandbox_backed:false
-    Permission.Preset.Default [ command "dune" [ "build" ] ]
+  decide ~conversation:[ allow ] [ command "dune" [ "build" ] ]
   |> expect_allowed "conversation allow precedes product fallback";
   decide ~durable:[ [ review ] ] ~conversation:[ allow ]
-    ~sandbox_backed:false Permission.Preset.Default
     [ command "dune" [ "build" ] ]
   |> expect_review "durable review precedes conversation allow"
+
+let product_rows_have_one_source_and_stable_identity () =
+  let run = make_run () in
+  let rows = Permission.Run.rows run in
+  is_true ~msg:"product rows exist" (not (List.is_empty rows));
+  List.iter
+    (fun row ->
+      equal string ~msg:"row identity follows its rule"
+        (Permission.rule_id row.Permission.Run.rule)
+        row.Permission.Run.id;
+      match row.Permission.Run.source with
+      | `Product -> ()
+      | `Durable -> fail "product row has durable provenance")
+    rows
 
 let () =
   run "spice.host.permission"
     [
-      test "sealed commands review under the safe default"
-        sealed_commands_review_by_default;
-      test "ordered durable rules opt into read-anywhere shell"
-        explicit_read_anywhere_opt_in;
-      test "unproven and sensitive commands still review"
-        unproven_and_sensitive_commands_still_review;
-      test "posture and explicit rule precedence are preserved"
-        posture_and_rule_precedence_are_preserved;
-      test "conversation rules have explicit precedence"
-        conversation_rules_have_explicit_precedence;
+      test "default behavior reviews commands" default_reviews_commands;
+      test "bypass allows reviews but preserves denials"
+        bypass_allows_review_but_not_deny;
+      test "durable rules precede conversation and product rules"
+        durable_rules_precede_conversation_and_product;
+      test "product rows carry stable identity and provenance"
+        product_rows_have_one_source_and_stable_identity;
     ]

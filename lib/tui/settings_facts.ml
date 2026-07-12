@@ -29,7 +29,6 @@ let config_groups_spec =
       ] );
     ( "Permissions & sandbox",
       [
-        ("Permission mode", Any permission_mode, Enum_kind);
         ("Unattended permission", Any permission_unattended, Enum_kind);
         ("Sandbox mode", Any sandbox_mode, Enum_kind);
         ("Sandbox required", Any sandbox_require, Enum_kind);
@@ -69,7 +68,6 @@ let config_groups_spec =
    a confirmation prompt, just a warning suffix. *)
 let danger_of name value =
   match (name, value) with
-  | "permission.mode", "bypass" -> Some "approvals skipped"
   | "sandbox.mode", "danger-full-access" -> Some "no filesystem confinement"
   | "sandbox.require", "off" -> Some "sandbox not required"
   | _ -> None
@@ -197,11 +195,6 @@ let status_facts ~stdenv host config ~session ~model =
           (model_status_string (Spice_provider.Model.status m))
     | None -> "unavailable"
   in
-  let permission =
-    Spice_host.Permission.Preset.to_string
-      (Spice_host.Config.Permissions.mode
-         (Spice_host.Config.permissions config))
-  in
   let sandbox =
     match Spice_host.Config.Sandbox.mode (Spice_host.Config.sandbox config) with
     | Some m -> Spice_host.Sandbox.Mode.to_string m
@@ -232,7 +225,7 @@ let status_facts ~stdenv host config ~session ~model =
         fact "cwd" (path (Spice_host.Config.cwd config));
         fact "account" account;
         fact "model" model_row;
-        fact "permission" permission;
+        fact "permission review" "default";
         fact "sandbox" sandbox;
         fact "trust" (trust_status ^ " · " ^ trust_root);
         fact "user config" (path (Spice_host.Config.Config_file.user files));

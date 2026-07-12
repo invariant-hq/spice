@@ -15,12 +15,8 @@ let read_only_policy =
     [
       Policy.Rule.allow
         (Policy.Match.path ~op:`Read Policy.Match.Path.workspace);
-      Policy.Rule.deny
-        (Policy.Match.path ~op:`Create Policy.Match.Path.workspace);
-      Policy.Rule.deny
-        (Policy.Match.path ~op:`Modify Policy.Match.Path.workspace);
-      Policy.Rule.deny
-        (Policy.Match.path ~op:`Delete Policy.Match.Path.workspace);
+      Policy.Rule.deny (Policy.Match.kind `Write);
+      Policy.Rule.deny (Policy.Match.kind `Command);
     ]
 
 (* The read-only tool set, owned here by stable model-visible tool name so this

@@ -317,9 +317,9 @@ let permission_lines context request =
     |> Option.fold ~none:[] ~some:(fun display ->
         [ "action: " ^ shell_arg display ])
   in
-  ("mode: "
-  ^ Spice_host.Permission.Preset.to_string
-      (Permission_run.preset context.permission))
+  ("review: "
+  ^ Spice_host.Permission.Review_behavior.to_string
+      (Permission_run.review_behavior context.permission))
   :: action_lines @ ("accesses:" :: access_lines)
   @ match change_lines with [] -> [] | lines -> "change:" :: lines
 
@@ -382,10 +382,10 @@ let permission_json_fields context request =
     |> Spice_permission.Request.display
   in
   [
-    ( "mode",
+    ( "review",
       Jsont.Json.string
-        (Spice_host.Permission.Preset.to_string
-           (Permission_run.preset context.permission)) );
+        (Spice_host.Permission.Review_behavior.to_string
+           (Permission_run.review_behavior context.permission)) );
     ("reviewed", reviewed_json context request);
   ]
   @ Option.fold ~none:[] ~some:(fun display ->

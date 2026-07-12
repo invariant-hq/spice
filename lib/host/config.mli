@@ -22,9 +22,8 @@
 
     A {{!Field.t}[field]} is a typed handle for one supported configuration
     setting. Its type parameter is the setting's domain value: [Field.model] is
-    a [string Field.t] and [Field.permission_mode] is a
-    [Permission.Preset.t Field.t]. Fields drive string-addressed editing, typed
-    effective reads ({!find}), effective-value inspection, and provenance.
+    a [string Field.t]. Fields drive string-addressed editing, typed effective
+    reads ({!find}), effective-value inspection, and provenance.
     Grouped typed reads over an effective configuration live in the product-area
     view modules ({!Models}, {!Runtime}, {!Permissions}, and the rest).
 
@@ -73,7 +72,7 @@ module Source : sig
       [User], [Project], [Project_local], and [Extra_file] identify file layers.
       [Env] identifies one process-environment variable. [Override] identifies
       caller-supplied runtime layers. [Default] identifies built-in or
-      platform-derived values such as [permission.mode] and [shell]. *)
+      platform-derived values such as [shell]. *)
 
   type t =
     | User of { path : Spice_path.Abs.t }  (** A user config file at [path]. *)
@@ -96,7 +95,7 @@ module Source : sig
   val kind_string : t -> string
   (** [kind_string t] is the stable short source kind used in user-facing
       provenance: ["user"], ["project"], ["project-local"], ["extra"], ["env"],
-      ["override"], or ["preset"]. *)
+      ["override"], or ["default"]. *)
 
   val jsont : t Jsont.t
   (** [jsont] maps sources to credential-free diagnostic JSON.
@@ -202,14 +201,6 @@ module Field : sig
       settling while the session is idle starts a continuation turn so the model
       sees the result immediately (doc/plans/subagent-tui.md §8.4). Defaults to
       [true]; when off, results wait for the next user message. *)
-
-  val permission_mode : Permission.Preset.t t
-  (** [permission_mode] is the [permission.mode] field.
-
-      [SPICE_PERMISSION_MODE] accepts every preset except [bypass]: the
-      environment is the one channel a parent process can set invisibly, which
-      is the wrong property for the dangerous preset. The CLI flag and config
-      files may still select [bypass]. *)
 
   val permission_unattended : Permission.Unattended.t t
   (** [permission_unattended] is the [permission.unattended] field. *)
@@ -345,7 +336,6 @@ module Field : sig
       shells, paths, integers, and free lists) whose values are not enumerable.
 
       The closed-vocabulary fields are the enums — [reasoning],
-      [permission.mode] (durable channels omit [bypass], so it is not offered),
       [permission.unattended], the [sandbox.*] modes, [tools.editor], and
       [web.search_backend] — and the booleans, whose values are
       [["true"; "false"]]. The list is exactly the vocabulary the field's
@@ -741,9 +731,6 @@ module Permissions : sig
   type t
   (** The permission configuration view of an effective {!Config.t}. *)
 
-  val mode : t -> Permission.Preset.t
-  (** [mode t] is the configured permission preset or its default. *)
-
   val unattended : t -> Permission.Unattended.t
   (** [unattended t] is the configured policy for permission reviews in
       unattended runs. *)
@@ -968,14 +955,14 @@ val permissions : t -> Permissions.t
 (** [permissions t] is [t]'s permission configuration view. *)
 
 val permission_posture :
-  ?preset:Permission.Preset.t -> t -> Source.t Permission.Run.t
-(** [permission_posture ?preset t] is the effective permission posture for one
+  ?review:Permission.Review_behavior.t -> t -> Source.t Permission.Run.t
+(** [permission_posture ?review t] is the effective permission policy for one
     model/tool run over [t].
 
-    [preset] overrides the configured permission preset when present. Durable
-    rules come from {!Permissions.rules} in descending precedence, and the
-    active preset is appended as the default source. This is the run-specific
-    construction over the durable facts {!Permissions} reports. *)
+    [review] defaults to {!Permission.Review_behavior.Default}; the CLI may
+    explicitly select {!Permission.Review_behavior.Bypass} for one run. Durable
+    rules come from {!Permissions.rules} in descending precedence, followed by
+    the fixed product policy. *)
 
 val sandbox : t -> Sandbox.t
 (** [sandbox t] is [t]'s sandbox configuration view. *)
@@ -1010,8 +997,7 @@ val find : 'a Field.t -> t -> 'a option
 
 val origin : 'a Field.t -> t -> Origin.t option
 (** [origin field t] is [field]'s effective provenance, if [field] has an
-    effective value. Resolved defaults such as [permission.mode] and [shell]
-    have default origins. *)
+    effective value. Resolved defaults such as [shell] have default origins. *)
 
 val origins : t -> (Field.any * Origin.t) list
 (** [origins t] are all effective value origins, ordered by config-key spelling.
@@ -1021,8 +1007,7 @@ val get : 'a Field.t -> t -> string option
 (** [get field t] is the effective textual config value named by [field], if it
     is configured.
 
-    Resolved defaults, such as [permission.mode] and [shell], are returned as
-    values. *)
+    Resolved defaults, such as [shell], are returned as values. *)
 
 val json : 'a Field.t -> t -> Jsont.json
 (** [json field t] is [field]'s effective JSON scalar value, or JSON [null] if

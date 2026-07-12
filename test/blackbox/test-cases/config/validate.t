@@ -97,7 +97,7 @@ Supported fields are type checked.
 
   $ printf '{"permission":{"mode":1}}\n' > bad-permission.json
   $ spice config validate bad-permission.json
-  spice: bad-permission.json permission.mode must be a string
+  spice: bad-permission.json permission.mode is no longer supported; use --permission bypass for one run
   [1]
 
   $ printf '{"reasoning":"hyper"}\n' > bad-reasoning.json
@@ -142,12 +142,11 @@ Validation reports every error it finds in one file.
   > {"model":1,"reasoning":"hyper","run":{"max_steps":0,"extra":true},"permission":{"mode":"fast"},"extra":true}
   > EOF
   $ spice config validate --strict many-errors.json
+  spice: many-errors.json permission.mode is no longer supported; use --permission bypass for one run
   spice: many-errors.json model must be a string
   spice: many-errors.json reasoning: unknown reasoning effort: hyper
   Hint: expected one of: none, minimal, low, medium, high, xhigh, max
   spice: many-errors.json run.max_steps must be positive
-  spice: many-errors.json permission.mode: unknown permission mode: fast
-  Hint: expected one of: default, accept-edits, plan, bypass
   spice: many-errors.json unknown field: extra
   spice: many-errors.json run unknown field: extra
   [1]

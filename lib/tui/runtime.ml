@@ -65,24 +65,6 @@ let model_effort config choice =
   in
   Option.map Spice_llm.Request.Options.Reasoning_effort.to_string effort
 
-(* Non-default permission posture as the compact record's hanging label; the
-   default ask-first posture stays silent (04-header-footer.md §1). *)
-let permission_label config =
-  match
-    Spice_host.Config.Permissions.mode (Spice_host.Config.permissions config)
-  with
-  | Spice_host.Permission.Preset.Default -> None
-  | Spice_host.Permission.Preset.Accept_edits -> Some "auto edits"
-  | Spice_host.Permission.Preset.Plan -> Some "plan mode"
-  | Spice_host.Permission.Preset.Bypass -> Some "never ask"
-
-let permission_bypassed config =
-  match
-    Spice_host.Config.Permissions.mode (Spice_host.Config.permissions config)
-  with
-  | Spice_host.Permission.Preset.Bypass -> true
-  | _ -> false
-
 (* The sandbox mode and its origin, labelled for the record; unset means no
    sandbox line. [flag] is the per-run [--sandbox] override — it wins over the
    config mode with the same precedence {!Spice_host.Sandbox.resolve} applies,
@@ -123,9 +105,7 @@ let config_warning ?flag config =
     match sandbox_mode ?flag config with
     | Some ((Spice_host.Sandbox.Mode.Danger_full_access, _) as sandbox) ->
         Some ("sandbox: " ^ sandbox_string sandbox)
-    | Some _ | None ->
-        if permission_bypassed config then Some "permission: never ask"
-        else None
+    | Some _ | None -> None
 
 (* Whether no provider is connected (09-auth.md §9): at least one provider
    requires auth yet no provider — optional-auth ones included — has a
@@ -170,7 +150,6 @@ let build_snapshot ?sandbox_flag ~stdenv host =
     effort;
     cwd = Spice_host.Config.cwd config;
     context_window;
-    permission = permission_label config;
     sandbox = sandbox_label ?flag:sandbox_flag config;
   }
 

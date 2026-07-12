@@ -387,6 +387,11 @@ end
 
 (** {1:evaluating Evaluating policies} *)
 
+type on_review = Ask | Allow
+(** How policy review outcomes are handled. [Ask] returns a reviewer block.
+    [Allow] treats both matched and unmatched review outcomes as allowed while
+    preserving every denial. *)
+
 (** The type for single-access policy explanations.
 
     Explanations are evaluation provenance for audit, debugging, and policy
@@ -402,13 +407,17 @@ type explanation =
   | Denied_by_rule of Rule.t
       (** The access was denied by the first matching deny rule. *)
 
-val decide : ?grants:Grants.t -> t -> Request.t -> Decision.t
-(** [decide ?grants p r] is [r]'s policy decision under [p] and [grants].
+val decide :
+  ?grants:Grants.t -> ?on_review:on_review -> t -> Request.t -> Decision.t
+(** [decide ?grants ?on_review p r] is [r]'s policy decision under [p] and
+    [grants].
 
-    [grants] defaults to {!Grants.empty}. Rules are evaluated before grants: if
-    a rule matches an access, its action decides that access. If no rule matches
-    an access, an exact grant allows it. Accesses matched by no rule and no
-    grant need reviewer input.
+    [grants] defaults to {!Grants.empty} and [on_review] defaults to {!Ask}.
+    Rules are evaluated before grants: if a rule matches an access, its action
+    decides that access. If no rule matches an access, an exact grant allows
+    it. Under [Ask], accesses matched by no rule and no grant need reviewer
+    input. Under [Allow], both unmatched accesses and accesses matched by a
+    review rule are allowed; deny rules still deny.
 
     Requests are evaluated in {!Request.normalized_accesses} order, preserving
     the first occurrence of exact duplicate access facts. If any access is

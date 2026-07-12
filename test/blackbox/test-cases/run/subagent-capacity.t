@@ -15,7 +15,7 @@ child frees its slot, but cannot resume while another child holds that slot.
   > JSONL
   $ SPICE_FAKE_PROVIDER_UNORDERED=1 start_fake_openai capacity.jsonl capacity-capture capacity-port
 
-  $ spice run --json --cwd "$PWD" --permission-mode bypass --id capacity-parent "exercise subagent capacity" 2>&1 | grep -o '"final_text":"Capacity enforced."'
+  $ spice run --json --cwd "$PWD" --permission bypass --id capacity-parent "exercise subagent capacity" 2>&1 | grep -o '"final_text":"Capacity enforced."'
   "final_text":"Capacity enforced."
   $ wait_fake_server
 

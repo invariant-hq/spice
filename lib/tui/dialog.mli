@@ -46,13 +46,8 @@ type resolution =
     }  (** A permission reply — {!Spice_protocol.Command.Reply}. *)
   | Answer of { text : string }
       (** A question answer — {!Spice_protocol.Command.Answer}. *)
-  | Resolve_plan of {
-      decision : Spice_protocol.Plan.Decision.t;
-      accept_edits : bool;
-    }
-      (** A plan decision — {!Spice_protocol.Command.Resolve_plan};
-          [accept_edits] asks the shell to also set the approval posture in the
-          same stroke. *)
+  | Resolve_plan of { decision : Spice_protocol.Plan.Decision.t }
+      (** A plan decision — {!Spice_protocol.Command.Resolve_plan}. *)
 
 (** What folding a key asks the shell to do — the surface's outcome vocabulary
     the shell interprets (doc/plans/tui-next-surfaces.md §The three forms). *)

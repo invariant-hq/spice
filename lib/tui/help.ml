@@ -39,7 +39,6 @@ let sections =
         [
           { keys = "←"; action = "focus agents" };
           { keys = "ctrl+o"; action = "verbose reasoning" };
-          { keys = "shift+tab"; action = "cycle approvals" };
           { keys = "pageup pagedown"; action = "scroll" };
           { keys = "ctrl+c ctrl+c"; action = "quit" };
         ];

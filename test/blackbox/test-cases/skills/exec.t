@@ -11,7 +11,7 @@ a builtin skill; the tool result carries the skill text into the transcript.
   > {"expect":{"body_contains":["function_call_output","call-skill-1","Tidying is disciplined implementation editing"]},"response":{"id":"resp-skill-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"loaded the skill"}]}]}}
   > JSONL
   $ start_fake_openai load.jsonl capture-load port-load
-  $ spice run --cwd "$PWD" --permission-mode bypass --id skill-run "tidy this code"
+  $ spice run --cwd "$PWD" --permission bypass --id skill-run "tidy this code"
   permission: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested
@@ -32,7 +32,7 @@ loads the skill body instead of trying to read a non-existent resource.
   > {"expect":{"body_contains":["function_call_output","call-empty-resource-1","Tidying is disciplined implementation editing"]},"response":{"id":"resp-empty-resource-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"loaded empty resource skill"}]}]}}
   > JSONL
   $ start_fake_openai empty-resource.jsonl capture-empty-resource port-empty-resource
-  $ spice run --cwd "$PWD" --permission-mode bypass --id empty-resource-run "tidy this code with empty resource"
+  $ spice run --cwd "$PWD" --permission bypass --id empty-resource-run "tidy this code with empty resource"
   permission: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested
@@ -51,7 +51,7 @@ An unknown skill name in the tool call is a failed tool result, not a crash.
   > {"expect":{"body_contains":["function_call_output","unknown skill"]},"response":{"id":"resp-unk-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"no such skill"}]}]}}
   > JSONL
   $ start_fake_openai unknown.jsonl capture-unknown port-unknown
-  $ spice run --cwd "$PWD" --permission-mode bypass --id unknown-run "use a missing skill"
+  $ spice run --cwd "$PWD" --permission bypass --id unknown-run "use a missing skill"
   permission: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested
@@ -70,7 +70,7 @@ user message, durably.
   > {"expect":{"body_contains":["The user invoked the","Tidying is disciplined implementation editing","tidy my file"]},"response":{"id":"resp-forced-1","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"followed the skill"}]}]}}
   > JSONL
   $ start_fake_openai forced.jsonl capture-forced port-forced
-  $ spice run --cwd "$PWD" --permission-mode bypass --id forced-run --skill ocaml-tidy "tidy my file"
+  $ spice run --cwd "$PWD" --permission bypass --id forced-run --skill ocaml-tidy "tidy my file"
   permission: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested
@@ -98,7 +98,7 @@ session.
   > {"expect":{"body_not_contains":["\"name\":\"skill\"","Available skills:"]},"response":{"id":"resp-ns-1","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"no skills here"}]}]}}
   > JSONL
   $ start_fake_openai noskills.jsonl capture-ns port-ns
-  $ spice run --cwd "$PWD" --permission-mode bypass --no-skills --id ns-run "plain run"
+  $ spice run --cwd "$PWD" --permission bypass --no-skills --id ns-run "plain run"
   permission: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested

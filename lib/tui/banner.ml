@@ -49,11 +49,6 @@ let record_indent = "      "
    lockup's gap to its facts (the mock in 04-header-footer.md §Banner record). *)
 let record_gap = 2
 
-(* The record colors a bypassed posture ["never ask"] error, other non-default
-   postures muted (04-header-footer.md §1, fact_style). *)
-let permission_style label =
-  if String.equal label "never ask" then Theme.error else Theme.muted
-
 (* Display width in columns: one per UTF-8 scalar value (a continuation byte
    begins [0b10……]). *)
 let display_width s =
@@ -137,10 +132,7 @@ let record (snapshot : Snapshot.t) ~width =
   box ~flex_direction:Flex_direction.Column ~padding:(padding record_margin)
     ~size:{ width = pct 100; height = auto }
     (head
-     :: hanging
-          (fun label -> "permission: " ^ label)
-          permission_style snapshot.Snapshot.permission
-    @ hanging
+    :: hanging
         (fun label -> "sandbox: " ^ label)
         (fun _ -> Theme.warning)
         snapshot.Snapshot.sandbox)

@@ -30,7 +30,7 @@ counted in tool_failures either way.
   > JSONL
 
   $ start_fake_openai tool-metrics.jsonl tool-metrics-capture tool-metrics-port
-  $ spice run --cwd "$PWD" --json --permission-mode bypass --id tool-metrics "tool metrics prompt" | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/g; s/"tool_claim_id":"tool_exec:[0-9a-f]+"/"tool_claim_id":"tool_exec:$ID"/g; s/"duration_ms":[0-9]+/"duration_ms":$TIME/g'
+  $ spice run --cwd "$PWD" --json --permission bypass --id tool-metrics "tool metrics prompt" | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/g; s/"tool_claim_id":"tool_exec:[0-9a-f]+"/"tool_claim_id":"tool_exec:$ID"/g; s/"duration_ms":[0-9]+/"duration_ms":$TIME/g'
   spice: session saved; resume with: spice resume 'tool-metrics'
   {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"danger-full-access","read":"all","origin":"config","require":"enforced","network":"enabled","backend":"none","enforcement":"not_requested"}}
   {"schema_version":1,"type":"session.started","session_id":"tool-metrics","revision":"sha256:$HASH"}
@@ -92,7 +92,7 @@ increments tool_rejections and leaves tool_calls untouched.
   > JSONL
 
   $ start_fake_openai rejected-metrics.jsonl rejected-capture rejected-port
-  $ spice run --cwd "$PWD" --json --permission-mode bypass --id rejected-metrics "rejected metrics prompt" | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/g; s/"duration_ms":[0-9]+/"duration_ms":$TIME/g' | grep '"type":"turn.finished"'
+  $ spice run --cwd "$PWD" --json --permission bypass --id rejected-metrics "rejected metrics prompt" | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/g; s/"duration_ms":[0-9]+/"duration_ms":$TIME/g' | grep '"type":"turn.finished"'
   spice: session saved; resume with: spice resume 'rejected-metrics'
   {"schema_version":1,"type":"turn.finished","session_id":"rejected-metrics","revision":"sha256:$HASH","turn_id":"turn_$ID","outcome":"completed","final_text":"rejected metrics final","metrics":{"usage":{"input":9,"output":5,"reasoning":0,"cache_read":1,"cache_write":0},"responses":2,"turns":1,"tool_calls":0,"tool_failures":0,"tool_rejections":1,"tool_calls_by_name":[],"permission_denials":0},"duration_ms":$TIME}
   $ wait_fake_server

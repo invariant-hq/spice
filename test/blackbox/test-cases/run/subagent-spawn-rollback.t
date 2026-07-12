@@ -10,7 +10,7 @@ launches normally instead of colliding with an orphan.
   > JSONL
   $ start_fake_openai failed-spawn.jsonl failed-spawn-capture failed-spawn-port
 
-  $ spice run --json --cwd "$PWD" --permission-mode bypass --id rollback-parent "delegate with broken storage" 2>&1 | grep -o '"final_text":"Spawn failed cleanly."'
+  $ spice run --json --cwd "$PWD" --permission bypass --id rollback-parent "delegate with broken storage" 2>&1 | grep -o '"final_text":"Spawn failed cleanly."'
   "final_text":"Spawn failed cleanly."
   $ wait_fake_server
   $ test ! -e $SPICE_TEST_DATA_HOME/sessions/rollback-parent-sub-retry-call/session.json && echo no-orphan

@@ -63,7 +63,7 @@ or start automatic project processes.
   > EOF
   $ start_fake_openai unknown-shell.jsonl unknown-shell-capture unknown-shell-port
   $ spice_bin=$(command -v spice)
-  $ PATH=/usr/bin:/bin SPICE_WORKSPACE_TOOLING=off "$spice_bin" run --ephemeral --permission-mode bypass --sandbox danger-full-access "try local dune" 2>/dev/null | grep 'restricted shell unavailable'
+  $ PATH=/usr/bin:/bin SPICE_WORKSPACE_TOOLING=off "$spice_bin" run --ephemeral --permission bypass --sandbox danger-full-access "try local dune" 2>/dev/null | grep 'restricted shell unavailable'
   restricted shell unavailable
   $ wait_fake_server
   $ test ! -e "$LOCAL_SWITCH_MARKER" && echo no-local-switch-process
@@ -81,7 +81,7 @@ or start automatic project processes.
   > {"expect":{"body_contains":["unknown trust prompt"],"body_not_contains":["REPOSITORY INSTRUCTION","project-only","relative-only"]},"response":{"id":"resp-unknown","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"restricted answer"}]}]}}
   > EOF
   $ start_fake_openai unknown-run.jsonl unknown-capture unknown-port
-  $ spice run --ephemeral --permission-mode bypass "unknown trust prompt" > unknown.out 2> unknown.err
+  $ spice run --ephemeral --permission bypass "unknown trust prompt" > unknown.out 2> unknown.err
   $ grep -o 'activation state: unknown' unknown.err
   activation state: unknown
   $ test ! -e "$DUNE_MARKER" && echo no-project-process
@@ -114,7 +114,7 @@ fields outside the workspace allowlist.
   > {"expect":{"body_contains":["function_call_output","call-trusted-shell"]},"response":{"id":"resp-trusted-shell-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"trusted shell finished"}]}]}}
   > EOF
   $ start_fake_openai trusted-shell.jsonl trusted-shell-capture trusted-shell-port
-  $ PATH=/usr/bin:/bin SPICE_WORKSPACE_TOOLING=off "$spice_bin" run --ephemeral --permission-mode bypass --sandbox danger-full-access "use local dune" 2>/dev/null | grep 'trusted shell finished'
+  $ PATH=/usr/bin:/bin SPICE_WORKSPACE_TOOLING=off "$spice_bin" run --ephemeral --permission bypass --sandbox danger-full-access "use local dune" 2>/dev/null | grep 'trusted shell finished'
   trusted shell finished
   $ wait_fake_server
   $ test -e "$LOCAL_SWITCH_MARKER" && echo local-switch-process-started
@@ -124,7 +124,7 @@ fields outside the workspace allowlist.
   > {"expect":{"body_contains":["plan without executing"],"body_not_contains":["\"name\":\"shell\"","\"name\":\"ocaml_eval\"","\"name\":\"ocaml_dune_describe\""]},"response":{"id":"resp-trusted-plan","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"trusted plan answer"}]}]}}
   > EOF
   $ start_fake_openai trusted-plan.jsonl trusted-plan-capture trusted-plan-port
-  $ spice run --ephemeral --mode plan --permission-mode bypass "plan without executing" > trusted-plan.out 2> trusted-plan.err
+  $ spice run --ephemeral --mode plan --permission bypass "plan without executing" > trusted-plan.out 2> trusted-plan.err
   $ test ! -e "$LOCAL_SWITCH_MARKER" && echo plan-started-no-project-process
   plan-started-no-project-process
   $ grep 'trusted plan answer' trusted-plan.out
@@ -134,7 +134,7 @@ fields outside the workspace allowlist.
   > {"expect":{"body_contains":["trusted prompt","REPOSITORY INSTRUCTION","project-only","relative-only"]},"response":{"id":"resp-trusted","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"trusted answer"}]}]}}
   > EOF
   $ start_fake_openai trusted-run.jsonl trusted-capture trusted-port
-  $ spice run --ephemeral --permission-mode bypass "trusted prompt" > trusted.out 2> trusted.err
+  $ spice run --ephemeral --permission bypass "trusted prompt" > trusted.out 2> trusted.err
   $ grep 'trusted answer' trusted.out
   trusted answer
   $ wait_fake_server
@@ -160,7 +160,7 @@ refusal with the same runtime behavior as an unknown workspace.
   > {"expect":{"body_contains":["untrusted prompt"],"body_not_contains":["REPOSITORY INSTRUCTION","project-only","relative-only"]},"response":{"id":"resp-untrusted","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"untrusted answer"}]}]}}
   > EOF
   $ start_fake_openai untrusted-run.jsonl untrusted-capture untrusted-port
-  $ spice run --ephemeral --permission-mode bypass "untrusted prompt" > untrusted.out 2> untrusted.err
+  $ spice run --ephemeral --permission bypass "untrusted prompt" > untrusted.out 2> untrusted.err
   $ grep -o 'activation state: untrusted' untrusted.err
   activation state: untrusted
   $ test ! -e "$DUNE_MARKER" && echo no-project-process

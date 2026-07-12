@@ -16,7 +16,7 @@ the cancellation returns that same settlement without another transition.
   > JSONL
   $ SPICE_FAKE_PROVIDER_UNORDERED=1 start_fake_openai cancel.jsonl cancel-capture cancel-port
 
-  $ spice run --json --cwd "$PWD" --permission-mode bypass --id cancel-parent "delegate then cancel" 2>&1 | grep -o '"final_text":"Cancellation observed."'
+  $ spice run --json --cwd "$PWD" --permission bypass --id cancel-parent "delegate then cancel" 2>&1 | grep -o '"final_text":"Cancellation observed."'
   "final_text":"Cancellation observed."
   $ wait_fake_server
   $ spice session show --json cancel-parent | grep -o '"status":{"type":"cancelled"'
@@ -38,7 +38,7 @@ notice or fabricated child-session terminal event.
   > {"expect":{"body_contains":["function_call_output","ownerless-wait","child session asked: Still needed?"]},"response":{"id":"resp-ownerless-parked","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Ownerless child parked."}]}]}}
   > JSONL
   $ SPICE_FAKE_PROVIDER_UNORDERED=1 start_fake_openai ownerless-park.jsonl ownerless-park-capture ownerless-park-port
-  $ spice run --json --cwd "$PWD" --permission-mode bypass --id ownerless-parent "park a recoverable child" 2>&1 | grep -o '"final_text":"Ownerless child parked."'
+  $ spice run --json --cwd "$PWD" --permission bypass --id ownerless-parent "park a recoverable child" 2>&1 | grep -o '"final_text":"Ownerless child parked."'
   "final_text":"Ownerless child parked."
   $ wait_fake_server
   $ grep -o '"type":"blocked"' $SPICE_TEST_DATA_HOME/subagents/ownerless-parent/ownerless-parent-sub-ownerless-spawn.json

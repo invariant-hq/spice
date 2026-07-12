@@ -145,8 +145,6 @@ val cursor : string
 val separator : string
 (** [separator] joins inline facts ([" · "]). *)
 
-val posture : string
-(** [posture] heads the footer approval-posture pill ([⏵⏵]). *)
 
 val problem : string
 (** [problem] marks a problem line (["! "]). *)

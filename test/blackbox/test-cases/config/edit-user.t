@@ -32,10 +32,6 @@ Set and read scalar values.
   $ spice config get --user --json run.max_steps
   12
 
-  $ spice config set permission.mode accept-edits
-  $ spice config get permission.mode
-  accept-edits
-
 Boolean instruction keys accept exactly true or false and render as JSON
 booleans.
 
@@ -77,13 +73,12 @@ Unset removes persisted values.
   [1]
 
   $ cat "$XDG_CONFIG_HOME/spice/config.json"
-  {"small_model":"openai/gpt-5.4-mini","reasoning":"high","shell":"/bin/bash","run":{"max_steps":12},"instructions":{"project_max_bytes":1024,"project":false},"providers":{"openrouter":{"base_url":"https://openrouter.example/api/v1"},"openai":{"base_url":"https://api.openai.example/v1"}},"permission":{"mode":"accept-edits"}}
+  {"small_model":"openai/gpt-5.4-mini","reasoning":"high","shell":"/bin/bash","run":{"max_steps":12},"instructions":{"project_max_bytes":1024,"project":false},"providers":{"openrouter":{"base_url":"https://openrouter.example/api/v1"},"openai":{"base_url":"https://api.openai.example/v1"}}}
 
 Unsetting nested values removes empty containers.
 
   $ spice config unset reasoning
   $ spice config unset run.max_steps
-  $ spice config unset permission.mode
   $ spice config unset instructions.project
   $ spice config unset instructions.project_max_bytes
   $ spice config unset providers.openrouter.base_url

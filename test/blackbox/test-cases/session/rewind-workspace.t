@@ -23,7 +23,7 @@ a separate run against its own fake backend cycle.
   > JSONL
 
   $ start_fake_openai turn-a.jsonl cap-a port-a
-  $ spice run --cwd "$PWD" --permission-mode bypass --id rw "edit A" >/dev/null 2>&1
+  $ spice run --cwd "$PWD" --permission bypass --id rw "edit A" >/dev/null 2>&1
   $ wait_fake_server
   $ cat fileA.txt
   AAA
@@ -34,7 +34,7 @@ a separate run against its own fake backend cycle.
   > JSONL
 
   $ start_fake_openai turn-b.jsonl cap-b port-b
-  $ spice run resume rw --cwd "$PWD" --permission-mode bypass "edit B" >/dev/null 2>&1
+  $ spice run resume rw --cwd "$PWD" --permission bypass "edit B" >/dev/null 2>&1
   $ wait_fake_server
   $ cat fileB.txt
   BBB
@@ -90,7 +90,7 @@ landed.
   > JSONL
 
   $ start_fake_openai turn-c.jsonl cap-c port-c
-  $ spice run --cwd "$PWD" --permission-mode bypass --id rw2 "edit C" >/dev/null 2>&1
+  $ spice run --cwd "$PWD" --permission bypass --id rw2 "edit C" >/dev/null 2>&1
   $ wait_fake_server
   $ cat fileC.txt
   CCC

@@ -25,7 +25,7 @@ checkpoint when the turn finishes because shell ran.
   > JSONL
 
   $ start_fake_openai mixed.jsonl capture-mixed port-mixed
-  $ spice run --cwd "$PWD/repo" --permission-mode bypass --id mixed-run "edit then shell" 2>mixed.err | sed -E 's/exited 0 in [0-9.]+s/exited 0 in $TIME/'
+  $ spice run --cwd "$PWD/repo" --permission bypass --id mixed-run "edit then shell" 2>mixed.err | sed -E 's/exited 0 in [0-9.]+s/exited 0 in $TIME/'
   • tool edit_file running
   ✓ tool edit_file note.txt completed: M note.txt
   • tool shell running
@@ -81,7 +81,7 @@ no degraded note.
   > JSONL
 
   $ start_fake_openai editonly.jsonl capture-eo port-eo
-  $ spice run --cwd "$PWD/repo" --permission-mode bypass --id edit-only "edit only" 2>/dev/null
+  $ spice run --cwd "$PWD/repo" --permission bypass --id edit-only "edit only" 2>/dev/null
   • tool edit_file running
   ✓ tool edit_file note.txt completed: M note.txt
   changed 1 file (+1 -1)

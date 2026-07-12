@@ -64,12 +64,7 @@ module Plan : sig
       {!Sandbox.Effective.status} for the run-start summary. *)
 
   val permission : t -> Config.Source.t Permission.Run.t
-  (** [permission t] is the run's permission table, including the rules a
-      confining sandbox credits into the posture (see
-      {!Permission.Run.with_sandbox_backing}). Display surfaces read this table
-      — not the pre-plan posture — so denial provenance explains the decision
-      the run actually made. Read {!Permission.Run.preset} for the run-start
-      summary. *)
+  (** [permission t] is the complete run permission table. *)
 end
 
 val plan :
@@ -81,9 +76,8 @@ val plan :
 (** [plan ~workspace ~sandbox ~permission ()] gates [sandbox] and bundles the
     run posture.
 
-    [sandbox] and [permission] are resolved by the caller — their resolution
-    (protected paths, preset overrides) is frontend-specific — and passed in as
-    the fail-closed gated values. [plan] applies {!Sandbox.gate}: an
+    [sandbox] and [permission] are resolved by the caller and passed in as the
+    fail-closed gated values. [plan] applies {!Sandbox.gate}: an
     unenforceable confined run fails here with a {!Sandbox.Gate_error.t},
     {e before} any credential is loaded. On success the returned {!Plan.t} is
     the token {!start} requires and the posture the caller's summary renders. *)

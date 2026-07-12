@@ -21,7 +21,7 @@ OpenAI-Responses backend.
   > JSONL
 
   $ start_fake_openai edit.jsonl capture-edit port-edit
-  $ spice run --cwd "$PWD" --permission-mode bypass --id edit-run "change the greeting"
+  $ spice run --cwd "$PWD" --permission bypass --id edit-run "change the greeting"
   permission: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested
@@ -64,7 +64,7 @@ unchanged, and do not record changed-file evidence for a failed-only run.
   > JSONL
 
   $ start_fake_openai edit-fail.jsonl capture-fail port-fail
-  $ spice run --cwd "$PWD" --permission-mode bypass --id edit-fail-run "try failing edits" > edit-fail.out 2>&1
+  $ spice run --cwd "$PWD" --permission bypass --id edit-fail-run "try failing edits" > edit-fail.out 2>&1
   $ sed -n '/tool edit_file/p;/edit failures reported/p;/session saved/p' edit-fail.out
   • tool edit_file running
   ✗ tool edit_file failed: fail.txt: old_string was not found
@@ -88,7 +88,7 @@ degrades without changing the model run.
   > {"expect":{"body_contains":["function_call_output","call-cleanup-1"]},"response":{"id":"resp-cleanup-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"cleanup exercised"}]}]}}
   > JSONL
   $ start_fake_openai mutation-cleanup.jsonl capture-cleanup port-cleanup
-  $ spice run --cwd "$PWD" --permission-mode bypass --id mutation-cleanup "force ledger rename failure" > /dev/null 2>&1
+  $ spice run --cwd "$PWD" --permission bypass --id mutation-cleanup "force ledger rename failure" > /dev/null 2>&1
   $ wait_fake_server
   $ find "$SPICE_TEST_DATA_HOME/sessions/mutation-cleanup" -name 'mutations.jsonl.tmp.*' | wc -l | tr -d ' '
   0
@@ -101,7 +101,7 @@ Runtime paths that need escaping remain display-safe in diff headers.
   > JSONL
 
   $ start_fake_openai newline-path.jsonl capture-newline port-newline
-  $ spice run --cwd "$PWD" --permission-mode bypass --id newline-path-run "create the newline path" > newline-run.out 2>&1
+  $ spice run --cwd "$PWD" --permission bypass --id newline-path-run "create the newline path" > newline-run.out 2>&1
   $ sed -n '/^changed /p;/^diff:/p;/^spice:/p' newline-run.out
   changed 1 file (+1 -0)
   diff: spice session diff --latest 'newline-path-run'
@@ -144,7 +144,7 @@ A stale workspace refuses the revert loudly and changes nothing.
   > JSONL
 
   $ start_fake_openai create.jsonl capture-create port-create
-  $ spice run --cwd "$PWD" --permission-mode bypass --id create-run "create the target file"
+  $ spice run --cwd "$PWD" --permission bypass --id create-run "create the target file"
   permission: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested

@@ -12,7 +12,6 @@ Seed user config with file values.
   $ spice config set small_model openai/gpt-5.4-nano
   $ spice config set reasoning medium
   $ spice config set run.max_steps 7
-  $ spice config set permission.mode plan
   $ spice config set shell /bin/bash
   $ spice config set providers.openai.base_url https://file.example/v1
 
@@ -39,11 +38,6 @@ Environment variables have higher precedence for reads.
   spice: SPICE_MAX_STEPS must be at most 9007199254740991
   [1]
 
-  $ SPICE_PERMISSION_MODE=bypass spice config get permission.mode
-  spice: SPICE_PERMISSION_MODE must not be bypass
-  Hint: pass --permission-mode bypass for one run
-  [1]
-
   $ SPICE_SHELL=/bin/zsh spice config get shell
   /bin/zsh
 
@@ -57,4 +51,4 @@ Environment overrides are not persisted by edits.
 
   $ SPICE_MODEL=openai/env-model spice config set small_model openai/gpt-5.4-mini
   $ cat "$XDG_CONFIG_HOME/spice/config.json"
-  {"model":"openai/gpt-5.4","small_model":"openai/gpt-5.4-mini","reasoning":"medium","shell":"/bin/bash","run":{"max_steps":7},"providers":{"openai":{"base_url":"https://file.example/v1"}},"permission":{"mode":"plan"}}
+  {"model":"openai/gpt-5.4","small_model":"openai/gpt-5.4-mini","reasoning":"medium","shell":"/bin/bash","run":{"max_steps":7},"providers":{"openai":{"base_url":"https://file.example/v1"}}}

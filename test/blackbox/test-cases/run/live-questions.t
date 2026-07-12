@@ -10,7 +10,7 @@ model-visible tool result before receiving final assistant text.
   > JSONL
   $ start_fake_openai question.jsonl question-capture question-port
 
-  $ spice run --cwd "$PWD" --permission-mode bypass --id needs-answer "deploy the app"
+  $ spice run --cwd "$PWD" --permission bypass --id needs-answer "deploy the app"
   permission: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested
@@ -79,7 +79,7 @@ JSON mode exposes the same blocked and finished lifecycle for product clients.
   > JSONL
   $ start_fake_openai json-question.jsonl json-question-capture json-question-port
 
-  $ spice run --json --cwd "$PWD" --permission-mode bypass --id json-question "choose a region" 2>&1 | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/; s/"turn":"turn_[^"]+"/"turn":"turn_$ID"/; s/"duration_ms":[0-9]+/"duration_ms":$TIME/'
+  $ spice run --json --cwd "$PWD" --permission bypass --id json-question "choose a region" 2>&1 | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/; s/"turn":"turn_[^"]+"/"turn":"turn_$ID"/; s/"duration_ms":[0-9]+/"duration_ms":$TIME/'
   {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"danger-full-access","read":"all","origin":"config","require":"enforced","network":"enabled","backend":"none","enforcement":"not_requested"}}
   {"schema_version":1,"type":"session.started","session_id":"json-question","revision":"sha256:$HASH"}
   {"schema_version":1,"type":"turn.started","session_id":"json-question","revision":"sha256:$HASH","turn_id":"turn_$ID","workflow_mode":"build","projection_digest":"sha256:$HASH","context_warnings":[]}

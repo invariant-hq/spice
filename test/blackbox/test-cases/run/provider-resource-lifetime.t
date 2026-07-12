@@ -15,7 +15,7 @@ limit. Only Spice runs with the constrained limit, so completing all fifty
 responses proves that finished provider connections do not accumulate in the
 client process.
 
-  $ (ulimit -n 32; spice run --json --cwd "$PWD" --permission-mode bypass --max-steps 60 --id bounded-fds "keep requesting" 2>&1) | grep -o '"final_text":"Descriptors stayed bounded."'
+  $ (ulimit -n 32; spice run --json --cwd "$PWD" --permission bypass --max-steps 60 --id bounded-fds "keep requesting" 2>&1) | grep -o '"final_text":"Descriptors stayed bounded."'
   "final_text":"Descriptors stayed bounded."
   $ wait_fake_server
   $ find capture -name 'request-*.json' | wc -l | tr -d ' '

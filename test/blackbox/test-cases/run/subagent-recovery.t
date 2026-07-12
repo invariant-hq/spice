@@ -11,7 +11,7 @@ parent process exits. The next host process hydrates the durable run and
   > {"expect":{"body_contains":["function_call_output","recover-launch-wait","subagent explore completed","durable child findings"]},"response":{"id":"resp-recovery-parent","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Child launched."}]}]}}
   > JSONL
   $ SPICE_FAKE_PROVIDER_UNORDERED=1 start_fake_openai launch.jsonl launch-capture launch-port
-  $ spice run --json --cwd "$PWD" --permission-mode bypass --id recovery-parent "launch recoverable child" 2>&1 | grep -o '"final_text":"Child launched."'
+  $ spice run --json --cwd "$PWD" --permission bypass --id recovery-parent "launch recoverable child" 2>&1 | grep -o '"final_text":"Child launched."'
   "final_text":"Child launched."
   $ wait_fake_server
   $ grep -o '"summary":"durable child findings"' $SPICE_TEST_DATA_HOME/subagents/recovery-parent/recovery-parent-sub-recover-child.json
@@ -78,7 +78,7 @@ place, so the resumed child finishes the original turn.
   > {"expect":{"body_contains":["function_call_output","park-launch-wait","child session asked: What is the answer?"]},"response":{"id":"resp-park-parent","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Parked child launched."}]}]}}
   > JSONL
   $ SPICE_FAKE_PROVIDER_UNORDERED=1 start_fake_openai park.jsonl park-capture park-port
-  $ spice run --json --cwd "$PWD" --permission-mode bypass --id parked-parent "launch a parked child" 2>&1 | grep -o '"final_text":"Parked child launched."'
+  $ spice run --json --cwd "$PWD" --permission bypass --id parked-parent "launch a parked child" 2>&1 | grep -o '"final_text":"Parked child launched."'
   "final_text":"Parked child launched."
   $ wait_fake_server
   $ grep -o '"type":"blocked"' $SPICE_TEST_DATA_HOME/subagents/parked-parent/parked-parent-sub-park-child.json

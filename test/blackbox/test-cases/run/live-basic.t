@@ -34,7 +34,7 @@ the tool result in the follow-up request.
   > JSONL
 
   $ start_fake_openai read-tool.jsonl capture-read port-read
-  $ spice run --cwd "$PWD" --permission-mode bypass --id read-live "read input.txt"
+  $ spice run --cwd "$PWD" --permission bypass --id read-live "read input.txt"
   permission: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested

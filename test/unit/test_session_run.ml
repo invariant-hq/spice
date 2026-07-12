@@ -112,10 +112,10 @@ let raising_permissions_tool () =
     ~run:(fun _context () -> Tool.Result.completed ~output:() ())
     ()
 
-let config ?(policy = Permission.Policy.default) ?host_tools ?prelude ?max_steps
-    tools =
-  Run.Config.make ~tools ?host_tools ~policy:(fun _ -> policy) ?prelude
-    ?safety_step_cap:max_steps ()
+let config ?(policy = Permission.Policy.default) ?host_tools ?on_review ?prelude
+    ?max_steps tools =
+  Run.Config.make ~tools ?host_tools ~policy:(fun _ -> policy) ?on_review
+    ?prelude ?safety_step_cap:max_steps ()
 
 let config_construction_is_programmer_local () =
   expect_invalid_arg "non-positive safety cap raises" (fun () ->
@@ -155,6 +155,14 @@ let run_response config response =
   match Run.accept_response config response (session ()) with
   | Ok step -> step
   | Error error -> failf "record response failed: %a" Run.Error.pp error
+
+let review_bypass_runs_without_a_permission_boundary () =
+  let config =
+    config ~on_review:Permission.Policy.Allow [ executable_tool () ]
+  in
+  match Run.Step.next (run_response config (response (call ()))) with
+  | Run.Step.Run_tool _ -> ()
+  | next -> failf "expected bypassed tool run, got %a" Run.Step.pp_next next
 
 let deterministic_permission_ids () =
   let call = call () in
@@ -1526,6 +1534,8 @@ let () =
       test "config construction is programmer-local"
         config_construction_is_programmer_local;
       test "deterministic permission ids" deterministic_permission_ids;
+      test "review bypass runs without a permission boundary"
+        review_bypass_runs_without_a_permission_boundary;
       test "permission ids include request position"
         permission_ids_include_request_position;
       test "permission ids include full request"

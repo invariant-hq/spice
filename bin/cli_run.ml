@@ -569,10 +569,12 @@ let turn_final_text session turn =
    stream-level run.started event in JSON mode. Stdout stays content-only.
    All fact vocabulary comes from [Spice_host.Sandbox.Effective] so this
    summary cannot disagree with [spice sandbox status]/[explain]. *)
-let run_started ~json ~preset effective =
+let run_started ~json ~review_behavior effective =
   let module Effective = Spice_host.Sandbox.Effective in
   let module Status = Spice_host.Sandbox.Status in
-  let permission = Spice_host.Permission.Preset.to_string preset in
+  let review =
+    Spice_host.Permission.Review_behavior.to_string review_behavior
+  in
   let status = Effective.status effective in
   let mode = status.Status.mode in
   let mode_string = Spice_host.Sandbox.Mode.to_string mode in
@@ -587,7 +589,8 @@ let run_started ~json ~preset effective =
       (Cli_common.json_envelope ~type_:"run.started"
          [
            ( "permission",
-             Cli_common.json_obj [ ("mode", Jsont.Json.string permission) ] );
+             Cli_common.json_obj
+               [ ("review", Jsont.Json.string review) ] );
            ( "sandbox",
              Cli_common.json_obj
                [
@@ -601,7 +604,7 @@ let run_started ~json ~preset effective =
                ] );
          ])
   else begin
-    Cli_common.stderr_printf "permission: %s\n" permission;
+    Cli_common.stderr_printf "permission review: %s\n" review;
     (match mode with
     | Spice_host.Sandbox.Mode.Read_only
     | Spice_host.Sandbox.Mode.Workspace_write ->
@@ -666,7 +669,7 @@ let assemble ?cwd_override_abs ?skills:preloaded_skills ~sw ~stdenv ~json ~store
   in
   workspace_trust_warning host;
   run_started ~json
-    ~preset:(Spice_host.Permission.Run.preset permission)
+    ~review_behavior:(Spice_host.Permission.Run.review_behavior permission)
     effective;
   let* choice = resolve_run_model ?reasoning_request ~stdenv host model in
   let model = Model_choice.model choice in
@@ -1998,18 +2001,20 @@ let reasoning =
 
 let permission_mode =
   let parse raw =
-    match Spice_host.Permission.Preset.of_string raw with
+    match Spice_host.Permission.Review_behavior.of_string raw with
     | Some mode -> Ok mode
-    | None -> Error (`Msg ("unknown permission mode: " ^ raw))
+    | None -> Error (`Msg ("unknown permission review behavior: " ^ raw))
   in
-  let print = Spice_host.Permission.Preset.pp in
+  let print = Spice_host.Permission.Review_behavior.pp in
   Arg.(
     value
     & opt (some (conv (parse, print))) None
     & info
-        [ "permission"; "permission-mode" ]
+        [ "permission" ]
         ~docs:Cli_common.s_sandbox_options ~docv:"MODE"
-        ~doc:"Permission preset override.")
+        ~doc:
+          "Review behavior for this run: $(b,default) asks when policy requires \
+           review; $(b,bypass) allows review outcomes but never denials.")
 
 let permission_unattended =
   let parse raw =

@@ -11,7 +11,7 @@ verbs against it.
 
 A parked goal turn exits with the blocked convention; the goal stays active.
 
-  $ spice run --cwd "$PWD" --permission-mode bypass --id goal-life --goal "Ship it" 2>&1 | sed -E 's/turn_[-0-9_]+/turn_$ID/g; s/goal_[-0-9_]+/goal_$ID/g'
+  $ spice run --cwd "$PWD" --permission bypass --id goal-life --goal "Ship it" 2>&1 | sed -E 's/turn_[-0-9_]+/turn_$ID/g; s/goal_[-0-9_]+/goal_$ID/g'
   permission: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested

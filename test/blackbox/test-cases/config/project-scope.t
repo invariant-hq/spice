@@ -6,10 +6,6 @@ Capability-shaped keys are rejected when writing either workspace file.
   spice: shell is not allowed in workspace config; allowed keys: model, small_model, reasoning, run.max_steps, permission.unattended, workspace.tooling, tools.editor, web.search_backend, web.fetch_max_bytes, web.output_max_chars, web.timeout_ms, web.max_timeout_ms
   [2]
 
-  $ spice config set --project permission.mode bypass
-  spice: permission.mode is not allowed in workspace config; allowed keys: model, small_model, reasoning, run.max_steps, permission.unattended, workspace.tooling, tools.editor, web.search_backend, web.fetch_max_bytes, web.output_max_chars, web.timeout_ms, web.max_timeout_ms
-  [2]
-
   $ spice config set --project providers.openai.base_url https://repo.example/v1
   spice: providers.openai.base_url is not allowed in workspace config; allowed keys: model, small_model, reasoning, run.max_steps, permission.unattended, workspace.tooling, tools.editor, web.search_backend, web.fetch_max_bytes, web.output_max_chars, web.timeout_ms, web.max_timeout_ms
   [2]
@@ -45,9 +41,9 @@ disallowed keys are ignored with structured diagnostics.
   $ spice config show --json --origins | grep -o '"kind":"ignored_project_key"' | awk 'END { print NR }'
   3
 
-A workspace file that names the bypass preset is rejected whole: bypass is
-per-invocation, never durable, so the file degrades to an empty layer with a
-diagnostic instead of applying partially.
+A workspace file that names the removed permission.mode field is rejected
+whole, so the file degrades to an empty layer with a diagnostic instead of
+applying partially.
 
   $ cat > .spice/config.json <<EOF
   > {"model":"openai/gpt-5.4","permission":{"mode":"bypass"}}

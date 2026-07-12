@@ -7,7 +7,7 @@ With no optional fields configured, text output contains resolved defaults.
   $ spice config show
   workspace_trust=trusted
   tui.thinking=true
-  permission.mode=default
+  permission.unattended=block
   shell=/bin/sh
   notices.fswatch=true
   notices.cr_comments=true
@@ -38,7 +38,6 @@ Set values for the rendered views.
   $ spice config set model openai/gpt-5.5
   $ spice config set small_model openai/gpt-5.4-mini
   $ spice config set run.max_steps 9
-  $ spice config set permission.mode plan
   $ spice config set shell /bin/bash
   $ spice config set providers.openrouter.base_url https://openrouter.example/api/v1
   $ spice config set providers.openai.base_url https://api.openai.example/v1
@@ -53,7 +52,7 @@ Text output is stable and ordered by provider id.
   providers.openai.base_url=https://api.openai.example/v1
   providers.openrouter.base_url=https://openrouter.example/api/v1
   run.max_steps=9
-  permission.mode=plan
+  permission.unattended=block
   shell=/bin/bash
   notices.fswatch=true
   notices.cr_comments=true
@@ -96,8 +95,8 @@ Origin output explains where effective values came from.
     source: user $TESTCASE_ROOT/xdg-config/spice/config.json
   run.max_steps=9
     source: user $TESTCASE_ROOT/xdg-config/spice/config.json
-  permission.mode=plan
-    source: user $TESTCASE_ROOT/xdg-config/spice/config.json
+  permission.unattended=block
+    source: default built-in permission.unattended
   shell=/bin/bash
     source: user $TESTCASE_ROOT/xdg-config/spice/config.json
   notices.fswatch=true
@@ -150,7 +149,7 @@ Origin output explains where effective values came from.
 JSON output has a stable shape.
 
   $ spice config show --json
-  {"cwd":"$TESTCASE_ROOT","project_root":"$TESTCASE_ROOT","workspace_trust":"trusted","data_home":"$TESTCASE_ROOT/xdg-data/spice","state_home":"$TESTCASE_ROOT/xdg-state/spice","auth_store_path":"$TESTCASE_ROOT/xdg-config/spice/auth.json","files":{"user":"$TESTCASE_ROOT/xdg-config/spice/config.json","project":"$TESTCASE_ROOT/.spice/config.json","project_local":"$TESTCASE_ROOT/.spice/config.local.json"},"model":"openai/gpt-5.5","small_model":"openai/gpt-5.4-mini","reasoning":null,"run":{"max_steps":9},"tui":{"thinking":true},"notices":{"fswatch":true,"cr_comments":true,"dune_diagnostics":true,"dune_build":true},"permission":{"mode":"plan"},"shell":"/bin/bash","instructions":{"global":true,"project":true,"claude_md":true,"project_max_bytes":32768},"skills":{"enabled":true,"builtin":true,"project":true,"compat":true,"paths":[],"catalog_max_bytes":8192},"tools":{"anchored_edits":false},"web":{"enabled":false,"allow_private_network":false,"search_backend":"disabled","fetch_max_bytes":5242880,"output_max_chars":100000,"timeout_ms":30000,"max_timeout_ms":120000},"providers":{"openai":{"base_url":"https://api.openai.example/v1"},"openrouter":{"base_url":"https://openrouter.example/api/v1"}}}
+  {"cwd":"$TESTCASE_ROOT","project_root":"$TESTCASE_ROOT","workspace_trust":"trusted","data_home":"$TESTCASE_ROOT/xdg-data/spice","state_home":"$TESTCASE_ROOT/xdg-state/spice","auth_store_path":"$TESTCASE_ROOT/xdg-config/spice/auth.json","files":{"user":"$TESTCASE_ROOT/xdg-config/spice/config.json","project":"$TESTCASE_ROOT/.spice/config.json","project_local":"$TESTCASE_ROOT/.spice/config.local.json"},"model":"openai/gpt-5.5","small_model":"openai/gpt-5.4-mini","reasoning":null,"run":{"max_steps":9},"tui":{"thinking":true},"notices":{"fswatch":true,"cr_comments":true,"dune_diagnostics":true,"dune_build":true},"permission":{"unattended":"block"},"shell":"/bin/bash","instructions":{"global":true,"project":true,"claude_md":true,"project_max_bytes":32768},"skills":{"enabled":true,"builtin":true,"project":true,"compat":true,"paths":[],"catalog_max_bytes":8192},"tools":{"anchored_edits":false},"web":{"enabled":false,"allow_private_network":false,"search_backend":"disabled","fetch_max_bytes":5242880,"output_max_chars":100000,"timeout_ms":30000,"max_timeout_ms":120000},"providers":{"openai":{"base_url":"https://api.openai.example/v1"},"openrouter":{"base_url":"https://openrouter.example/api/v1"}}}
 
 JSON origin output has a stable envelope and includes shadowed sources.
 

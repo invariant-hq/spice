@@ -33,7 +33,7 @@ is requested.
   > {"expect":{"body_contains":["function_call_output","skill \\\"ocaml-tidy\\\" has no resource files","call the skill tool without resource"]},"response":{"id":"r-5","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}]}}
   > JSONL
   $ start_fake_openai resources.jsonl capture-res port-res
-  $ spice run --cwd "$PWD" --permission-mode bypass --id res-run "read the resources"
+  $ spice run --cwd "$PWD" --permission bypass --id res-run "read the resources"
   permission: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested

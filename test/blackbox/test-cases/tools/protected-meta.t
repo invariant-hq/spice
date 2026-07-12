@@ -24,7 +24,7 @@ and an ordinary file. Only the ordinary file may be written.
   > {"expect":{"body_contains":["call-meta-3"]},"response":{"id":"resp-meta-4","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}]}}
   > JSONL
   $ start_fake_openai meta.jsonl capture-meta port-meta
-  $ spice run --cwd "$PWD" --permission-mode bypass --id meta-run "write files" >meta.out 2>&1; echo exit:$?
+  $ spice run --cwd "$PWD" --permission bypass --id meta-run "write files" >meta.out 2>&1; echo exit:$?
   exit:0
   $ wait_fake_server
 
@@ -47,6 +47,6 @@ Reads of protected metadata are unaffected: only writes are guarded.
   > {"expect":{"body_contains":["call-read-1","refs/heads/main"]},"response":{"id":"resp-read-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"read"}]}]}}
   > JSONL
   $ start_fake_openai read.jsonl capture-read port-read
-  $ spice run --cwd "$PWD" --permission-mode bypass --id read-run "read head" >read.out 2>&1; echo exit:$?
+  $ spice run --cwd "$PWD" --permission bypass --id read-run "read head" >read.out 2>&1; echo exit:$?
   exit:0
   $ wait_fake_server

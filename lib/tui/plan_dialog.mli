@@ -26,17 +26,14 @@ val make : Spice_protocol.Plan.Proposal.t -> t
     the composer borrow. esc never approves — it is {!Keep_planning}. *)
 type outcome =
   | Stay  (** Redraw; the dialog is still open (cursor move, body expand). *)
-  | Approve of { accept_edits : bool }
-      (** Approve the plan. [accept_edits] additionally sets the approval
-          posture to accept-edits in the same stroke (03-ia's [approve + ⏵⏵]).
-      *)
+  | Approve  (** Approve the plan. *)
   | Adjust
       (** Reject with feedback: the typed text becomes the rejection reason. *)
   | Keep_planning
       (** Reject with no feedback and keep the planning turn going. *)
 
 val key : Matrix.Input.Key.event -> t -> t * outcome
-(** [key ev t] folds one key: a digit [1]–[4] resolves that option directly,
+(** [key ev t] folds one key: a digit [1]–[3] resolves that option directly,
     arrows / [ctrl+p]·[ctrl+n] move the cursor, [enter] confirms it, [ctrl+o]
     toggles the body expand (a {!Stay}), and [esc] is {!Keep_planning}. Any
     other key is {!Stay}. *)

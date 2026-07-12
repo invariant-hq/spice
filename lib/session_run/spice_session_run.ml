@@ -74,6 +74,7 @@ module Config = struct
     tools : Tool.Catalog.t;
     host_tool_names : string list;
     policy : Spice_permission.Policy.Rule.t list -> Spice_permission.Policy.t;
+    on_review : Spice_permission.Policy.on_review;
     prelude : Llm.Request.Prelude.t;
     safety_step_cap : int;
     denial_message : Spice_permission.Policy.Denial.t -> string;
@@ -113,6 +114,7 @@ module Config = struct
     loop [] host_tools
 
   let make ~tools ?(host_tools = []) ~policy
+      ?(on_review = Spice_permission.Policy.Ask)
       ?(prelude = Llm.Request.Prelude.empty) ?(safety_step_cap = max_int)
       ?(denial_message = default_denial_message) () =
     if safety_step_cap <= 0 then
@@ -130,6 +132,7 @@ module Config = struct
         tools;
         host_tool_names;
           policy;
+          on_review;
           prelude;
           safety_step_cap;
           denial_message;
@@ -411,6 +414,7 @@ let review_permissions config session turn_id call requests =
     | request :: requests -> (
         match
           Spice_permission.Policy.decide ~grants:(State.grants state)
+            ~on_review:config.Config.on_review
             (config.Config.policy (State.permission_rules state)) request
         with
         | Spice_permission.Policy.Decision.Allowed ->

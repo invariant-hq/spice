@@ -35,10 +35,10 @@ val read_only : t
 
     {!filter_tools} keeps only reading, listing, searching, and globbing the
     workspace plus the read-only skill load; {!policy} strengthens any
-    configured policy to one that allows workspace reads and denies workspace
-    creates, modifies, and deletes, regardless of [configured]. It is the
-    {!Mode.Plan} and {!Mode.Review} contract and the {!Subagent.Role.Explore}
-    and {!Subagent.Role.Review} contract. *)
+    configured policy to one that allows workspace reads and denies every write
+    and command, regardless of [configured]. It is the {!Mode.Plan} and
+    {!Mode.Review} contract and the {!Subagent.Role.Explore} and
+    {!Subagent.Role.Review} contract. *)
 
 val checks : t
 (** [checks] allows read-only discovery plus shell, under the configured policy.

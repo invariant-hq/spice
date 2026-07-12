@@ -10,7 +10,7 @@ Write a user config holding plausible legacy fields next to a supported one.
   > EOF
 
 Effective loading still works and silently ignores the legacy fields: no
-permission mode, reasoning effort, or small model is derived from them.
+reasoning effort or small model is derived from them.
 
   $ spice config get model
   openai/gpt-5.5
@@ -19,7 +19,7 @@ permission mode, reasoning effort, or small model is derived from them.
   workspace_trust=trusted
   model=openai/gpt-5.5
   tui.thinking=true
-  permission.mode=default
+  permission.unattended=block
   shell=/bin/sh
   notices.fswatch=true
   notices.cr_comments=true
@@ -53,17 +53,17 @@ Legacy names are not addressable keys and gain no compatibility alias.
          keys: model, small_model, reasoning, providers.<provider>.base_url,
          tui.thinking, run.max_steps, run.subagent_max_concurrent,
          run.subagent_max_depth, run.subagent_wake, run.subagent_max_exchanges,
-         permission.mode, permission.unattended, sandbox.mode, sandbox.require,
-         sandbox.read, sandbox.readable_roots, sandbox.writable_roots,
-         sandbox.network, shell, compaction.auto, notices.fswatch,
-         notices.cr_comments, notices.dune_diagnostics, notices.dune_build,
-         workspace.tooling, instructions.global, instructions.project,
-         instructions.claude_md, instructions.project_max_bytes,
-         skills.enabled, skills.builtin, skills.project, skills.compat,
-         skills.disabled, skills.paths, skills.catalog_max_bytes,
-         tools.anchored_edits, tools.editor, ocaml.merlin_program, web.enabled,
-         web.allow_private_network, web.search_backend, web.fetch_max_bytes,
-         web.output_max_chars, web.timeout_ms, web.max_timeout_ms
+         permission.unattended, sandbox.mode, sandbox.require, sandbox.read,
+         sandbox.readable_roots, sandbox.writable_roots, sandbox.network,
+         shell, compaction.auto, notices.fswatch, notices.cr_comments,
+         notices.dune_diagnostics, notices.dune_build, workspace.tooling,
+         instructions.global, instructions.project, instructions.claude_md,
+         instructions.project_max_bytes, skills.enabled, skills.builtin,
+         skills.project, skills.compat, skills.disabled, skills.paths,
+         skills.catalog_max_bytes, tools.anchored_edits, tools.editor,
+         ocaml.merlin_program, web.enabled, web.allow_private_network,
+         web.search_backend, web.fetch_max_bytes, web.output_max_chars,
+         web.timeout_ms, web.max_timeout_ms
   [124]
 
 A typed edit rewrites the file canonically but preserves every unknown field

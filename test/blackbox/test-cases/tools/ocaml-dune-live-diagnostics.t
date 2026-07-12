@@ -47,7 +47,7 @@ synchronous diagnostics response.
   > {"expect":{"body_contains":["function_call_output","call-diagnostics-live","OCaml Dune diagnostics: none","endpoint:"]},"response":{"id":"resp-iterative-3","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"diagnostics observed"}]}]}}
   > JSONL
   $ SPICE_FAKE_PROVIDER_ACCEPT_TIMEOUT=12 start_fake_openai iterative.jsonl iterative-capture iterative-port
-  $ spice run --cwd "$fixture" --json --permission-mode bypass --sandbox danger-full-access --id ocaml-dune-iterative "break the OCaml project and inspect diagnostics" | grep -oE '"tool":"shell"|"tool":"ocaml_dune_diagnostics"|"final_text":"diagnostics observed"|"tool_calls_by_name":\[\{"name":"ocaml_dune_diagnostics","count":1\},\{"name":"shell","count":1\}\]'
+  $ spice run --cwd "$fixture" --json --permission bypass --sandbox danger-full-access --id ocaml-dune-iterative "break the OCaml project and inspect diagnostics" | grep -oE '"tool":"shell"|"tool":"ocaml_dune_diagnostics"|"final_text":"diagnostics observed"|"tool_calls_by_name":\[\{"name":"ocaml_dune_diagnostics","count":1\},\{"name":"shell","count":1\}\]'
   spice: session saved; resume with: spice resume 'ocaml-dune-iterative'
   "tool":"shell"
   "tool":"shell"

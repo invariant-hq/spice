@@ -12,7 +12,7 @@ these cases override it per invocation.
   > JSONL
 
   $ start_fake_openai sandbox-run.jsonl sandbox-capture sandbox-port
-  $ spice run --cwd "$PWD" --json --permission-mode bypass --sandbox danger-full-access --id sandbox-live "sandbox prompt" | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/g; s/"duration_ms":[0-9]+/"duration_ms":$TIME/g' | grep '"type":"turn.finished"'
+  $ spice run --cwd "$PWD" --json --permission bypass --sandbox danger-full-access --id sandbox-live "sandbox prompt" | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/g; s/"duration_ms":[0-9]+/"duration_ms":$TIME/g' | grep '"type":"turn.finished"'
   spice: session saved; resume with: spice resume 'sandbox-live'
   {"schema_version":1,"type":"turn.finished","session_id":"sandbox-live","revision":"sha256:$HASH","turn_id":"turn_$ID","outcome":"completed","final_text":"sandbox final","metrics":{"usage":{"input":14,"output":5,"reasoning":0,"cache_read":0,"cache_write":0},"responses":2,"turns":1,"tool_calls":1,"tool_failures":0,"tool_rejections":0,"tool_calls_by_name":[{"name":"shell","count":1}],"permission_denials":0},"duration_ms":$TIME}
   $ wait_fake_server
@@ -54,7 +54,7 @@ accepted and shell results carry declared_external evidence.
   > {"expect":{"body_contains":["function_call_output","call-external","declared_external","external-ok"]},"response":{"id":"resp-external-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"external final"}]}]}}
   > JSONL
   $ start_fake_openai external-run.jsonl external-capture external-port
-  $ SPICE_SANDBOX_REQUIRE=enforced-or-external spice run --cwd "$PWD" --json --permission-mode bypass --sandbox external-sandbox --id external-run "external prompt" | sed -n '/"type":"run.started"/p; s/.*\("sandbox":{"kind":"declared_external"}\).*/\1/p; s/.*\("final_text":"external final"\).*/\1/p'
+  $ SPICE_SANDBOX_REQUIRE=enforced-or-external spice run --cwd "$PWD" --json --permission bypass --sandbox external-sandbox --id external-run "external prompt" | sed -n '/"type":"run.started"/p; s/.*\("sandbox":{"kind":"declared_external"}\).*/\1/p; s/.*\("final_text":"external final"\).*/\1/p'
   spice: session saved; resume with: spice resume 'external-run'
   {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"external-sandbox","read":"all","origin":"flag","require":"enforced-or-external","network":"external","backend":"external","enforcement":"declared"}}
   "sandbox":{"kind":"declared_external"}
@@ -79,7 +79,7 @@ command is never spawned.
   > {"expect":{"body_contains":["function_call_output","call-refused","refused"],"body_not_contains":["refused-spawn-marker\\nstderr","refused-spawn-markerstderr"]},"response":{"id":"resp-refused-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"refused final"}]}]}}
   > JSONL
   $ start_fake_openai refused.jsonl refused-capture refused-port
-  $ _SPICE_TEST_SANDBOX_UNAVAILABLE=1 SPICE_SANDBOX_REQUIRE=off SPICE_TRUSTED_WORKSPACE="$PWD" spice run --cwd "$PWD" --json --permission-mode bypass --sandbox workspace-write --id refused-run "refused prompt" | grep -oE '"final_text":"refused final"|"sandbox":\{"kind":"refused"'
+  $ _SPICE_TEST_SANDBOX_UNAVAILABLE=1 SPICE_SANDBOX_REQUIRE=off SPICE_TRUSTED_WORKSPACE="$PWD" spice run --cwd "$PWD" --json --permission bypass --sandbox workspace-write --id refused-run "refused prompt" | grep -oE '"final_text":"refused final"|"sandbox":\{"kind":"refused"'
   spice: session saved; resume with: spice resume 'refused-run'
   "sandbox":{"kind":"refused"
   "final_text":"refused final"
@@ -95,7 +95,7 @@ when an unavailable backend is reported as refused data.
   > {"expect":{"body_contains":["network prompt","\"name\":\"shell\""]},"response":{"id":"resp-network","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"network final"}]}]}}
   > JSONL
   $ start_fake_openai network-enabled-run.jsonl network-capture network-port
-  $ _SPICE_TEST_SANDBOX_UNAVAILABLE=1 SPICE_SANDBOX_REQUIRE=off SPICE_SANDBOX_MODE=workspace-write SPICE_SANDBOX_NETWORK=enabled spice run --cwd "$PWD" --json --permission-mode bypass --id network-enabled-run "network prompt" | sed -n '/"type":"run.started"/p; s/.*\("final_text":"network final"\).*/\1/p'
+  $ _SPICE_TEST_SANDBOX_UNAVAILABLE=1 SPICE_SANDBOX_REQUIRE=off SPICE_SANDBOX_MODE=workspace-write SPICE_SANDBOX_NETWORK=enabled spice run --cwd "$PWD" --json --permission bypass --id network-enabled-run "network prompt" | sed -n '/"type":"run.started"/p; s/.*\("final_text":"network final"\).*/\1/p'
   spice: session saved; resume with: spice resume 'network-enabled-run'
   {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"workspace-write","read":"all","origin":"config","require":"off","network":"enabled","backend":"none","enforcement":"refused"}}
   "final_text":"network final"
@@ -110,7 +110,7 @@ unconfined.
   > {"expect":{"body_contains":["function_call_output","call-ro","refused"],"body_not_contains":["read-only-spawn-marker\\nstderr","read-only-spawn-markerstderr"]},"response":{"id":"resp-ro-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"read-only final"}]}]}}
   > JSONL
   $ start_fake_openai read-only-run.jsonl read-only-capture read-only-port
-  $ _SPICE_TEST_SANDBOX_UNAVAILABLE=1 SPICE_SANDBOX_REQUIRE=off spice run --cwd "$PWD" --json --permission-mode bypass --sandbox read-only --id read-only-run "read-only prompt" | sed -n '/"type":"run.started"/p; s/.*\("sandbox":{"kind":"refused"\).*/\1/p; s/.*\("final_text":"read-only final"\).*/\1/p'
+  $ _SPICE_TEST_SANDBOX_UNAVAILABLE=1 SPICE_SANDBOX_REQUIRE=off spice run --cwd "$PWD" --json --permission bypass --sandbox read-only --id read-only-run "read-only prompt" | sed -n '/"type":"run.started"/p; s/.*\("sandbox":{"kind":"refused"\).*/\1/p; s/.*\("final_text":"read-only final"\).*/\1/p'
   spice: session saved; resume with: spice resume 'read-only-run'
   {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"read-only","read":"all","origin":"flag","require":"off","network":"restricted","backend":"none","enforcement":"refused"}}
   "sandbox":{"kind":"refused"
@@ -126,7 +126,7 @@ exception.
   > {"expect":{"body_contains":["function_call_output","call-esc","escalation is not available in a read-only sandbox"]},"response":{"id":"resp-esc-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"escalate final"}]}]}}
   > JSONL
   $ start_fake_openai escalate-ro.jsonl escalate-capture escalate-port
-  $ _SPICE_TEST_SANDBOX_UNAVAILABLE=1 SPICE_SANDBOX_REQUIRE=off spice run --cwd "$PWD" --json --permission-mode bypass --sandbox read-only --id escalate-ro "escalate prompt" | grep -o '"final_text":"escalate final"'
+  $ _SPICE_TEST_SANDBOX_UNAVAILABLE=1 SPICE_SANDBOX_REQUIRE=off spice run --cwd "$PWD" --json --permission bypass --sandbox read-only --id escalate-ro "escalate prompt" | grep -o '"final_text":"escalate final"'
   spice: session saved; resume with: spice resume 'escalate-ro'
   "final_text":"escalate final"
   $ wait_fake_server

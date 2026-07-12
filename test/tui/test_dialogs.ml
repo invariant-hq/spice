@@ -387,11 +387,11 @@ let%expect_test "the plan dialog approves and resumes the turn" =
 07 |   Make parse return a result.
 08 |
 09 | ❯ 1. approve
-10 |   2. approve + ⏵⏵ accept edits
-11 |   3. adjust — tell the model what to change
-12 |   4. keep planning
-13 |
-14 |   1-4 choose · enter confirm · ctrl+o expand · esc keep planning
+10 |   2. adjust — tell the model what to change
+11 |   3. keep planning
+12 |
+13 |   1-3 choose · enter confirm · ctrl+o expand · esc keep planning
+14 |
 15 |
 16 |
 17 |

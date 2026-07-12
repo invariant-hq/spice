@@ -8,8 +8,8 @@ The command group help lists every supported config key with its vocabulary.
   $ spice config --help=plain | grep -o 'CONFIG KEYS'
   CONFIG KEYS
 
-  $ spice config --help=plain | grep -cE '^       (model|small_model|reasoning|run.max_steps|permission.mode|shell)$'
-  6
+  $ spice config --help=plain | grep -cE '^       (model|small_model|reasoning|run.max_steps|shell)$'
+  5
 
   $ spice config --help=plain | grep -o 'providers.ID.base_url'
   providers.ID.base_url
@@ -18,12 +18,6 @@ Enum-valued keys spell out their allowed values.
 
   $ spice config --help=plain | grep -o 'none, minimal, low, medium, high, xhigh'
   none, minimal, low, medium, high, xhigh
-
-  $ spice config --help=plain | grep -o 'default, accept-edits, or plan'
-  default, accept-edits, or plan
-
-  $ spice config --help=plain | grep -o 'is available only through the per-run --permission-mode flag'
-  is available only through the per-run --permission-mode flag
 
 The group help explains the editing targets, including project-local.
 

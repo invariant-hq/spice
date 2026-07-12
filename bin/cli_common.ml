@@ -441,14 +441,11 @@ let mode_prelude context mode =
   |> Result.map_error (fun error -> Spice_host.Host.Error.Instructions error)
 
 (* One rule table per invocation is the single source of truth for the run
-   policy, the denial wording, blocked-output provenance, and `spice
-   permission list`: durable config rules in descending layer precedence,
-   then the active preset's rules. Every consumer receives this one value so
-   the surfaces cannot disagree. *)
+   policy, denial wording, and blocked-output provenance. *)
 type permission_args = Spice_host.Config.Source.t Spice_host.Permission.Run.t
 
 let permission_args host override =
-  Spice_host.Config.permission_posture ?preset:override
+  Spice_host.Config.permission_posture ?review:override
     (Spice_host.Host.config host)
 
 let source_kind_string = Spice_host.Config.Source.kind_string

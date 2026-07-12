@@ -29,7 +29,7 @@ before the follow-up request is prepared.
   > {"expect":{"body_contains":["function_call_output","call-cr"]},"response":{"id":"resp-cr-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"noticed the review comment"}]}]}}
   > JSONL
   $ SPICE_FAKE_PROVIDER_ACCEPT_TIMEOUT=12 start_fake_openai cr.jsonl cr-capture cr-port
-  $ spice run --cwd "$PWD" --json --permission-mode bypass --id cr-live "seed a review comment" | grep -oE '"tool":"shell"|"final_text":"noticed the review comment"'
+  $ spice run --cwd "$PWD" --json --permission bypass --id cr-live "seed a review comment" | grep -oE '"tool":"shell"|"final_text":"noticed the review comment"'
   spice: session saved; resume with: spice resume 'cr-live'
   "tool":"shell"
   "tool":"shell"
@@ -58,7 +58,7 @@ file or failing the run.
   > {"expect":{"body_contains":["function_call_output","call-cr-limit","source: code-review-comments","title: Code review scan incomplete","oversized.ml exceeds the 2097152-byte code-review source limit"]},"response":{"id":"resp-cr-limit-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"continued after the bounded scan"}]}]}}
   > JSONL
   $ SPICE_FAKE_PROVIDER_ACCEPT_TIMEOUT=12 start_fake_openai cr-oversize.jsonl cr-limit-capture cr-limit-port
-  $ spice run --cwd "$PWD" --json --permission-mode bypass --id cr-limit "bound an oversized review source" | grep -oE '"tool":"shell"|"final_text":"continued after the bounded scan"'
+  $ spice run --cwd "$PWD" --json --permission bypass --id cr-limit "bound an oversized review source" | grep -oE '"tool":"shell"|"final_text":"continued after the bounded scan"'
   spice: session saved; resume with: spice resume 'cr-limit'
   "tool":"shell"
   "tool":"shell"

@@ -45,7 +45,7 @@ cause. The command runs with a narrowed PATH that excludes the real dune, and
 Spice is invoked by its absolute path so it still resolves.
 
   $ start_fake_openai describe.jsonl cap-a port-a
-  $ PATH=/usr/bin:/bin "$SPICE" run --cwd fixture --permission-mode bypass --sandbox danger-full-access --id unreachable "go" >/dev/null 2>&1
+  $ PATH=/usr/bin:/bin "$SPICE" run --cwd fixture --permission bypass --sandbox danger-full-access --id unreachable "go" >/dev/null 2>&1
   $ wait_fake_server
   $ grep -oE "dune is not on Spice's PATH" cap-a/request-2.json | head -1
   dune is not on Spice's PATH
@@ -54,7 +54,7 @@ Recovery: OPAM_SWITCH_PREFIX points at the fake switch, so the stub dune runs an
 the tool returns a project shape instead of the hint.
 
   $ start_fake_openai describe.jsonl cap-b port-b
-  $ PATH=/usr/bin:/bin OPAM_SWITCH_PREFIX="$PWD/switch" "$SPICE" run --cwd fixture --permission-mode bypass --sandbox danger-full-access --id recovered "go" >/dev/null 2>&1
+  $ PATH=/usr/bin:/bin OPAM_SWITCH_PREFIX="$PWD/switch" "$SPICE" run --cwd fixture --permission bypass --sandbox danger-full-access --id recovered "go" >/dev/null 2>&1
   $ wait_fake_server
   $ grep -oE "OCaml Dune project" cap-b/request-2.json | head -1
   OCaml Dune project
@@ -67,7 +67,7 @@ switch whose _opam/bin resolves dune.
   $ mkdir -p fixture/_opam/bin
   $ cp switch/bin/dune fixture/_opam/bin/dune
   $ start_fake_openai describe.jsonl cap-c port-c
-  $ PATH=/usr/bin:/bin "$SPICE" run --cwd fixture --permission-mode bypass --sandbox danger-full-access --id local-switch "go" >/dev/null 2>&1
+  $ PATH=/usr/bin:/bin "$SPICE" run --cwd fixture --permission bypass --sandbox danger-full-access --id local-switch "go" >/dev/null 2>&1
   $ wait_fake_server
   $ grep -oE "OCaml Dune project" cap-c/request-2.json | head -1
   OCaml Dune project
@@ -77,7 +77,7 @@ Explicit override: SPICE_DUNE names the stub, which is used although PATH
 cannot resolve dune.
 
   $ start_fake_openai describe.jsonl cap-d port-d
-  $ PATH=/usr/bin:/bin SPICE_DUNE="$PWD/switch/bin/dune" "$SPICE" run --cwd fixture --permission-mode bypass --sandbox danger-full-access --id explicit "go" >/dev/null 2>&1
+  $ PATH=/usr/bin:/bin SPICE_DUNE="$PWD/switch/bin/dune" "$SPICE" run --cwd fixture --permission bypass --sandbox danger-full-access --id explicit "go" >/dev/null 2>&1
   $ wait_fake_server
   $ grep -oE "OCaml Dune project" cap-d/request-2.json | head -1
   OCaml Dune project
@@ -86,7 +86,7 @@ A broken override fails loudly and never falls through, even though the real
 dune is on this PATH.
 
   $ start_fake_openai describe.jsonl cap-e port-e
-  $ SPICE_DUNE=/no/such/dune "$SPICE" run --cwd fixture --permission-mode bypass --sandbox danger-full-access --id broken-override "go" >/dev/null 2>&1
+  $ SPICE_DUNE=/no/such/dune "$SPICE" run --cwd fixture --permission bypass --sandbox danger-full-access --id broken-override "go" >/dev/null 2>&1
   $ wait_fake_server
   $ grep -oE "SPICE_DUNE is set to /no/such/dune" cap-e/request-2.json | head -1
   SPICE_DUNE is set to /no/such/dune
@@ -107,7 +107,7 @@ recovered switch bin.
   > JSONL
 
   $ start_fake_openai shell.jsonl cap-f port-f
-  $ PATH=/usr/bin:/bin OPAM_SWITCH_PREFIX="$PWD/swshell" "$SPICE" run --cwd fixture --permission-mode bypass --sandbox danger-full-access --id shell-recovered "go" >/dev/null 2>&1
+  $ PATH=/usr/bin:/bin OPAM_SWITCH_PREFIX="$PWD/swshell" "$SPICE" run --cwd fixture --permission bypass --sandbox danger-full-access --id shell-recovered "go" >/dev/null 2>&1
   $ wait_fake_server
   $ grep -oE "dune-from-swshell" cap-f/request-2.json | head -1
   dune-from-swshell
@@ -116,7 +116,7 @@ A dune the shell cannot resolve exits 127 and the failure carries the
 toolchain hint, not just the bare shell error.
 
   $ start_fake_openai shell.jsonl cap-g port-g
-  $ PATH=/usr/bin:/bin "$SPICE" run --cwd fixture --permission-mode bypass --sandbox danger-full-access --id shell-unreachable "go" >/dev/null 2>&1
+  $ PATH=/usr/bin:/bin "$SPICE" run --cwd fixture --permission bypass --sandbox danger-full-access --id shell-unreachable "go" >/dev/null 2>&1
   $ wait_fake_server
   $ grep -oE "dune is not on Spice's PATH" cap-g/request-2.json | head -1
   dune is not on Spice's PATH

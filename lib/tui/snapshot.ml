@@ -9,7 +9,6 @@ type t = {
   effort : string option;
   cwd : Spice_path.Abs.t;
   context_window : int option;
-  permission : string option;
   sandbox : string option;
 }
 
@@ -19,7 +18,6 @@ let equal a b =
   && Option.equal String.equal a.effort b.effort
   && Spice_path.Abs.equal a.cwd b.cwd
   && Option.equal Int.equal a.context_window b.context_window
-  && Option.equal String.equal a.permission b.permission
   && Option.equal String.equal a.sandbox b.sandbox
 
 let with_effort model effort =

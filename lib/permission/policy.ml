@@ -1177,6 +1177,8 @@ module Decision = struct
   type t = Allowed | Review of Review.t | Denied of Denial.t * Denial.t list
 end
 
+type on_review = Ask | Allow
+
 type explanation =
   | Allowed_by_rule of Rule.t
   | Allowed_by_grant
@@ -1204,7 +1206,7 @@ let explain ?(grants = Grants.empty) policy access =
   in
   loop policy
 
-let decide ?(grants = Grants.empty) policy request =
+let decide ?(grants = Grants.empty) ?(on_review = Ask) policy request =
   let rec loop denials review_reasons = function
     | [] -> (
         match List.rev denials with
@@ -1222,12 +1224,20 @@ let decide ?(grants = Grants.empty) policy request =
               review_reasons accesses
         | Allowed_by_rule _ | Allowed_by_grant ->
             loop denials review_reasons accesses
-        | Needs_review ->
-            loop denials ((access, Review.Unmatched) :: review_reasons) accesses
-        | Needs_review_by_rule rule ->
-            loop denials
-              ((access, Review.By_rule rule) :: review_reasons)
-              accesses)
+        | Needs_review -> (
+            match on_review with
+            | Ask ->
+                loop denials
+                  ((access, Review.Unmatched) :: review_reasons)
+                  accesses
+            | Allow -> loop denials review_reasons accesses)
+        | Needs_review_by_rule rule -> (
+            match on_review with
+            | Ask ->
+                loop denials
+                  ((access, Review.By_rule rule) :: review_reasons)
+                  accesses
+            | Allow -> loop denials review_reasons accesses))
   in
   loop [] [] (Request.normalized_accesses request)
 

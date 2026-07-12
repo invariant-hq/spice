@@ -10,7 +10,7 @@ workspace mutation tools or todo writes.
   > JSONL
 
   $ start_fake_openai plan-mode.jsonl capture-plan-mode port-plan-mode
-  $ spice run --cwd "$PWD" --json --mode plan --permission-mode bypass --id plan-mode "plan prompt" | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/; s/"duration_ms":[0-9]+/"duration_ms":$MS/g'
+  $ spice run --cwd "$PWD" --json --mode plan --permission bypass --id plan-mode "plan prompt" | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/; s/"duration_ms":[0-9]+/"duration_ms":$MS/g'
   spice: session saved; resume with: spice resume 'plan-mode'
   {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"danger-full-access","read":"all","origin":"config","require":"enforced","network":"enabled","backend":"none","enforcement":"not_requested"}}
   {"schema_version":1,"type":"session.started","session_id":"plan-mode","revision":"sha256:$HASH"}
@@ -30,7 +30,7 @@ workspace mutation tools.
   > JSONL
 
   $ start_fake_openai review-mode.jsonl capture-review-mode port-review-mode
-  $ spice run --cwd "$PWD" --json --mode review --permission-mode bypass --id review-mode "review prompt" | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/; s/"duration_ms":[0-9]+/"duration_ms":$MS/g'
+  $ spice run --cwd "$PWD" --json --mode review --permission bypass --id review-mode "review prompt" | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/; s/"duration_ms":[0-9]+/"duration_ms":$MS/g'
   spice: session saved; resume with: spice resume 'review-mode'
   {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"danger-full-access","read":"all","origin":"config","require":"enforced","network":"enabled","backend":"none","enforcement":"not_requested"}}
   {"schema_version":1,"type":"session.started","session_id":"review-mode","revision":"sha256:$HASH"}
@@ -49,7 +49,7 @@ workspace tools and host-boundary tools.
   > JSONL
 
   $ start_fake_openai build-mode.jsonl capture-build-mode port-build-mode
-  $ spice run --cwd "$PWD" --json --permission-mode bypass --id build-mode "build prompt" | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/; s/"duration_ms":[0-9]+/"duration_ms":$MS/g'
+  $ spice run --cwd "$PWD" --json --permission bypass --id build-mode "build prompt" | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/; s/"duration_ms":[0-9]+/"duration_ms":$MS/g'
   spice: session saved; resume with: spice resume 'build-mode'
   {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"danger-full-access","read":"all","origin":"config","require":"enforced","network":"enabled","backend":"none","enforcement":"not_requested"}}
   {"schema_version":1,"type":"session.started","session_id":"build-mode","revision":"sha256:$HASH"}

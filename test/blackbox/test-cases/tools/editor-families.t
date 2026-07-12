@@ -15,7 +15,7 @@ family), and a scripted apply_patch edit applies for real.
   > {"expect":{"body_contains":["function_call_output","call-patch"]},"response":{"id":"resp-patch-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"patched"}]}]}}
   > JSONL
   $ start_fake_openai patch.jsonl capture-patch port-patch
-  $ spice run --cwd "$PWD" --permission-mode bypass --id patch-run "fix the greeting"
+  $ spice run --cwd "$PWD" --permission bypass --id patch-run "fix the greeting"
   permission: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested

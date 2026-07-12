@@ -189,21 +189,7 @@ let plan ~workspace ~sandbox ~permission () =
      before [start] loads any credential. On success the posture is readable. *)
   match Sandbox.gate sandbox with
   | Error _ as error -> error
-  | Ok () ->
-      (* An enforcing workspace-write sandbox backs the native workspace edit
-         boundary, so the posture credits those path mutations here. Command
-         accesses remain reviewable independently. *)
-      let permission =
-        Permission.Run.with_sandbox_backing
-          ~sandbox_backed:(Sandbox.enforces_workspace_write sandbox)
-          permission
-      in
-      (* Reading curated documentation is read-only regardless of the sandbox or
-         preset, so the docs allowlist credits the posture on every run — a
-         web_fetch to a listed host does not prompt, while a shell command to it
-         stays a command the sandbox confines. *)
-      let permission = Permission.Run.with_web_docs_allowlist permission in
-      Ok { Plan.workspace; sandbox; permission }
+  | Ok () -> Ok { Plan.workspace; sandbox; permission }
 
 (* The run *)
 
@@ -516,8 +502,9 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
       |> List.map Spice_protocol.Call.Kind.tool
     in
     let run_config =
-      Spice_session_run.Config.make ~tools ~host_tools ~policy ~denial_message
-        ~prelude ?safety_step_cap:max_steps ()
+      Spice_session_run.Config.make ~tools ~host_tools ~policy
+        ~on_review:(Permission.Run.on_review permission)
+        ~denial_message ~prelude ?safety_step_cap:max_steps ()
     in
     (* Disabling automatic compaction is the absence of the policy: the
        interpreter performs neither pressure compaction nor overflow recovery
@@ -554,6 +541,7 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
          applies the shared depth and running-capacity bounds. *)
       Ok
         (Spice_session_run.Config.make ~tools:child_tools ~policy:child_policy
+           ~on_review:(Permission.Run.on_review permission)
            ~host_tools:
              [
                Spice_protocol.Call.Kind.tool

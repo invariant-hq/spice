@@ -7,10 +7,10 @@
 
     This is tui-next's own status projection (doc/plans/tui-next.md, "tui-next
     builds its own snapshot from host calls"): version, model, cwd, the context
-    window, and any non-default permission/sandbox posture. The live facts
+    window, and any non-default sandbox posture. The live facts
     (dune, worktree, CRs, last session) are the {!Home.Brief.t}; the two are
     kept apart because they refresh on different clocks (04-header-footer.md,
-    "Header vs footer"). Version, cwd, and posture are process-static; the model
+    "Header vs footer"). Version, cwd, and sandbox are process-static; the model
     facts track the session's turn binding — a /model pick or a login that flips
     the derived default pushes a rebuilt snapshot, so the footer never shows a
     model the next turn would not use. A banner already appended to the
@@ -32,10 +32,6 @@ type t = {
   context_window : int option;
       (** The main model's context window in tokens, when the catalog knows it —
           the denominator of the footer meter. *)
-  permission : string option;
-      (** Non-default permission posture as a hanging-line label (e.g.
-          ["never ask"]); [None] when the posture is the default ask-first. Only
-          the compact banner record shows it (04-header-footer.md §1). *)
   sandbox : string option;
       (** Configured sandbox as a hanging-line label (e.g.
           ["danger-full-access (config)"]); [None] when no sandbox is

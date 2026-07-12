@@ -11,22 +11,21 @@ type t = {
   expanded : bool;
 }
 
-let option_count = 4
+let option_count = 3
 
 let make proposal =
   { proposal; nav = Option_list.make ~count:option_count; expanded = false }
 
 type outcome =
   | Stay
-  | Approve of { accept_edits : bool }
+  | Approve
   | Adjust
   | Keep_planning
 
 (* The option order the numbers name (03-ia §Dialogs, plan approval). *)
 let resolve_index = function
-  | 0 -> Approve { accept_edits = false }
-  | 1 -> Approve { accept_edits = true }
-  | 2 -> Adjust
+  | 0 -> Approve
+  | 1 -> Adjust
   | _ -> Keep_planning
 
 let ctrl_o (ev : Matrix.Input.Key.event) =
@@ -53,7 +52,7 @@ let max_body_lines = 8
 
 let hint t =
   let expand = if t.expanded then [] else [ "ctrl+o expand" ] in
-  [ "1-4 choose"; "enter confirm" ] @ expand @ [ "esc keep planning" ]
+  [ "1-3 choose"; "enter confirm" ] @ expand @ [ "esc keep planning" ]
 
 let title t =
   match Spice_protocol.Plan.Proposal.title t.proposal with
@@ -95,7 +94,6 @@ let body_rows t =
 let option_labels =
   [|
     "approve";
-    "approve + " ^ Theme.posture ^ " accept edits";
     "adjust — tell the model what to change";
     "keep planning";
   |]

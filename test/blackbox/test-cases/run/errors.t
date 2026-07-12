@@ -33,7 +33,7 @@ loaded.
 
 The permission-mode alias is accepted before runtime assembly.
 
-  $ SPICE_MODEL=openai/gpt-5.5 spice run --permission-mode plan --max-steps 0 hello
+  $ SPICE_MODEL=openai/gpt-5.5 spice run --permission plan --max-steps 0 hello
   spice: --max-steps must be positive, got 0
   [2]
 

@@ -314,10 +314,10 @@ let%expect_test "escape from a settings-opened model panel restores settings" =
 09 |     Thinking summaries       true
 10 |
 11 |   Permissions & sandbox
-12 |     Permission mode          default
-13 |     Unattended permission    block
-14 |     Sandbox mode             danger-full-access  — no filesystem confinement
-15 |     Sandbox required         enforced
+12 |     Unattended permission    block
+13 |     Sandbox mode             danger-full-access  — no filesystem confinement
+14 |     Sandbox required         enforced
+15 |     Sandbox reads            all
 16 |
 17 |   Context
 18 |     Auto compact             true

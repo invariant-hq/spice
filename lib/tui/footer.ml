@@ -7,7 +7,6 @@ open Mosaic
 open Prims
 
 type severity = Ok | Warn | Critical
-type posture = Ask | Accept_edits | Never_ask
 type input_mode = Shell | History_search
 
 (* The heap sinks as context fills, framed as runway left (04-header-footer.md
@@ -71,16 +70,6 @@ let context_segment window =
            [ seg glyph_style glyph; seg text_style (" " ^ text) ])
   | Some _ | None -> None
 
-(* The posture pill (04-header-footer.md §4): a safety-relevant mode readout,
-   leftmost, drawn with a two-space gap before the facts. Ask shows nothing. *)
-let posture_pill = function
-  | Ask -> None
-  | Accept_edits ->
-      Some
-        (Theme.accent, Theme.posture ^ " accept edits on (shift+tab to cycle)")
-  | Never_ask ->
-      Some (Theme.error, Theme.posture ^ " never ask on (shift+tab to cycle)")
-
 (* Committed strings (03-composer.md §Shell mode, and the lead's spec sync):
    the input mode claims the right hint slot for its badge and the left fact
    segments for its key hints. *)
@@ -116,7 +105,7 @@ let cwd_leaf = 8
 (* The idle footer's left facts, and whether the [? for shortcuts] hint still
    fits beside them. The cwd left-truncates in OCaml rather than under the
    flex-truncate measure quirk (doc/plans/tui-next.md §Rules); [reserved] is a
-   column estimate of the kept segments — the posture pill, the model, dune
+   column estimate of the kept segments — the model, dune
    verdict, context and agent facts (each with its separator), and, while it is
    kept, the hint.
 
@@ -125,8 +114,7 @@ let cwd_leaf = 8
    verdict → agent count → model until the row holds what remains plus a
    [cwd_leaf]-wide cwd; the cwd itself never fully drops — it left-truncates to
    whatever is left, down to a floor. *)
-let idle_facts (snapshot : Snapshot.t) ~dune ~width ~pill_width ~agents
-    ~account_absent =
+let idle_facts (snapshot : Snapshot.t) ~dune ~width ~agents ~account_absent =
   let model = Snapshot.model_line_compact snapshot in
   let context = context_segment snapshot.Snapshot.context_window in
   let agents = agents_fact agents in
@@ -156,7 +144,7 @@ let idle_facts (snapshot : Snapshot.t) ~dune ~width ~pill_width ~agents
     else 0
   in
   let reserved ~has_hint ~keep_model ~keep_agents ~keep_dune ~keep_context =
-    2 (* indent *) + pill_width
+    2 (* indent *)
     + 2 (* right pad *) + 1 (* min spacer *)
     + nudge_cols
     + (if has_hint then display_width "? for shortcuts" + 1 else 0)
@@ -215,13 +203,8 @@ let idle_facts (snapshot : Snapshot.t) ~dune ~width ~pill_width ~agents
   in
   (facts, has_hint)
 
-let view ?(posture = Ask) ?input_mode ?agents ?home_badge
+let view ?input_mode ?agents ?home_badge
     ?(account_absent = false) (snapshot : Snapshot.t) ~dune ~width =
-  let pill_seg, pill_width =
-    match posture_pill posture with
-    | None -> ([], 0)
-    | Some (style, text) -> ([ seg style (text ^ "  ") ], display_width text + 2)
-  in
   (* Only the idle facts carry the [? for shortcuts] hint, and they alone decide
      whether it fits (04-header-footer.md §4): a shell or history badge claims
      the right slot outright, so those states never show it. [has_hint] is
@@ -230,7 +213,7 @@ let view ?(posture = Ask) ?input_mode ?agents ?home_badge
     match input_mode with
     | Some mode -> ([ seg Theme.faint (input_mode_hint mode) ], false)
     | None ->
-        idle_facts snapshot ~dune ~width ~pill_width ~agents ~account_absent
+        idle_facts snapshot ~dune ~width ~agents ~account_absent
   in
   let right =
     match input_mode with
@@ -252,4 +235,4 @@ let view ?(posture = Ask) ?input_mode ?agents ?home_badge
   box ~key:"footer" ~flex_direction:Flex_direction.Row ~flex_shrink:0.
     ~padding:(padding_lrtb 2 2 0 0)
     ~size:{ width = pct 100; height = px 1 }
-    (pill_seg @ left @ (spacer :: right))
+    (left @ (spacer :: right))

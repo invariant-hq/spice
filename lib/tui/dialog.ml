@@ -44,10 +44,7 @@ type resolution =
       message : string option;
     }
   | Answer of { text : string }
-  | Resolve_plan of {
-      decision : Spice_protocol.Plan.Decision.t;
-      accept_edits : bool;
-    }
+  | Resolve_plan of { decision : Spice_protocol.Plan.Decision.t }
 
 type event =
   | Stay
@@ -97,21 +94,14 @@ let key ev t =
       let t = { t with form = Plan d } in
       match outcome with
       | Plan_dialog.Stay -> (t, Stay)
-      | Plan_dialog.Approve { accept_edits } ->
-          let echo =
-            "plan approved · building"
-            ^ if accept_edits then " · accept edits on" else ""
-          in
+      | Plan_dialog.Approve ->
           ( t,
             Resolve
               {
                 resolution =
                   Resolve_plan
-                    {
-                      decision = Spice_protocol.Plan.Decision.approve;
-                      accept_edits;
-                    };
-                echo;
+                    { decision = Spice_protocol.Plan.Decision.approve };
+                echo = "plan approved · building";
               } )
       | Plan_dialog.Adjust ->
           ( { t with feedback = Some Adjust },
@@ -122,10 +112,7 @@ let key ev t =
               {
                 resolution =
                   Resolve_plan
-                    {
-                      decision = Spice_protocol.Plan.Decision.reject;
-                      accept_edits = false;
-                    };
+                    { decision = Spice_protocol.Plan.Decision.reject };
                 echo = "kept planning";
               } ))
   | Question d -> (
@@ -165,10 +152,7 @@ let resolve_borrow ~text t =
       if String.length text = 0 then
         Ok
           ( Resolve_plan
-              {
-                decision = Spice_protocol.Plan.Decision.reject;
-                accept_edits = false;
-              },
+              { decision = Spice_protocol.Plan.Decision.reject },
             "kept planning" )
       else
         Ok
@@ -182,8 +166,7 @@ let resolve_borrow ~text t =
                   | Error error ->
                       invalid_arg
                         (Format.asprintf "%a"
-                           Spice_protocol.Plan.Decision.pp_error error));
-                accept_edits = false;
+                           Spice_protocol.Plan.Decision.pp_error error))
               },
             "plan rejected · " ^ quote text )
   | Some Custom ->

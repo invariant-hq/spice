@@ -448,11 +448,40 @@ module Contract_tests = struct
          (Contract.policy Contract.read_only
             ~configured:(Permission.Policy.make [])))
 
+  let read_only_denies_commands_and_writes_under_bypass () =
+    let policy =
+      Contract.policy Contract.read_only
+        ~configured:
+          (Permission.Policy.make
+             [ Permission.Policy.Rule.allow_all_dangerously ])
+    in
+    let cwd = Permission.Access.Path_scope.unknown "test-cwd" in
+    let command =
+      Permission.Access.argv ~cwd
+        ~execution:Permission.Access.Command.Enforced ~program:"dune"
+        [ "build" ]
+    in
+    let write = Permission.Access.unknown_path ~op:`Modify "/outside" in
+    let denied access =
+      match
+        Permission.Policy.decide ~on_review:Permission.Policy.Allow policy
+          (Permission.Request.of_accesses [ access ])
+      with
+      | Permission.Policy.Decision.Denied _ -> true
+      | Permission.Policy.Decision.Allowed
+      | Permission.Policy.Decision.Review _ ->
+          false
+    in
+    is_true ~msg:"read_only denies a forged command" (denied command);
+    is_true ~msg:"read_only denies a forged write" (denied write)
+
   let suite =
     group "contract"
       [
         test "filter_tools by contract" filter_tools_by_contract;
         test "policy strengthening" policy_strengthening;
+        test "read_only denies commands and writes under bypass"
+          read_only_denies_commands_and_writes_under_bypass;
       ]
 end
 

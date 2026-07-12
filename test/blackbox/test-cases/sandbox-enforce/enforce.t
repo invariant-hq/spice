@@ -19,7 +19,7 @@ files work. Evidence on every command names the backend.
   > JSONL
 
   $ SPICE_FAKE_PROVIDER_ACCEPT_TIMEOUT=12 start_fake_openai enforce.jsonl enforce-capture enforce-port
-  $ SPICE_TRUSTED_WORKSPACE="$PWD" spice run --cwd "$PWD" --json --permission-mode bypass --id enforce-run "enforce prompt" | grep -oE '"outcome":"completed"|"sandbox":\{"mode":"workspace-write","read":"project","origin":"default","require":"enforced","network":"restricted","backend":"macos-seatbelt","enforcement":"enforceable"\}|"sandbox":\{"kind":"enforced","backend":"macos-seatbelt"'
+  $ SPICE_TRUSTED_WORKSPACE="$PWD" spice run --cwd "$PWD" --json --permission bypass --id enforce-run "enforce prompt" | grep -oE '"outcome":"completed"|"sandbox":\{"mode":"workspace-write","read":"project","origin":"default","require":"enforced","network":"restricted","backend":"macos-seatbelt","enforcement":"enforceable"\}|"sandbox":\{"kind":"enforced","backend":"macos-seatbelt"'
   spice: session saved; resume with: spice resume 'enforce-run'
   "sandbox":{"mode":"workspace-write","read":"project","origin":"default","require":"enforced","network":"restricted","backend":"macos-seatbelt","enforcement":"enforceable"}
   "sandbox":{"kind":"enforced","backend":"macos-seatbelt"
@@ -49,7 +49,7 @@ succeeds, and evidence records not_requested.
   > {"expect":{"body_contains":["call-x1","exited 0","not_requested"]},"response":{"id":"resp-esc-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"escalate final"}]}]}}
   > JSONL
   $ start_fake_openai escalate.jsonl escalate-capture escalate-port
-  $ SPICE_TRUSTED_WORKSPACE="$PWD" spice run --cwd "$PWD" --json --permission-mode bypass --id escalate-run "escalate prompt" | grep -o '"final_text":"escalate final"'
+  $ SPICE_TRUSTED_WORKSPACE="$PWD" spice run --cwd "$PWD" --json --permission bypass --id escalate-run "escalate prompt" | grep -o '"final_text":"escalate final"'
   spice: session saved; resume with: spice resume 'escalate-run'
   "final_text":"escalate final"
   $ wait_fake_server

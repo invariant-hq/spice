@@ -89,17 +89,20 @@ module Config : sig
     tools:Spice_tool.t list ->
     ?host_tools:Spice_llm.Tool.t list ->
     policy:(Spice_permission.Policy.Rule.t list -> Spice_permission.Policy.t) ->
+    ?on_review:Spice_permission.Policy.on_review ->
     ?prelude:Spice_llm.Request.Prelude.t ->
     ?safety_step_cap:int ->
     ?denial_message:(Spice_permission.Policy.Denial.t -> string) ->
     unit ->
     t
-  (** [make ~tools ?host_tools ~policy ?prelude ?safety_step_cap
+  (** [make ~tools ?host_tools ~policy ?on_review ?prelude ?safety_step_cap
       ?denial_message ()] is a checked run config.
 
       [tools] are executable host capabilities. [policy] builds the effective
       policy from the conversation's durable family rules for every permission
-      decision. [host_tools] are model-visible
+      decision. [on_review] defaults to {!Spice_permission.Policy.Ask}; callers
+      may select {!Spice_permission.Policy.Allow} for an explicit per-run
+      bypass that still preserves denials. [host_tools] are model-visible
       tools whose calls block the run for product-owned host handling. A call
       is classified as host-handled by tool name before executable-tool
       dispatch. Their provider-facing declarations are cached and become the

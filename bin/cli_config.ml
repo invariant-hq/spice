@@ -32,10 +32,6 @@ let config_keys =
       "API root override for provider $(i,ID). Provider ids are lowercase \
        ASCII slugs." );
     ("run.max_steps", "Positive integer maximum for model/tool cycles.");
-    ( "permission.mode",
-      "Durable permission preset: $(b,default), $(b,accept-edits), or \
-       $(b,plan). $(b,bypass) is available only through the per-run \
-       $(b,--permission-mode) flag." );
     ("shell", "Shell program used for shell commands. Must not be empty.");
     ( "instructions.global",
       "Whether the global $(b,AGENTS.md) in the config home is loaded: \
@@ -194,10 +190,10 @@ let show_json config =
       ( "permission",
         json_obj
           [
-            ( "mode",
+            ( "unattended",
               Jsont.Json.string
-                (Spice_host.Permission.Preset.to_string
-                   (Config.Permissions.mode permissions)) );
+                (Spice_host.Permission.Unattended.to_string
+                   (Config.Permissions.unattended permissions)) );
           ] );
       ("shell", Jsont.Json.string (Config.Runtime.shell runtime));
       ( "instructions",
@@ -272,7 +268,7 @@ let text_fields config =
       (Config.Models.provider_base_urls (Config.models config))
   @ [
       Any run_max_steps;
-      Any permission_mode;
+      Any permission_unattended;
       Any shell;
       Any notices_fswatch;
       Any notices_cr_comments;
