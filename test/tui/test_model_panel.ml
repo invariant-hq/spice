@@ -334,9 +334,9 @@ let%expect_test "escape from a settings-opened model panel restores settings" =
 19 |
 20 |   Instructions
 21 |     Global instructions      true
-22 |     Project instructions     true
-23 |     Claude.md instructions   true
-24 |   … +12 more|}]
+22 |   … +14 more
+23 |
+24 |   ↵ edit · ↑↓ move · ←→ tab/value · / filter · esc back|}]
 
 (* A panel is pinned where the composer and footer were, leaving the transcript
    as the growing region above it. At the baseline 80x24 geometry, even a short
