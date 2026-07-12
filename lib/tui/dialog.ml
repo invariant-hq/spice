@@ -11,10 +11,8 @@ type form =
   | Plan of Plan_dialog.t
   | Question of Question_dialog.t
 
-(* The composer-borrow kind, so a resumed submit knows which reply it finishes.
-   [Custom] carries the question form because its emptiness rule differs (a plan
-   adjust or a deny may submit empty; a custom answer may not). *)
-type feedback = Deny | Adjust | Custom
+(* The composer-borrow kind, so a resumed submit knows which reply it finishes. *)
+type feedback = Deny | Adjust
 type t = { pending : pending; form : form; feedback : feedback option }
 
 let of_pending ~owner boundary =
@@ -54,7 +52,6 @@ type event =
 
 let deny_placeholder = "tell Spice what to do differently"
 let adjust_placeholder = "what should the plan do differently?"
-let custom_placeholder = "type your answer"
 
 (* --- Key folding, per form --- *)
 
@@ -122,9 +119,6 @@ let key ev t =
       | Question_dialog.Stay -> (t, Stay)
       | Question_dialog.Answer text ->
           (t, Resolve { resolution = Answer { text }; echo = "answered" })
-      | Question_dialog.Custom ->
-          ( { t with feedback = Some Custom },
-            Borrow { placeholder = custom_placeholder } )
       | Question_dialog.Flash message -> (t, Flash message))
 
 (* --- Borrow lifecycle --- *)
@@ -133,7 +127,6 @@ let borrow_summary t =
   match (t.feedback, t.form) with
   | Some Deny, Permission d -> "Denying: " ^ Permission_dialog.summary d
   | Some Adjust, _ -> "Adjusting the plan"
-  | Some Custom, Question _ -> "Type your answer"
   | _ -> ""
 
 let quote text = "\"" ^ text ^ "\""
@@ -169,12 +162,20 @@ let resolve_borrow ~text t =
                            Spice_protocol.Plan.Decision.pp_error error))
               },
             "plan rejected · " ^ quote text )
-  | Some Custom ->
-      if String.length text = 0 then Error "type an answer"
-      else Ok (Answer { text }, "answered")
   | None -> Error "no answer is being collected"
 
 let cancel_borrow t = { t with feedback = None }
+
+let accepts_paste t =
+  match t.form with
+  | Question question -> Question_dialog.accepts_paste question
+  | Permission _ | Plan _ -> false
+
+let paste text t =
+  match t.form with
+  | Question question ->
+      { t with form = Question (Question_dialog.paste text question) }
+  | Permission _ | Plan _ -> t
 
 (* --- View --- *)
 

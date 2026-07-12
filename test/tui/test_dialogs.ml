@@ -140,10 +140,9 @@ let%expect_test "multi-select digits toggle before Enter submits" =
   Tui.release t "fin";
   Tui.settle t
 
-(* Esc on the question dialog borrows the composer for a free-form answer
-   (03-composer.md §Borrow): the dialog closes and the composer takes a scoped
-   placeholder, no turn resumed yet. *)
-let%expect_test "esc on the question dialog borrows the composer" =
+(* A custom answer is edited inside the question surface. Cursor motion and
+   insertion belong to that field, and Enter submits its value directly. *)
+let%expect_test "a custom answer edits inline and submits" =
   let script =
     [
       Provider_script.tool_call ~expect:[ "which runner" ] ~id:"resp-qe-1"
@@ -151,38 +150,167 @@ let%expect_test "esc on the question dialog borrows the composer" =
         ~arguments:
           {|{"question":"Which test runner should I wire up?","options":[{"label":"dune runtest","description":"the existing runner"},{"label":"alcotest","description":"add a dependency"}]}|}
         ();
+      resume ~expect:[ "call-qe"; "abc" ] ~id:"resp-qe-2"
+        "Used the custom runner.";
     ]
   in
   Tui.run ~name:"dialog-question-esc" ~provider:script @@ fun t ->
   open_dialog t "which runner";
   Tui.keys t Key.escape;
   Tui.settle t;
-  Tui.print t;
+  let screen = Tui.screen t in
+  Printf.printf "question remains visible: %b\n"
+    (String.includes ~affix:"Which test runner should I wire up?" screen);
+  Printf.printf "inline field is visible: %b\n"
+    (String.includes ~affix:"❯ ▌" screen);
+  Printf.printf "composer placeholder is absent: %b\n"
+    (not (String.includes ~affix:"❯ type your answer" screen));
   [%expect
-    {|01 |
-02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
-03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
-04 |        sandbox: danger-full-access (config)
-05 |
-06 | ❯ which runner
-07 |
-08 | ⋯ Waiting for your answer
-09 |
-10 |
-11 |
-12 |
-13 |
-14 |
-15 |
-16 |
-17 |
-18 |
-19 |
-20 |   Type your answer
-21 |
-22 | ────────────────────────────────────────────────────────────────────────────────
-23 | ❯ type your answer
-24 | ────────────────────────────────────────────────────────────────────────────────|}]
+    {|
+    question remains visible: true
+    inline field is visible: true
+    composer placeholder is absent: true |}];
+  Tui.keys t "ac";
+  Tui.keys t Key.left;
+  Tui.keys t "b";
+  Tui.settle t;
+  Printf.printf "cursor editing stays in the field: %b\n"
+    (String.includes ~affix:"❯ ab▌c" (Tui.screen t));
+  [%expect {| cursor editing stays in the field: true |}];
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin";
+  Tui.settle t
+
+(* A multi-select's custom row enters the same field. Bracketed paste is routed
+   to the field and is submitted as one custom answer, not as checked labels. *)
+let%expect_test "a multi-select custom answer accepts paste inline" =
+  let script =
+    [
+      Provider_script.tool_call ~expect:[ "which checks" ] ~id:"resp-qmc-1"
+        ~call_id:"call-qmc" ~name:"ask_user"
+        ~arguments:
+          {|{"question":"Which checks should I run?","options":[{"label":"parser"},{"label":"cli"}],"multi":true}|}
+        ();
+      resume ~expect:[ "call-qmc"; "criterion β" ] ~id:"resp-qmc-2"
+        "Used the custom criterion.";
+    ]
+  in
+  Tui.run ~name:"dialog-question-multi-custom" ~provider:script @@ fun t ->
+  open_dialog t "which checks";
+  Tui.keys t "3";
+  Tui.enter t;
+  Tui.paste t "criterion β";
+  Tui.settle t;
+  Printf.printf "pasted value renders inline: %b\n"
+    (String.includes ~affix:"❯ criterion β▌" (Tui.screen t));
+  [%expect {| pasted value renders inline: true |}];
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin";
+  Tui.settle t
+
+(* Escape from the inline field cancels that edit and returns to the choices;
+   it does not answer the tool or retain the abandoned value. *)
+let%expect_test "escape cancels an inline custom answer" =
+  let script =
+    [
+      Provider_script.tool_call ~expect:[ "choose safely" ] ~id:"resp-qc-1"
+        ~call_id:"call-qc" ~name:"ask_user"
+        ~arguments:
+          {|{"question":"Choose safely","options":[{"label":"stable"},{"label":"experimental"}]}|}
+        ();
+      resume ~expect:[ "call-qc"; "stable" ] ~id:"resp-qc-2"
+        "Chose stable.";
+    ]
+  in
+  Tui.run ~name:"dialog-question-custom-cancel" ~provider:script @@ fun t ->
+  open_dialog t "choose safely";
+  Tui.keys t Key.escape;
+  Tui.settle t;
+  Tui.keys t "discard me";
+  Tui.keys t Key.escape;
+  Tui.settle t;
+  let screen = Tui.screen t in
+  Printf.printf "choice list restored: %b\n"
+    (String.includes ~affix:"❯ 1. stable" screen);
+  Printf.printf "cancelled value discarded: %b\n"
+    (not (String.includes ~affix:"discard me" screen));
+  [%expect
+    {|
+    choice list restored: true
+    cancelled value discarded: true |}];
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin";
+  Tui.settle t
+
+(* A draft typed while the provider is producing the question is independent
+   of the dialog-owned field and remains untouched after the answer resumes. *)
+let%expect_test "a custom answer preserves the prompt draft" =
+  let draft = "FOLLOW-UP-DRAFT" in
+  let script =
+    [
+      Provider_script.tool_call ~expect:[ "ask with draft" ] ~gate:"dialog"
+        ~id:"resp-qd-1" ~call_id:"call-qd" ~name:"ask_user"
+        ~arguments:
+          {|{"question":"Which value?","options":[{"label":"default"}]}|}
+        ();
+      resume ~expect:[ "call-qd"; "custom value" ] ~id:"resp-qd-2"
+        "Accepted the custom value.";
+    ]
+  in
+  Tui.run ~name:"dialog-question-custom-draft" ~provider:script @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "ask with draft";
+  Tui.enter t;
+  ignore (Tui.await_request t 1 : string);
+  Tui.keys t draft;
+  Tui.release_response t "dialog";
+  Tui.await_suspend t;
+  Tui.keys t Key.escape;
+  Tui.settle t;
+  Tui.keys t "custom value";
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin";
+  let screen = Tui.screen t in
+  Printf.printf "draft remains once in composer: %b\n"
+    (count_occurrences ~affix:draft screen = 1);
+  [%expect {| draft remains once in composer: true |}]
+
+(* Question input never enters the composer's in-memory or persisted history.
+   After the turn settles, Up therefore recalls the original turn prompt. *)
+let%expect_test "a custom answer never enters prompt history" =
+  let script =
+    [
+      Provider_script.tool_call ~expect:[ "history question" ] ~id:"resp-qh-1"
+        ~call_id:"call-qh" ~name:"ask_user"
+        ~arguments:
+          {|{"question":"Name a value","options":[{"label":"known"}]}|}
+        ();
+      Provider_script.message ~expect:[ "call-qh"; "history sentinel" ]
+        ~id:"resp-qh-2" "Recorded.";
+    ]
+  in
+  Tui.run ~name:"dialog-question-custom-history" ~provider:script @@ fun t ->
+  open_dialog t "history question";
+  Tui.keys t Key.escape;
+  Tui.settle t;
+  Tui.keys t "history sentinel";
+  Tui.enter t;
+  ignore (Tui.await_turn t 2 : string);
+  Tui.keys t Key.up;
+  Tui.settle t;
+  let screen = Tui.screen t in
+  Printf.printf "turn prompt is recalled: %b\n"
+    (String.includes ~affix:"❯ history question" screen);
+  Printf.printf "custom answer is not recalled: %b\n"
+    (not (String.includes ~affix:"❯ history sentinel" screen));
+  [%expect
+    {|
+    turn prompt is recalled: true
+    custom answer is not recalled: true |}]
 
 (* {2 Permission dialog} *)
 

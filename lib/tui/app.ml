@@ -86,7 +86,7 @@ and panel =
   | Model of model_panel
   | Dialog of Dialog.t
       (** A decision dialog (permission, plan, question). It is a panel that
-          parks the working line and, on deny/adjust/custom-answer, borrows the
+          parks the working line and, on deny/adjust, borrows the
           composer (see {!borrow}) (03-ia §Dialogs). *)
   | Auth of Auth_panel.t
       (** The provider login / logout drill-down (09-auth.md): a staged panel
@@ -129,7 +129,7 @@ type completion =
     }
 
 (* The composer borrow (doc/plans/tui-next-surfaces.md §The composer borrow): a
-   dialog's deny/adjust/custom-answer option returns the user to the real
+   dialog's deny/adjust option returns the user to the real
    composer with a scoped [placeholder]; submit resolves the pending dialog
    instead of starting a turn, and esc restores [saved_draft] and re-opens the
    option list. The dialog itself is still in [surface] while borrowed. *)
@@ -175,8 +175,8 @@ type t = {
      in flight never changes this displayed value. *)
   permission_review : Spice_host.Permission.Review_behavior.t;
   permission_review_pending : bool;
-  (* Whether the composer is borrowed to collect a dialog's feedback answer
-     ([For_answer] while a deny/adjust/custom-answer composer is open). *)
+  (* Whether the composer is borrowed to collect a dialog's permission or plan
+     feedback ([For_answer] while a deny/adjust composer is open). *)
   borrow : borrow;
   (* The one in-flight user shell command ([Some] while running): its header
      renders pinned above the composer, its result settles as a transcript
@@ -312,6 +312,7 @@ type msg =
   (* A key routed to an open decision dialog while it owns the keyboard, and the
      esc that steps back from a borrowed feedback composer to the dialog. *)
   | Dialog_key of Matrix.Input.Key.event
+  | Dialog_paste of string
   | Cancel_borrow
   | Shell_finished of Tool_block.t
   (* Transcript scroll (01-transcript.md §Seam replay, scroll, spacing): the
@@ -1286,9 +1287,8 @@ let resolve_dialog ~resolution ~echo dialog t =
   in
   ({ t with surface = Conversing; borrow = Free }, commands)
 
-(* Finish a borrowed feedback composer from the submitted [text]: an empty custom
-   answer is refused (flash, stay borrowed), everything else resolves. The saved
-   draft is restored before the composer returns. *)
+(* Finish a borrowed permission/plan feedback composer from the submitted
+   [text]. The saved draft is restored before the composer returns. *)
 let resolve_borrow_text text t =
   match (t.surface, t.borrow) with
   | Panel (Dialog dialog), For_answer { saved_draft; _ } -> (
@@ -2563,6 +2563,12 @@ let update msg t =
           | Dialog.Flash message -> ({ t with flash = Some message }, []))
       | Conversing | Panel (Session_switch _ | Model _ | Auth _) | Screen _ ->
           (t, []))
+  | Dialog_paste text -> (
+      match t.surface with
+      | Panel (Dialog dialog) ->
+          ({ t with surface = Panel (Dialog (Dialog.paste text dialog)) }, [])
+      | Conversing | Panel (Session_switch _ | Model _ | Auth _) | Screen _ ->
+          (t, []))
   | Cancel_borrow -> (
       match (t.surface, t.borrow) with
       | Panel (Dialog dialog), For_answer { saved_draft; _ } ->
@@ -3547,5 +3553,11 @@ let subscriptions t =
           Mosaic.Sub.on_paste_all (fun ev ->
               Mosaic.Event.Paste.prevent_default ev;
               Some (Auth_paste (Mosaic.Event.Paste.text ev)))
+      | _ -> Mosaic.Sub.none);
+      (match t.surface with
+      | Panel (Dialog dialog) when Dialog.accepts_paste dialog ->
+          Mosaic.Sub.on_paste_all (fun ev ->
+              Mosaic.Event.Paste.prevent_default ev;
+              Some (Dialog_paste (Mosaic.Event.Paste.text ev)))
       | _ -> Mosaic.Sub.none);
     ]
