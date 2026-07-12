@@ -1227,7 +1227,11 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
           | Some clock -> clock
           | None -> Eio.Stdenv.clock stdenv
         in
-        let cwd = Spice_host.Config.cwd (Spice_host.Host.config host) in
+        let config = Spice_host.Host.config host in
+        let cwd = Spice_host.Config.cwd config in
+        let show_reasoning =
+          Spice_host.Config.Tui.thinking (Spice_host.Config.tui config)
+        in
         let trusted =
           Spice_host.Config.workspace_trust (Spice_host.Host.config host)
           |> Spice_host.Trust.is_trusted
@@ -2492,6 +2496,7 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
                 let model, commands =
                   App.init ~startup ~snapshot
                     ~reduced_motion:(reduced_motion ())
+                    ~show_reasoning
                 in
                 (model, sync_title model commands));
             update =

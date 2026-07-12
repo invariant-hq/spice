@@ -516,6 +516,48 @@ let%expect_test "reasoning streams a ticker then settles to a titled one-liner"
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
 
+(* The effective persisted TUI preference seeds the session before its first
+   turn. With thinking summaries disabled, reasoning is absent both while the
+   response streams and after the terminal event settles the durable turn. *)
+let%expect_test "thinking disabled in config hides reasoning from boot" =
+  let seed project =
+    Project.write_scratch project "config/spice/config.json"
+      {|{"tui":{"thinking":false}}|}
+  in
+  let script =
+    [
+      Provider_script.stream_hold ~expect:[ "retries" ] ~gate:"held"
+        ~reasoning:"**Hidden boot plan**\nThis must never render."
+        ~id:"resp-boot-thinking-off" "Retries still back off exponentially.";
+    ]
+  in
+  Tui.run ~name:"thinking-boot-off" ~seed ~provider:script @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "how do retries space out";
+  Tui.enter t;
+  ignore (Tui.await_request t 1 : string);
+  Tui.settle t;
+  print_string
+    (Printf.sprintf "live ticker visible: %b\nlive reasoning visible: %b\n"
+       (Screen.contains (Tui.screen t) "∴ Thinking")
+       (Screen.contains (Tui.screen t) "Hidden boot plan"));
+  [%expect
+    {|live ticker visible: false
+live reasoning visible: false|}];
+  Tui.release t "held";
+  Tui.settle t;
+  print_string
+    (Printf.sprintf
+       "settled thought visible: %b\nsettled reasoning visible: %b\nanswer visible: \
+        %b\n"
+       (Screen.contains (Tui.screen t) "∴ Thought")
+       (Screen.contains (Tui.screen t) "Hidden boot plan")
+       (Screen.contains (Tui.screen t) "Retries still back off exponentially."));
+  [%expect
+    {|settled thought visible: false
+settled reasoning visible: false
+answer visible: true|}]
+
 let overflow_answer =
   String.concat "\n\n"
     [

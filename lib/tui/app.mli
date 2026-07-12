@@ -503,18 +503,21 @@ val init :
   startup:startup ->
   snapshot:Snapshot.t ->
   reduced_motion:bool ->
+  show_reasoning:bool ->
   t * command list
-(** [init ~startup ~snapshot ~reduced_motion] is the initial model for
-    [snapshot] and its startup commands, per [startup]'s axes. Without a session
-    it is the home model and a first {!Reload_brief}. With one ([spice resume])
-    it is the session's chat — the same banner-headed transcript an in-app
-    resume enters — and a {!Resume_session} that replays the durable events into
-    it, so launch-resume and in-app resume are one path. {!Draft} seeds the
-    composer; {!Submit} starts the first turn at once (the drop happens before
-    the first frame; combined with a session — a pair the CLI rejects — it
+(** [init ~startup ~snapshot ~reduced_motion ~show_reasoning] is the initial
+    model for [snapshot] and its startup commands, per [startup]'s axes. Without
+    a session it is the home model and a first {!Reload_brief}. With one
+    ([spice resume]) it is the session's chat — the same banner-headed transcript
+    an in-app resume enters — and a {!Resume_session} that replays the durable
+    events into it, so launch-resume and in-app resume are one path. {!Draft}
+    seeds the composer; {!Submit} starts the first turn at once (the drop happens
+    before the first frame; combined with a session — a pair the CLI rejects — it
     degrades to the draft seat rather than racing the replay). {!Launch_review}
     opens the review screen over whatever the other axes set up.
-    [reduced_motion] holds the lockup static with no timers. *)
+    [reduced_motion] holds the lockup static with no timers. [show_reasoning]
+    seeds reasoning visibility for the session; [/thinking] may override it for
+    the remainder of that session. *)
 
 val update : msg -> t -> t * command list
 (** [update msg t] folds [msg] into [t]. Composer activity flows through

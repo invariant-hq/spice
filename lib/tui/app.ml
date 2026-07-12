@@ -553,7 +553,7 @@ let welcome_notice =
     "it's experimental: sessions and config may change without migration.";
   ]
 
-let init_model ~snapshot ~reduced_motion =
+let init_model ~snapshot ~reduced_motion ~show_reasoning =
   {
     snapshot;
     brief = None;
@@ -576,7 +576,7 @@ let init_model ~snapshot ~reduced_motion =
     rows = 24;
     pane_open = false;
     armed = None;
-    show_reasoning = true;
+    show_reasoning;
     thread_runs = [];
     subagent_wake_pending = false;
     strip_focus = None;
@@ -842,9 +842,12 @@ let open_review ?base_spec t =
   ( { t with surface = Screen (Review review) },
     List.map (fun e -> Review_command e) effects )
 
-let init ~(startup : startup) ~snapshot ~reduced_motion =
+let init ~(startup : startup) ~snapshot ~reduced_motion ~show_reasoning =
   let model =
-    { (init_model ~snapshot ~reduced_motion) with mode = startup_mode startup }
+    {
+      (init_model ~snapshot ~reduced_motion ~show_reasoning) with
+      mode = startup_mode startup;
+    }
   in
   let model, commands =
     match (startup.session, startup.input) with
