@@ -38,10 +38,10 @@ type outcome =
       (** Reject the key and flash [message] (an empty multi-select submit). *)
 
 val key : Matrix.Input.Key.event -> t -> t * outcome
-(** [key ev t] folds one key: a digit picks (single) or toggles (multi) that
-    option, [space] toggles the option under the cursor (multi), arrows move the
-    cursor, [enter] answers with the selection, and [esc] or the [✎] row borrow
-    the composer. *)
+(** [key ev t] folds one key: a digit selects a single-choice row or toggles a
+    multi-choice option. [Space] toggles the option under the cursor (multi),
+    arrows move the cursor, [enter] answers with the selected or checked rows,
+    and [esc] or confirmed [✎] row borrows the composer. *)
 
 val view : width:int -> t -> _ Mosaic.t
 (** [view ~width t] renders the whole dialog as a panel. *)

@@ -39,9 +39,7 @@ let key ev t =
   if ctrl_o ev then ({ t with expanded = not t.expanded }, Stay)
   else
     match Panel.classify ev with
-    | Panel.Digit d when d >= 1 && d <= option_count ->
-        (t, resolve_index (d - 1))
-    | Panel.Digit _ -> (t, Stay)
+    | Panel.Digit d -> ({ t with nav = Option_list.jump d t.nav }, Stay)
     | Panel.Action Panel.Up -> ({ t with nav = Option_list.up t.nav }, Stay)
     | Panel.Action Panel.Down -> ({ t with nav = Option_list.down t.nav }, Stay)
     | Panel.Action Panel.Enter -> (t, resolve_index (Option_list.selected t.nav))

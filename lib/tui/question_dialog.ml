@@ -68,9 +68,8 @@ let key ev t =
   match Panel.classify ev with
   | Panel.Digit d when d >= 1 && d <= option_count t + 1 ->
       let i = d - 1 in
-      if i = custom_index t then (t, Custom)
-      else if t.multi then toggle t i
-      else (t, Answer (Q.Option.label (List.nth t.options i)))
+      if t.multi && i < option_count t then toggle t i
+      else ({ t with nav = Option_list.jump d t.nav }, Stay)
   | Panel.Digit _ -> (t, Stay)
   | Panel.Printable " " when t.multi -> toggle t (Option_list.selected t.nav)
   | Panel.Action Panel.Up -> ({ t with nav = Option_list.up t.nav }, Stay)

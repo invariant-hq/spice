@@ -33,10 +33,10 @@ type outcome =
       (** Reject with no feedback and keep the planning turn going. *)
 
 val key : Matrix.Input.Key.event -> t -> t * outcome
-(** [key ev t] folds one key: a digit [1]–[3] resolves that option directly,
-    arrows / [ctrl+p]·[ctrl+n] move the cursor, [enter] confirms it, [ctrl+o]
-    toggles the body expand (a {!Stay}), and [esc] is {!Keep_planning}. Any
-    other key is {!Stay}. *)
+(** [key ev t] folds one key: a digit [1]–[3] selects that option, arrows /
+    [ctrl+p]·[ctrl+n] move the cursor, and [enter] confirms it. [ctrl+o] toggles
+    the body expand (a {!Stay}), and [esc] is {!Keep_planning}. Any other key is
+    {!Stay}. *)
 
 val view : width:int -> t -> _ Mosaic.t
 (** [view ~width t] renders the whole dialog as a plan-blue panel. *)

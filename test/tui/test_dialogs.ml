@@ -39,6 +39,16 @@ let enter_plan_mode t =
   Tui.enter t;
   Tui.settle t
 
+let count_occurrences ~affix text =
+  let affix_length = String.length affix in
+  let rec loop from count =
+    if from + affix_length > String.length text then count
+    else if String.equal (String.sub text from affix_length) affix then
+      loop (from + affix_length) (count + 1)
+    else loop (from + 1) count
+  in
+  loop 0 0
+
 (* {2 Question dialog} *)
 
 (* A structured [ask_user] with two labelled options renders the question and
@@ -53,8 +63,8 @@ let%expect_test "the question dialog renders and a pick resumes the turn" =
           {|{"question":"Which test runner should I wire up?","options":[{"label":"dune runtest","description":"the existing runner"},{"label":"alcotest","description":"add a dependency"}]}|}
         ();
       resume
-        ~expect:[ "call-q"; "dune runtest" ]
-        ~id:"resp-q-2" "Wired up dune runtest.";
+        ~expect:[ "call-q"; "alcotest" ]
+        ~id:"resp-q-2" "Wired up alcotest.";
     ]
   in
   Tui.run ~name:"dialog-question" ~provider:script @@ fun t ->
@@ -85,10 +95,46 @@ let%expect_test "the question dialog renders and a pick resumes the turn" =
 22 |
 23 |
 24 ||}];
-  (* Pick the highlighted option. The resume request carries "dune runtest",
-     asserted at the wire by the resume item's [~expect] (it fails loudly
-     otherwise). The dialog frame and wire assertion are the observable contract;
-     this test does not duplicate the post-resume frame coverage. *)
+  (* A digit moves the highlight but does not answer. Enter confirms the visible
+     row, and the resume request carries "alcotest" (asserted at the wire). *)
+  Tui.keys t "2";
+  Tui.settle t;
+  Printf.printf "digit selects the question row: %b\n"
+    (String.includes ~affix:"❯ 2. alcotest" (Tui.screen t));
+  [%expect {| digit selects the question row: true |}];
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin";
+  Tui.settle t
+
+(* Multi-select keeps digits as toggles. Toggling does not answer on its own;
+   Enter submits the accumulated checked set. *)
+let%expect_test "multi-select digits toggle before Enter submits" =
+  let script =
+    [
+      Provider_script.tool_call ~expect:[ "which checks" ] ~id:"resp-qm-1"
+        ~call_id:"call-qm" ~name:"ask_user"
+        ~arguments:
+          {|{"question":"Which checks should I run?","options":[{"label":"parser","description":"unit suite"},{"label":"cli","description":"headless suite"}],"multi":true}|}
+        ();
+      resume ~expect:[ "call-qm"; "parser, cli" ] ~id:"resp-qm-2"
+        "Ran both suites.";
+    ]
+  in
+  Tui.run ~name:"dialog-question-multi" ~provider:script @@ fun t ->
+  open_dialog t "which checks";
+  Tui.keys t "12";
+  Tui.settle t;
+  let screen = Tui.screen t in
+  Printf.printf "digits toggle both rows: %b\n"
+    (String.includes ~affix:"[x] 1. parser" screen
+    && String.includes ~affix:"[x] 2. cli" screen);
+  Printf.printf "question still awaits Enter: %b\n"
+    (String.includes ~affix:"Which checks should I run?" screen);
+  [%expect
+    {|
+    digits toggle both rows: true
+    question still awaits Enter: true |}];
   Tui.enter t;
   ignore (Tui.await_request t 2 : string);
   Tui.release t "fin";
@@ -227,6 +273,45 @@ let%expect_test "digit then Enter cannot approve a stacked permission dialog" =
   ignore (Tui.await_request t 2 : string);
   Tui.release t "fin";
   Tui.settle t
+
+(* A follow-up draft may be typed while the provider is still producing the
+   tool call. Once the permission modal appears, its digit and confirming Enter
+   must be consumed by that modal; the restored draft remains exactly once in
+   the composer and never becomes a new request. *)
+let%expect_test "permission confirmation cannot submit a restored draft" =
+  let draft = "DRAFT-NOT-SENT" in
+  let script =
+    [
+      Provider_script.tool_call ~expect:[ "run it" ] ~gate:"dialog"
+        ~id:"resp-pd-1" ~call_id:"call-pd" ~name:"shell"
+        ~arguments:{|{"command":"printf recorded"}|} ();
+      resume ~expect:[ "call-pd"; "recorded" ] ~id:"resp-pd-2"
+        "Command finished.";
+      Provider_script.message ~expect:[ draft ] ~gate:"unexpected"
+        ~id:"resp-pd-3" "The draft was unexpectedly submitted.";
+    ]
+  in
+  Tui.run ~name:"dialog-perm-draft" ~provider:script @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "run it";
+  Tui.enter t;
+  ignore (Tui.await_request t 1 : string);
+  Tui.keys t draft;
+  Tui.release_response t "dialog";
+  Tui.await_suspend t;
+  Tui.keys t "1";
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin";
+  let screen = Tui.screen t in
+  Printf.printf "draft remains only in composer: %b\n"
+    (count_occurrences ~affix:draft screen = 1);
+  Printf.printf "permission turn completed: %b\n"
+    (String.includes ~affix:"Command finished." screen);
+  [%expect
+    {|
+    draft remains only in composer: true
+    permission turn completed: true |}]
 
 (* A compound shell expression may normalize to several access facts, but it is
    still one model action and therefore one decision. The original expression
@@ -438,10 +523,57 @@ let%expect_test "the plan dialog approves and resumes the turn" =
 22 |
 23 |
 24 ||}];
+  Tui.keys t Key.down;
   Tui.keys t "1";
+  Tui.settle t;
+  Printf.printf "digit selects the plan row: %b\n"
+    (String.includes ~affix:"❯ 1. approve" (Tui.screen t));
+  [%expect {| digit selects the plan row: true |}];
+  Tui.enter t;
   ignore (Tui.await_request t 2 : string);
   Tui.release t "fin";
   Tui.settle t
+
+(* This is the modal-boundary form of the draft leak: the model's plan arrives
+   after the user has already started a follow-up. The plan's digit and Enter
+   resolve only the proposal, leaving that draft unsubmitted in the composer. *)
+let%expect_test "plan confirmation cannot submit a restored draft" =
+  let draft = "PLAN-DRAFT-NOT-SENT" in
+  let script =
+    [
+      Provider_script.tool_call ~expect:[ "draft a plan" ] ~gate:"dialog"
+        ~id:"resp-plan-draft-1" ~call_id:"call-plan-draft"
+        ~name:"propose_plan"
+        ~arguments:
+          {|{"id":"plan-draft","title":"Refactor safely","body":"Keep the public boundary small."}|}
+        ();
+      resume ~expect:[ "call-plan-draft" ] ~id:"resp-plan-draft-2"
+        "Plan accepted.";
+      Provider_script.message ~expect:[ draft ] ~gate:"unexpected"
+        ~id:"resp-plan-draft-3" "The draft was unexpectedly submitted.";
+    ]
+  in
+  Tui.run ~name:"dialog-plan-draft" ~provider:script @@ fun t ->
+  enter_plan_mode t;
+  Tui.keys t "draft a plan";
+  Tui.enter t;
+  ignore (Tui.await_request t 1 : string);
+  Tui.keys t draft;
+  Tui.release_response t "dialog";
+  Tui.await_suspend t;
+  Tui.keys t "1";
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin";
+  let screen = Tui.screen t in
+  Printf.printf "plan draft remains only in composer: %b\n"
+    (count_occurrences ~affix:draft screen = 1);
+  Printf.printf "plan turn completed: %b\n"
+    (String.includes ~affix:"Plan accepted." screen);
+  [%expect
+    {|
+    plan draft remains only in composer: true
+    plan turn completed: true |}]
 
 (* Escape is the safe plan decision: it rejects the proposal, keeps plan mode,
    and resumes the provider without ever emitting an approval. *)
