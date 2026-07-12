@@ -398,13 +398,39 @@ let create_scratch ~sw ~stdenv ~env =
   | exception exn ->
       Error (Resolve_error.Scratch_creation_failed (Printexc.to_string exn))
 
+let trusted_workspace_executable_roots workspace =
+  Spice_workspace.roots workspace
+  |> List.filter_map (fun root ->
+      let candidate =
+        Filename.concat
+          (Spice_workspace.Root.dir root |> Spice_path.Abs.to_string)
+          "_opam/bin"
+      in
+      match Unix.stat candidate with
+      | { Unix.st_kind = Unix.S_DIR; _ } ->
+          Spice_path.Abs.of_string candidate |> Result.to_option
+          |> Option.map canonical
+      | _ -> None
+      | exception Unix.Unix_error _ -> None)
+
+let environment_path ~workspace_trusted ~env ~workspace =
+  let inherited = Option.value (env "PATH") ~default:"" in
+  let admitted =
+    if workspace_trusted then trusted_workspace_executable_roots workspace
+    else []
+  in
+  List.map Spice_path.Abs.to_string admitted @ [ inherited ]
+  |> List.filter (fun path -> not (String.equal path ""))
+  |> String.concat ":"
+
 let resolve ~sw ?flag ?config_mode ?(require = Require.Enforced) ?(protect = [])
     ?(writable_roots = []) ?(network = Network.Restricted)
-    ?(toolchain_caches = true) ~stdenv ~env ~workspace () =
+    ?(toolchain_caches = true) ?(workspace_trusted = false) ~stdenv ~env
+    ~workspace () =
   let* scratch = create_scratch ~sw ~stdenv ~env in
   let* environment =
     Spice_sandbox.Environment.make
-      ~path:(Option.value (env "PATH") ~default:"")
+      ~path:(environment_path ~workspace_trusted ~env ~workspace)
       ~scratch ~user_names:[] ~launch:env
     |> Result.map_error (fun error -> Resolve_error.Invalid_environment error)
   in

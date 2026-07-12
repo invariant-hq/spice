@@ -700,6 +700,9 @@ let resolve_sandbox ?flag ~sw ~stdenv host ~workspace =
   let process_env = Spice_host.Env.current () in
   let config = Spice_host.Host.config host in
   let sandbox_config = Spice_host.Config.sandbox config in
+  let workspace_trusted =
+    Spice_host.Config.workspace_trust config |> Spice_host.Trust.is_trusted
+  in
   Spice_host.Sandbox.resolve ~sw ?flag
     ?config_mode:(Spice_host.Config.Sandbox.mode sandbox_config)
     ~require:(Spice_host.Config.Sandbox.require sandbox_config)
@@ -708,6 +711,7 @@ let resolve_sandbox ?flag ~sw ~stdenv host ~workspace =
     ~network:(Spice_host.Config.Sandbox.network sandbox_config)
     ~toolchain_caches:
       (Spice_host.Config.Sandbox.toolchain_caches sandbox_config)
+    ~workspace_trusted
     ~stdenv
     ~env:(Spice_host.Env.get process_env)
     ~workspace ()
@@ -736,6 +740,13 @@ let git_runner ~stdenv ~sandbox ~cwd args =
       | exception exn ->
           let stderr = String.trim (Buffer.contents stderr_buffer) in
           Error (if String.is_empty stderr then Printexc.to_string exn else stderr)
+
+let restricted_git_runner ~cwd args =
+  Error
+    (Printf.sprintf
+       "repository activation is required to run git %s in %s; trust the \
+        repository and reload Spice"
+       (String.concat " " args) cwd)
 
 (* Assemble the workspace run for a session: gate the sandbox — the [--sandbox]
    flag over the config mode — and start the credential-free assembly
@@ -1240,8 +1251,10 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
               failwith (Spice_host.Sandbox.Resolve_error.message error)
         in
         let git_run =
-          git_runner ~stdenv
-            ~sandbox:(Spice_host.Sandbox.Effective.sandbox effective_sandbox)
+          if trusted then
+            git_runner ~stdenv
+              ~sandbox:(Spice_host.Sandbox.Effective.sandbox effective_sandbox)
+          else restricted_git_runner
         in
         let snapshot = build_snapshot ?sandbox_flag ~stdenv host in
         let load_brief =

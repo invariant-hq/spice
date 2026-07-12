@@ -40,7 +40,7 @@ trusted fixture root cannot leak into it.
     [1] outside-only  path  $TESTCASE_ROOT/outside-skills/outside-only
     project skills disabled: workspace is not trusted
   $ spice debug tools > unknown-tools.txt
-  $ for tool in ocaml_dune_describe ocaml_dune_diagnostics ocaml_eval ocaml_docs ocaml_find_definitions ocaml_find_references ocaml_rename ocaml_type_at; do if grep -q "^## $tool$" unknown-tools.txt; then echo "unexpected: $tool"; fi; done
+  $ for tool in shell ocaml_dune_describe ocaml_dune_diagnostics ocaml_eval ocaml_docs ocaml_find_definitions ocaml_find_references ocaml_rename ocaml_type_at; do if grep -q "^## $tool$" unknown-tools.txt; then echo "unexpected: $tool"; fi; done
   $ grep -E '^## ocaml_(ast_edit|search_expressions|replace_expressions)$' unknown-tools.txt
   ## ocaml_ast_edit
   ## ocaml_replace_expressions
@@ -58,13 +58,13 @@ or start automatic project processes.
   $ chmod +x _opam/bin/dune
   $ export LOCAL_SWITCH_MARKER="$PWD/local-switch-spawned"
   $ cat > unknown-shell.jsonl <<'EOF'
-  > {"expect":{"body_contains":["try local dune","\"name\":\"shell\""]},"response":{"id":"resp-unknown-shell-1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-unknown-shell","call_id":"call-unknown-shell","name":"shell","arguments":"{\"command\":\"dune --version\"}"}]}}
-  > {"expect":{"body_contains":["function_call_output","call-unknown-shell"]},"response":{"id":"resp-unknown-shell-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"restricted shell finished"}]}]}}
+  > {"expect":{"body_contains":["try local dune"],"body_not_contains":["\"name\":\"shell\""]},"response":{"id":"resp-unknown-shell-1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-unknown-shell","call_id":"call-unknown-shell","name":"shell","arguments":"{\"command\":\"dune --version\"}"}]}}
+  > {"expect":{"body_contains":["function_call_output","call-unknown-shell"]},"response":{"id":"resp-unknown-shell-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"restricted shell unavailable"}]}]}}
   > EOF
   $ start_fake_openai unknown-shell.jsonl unknown-shell-capture unknown-shell-port
   $ spice_bin=$(command -v spice)
-  $ PATH=/usr/bin:/bin SPICE_WORKSPACE_TOOLING=off "$spice_bin" run --ephemeral --permission-mode bypass --sandbox danger-full-access "try local dune" 2>/dev/null | grep 'restricted shell finished'
-  restricted shell finished
+  $ PATH=/usr/bin:/bin SPICE_WORKSPACE_TOOLING=off "$spice_bin" run --ephemeral --permission-mode bypass --sandbox danger-full-access "try local dune" 2>/dev/null | grep 'restricted shell unavailable'
+  restricted shell unavailable
   $ wait_fake_server
   $ test ! -e "$LOCAL_SWITCH_MARKER" && echo no-local-switch-process
   no-local-switch-process
@@ -122,9 +122,10 @@ fields outside the workspace allowlist.
   $ cat > trusted-run.jsonl <<'EOF'
   > {"expect":{"body_contains":["trusted prompt","REPOSITORY INSTRUCTION","project-only","relative-only"]},"response":{"id":"resp-trusted","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"trusted answer"}]}]}}
   > EOF
+  $ rm "$LOCAL_SWITCH_MARKER"
   $ start_fake_openai trusted-run.jsonl trusted-capture trusted-port
   $ spice run --ephemeral --permission-mode bypass "trusted prompt" > trusted.out 2> trusted.err
-  $ test -e "$DUNE_MARKER" && echo project-process-started
+  $ test -e "$LOCAL_SWITCH_MARKER" && echo project-process-started
   project-process-started
   $ grep 'trusted answer' trusted.out
   trusted answer

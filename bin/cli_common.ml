@@ -467,6 +467,9 @@ let resolve_sandbox ~sw ~stdenv host ~workspace args =
   let process_env = Spice_host.Env.current () in
   let config = Spice_host.Host.config host in
   let sandbox_config = Spice_host.Config.sandbox config in
+  let workspace_trusted =
+    Spice_host.Config.workspace_trust config |> Spice_host.Trust.is_trusted
+  in
   let require =
     if args.require_sandbox then Spice_host.Sandbox.Require.Enforced
     else Spice_host.Config.Sandbox.require sandbox_config
@@ -479,6 +482,7 @@ let resolve_sandbox ~sw ~stdenv host ~workspace args =
     ~network:(Spice_host.Config.Sandbox.network sandbox_config)
     ~toolchain_caches:
       (Spice_host.Config.Sandbox.toolchain_caches sandbox_config)
+    ~workspace_trusted
     ~stdenv
     ~env:(Spice_host.Env.get process_env)
     ~workspace ()

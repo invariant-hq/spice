@@ -212,6 +212,7 @@ val resolve :
   ?writable_roots:string list ->
   ?network:Network.t ->
   ?toolchain_caches:bool ->
+  ?workspace_trusted:bool ->
   stdenv:Eio_unix.Stdenv.base ->
   env:(string -> string option) ->
   workspace:Spice_workspace.t ->
@@ -229,6 +230,9 @@ val resolve :
     backends make only that private temporary directory writable. Workspace
     roots remain writable in workspace-write mode. [stdenv] supplies the
     process and clock capabilities for a bounded platform availability probe.
+    [workspace_trusted] defaults to [false]. When [true], existing canonical
+    workspace-local [_opam/bin] directories lead the exact child [PATH];
+    restricted workspaces never contribute executable roots.
     [env] supplies [$TMPDIR] and the private deterministic host test seam:
     [_SPICE_TEST_SANDBOX_UNAVAILABLE=1] forces the refusing backend, while
     [_SPICE_TEST_BUBBLEWRAP_PROBE] substitutes only the availability probe

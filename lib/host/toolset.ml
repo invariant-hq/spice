@@ -108,7 +108,7 @@ let make ~sw ~stdenv host ?model ~workspace ~sandbox ~skills ~cwd ~http
         ?merlin_program ~watch ~sandbox:process_sandbox ~fs
         ~process_mgr:(Eio.Stdenv.process_mgr stdenv)
         ~clock:(Eio.Stdenv.clock stdenv) ~cwd ~dune ~workspace ();
-      Spice_tools.shell ~fs ~workspace ~config:shell ();
+      (if trusted then Spice_tools.shell ~fs ~workspace ~config:shell () else []);
     ]
   @ Spice_tools.web ~sw
       ~mono_clock:(Eio.Stdenv.mono_clock stdenv)
