@@ -189,18 +189,14 @@ let policy_facts effective =
 (* This line shows where [dune] resolves from — or which rungs were checked —
    so a missing executable and a missing project-read dependency remain
    distinguishable. *)
-let toolchain_status host workspace =
+let toolchain_status host =
+  let config = Spice_host.Host.config host in
   let trusted =
-    Spice_host.Config.workspace_trust (Spice_host.Host.config host)
-    |> Spice_host.Trust.is_trusted
+    Spice_host.Config.workspace_trust config |> Spice_host.Trust.is_trusted
   in
   let workspace_root =
     if not trusted then None
-    else
-      match Spice_workspace.roots workspace with
-      | root :: _ ->
-          Some (Spice_path.Abs.to_string (Spice_workspace.Root.dir root))
-      | [] -> None
+    else Some (Spice_host.Config.project_root config |> Spice_path.Abs.to_string)
   in
   let toolchain =
     Spice_ocaml_toolchain.discover ~env:(Unix.environment ()) ~workspace_root
@@ -228,7 +224,7 @@ let explain_text host workspace effective =
         (fun (origin, path) ->
           match origin with
           | Host_sandbox.Scratch -> ()
-          | Host_sandbox.Workspace | Host_sandbox.Platform
+          | Host_sandbox.Project | Host_sandbox.Platform
           | Host_sandbox.Toolchain _ | Host_sandbox.Executable _
           | Host_sandbox.Git_worktree | Host_sandbox.User_configured ->
               stdout_printf "readable=%s origin=%s\n"
@@ -246,7 +242,7 @@ let explain_text host workspace effective =
               (Sandbox.Policy.protected_paths policy))));
   stdout_printf "environment=%s\n"
     (String.concat "," (environment_names effective));
-  stdout_printf "toolchain=%s\n" (toolchain_status host workspace);
+  stdout_printf "toolchain=%s\n" (toolchain_status host);
   stdout_printf "origin sandbox.mode=%s\n" (mode_origin_detail host effective)
 
 let explain_json host workspace effective =
@@ -302,7 +298,7 @@ let explain_json host workspace effective =
                 (fun (origin, _) ->
                   match origin with
                   | Host_sandbox.Scratch -> false
-                  | Host_sandbox.Workspace | Host_sandbox.Platform
+                  | Host_sandbox.Project | Host_sandbox.Platform
                   | Host_sandbox.Toolchain _ | Host_sandbox.Executable _
                   | Host_sandbox.Git_worktree | Host_sandbox.User_configured ->
                       true)
@@ -325,7 +321,7 @@ let explain_json host workspace effective =
                    (fun value -> Jsont.Json.string value)
                    (environment_names effective)) );
           ] );
-      ("toolchain", Jsont.Json.string (toolchain_status host workspace));
+      ("toolchain", Jsont.Json.string (toolchain_status host));
       ( "origins",
         json_obj
           [

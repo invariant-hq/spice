@@ -90,7 +90,7 @@ module Network = Spice_sandbox.Policy.Network
 (** Requested command network access. *)
 
 type root_origin =
-  | Workspace
+  | Project
   | Platform
   | Toolchain of string
   | Executable of string
@@ -272,10 +272,12 @@ val resolve :
   ?workspace_trusted:bool ->
   stdenv:Eio_unix.Stdenv.base ->
   env:(string -> string option) ->
+  project_root:Spice_path.Abs.t ->
   workspace:Spice_workspace.t ->
   unit ->
   (Effective.t, Resolve_error.t) result
-(** [resolve ~sw ~stdenv ~env ~workspace ()] resolves the effective posture.
+(** [resolve ~sw ~stdenv ~env ~project_root ~workspace ()] resolves the
+    effective posture.
 
     [flag] is the per-run CLI override and wins over [config_mode], which wins
     over the built-in default {!Mode.Workspace_write}. [require] defaults to
@@ -288,7 +290,7 @@ val resolve :
     roots remain writable in workspace-write mode. [stdenv] supplies the
     process and clock capabilities for a bounded platform availability probe.
     [workspace_trusted] defaults to [false]. When [true], existing canonical
-    workspace-local [_opam/bin] directories lead the exact child [PATH];
+    project-local [_opam/bin] directories lead the exact child [PATH];
     restricted workspaces never contribute executable roots.
     [env] supplies [$TMPDIR] and the private deterministic host test seam:
     [_SPICE_TEST_SANDBOX_UNAVAILABLE=1] forces the refusing backend, while
@@ -296,8 +298,11 @@ val resolve :
     executable. Neither seam changes a production enforcement prefix.
 
     [read] defaults to {!Read.All}. Under a confined {!Read.Project} mode,
-    workspace roots, [readable_roots], executable search roots, OCaml toolchain
-    roots, and the platform runtime profile form the complete read allowlist.
+    [project_root], workspace roots, [readable_roots], executable search roots,
+    OCaml toolchain roots, and the platform runtime profile form the complete
+    read allowlist. [project_root] identifies the enclosing project for reads,
+    linked Git metadata, and trusted local executables; only workspace roots
+    become automatically writable.
     User roots must exist, resolve physically, and may not name filesystem root,
     the account home, or an ancestor of the account home. Direct and external
     modes do not resolve or validate confined read roots and preserve the

@@ -482,6 +482,7 @@ let resolve_sandbox ~sw ~stdenv host ~workspace args =
     ~workspace_trusted
     ~stdenv
     ~env:(Spice_host.Env.get process_env)
+    ~project_root:(Spice_host.Config.project_root config)
     ~workspace ()
 
 let gate_sandbox effective =

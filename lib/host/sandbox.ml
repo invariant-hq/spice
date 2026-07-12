@@ -83,7 +83,7 @@ end
 module Network = Spice_sandbox.Policy.Network
 
 type root_origin =
-  | Workspace
+  | Project
   | Platform
   | Toolchain of string
   | Executable of string
@@ -92,7 +92,7 @@ type root_origin =
   | User_configured
 
 let root_origin_to_string = function
-  | Workspace -> "workspace"
+  | Project -> "project"
   | Platform -> "platform"
   | Toolchain name -> "toolchain:" ^ name
   | Executable name -> "executable:" ^ name
@@ -516,20 +516,16 @@ let create_scratch ~sw ~stdenv ~env =
   | exception exn ->
       Error (Resolve_error.Scratch_creation_failed (Printexc.to_string exn))
 
-let trusted_workspace_executable_roots workspace =
-  Spice_workspace.roots workspace
-  |> List.filter_map (fun root ->
-      let candidate =
-        Filename.concat
-          (Spice_workspace.Root.dir root |> Spice_path.Abs.to_string)
-          "_opam/bin"
-      in
-      match Unix.stat candidate with
-      | { Unix.st_kind = Unix.S_DIR; _ } ->
-          Spice_path.Abs.of_string candidate |> Result.to_option
-          |> Option.map canonical
-      | _ -> None
-      | exception Unix.Unix_error _ -> None)
+let trusted_project_executable_roots project_root =
+  let candidate =
+    Filename.concat (Spice_path.Abs.to_string project_root) "_opam/bin"
+  in
+  match Unix.stat candidate with
+  | { Unix.st_kind = Unix.S_DIR; _ } ->
+      Spice_path.Abs.of_string candidate |> Result.to_option
+      |> Option.map canonical |> Option.to_list
+  | _ -> []
+  | exception Unix.Unix_error _ -> []
 
 let canonical_paths paths = List.sort_uniq Spice_path.Abs.compare paths
 
@@ -716,9 +712,9 @@ let opam_bin_root ~env toolchain_roots =
       | Some prefix -> existing_auto_root (Filename.concat prefix "bin"))
 
 let environment_path ~scoped ~workspace_trusted ~path_roots ~toolchain_roots
-    ~env ~workspace =
+    ~env ~project_root =
   let trusted =
-    if workspace_trusted then trusted_workspace_executable_roots workspace
+    if workspace_trusted then trusted_project_executable_roots project_root
     else []
   in
   let admitted = trusted @ Option.to_list (opam_bin_root ~env toolchain_roots) in
@@ -741,11 +737,8 @@ let existing_entry root name =
       | exception Unix.Unix_error (Unix.ENOENT, _, _) -> None
       | exception Unix.Unix_error _ -> None)
 
-let workspace_protected_paths workspace =
-  Spice_workspace.roots workspace
-  |> List.concat_map (fun root ->
-      let root = Spice_workspace.Root.dir root in
-      List.filter_map (existing_entry root) [ ".git"; ".spice" ])
+let project_protected_paths project_root =
+  List.filter_map (existing_entry project_root) [ ".git"; ".spice" ]
 
 let read_metadata_path ~field path =
   let spelling = Spice_path.Abs.to_string path in
@@ -777,69 +770,60 @@ let resolve_metadata_dir ~field ~env ~workspace_roots ~base spelling =
     Error (Resolve_error.Broad_root { field; path })
   else Ok path
 
-let linked_git_roots ~env ~workspace_roots =
-  let rec loop roots = function
-    | [] -> Ok (List.rev roots)
-    | workspace_root :: rest -> (
-        match Spice_path.Abs.add_component workspace_root ".git" with
-        | Error _ -> loop roots rest
-        | Ok git -> (
-            let spelling = Spice_path.Abs.to_string git in
-            match Unix.lstat spelling with
-            | { Unix.st_kind = Unix.S_DIR; _ } -> loop roots rest
-            | { Unix.st_kind = Unix.S_REG; _ } ->
-                let* line = read_metadata_path ~field:"workspace .git" git in
-                let prefix = "gitdir: " in
-                if not (String.starts_with ~prefix line) then
-                  Error
-                    (root_error ~field:"workspace .git" ~spelling
-                       "expected a gitdir line")
-                else
-                  let target =
-                    String.sub line (String.length prefix)
-                      (String.length line - String.length prefix)
-                  in
-                  let* gitdir =
-                    resolve_metadata_dir ~field:"workspace gitdir" ~env
-                      ~workspace_roots ~base:workspace_root target
-                  in
-                  let* roots =
-                    match Spice_path.Abs.add_component gitdir "commondir" with
-                    | Error _ -> Ok (gitdir :: roots)
-                    | Ok commondir -> (
-                        match Unix.lstat (Spice_path.Abs.to_string commondir) with
-                        | { Unix.st_kind = Unix.S_REG; _ } ->
-                            let* target =
-                              read_metadata_path ~field:"workspace commondir"
-                                commondir
-                            in
-                            let* common =
-                              resolve_metadata_dir
-                                ~field:"workspace common git directory" ~env
-                                ~workspace_roots ~base:gitdir target
-                            in
-                            Ok (common :: gitdir :: roots)
-                        | _ -> Ok (gitdir :: roots)
-                        | exception Unix.Unix_error (Unix.ENOENT, _, _) ->
-                            Ok (gitdir :: roots)
-                        | exception Unix.Unix_error (error, _, _) ->
-                            Error
-                              (root_error ~field:"workspace commondir"
-                                 ~spelling:(Spice_path.Abs.to_string commondir)
-                                 (Unix.error_message error)))
-                  in
-                  loop roots rest
-            | _ ->
-                Error
-                  (root_error ~field:"workspace .git" ~spelling
-                     "expected a directory or gitfile")
-            | exception Unix.Unix_error (Unix.ENOENT, _, _) -> loop roots rest
-            | exception Unix.Unix_error (error, _, _) ->
-                Error
-                  (root_error ~field:"workspace .git" ~spelling
-                     (Unix.error_message error))))
-  in
-  loop [] workspace_roots
+let linked_git_roots ~env ~scope_roots project_root =
+  match Spice_path.Abs.add_component project_root ".git" with
+  | Error _ -> Ok []
+  | Ok git -> (
+      let spelling = Spice_path.Abs.to_string git in
+      match Unix.lstat spelling with
+      | { Unix.st_kind = Unix.S_DIR; _ } -> Ok []
+      | { Unix.st_kind = Unix.S_REG; _ } ->
+          let* line = read_metadata_path ~field:"project .git" git in
+          let prefix = "gitdir: " in
+          if not (String.starts_with ~prefix line) then
+            Error
+              (root_error ~field:"project .git" ~spelling
+                 "expected a gitdir line")
+          else
+            let target =
+              String.sub line (String.length prefix)
+                (String.length line - String.length prefix)
+            in
+            let* gitdir =
+              resolve_metadata_dir ~field:"project gitdir" ~env
+                ~workspace_roots:scope_roots ~base:project_root target
+            in
+            (match Spice_path.Abs.add_component gitdir "commondir" with
+            | Error _ -> Ok [ gitdir ]
+            | Ok commondir -> (
+                match Unix.lstat (Spice_path.Abs.to_string commondir) with
+                | { Unix.st_kind = Unix.S_REG; _ } ->
+                    let* target =
+                      read_metadata_path ~field:"project commondir" commondir
+                    in
+                    let* common =
+                      resolve_metadata_dir
+                        ~field:"project common git directory" ~env
+                        ~workspace_roots:scope_roots ~base:gitdir target
+                    in
+                    Ok [ common; gitdir ]
+                | _ -> Ok [ gitdir ]
+                | exception Unix.Unix_error (Unix.ENOENT, _, _) ->
+                    Ok [ gitdir ]
+                | exception Unix.Unix_error (error, _, _) ->
+                    Error
+                      (root_error ~field:"project commondir"
+                         ~spelling:(Spice_path.Abs.to_string commondir)
+                         (Unix.error_message error))))
+      | _ ->
+          Error
+            (root_error ~field:"project .git" ~spelling
+               "expected a directory or gitfile")
+      | exception Unix.Unix_error (Unix.ENOENT, _, _) -> Ok []
+      | exception Unix.Unix_error (error, _, _) ->
+          Error
+            (root_error ~field:"project .git" ~spelling
+               (Unix.error_message error)))
 
 let resolve_workspace_roots ~scoped ~env workspace =
   let rec loop index roots = function
@@ -860,10 +844,19 @@ let resolve_workspace_roots ~scoped ~env workspace =
   in
   loop 0 [] (Spice_workspace.roots workspace)
 
+let resolve_project_root ~env project_root =
+  let spelling = Spice_path.Abs.to_string project_root in
+  let* project_root =
+    physical_root ~field:"project" ~spelling ~directory:true project_root
+  in
+  if broad_root ~env ~workspace_roots:[] project_root then
+    Error (Resolve_error.Broad_root { field = "project"; path = project_root })
+  else Ok project_root
+
 let resolve ~sw ?flag ?config_mode ?(require = Require.Enforced) ?(protect = [])
     ?(read = Read.All) ?(readable_roots = []) ?(writable_roots = [])
     ?(network = Network.Restricted) ?(workspace_trusted = false) ~stdenv ~env
-    ~workspace () =
+    ~project_root ~workspace () =
   let* scratch = create_scratch ~sw ~stdenv ~env in
   let mode, origin =
     match (flag, config_mode) with
@@ -883,33 +876,39 @@ let resolve ~sw ?flag ?config_mode ?(require = Require.Enforced) ?(protect = [])
     else Ok ()
   in
   let* workspace_roots = resolve_workspace_roots ~scoped ~env workspace in
+  let* project_root =
+    if scoped then resolve_project_root ~env project_root else Ok project_root
+  in
+  let scope_roots = project_root :: workspace_roots in
   let* configured_reads =
     if scoped then
       user_roots ~field:"sandbox.readable_roots" ~directory:false ~env
-        ~workspace_roots readable_roots
+        ~workspace_roots:scope_roots readable_roots
     else Ok []
   in
   let* configured_writes =
     user_roots ~field:"sandbox.writable_roots" ~directory:true ~env
-      ~workspace_roots
+      ~workspace_roots:scope_roots
       writable_roots
   in
   let* executable_roots =
-    if scoped then path_roots ~scoped:true ~env ~workspace_roots else Ok []
+    if scoped then path_roots ~scoped:true ~env ~workspace_roots:scope_roots
+    else Ok []
   in
   let* toolchain_roots =
-    if scoped then toolchain_roots ~env ~workspace_roots else Ok []
+    if scoped then toolchain_roots ~env ~workspace_roots:scope_roots else Ok []
   in
   let* platform_roots =
-    if scoped then platform_roots ~env ~workspace_roots else Ok []
+    if scoped then platform_roots ~env ~workspace_roots:scope_roots else Ok []
   in
   let* git_roots =
-    if scoped then linked_git_roots ~env ~workspace_roots else Ok []
+    if scoped then linked_git_roots ~env ~scope_roots project_root
+    else Ok []
   in
   let toolchain_paths = List.map snd toolchain_roots in
   let environment_path =
     environment_path ~scoped ~workspace_trusted ~path_roots:executable_roots
-      ~toolchain_roots ~env ~workspace
+      ~toolchain_roots ~env ~project_root
   in
   let* environment =
     Spice_sandbox.Environment.make ~path:environment_path ~scratch
@@ -919,8 +918,9 @@ let resolve ~sw ?flag ?config_mode ?(require = Require.Enforced) ?(protect = [])
   let readable =
     if scoped then
       root_paths
-        (workspace_roots @ configured_reads @ platform_roots @ executable_roots
-       @ toolchain_paths @ git_roots)
+        ((project_root :: workspace_roots)
+        @ configured_reads @ platform_roots @ executable_roots @ toolchain_paths
+        @ git_roots)
     else []
   in
   let writable = workspace_roots @ configured_writes |> root_paths in
@@ -929,7 +929,7 @@ let resolve ~sw ?flag ?config_mode ?(require = Require.Enforced) ?(protect = [])
       (fun path ->
         existing_auto_root (Spice_path.Abs.to_string path))
       protect
-    @ workspace_protected_paths workspace
+    @ project_protected_paths project_root
     @ git_roots
     |> canonical_paths
   in
@@ -941,7 +941,7 @@ let resolve ~sw ?flag ?config_mode ?(require = Require.Enforced) ?(protect = [])
   let sandbox = Spice_sandbox.seal ~backend policy in
   let roots =
     if scoped then
-      List.map (fun path -> Workspace, path) workspace_roots
+      [ (Project, project_root) ]
       @ List.map (fun path -> User_configured, path) configured_reads
       @ List.map (fun path -> Platform, path) platform_roots
       @ List.map (fun path -> Executable "PATH", path) executable_roots

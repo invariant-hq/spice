@@ -16,6 +16,17 @@ writable root.
   $ git -C main commit -qm initial
   $ git -C main worktree add -qb linked ../linked
 
+From a nested cwd, the linked worktree itself is the project read root while
+only the nested cwd is writable. Its external Git metadata remains admitted.
+
+  $ mkdir -p linked/nested
+  $ spice sandbox explain --cwd "$PWD/linked/nested" | grep 'origin=project' | sed "s,$ROOT,TEST_ROOT,g"
+  readable=TEST_ROOT/linked origin=project
+  $ spice sandbox explain --cwd "$PWD/linked/nested" | grep 'origin=git-worktree' | sed "s,$ROOT,TEST_ROOT,g"
+  readable=TEST_ROOT/main/.git origin=git-worktree
+  $ spice sandbox explain --cwd "$PWD/linked/nested" | grep '^writable='
+  writable=.
+
   $ spice sandbox explain --cwd "$PWD/linked" | grep 'origin=git-worktree' | sed "s,$ROOT,TEST_ROOT,g"
   readable=TEST_ROOT/main/.git origin=git-worktree
   $ spice sandbox explain --cwd "$PWD/linked" | grep '^writable='

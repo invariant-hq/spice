@@ -156,7 +156,8 @@ let%expect_test "run construction does not read a workspace-sized review source"
   in
   let sandbox =
     Host.Sandbox.resolve ~sw ~flag:Host.Sandbox.Mode.Danger_full_access ~stdenv
-      ~env:(Host.Env.get process_env) ~workspace ()
+      ~env:(Host.Env.get process_env)
+      ~project_root:(Host.Config.project_root config) ~workspace ()
     |> get_or_fail Host.Sandbox.Resolve_error.pp
   in
   let plan =
@@ -217,7 +218,8 @@ let%expect_test "an oversized watcher snapshot warns and run close stays bounded
   in
   let sandbox =
     Host.Sandbox.resolve ~sw ~flag:Host.Sandbox.Mode.Danger_full_access ~stdenv
-      ~env:(Host.Env.get process_env) ~workspace ()
+      ~env:(Host.Env.get process_env)
+      ~project_root:(Host.Config.project_root config) ~workspace ()
     |> get_or_fail Host.Sandbox.Resolve_error.pp
   in
   let plan =
@@ -282,7 +284,8 @@ let%expect_test
   in
   let sandbox =
     Host.Sandbox.resolve ~sw ~flag:Host.Sandbox.Mode.Danger_full_access ~stdenv
-      ~env:(Host.Env.get process_env) ~workspace ()
+      ~env:(Host.Env.get process_env)
+      ~project_root:(Host.Config.project_root config) ~workspace ()
     |> get_or_fail Host.Sandbox.Resolve_error.pp
   in
   let plan =
@@ -403,7 +406,8 @@ let%expect_test
   in
   let sandbox =
     Host.Sandbox.resolve ~sw ~flag:Host.Sandbox.Mode.Danger_full_access ~stdenv
-      ~env:(Host.Env.get process_env) ~workspace ()
+      ~env:(Host.Env.get process_env)
+      ~project_root:(Host.Config.project_root config) ~workspace ()
     |> get_or_fail Host.Sandbox.Resolve_error.pp
   in
   let plan =
@@ -576,7 +580,8 @@ let%expect_test "closing a live session interrupts and joins its blocked turn" =
   in
   let sandbox =
     Host.Sandbox.resolve ~sw ~flag:Host.Sandbox.Mode.Danger_full_access
-      ~stdenv ~env:(Host.Env.get process_env) ~workspace ()
+      ~stdenv ~env:(Host.Env.get process_env)
+      ~project_root:(Host.Config.project_root config) ~workspace ()
     |> get_or_fail Host.Sandbox.Resolve_error.pp
   in
   let plan =

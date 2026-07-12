@@ -705,6 +705,7 @@ let resolve_sandbox ?flag ~sw ~stdenv host ~workspace =
     ~workspace_trusted
     ~stdenv
     ~env:(Spice_host.Env.get process_env)
+    ~project_root:(Spice_host.Config.project_root config)
     ~workspace ()
 
 let git_runner ~stdenv ~sandbox ~cwd args =
