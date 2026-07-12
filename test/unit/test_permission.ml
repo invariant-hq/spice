@@ -1254,33 +1254,37 @@ let change_is_inert_and_durable () =
     with_change;
   roundtrip "request without change roundtrips" request_value Request.jsont bare
 
-let destructive_command_matcher () =
-  let destructive = Policy.Match.command Policy.Match.Command.destructive in
-  let matches access = Policy.Match.matches destructive access in
+let high_impact_command_matcher () =
+  let high_impact = Policy.Match.command Policy.Match.Command.high_impact in
+  let matches access = Policy.Match.matches high_impact access in
   let yes msg access = check msg (matches access) in
   let no msg access = check msg (not (matches access)) in
-  yes "rm -rf is destructive" (exec "rm" [ "-rf"; "build" ]);
-  yes "rm -r is destructive" (exec "rm" [ "-r"; "dir" ]);
-  yes "rm -f is destructive" (exec "rm" [ "-f"; "file" ]);
-  yes "rm --recursive is destructive" (exec "rm" [ "--recursive"; "dir" ]);
+  yes "rm -rf is high_impact" (exec "rm" [ "-rf"; "build" ]);
+  yes "rm -r is high_impact" (exec "rm" [ "-r"; "dir" ]);
+  no "rm -f of a named file is not high impact" (exec "rm" [ "-f"; "file" ]);
+  yes "rm --recursive is high_impact" (exec "rm" [ "--recursive"; "dir" ]);
   no "rm of a named file is not flagged" (exec "rm" [ "notes.txt" ]);
   yes "an absolute rm path resolves by basename" (exec "/bin/rm" [ "-rf"; "x" ]);
-  yes "git push --force is destructive" (exec "git" [ "push"; "--force" ]);
-  yes "git push -f is destructive" (exec "git" [ "push"; "-f" ]);
+  yes "git push --force is high_impact" (exec "git" [ "push"; "--force" ]);
+  yes "git push -f is high_impact" (exec "git" [ "push"; "-f" ]);
   no "an ordinary git push is not flagged"
     (exec "git" [ "push"; "origin"; "main" ]);
-  yes "git reset --hard is destructive" (exec "git" [ "reset"; "--hard" ]);
+  yes "git reset --hard is high_impact" (exec "git" [ "reset"; "--hard" ]);
   no "a plain git reset is not flagged" (exec "git" [ "reset" ]);
-  yes "git clean --force is destructive" (exec "git" [ "clean"; "-fd" ]);
+  yes "git clean --force is high_impact" (exec "git" [ "clean"; "-fd" ]);
   no "git status is not flagged" (exec "git" [ "status" ]);
-  yes "dd is destructive" (exec "dd" [ "if=/dev/zero"; "of=disk.img" ]);
-  yes "an mkfs variant is destructive" (exec "mkfs.ext4" [ "/dev/sdb1" ]);
-  yes "sudo escalates and is destructive" (exec "sudo" [ "rm"; "x" ]);
+  no "dd to an ordinary file is not high impact"
+    (exec "dd" [ "if=/dev/zero"; "of=disk.img" ]);
+  yes "dd directly to a device is high impact"
+    (exec "dd" [ "if=image"; "of=/dev/disk2" ]);
+  yes "an mkfs variant is high_impact" (exec "mkfs.ext4" [ "/dev/sdb1" ]);
+  no "sudo is not high impact merely because it is privileged"
+    (exec "sudo" [ "rm"; "x" ]);
   no "ls is not flagged" (exec "ls" [ "-la" ]);
-  yes "a destructive segment in shell text is flagged"
+  yes "a high_impact segment in shell text is flagged"
     (shell "cd build && rm -rf .");
-  yes "a piped destructive command is flagged" (shell "echo x | rm -rf y");
-  yes "a wrapped destructive command is flagged"
+  yes "a piped high_impact command is flagged" (shell "echo x | rm -rf y");
+  yes "a wrapped high_impact command is flagged"
     (shell "find . -type f | xargs rm -rf");
   yes "command pass-through cannot hide destruction"
     (shell "command rm -rf build");
@@ -1292,18 +1296,18 @@ let destructive_command_matcher () =
     (shell "sh -c 'git reset --hard'");
   yes "destruction hidden by a substitution is flagged"
     (shell "rm -rf $(cat targets)");
-  yes "an opaque command substitution is conservative"
+  no "an opaque command substitution is left to confinement"
     (shell "echo $(pick-command)");
-  yes "dynamic eval is conservative" (shell "eval \"$ACTION\"");
+  no "dynamic eval is left to confinement" (shell "eval \"$ACTION\"");
   no "a benign command with a redirect is not flagged"
     (shell "dune build 2> log.txt");
   no "a read-only shell command is not flagged" (shell "git status");
   no "opaque language source is not classified by shell heuristics"
     (code ~language:"ocaml" "Sys.remove \"important\"");
   no "the matcher ignores non-command accesses" (workspace_read "README.md");
-  roundtrip "the destructive rule roundtrips through json" rule_value
+  roundtrip "the high_impact rule roundtrips through json" rule_value
     Policy.Rule.jsont
-    (Policy.Rule.review destructive)
+    (Policy.Rule.review high_impact)
 
 let enforced_command_matcher () =
   let matcher =
@@ -1403,8 +1407,8 @@ let () =
         rule_observers_and_match_eliminator;
       test "change validation and lookup" change_validation_and_lookup;
       test "change is inert and durable" change_is_inert_and_durable;
-      test "destructive command matcher classifies irreversible commands"
-        destructive_command_matcher;
+      test "high_impact command matcher classifies irreversible commands"
+        high_impact_command_matcher;
       test "enforced command matcher requires explicit execution evidence"
         enforced_command_matcher;
       test "command prefixes preserve execution route and cwd"

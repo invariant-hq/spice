@@ -137,25 +137,21 @@ module Command_match = struct
         args : string list;
       }
     | Execution of Access.Command.execution
-    | Destructive
+    | High_impact
 
   let any = Any
   let exact command = Exact command
   let execution execution = Execution execution
-  let destructive = Destructive
+  let high_impact = High_impact
 
   let argv_prefix ~execution ~cwd ~program ~args () =
     reject_empty "Match.Command.argv_prefix" "program" program;
     Argv_prefix { execution; cwd; program; args }
 
-  (* Programs and flag combinations that irreversibly delete or overwrite data
-     the model never named, or escalate out of confinement. A workspace sandbox
-     bounds where such a command writes but not whether the loss is
-     recoverable, so {!Destructive} keeps them reviewable even under a posture
-     that otherwise allows commands. The classifier inspects the already-parsed
-     argv structurally; for the shell-text form it applies the same rules to a
-     lenient token scan that ignores quoting and expansion — over-flagging
-     rather than missing a destructive form a redirect or substitution hid. *)
+  (* Visible bulk or irreversible intent gets a last accident interlock. This
+     is deliberately not a code-safety classifier: opacity, wrappers, and
+     privilege tools are reasons to rely on the selected execution boundary,
+     not to pretend a heuristic understood the program. *)
   let shell_syntax = function
     | '\'' | '"' | '`' | '$' | '(' | ')' -> true
     | _ -> false
@@ -227,7 +223,7 @@ module Command_match = struct
   let has_flag ~long ~short args =
     List.exists (fun t -> List.mem t long || short_flag short t) args
 
-  let git_is_destructive args =
+  let git_is_high_impact args =
     match
       List.find_opt (fun t -> not (String.length t > 0 && t.[0] = '-')) args
     with
@@ -252,52 +248,43 @@ module Command_match = struct
     in
     loop args
 
-  let opaque_substitution text =
-    let rec has_dollar_paren i =
-      i + 1 < String.length text
-      &&
-      if Char.equal text.[i] '$' && Char.equal text.[i + 1] '(' then true
-      else has_dollar_paren (i + 1)
-    in
-    String.contains text '`' || has_dollar_paren 0
+  let output_is_device args =
+    List.exists (String.starts_with ~prefix:"of=/dev/") args
 
-  let rec program_is_destructive program args =
+  let rec program_is_high_impact program args =
     match program with
-    | "sudo" | "doas" | "eval" | "source" | "." -> true
-    | "dd" | "shred" | "mkfs" -> true
+    | "dd" -> output_is_device args
+    | "shred" | "mkfs" -> true
     | "rm" ->
-        has_flag ~long:[ "--force"; "--recursive" ] ~short:'f' args
-        || List.exists (short_flag 'r') args
+        List.mem "--recursive" args || List.exists (short_flag 'r') args
         || List.exists (short_flag 'R') args
-    | "git" -> git_is_destructive args
+    | "git" -> git_is_high_impact args
     | shell when shell_program shell -> (
         match command_string args with
         | None -> false
-        | Some command ->
-            opaque_substitution command || shell_text_is_destructive command)
+        | Some command -> shell_text_is_high_impact command)
     | _ ->
         String.length program > 5 && String.equal (String.sub program 0 5) "mkfs."
 
-  and tokens_are_destructive tokens =
+  and tokens_are_high_impact tokens =
     match program_and_args tokens with
-    | Some (program, args) -> program_is_destructive program args
+    | Some (program, args) -> program_is_high_impact program args
     | None -> false
 
-  and tokens_contain_destructive = function
+  and tokens_contain_high_impact = function
     | [] -> false
     | (_ :: rest as tokens) ->
-        tokens_are_destructive tokens || tokens_contain_destructive rest
+        tokens_are_high_impact tokens || tokens_contain_high_impact rest
 
-  and shell_text_is_destructive text =
-    opaque_substitution text
-    || List.exists
-         (fun sub -> tokens_contain_destructive (scan_words sub))
-         (scan_subcommands text)
+  and shell_text_is_high_impact text =
+    List.exists
+      (fun sub -> tokens_contain_high_impact (scan_words sub))
+      (scan_subcommands text)
 
-  let command_is_destructive = function
+  let command_is_high_impact = function
     | Access.Command.Argv { program; args; _ } ->
-        tokens_contain_destructive (program :: args)
-    | Access.Command.Shell { text; _ } -> shell_text_is_destructive text
+        tokens_contain_high_impact (program :: args)
+    | Access.Command.Shell { text; _ } -> shell_text_is_high_impact text
     | Access.Command.Code _ -> false
 
   let list_has_prefix ~prefix values =
@@ -331,7 +318,7 @@ module Command_match = struct
     | Argv_prefix _, (Access.Command.Shell _ | Access.Command.Code _) -> false
     | Execution execution, command ->
         Access.Command.execution command = execution
-    | Destructive, command -> command_is_destructive command
+    | High_impact, command -> command_is_high_impact command
 
   let stable_text = function
     | Any -> "any"
@@ -345,14 +332,14 @@ module Command_match = struct
         ^ ":" ^ Path_match.stable_text cwd
     | Execution execution ->
         "execution:" ^ Access.Command.execution_to_string execution
-    | Destructive -> "destructive"
+    | High_impact -> "high_impact"
 
   let pp ppf = function
     | Any -> Format.pp_print_string ppf "any-command"
     | Execution execution ->
         Format.fprintf ppf "command-execution(%s)"
           (Access.Command.execution_to_string execution)
-    | Destructive -> Format.pp_print_string ppf "destructive-command"
+    | High_impact -> Format.pp_print_string ppf "high_impact-command"
     | Exact command ->
         Format.fprintf ppf "command-exact(%a)" Access.Command.pp command
     | Argv_prefix { execution; cwd; program; args } ->
@@ -808,8 +795,8 @@ module Rule = struct
     Jsont.Object.map ~kind:"any command matcher" Command_match.any
     |> Jsont.Object.error_unknown |> Jsont.Object.finish
 
-  let command_destructive_pattern_jsont =
-    Jsont.Object.map ~kind:"destructive command matcher" Command_match.destructive
+  let command_high_impact_pattern_jsont =
+    Jsont.Object.map ~kind:"high_impact command matcher" Command_match.high_impact
     |> Jsont.Object.error_unknown |> Jsont.Object.finish
 
   let command_execution_jsont =
@@ -825,7 +812,7 @@ module Rule = struct
     |> Jsont.Object.mem "execution" command_execution_jsont ~enc:(function
       | Command_match.Execution execution -> execution
       | Command_match.Any | Command_match.Exact _
-      | Command_match.Argv_prefix _ | Command_match.Destructive ->
+      | Command_match.Argv_prefix _ | Command_match.High_impact ->
           assert false)
     |> Jsont.Object.error_unknown |> Jsont.Object.finish
 
@@ -840,7 +827,7 @@ module Rule = struct
     |> Jsont.Object.mem "access" Access.jsont ~enc:(function
       | Command_match.Exact command -> Access.command command
       | Command_match.Any | Command_match.Argv_prefix _
-      | Command_match.Execution _ | Command_match.Destructive ->
+      | Command_match.Execution _ | Command_match.High_impact ->
           assert false)
     |> Jsont.Object.error_unknown |> Jsont.Object.finish
 
@@ -853,24 +840,24 @@ module Rule = struct
     |> Jsont.Object.mem "execution" command_execution_jsont ~enc:(function
       | Command_match.Argv_prefix { execution; _ } -> execution
       | Command_match.Any | Command_match.Exact _
-      | Command_match.Execution _ | Command_match.Destructive ->
+      | Command_match.Execution _ | Command_match.High_impact ->
           assert false)
     |> Jsont.Object.mem "cwd" scope_jsont ~enc:(function
       | Command_match.Argv_prefix { cwd; _ } -> cwd
       | Command_match.Any | Command_match.Exact _
-      | Command_match.Execution _ | Command_match.Destructive ->
+      | Command_match.Execution _ | Command_match.High_impact ->
           assert false)
     |> Jsont.Object.mem "program" Jsont.string ~enc:(function
       | Command_match.Argv_prefix { program; _ } -> program
       | Command_match.Any | Command_match.Exact _ | Command_match.Execution _
-      | Command_match.Destructive ->
+      | Command_match.High_impact ->
           assert false)
     |> Jsont.Object.mem "args"
          Jsont.(list string)
          ~enc:(function
            | Command_match.Argv_prefix { args; _ } -> args
            | Command_match.Any | Command_match.Exact _
-           | Command_match.Execution _ | Command_match.Destructive ->
+           | Command_match.Execution _ | Command_match.High_impact ->
                assert false)
     |> Jsont.Object.error_unknown |> Jsont.Object.finish
 
@@ -878,8 +865,8 @@ module Rule = struct
     let any_case =
       Jsont.Object.Case.map "any" command_any_pattern_jsont ~dec:Fun.id
     in
-    let destructive_case =
-      Jsont.Object.Case.map "destructive" command_destructive_pattern_jsont
+    let high_impact_case =
+      Jsont.Object.Case.map "high_impact" command_high_impact_pattern_jsont
         ~dec:Fun.id
     in
     let execution_case =
@@ -895,8 +882,8 @@ module Rule = struct
     in
     let enc_case = function
       | Command_match.Any as pattern -> Jsont.Object.Case.value any_case pattern
-      | Command_match.Destructive as pattern ->
-          Jsont.Object.Case.value destructive_case pattern
+      | Command_match.High_impact as pattern ->
+          Jsont.Object.Case.value high_impact_case pattern
       | Command_match.Execution _ as pattern ->
           Jsont.Object.Case.value execution_case pattern
       | Command_match.Exact _ as pattern ->
@@ -907,7 +894,7 @@ module Rule = struct
     let cases =
       [
         Jsont.Object.Case.make any_case;
-        Jsont.Object.Case.make destructive_case;
+        Jsont.Object.Case.make high_impact_case;
         Jsont.Object.Case.make execution_case;
         Jsont.Object.Case.make exact_case;
         Jsont.Object.Case.make argv_prefix_case;
@@ -1087,7 +1074,7 @@ module Match = struct
     type t = Command_match.t
 
     let any = Command_match.any
-    let destructive = Command_match.destructive
+    let high_impact = Command_match.high_impact
     let execution = Command_match.execution
     let exact = Command_match.exact
     let argv_prefix = Command_match.argv_prefix
