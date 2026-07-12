@@ -42,15 +42,11 @@ let environment_array bindings =
   |> List.map (fun (name, value) -> name ^ "=" ^ value)
   |> Array.of_list
 
-let prepare ~sandbox = function
+let prepare ~sandbox ~cwd = function
   | [] -> Error (Spice_sandbox.Error.invalid_request "process argv is empty")
   | program :: args ->
       let argv = Spice_sandbox.Argv.make ~program args in
-      Result.map
-        (fun spawn ->
-          ( Spice_sandbox.Spawn.argv spawn |> Spice_sandbox.Argv.to_list,
-            Spice_sandbox.Spawn.env spawn |> environment_array ))
-        (Spice_sandbox.spawn sandbox ~argv)
+      Spice_sandbox.spawn sandbox ~cwd ~argv
 
 let default_stdout_limit = 1024 * 1024
 let default_stderr_limit = 64 * 1024
@@ -530,7 +526,8 @@ let run_shell_blocking ~working_directory ~env ~timeout_ms ~max_output_bytes
           | Some message -> finish (Shell_failed_to_start message)))
 
 let run_blocking ?(stdout_limit = default_stdout_limit)
-    ?(stderr_limit = default_stderr_limit) ~env ~timeout_ms ~cancelled argv =
+    ?(stderr_limit = default_stderr_limit) ~working_directory ~env ~timeout_ms
+    ~cancelled argv =
   validate_limit "stdout_limit" stdout_limit;
   validate_limit "stderr_limit" stderr_limit;
   if timeout_ms <= 0 then invalid_arg "timeout_ms must be positive";
@@ -563,7 +560,11 @@ let run_blocking ?(stdout_limit = default_stdout_limit)
           let stderr_r, stderr_w = Unix.pipe () in
           let stderr_r = track stderr_r in
           let stderr_w = track stderr_w in
-          Ok (stdin, stdout_r, stdout_w, stderr_r, stderr_w)
+          let exec_r, exec_w = Unix.pipe () in
+          let exec_r = track exec_r in
+          let exec_w = track exec_w in
+          Unix.set_close_on_exec exec_w;
+          Ok (stdin, stdout_r, stdout_w, stderr_r, stderr_w, exec_r, exec_w)
         with
         | Unix.Unix_error (error, fn, arg) ->
             cleanup ();
@@ -574,31 +575,34 @@ let run_blocking ?(stdout_limit = default_stdout_limit)
       in
       let stdout = Buffer.create 4096 in
       let stderr = Buffer.create 1024 in
+      let exec_error = Buffer.create 128 in
       let bytes = Bytes.create 8192 in
       match setup with
       | Error message -> { status = Failed message; stdout = ""; stderr = "" }
-      | Ok (stdin, stdout_r, stdout_w, stderr_r, stderr_w) -> (
+      | Ok (stdin, stdout_r, stdout_w, stderr_r, stderr_w, exec_r, exec_w) -> (
           let child =
-            try
-              let argv = Array.of_list argv in
-              Ok (Unix.create_process_env prog argv env stdin stdout_w stderr_w)
-            with
-            | Unix.Unix_error (error, fn, arg) ->
-                Error (unix_error_message error fn arg)
-            | exn -> Error (Printexc.to_string exn)
+            fork_exec ~working_directory ~env ~stdin ~stdout:stdout_w
+              ~stderr:stderr_w ~exec_error:exec_w argv
           in
           close_tracked stdin;
           close_tracked stdout_w;
           close_tracked stderr_w;
+          close_tracked exec_w;
           set_nonblock stdout_r;
           set_nonblock stderr_r;
+          set_nonblock exec_r;
           let exceeded = ref None in
           let read_failure = ref None in
           let read_open_fd fd =
-            let buffer = if fd = stdout_r then stdout else stderr in
+            let buffer =
+              if fd = stdout_r then stdout
+              else if fd = stderr_r then stderr
+              else exec_error
+            in
             let stream, max_bytes =
               if fd = stdout_r then ("stdout", stdout_limit)
-              else ("stderr", stderr_limit)
+              else if fd = stderr_r then ("stderr", stderr_limit)
+              else ("exec", 4096)
             in
             match read_fd ~stream ~max_bytes fd buffer bytes with
             | `Open -> true
@@ -679,12 +683,13 @@ let run_blocking ?(stdout_limit = default_stdout_limit)
                           | _, status ->
                               drain (status_of_unix status) open_fds))
               in
-              let status = wait [ stdout_r; stderr_r ] in
+              let status = wait [ stdout_r; stderr_r; exec_r ] in
               cleanup ();
               let status =
-                match !read_failure with
-                | None -> status
-                | Some message -> Failed message
+                match !read_failure, Buffer.contents exec_error with
+                | None, "" -> status
+                | None, message -> Failed message
+                | Some message, _ -> Failed message
               in
               {
                 status;
@@ -711,27 +716,49 @@ let run_shell_fd ~cwd ~env ~timeout_ms ~max_output_bytes ?stdin ~cancelled argv 
 
 let run_sandboxed_shell ~sandbox ~cwd ~timeout_ms ~max_output_bytes ?stdin
     ~cancelled argv =
-  match prepare ~sandbox argv with
-  | Error error ->
+  let refused error =
       {
         shell_status = Shell_refused error;
         shell_stdout = Complete "";
         shell_stderr = Complete "";
         shell_duration_ms = 0;
       }
-  | Ok (argv, env) ->
-      run_shell ~cwd ~env ~timeout_ms ~max_output_bytes ?stdin ~cancelled argv
+  in
+  match Spice_path.Abs.of_string cwd with
+  | Error error ->
+      refused
+        (Spice_sandbox.Error.invalid_cwd (Spice_path.Error.message error))
+  | Ok cwd -> (
+      match prepare ~sandbox ~cwd argv with
+      | Error error -> refused error
+      | Ok spawn ->
+          let cwd =
+            Spice_sandbox.Spawn.cwd spawn |> Spice_path.Abs.to_string
+          in
+          let argv =
+            Spice_sandbox.Spawn.argv spawn |> Spice_sandbox.Argv.to_list
+          in
+          let env = Spice_sandbox.Spawn.env spawn |> environment_array in
+          run_shell ~cwd ~env ~timeout_ms ~max_output_bytes ?stdin ~cancelled
+            argv)
 
 let run ?stdout_limit ?stderr_limit ~timeout_ms ~cancelled argv =
   Eio_unix.run_in_systhread ~label:"spice-process" (fun () ->
-      run_blocking ?stdout_limit ?stderr_limit ~env:(Unix.environment ())
+      run_blocking ?stdout_limit ?stderr_limit
+        ~working_directory:(Path (Sys.getcwd ())) ~env:(Unix.environment ())
         ~timeout_ms ~cancelled argv)
 
-let run_sandboxed ?stdout_limit ?stderr_limit ~sandbox ~timeout_ms ~cancelled
-    argv =
-  match prepare ~sandbox argv with
+let run_sandboxed ?stdout_limit ?stderr_limit ~sandbox ~cwd ~timeout_ms
+    ~cancelled argv =
+  match prepare ~sandbox ~cwd argv with
   | Error error -> { status = Refused error; stdout = ""; stderr = "" }
-  | Ok (argv, env) ->
+  | Ok spawn ->
+      let cwd = Spice_sandbox.Spawn.cwd spawn in
+      let argv =
+        Spice_sandbox.Spawn.argv spawn |> Spice_sandbox.Argv.to_list
+      in
+      let env = Spice_sandbox.Spawn.env spawn |> environment_array in
       Eio_unix.run_in_systhread ~label:"spice-process" (fun () ->
-          run_blocking ?stdout_limit ?stderr_limit ~env ~timeout_ms ~cancelled
-            argv)
+          run_blocking ?stdout_limit ?stderr_limit
+            ~working_directory:(Path (Spice_path.Abs.to_string cwd)) ~env
+            ~timeout_ms ~cancelled argv)

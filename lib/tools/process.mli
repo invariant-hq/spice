@@ -127,20 +127,23 @@ val run_shell_fd :
 
 val prepare :
   sandbox:Spice_sandbox.t ->
+  cwd:Spice_path.Abs.t ->
   string list ->
-  (string list * string array, Spice_sandbox.Error.t) Stdlib.result
-(** [prepare ~sandbox argv] is the exact argv and environment selected by
-    [sandbox] for [argv]. An empty argv and a sandbox refusal are errors. *)
+  (Spice_sandbox.Spawn.t, Spice_sandbox.Error.t) Stdlib.result
+(** [prepare ~sandbox ~cwd argv] is the complete spawn plan selected by
+    [sandbox] for [argv] in [cwd]. An empty argv, invalid cwd, and a sandbox
+    refusal are errors. *)
 
 val run_sandboxed :
   ?stdout_limit:int ->
   ?stderr_limit:int ->
   sandbox:Spice_sandbox.t ->
+  cwd:Spice_path.Abs.t ->
   timeout_ms:int ->
   cancelled:(unit -> bool) ->
   string list ->
   result
-(** [run_sandboxed ~sandbox ~timeout_ms argv] prepares [argv] through [sandbox]
+(** [run_sandboxed ~sandbox ~cwd ~timeout_ms argv] prepares [argv] through [sandbox]
     before executing it with {!run}'s bounded direct-process semantics. A
     refusal is returned as [Refused] and starts no process. *)
 

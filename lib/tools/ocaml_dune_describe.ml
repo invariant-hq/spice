@@ -282,8 +282,13 @@ let blocked_message endpoint =
        and no boot snapshot is available; run `dune describe` yourself or stop \
        the build"
 
-let prepare sandbox ~argv =
-  Process.prepare ~sandbox argv
+let prepare sandbox ~cwd ~argv =
+  Process.prepare ~sandbox ~cwd argv
+  |> Result.map (fun spawn ->
+      ( Spice_sandbox.Spawn.argv spawn |> Spice_sandbox.Argv.to_list,
+        Spice_sandbox.Spawn.env spawn
+        |> List.map (fun (name, value) -> name ^ "=" ^ value)
+        |> Array.of_list ))
   |> Result.map_error Spice_sandbox.Error.message
 
 let run ~sandbox ~process_mgr ~clock ~cwd ~workspace ?project_source ctx () =

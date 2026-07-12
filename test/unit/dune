@@ -22,7 +22,8 @@
   jsont
   spice_digest
   spice_sandbox
-  spice_path))
+  spice_path
+  unix))
 
 (test
  (name test_diagnostic)

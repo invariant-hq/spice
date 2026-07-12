@@ -66,10 +66,12 @@ module Describe : sig
       {!Spice_ocaml.Project.t}. *)
 
   type prepare =
+    cwd:Spice_path.Abs.t ->
     argv:string list ->
     (string list * string array, string) result
   (** A host-supplied process preparation boundary. [Ok (argv, env)] is the
-      exact invocation and environment to execute; [Error message] refuses the
+      exact invocation and environment to execute; [cwd] is the working
+      directory the adapter will pass to the process. [Error message] refuses the
       spawn. The preparation boundary owns the child environment rather than
       receiving an ambient candidate from the adapter. *)
 

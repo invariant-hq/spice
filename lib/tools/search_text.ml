@@ -924,7 +924,9 @@ let is_missing_executable message =
 let run_rg ~sandbox ~workspace ~cancelled input roots =
   let result =
     Process.run_sandboxed ~sandbox ~stdout_limit:max_rg_stdout_bytes
-      ~stderr_limit:max_rg_stderr_bytes ~timeout_ms:max_rg_timeout_ms ~cancelled
+      ~stderr_limit:max_rg_stderr_bytes
+      ~cwd:(Workspace.Path.abs (Workspace.cwd workspace))
+      ~timeout_ms:max_rg_timeout_ms ~cancelled
       (rg_args input roots)
   in
   match result.Process.status with

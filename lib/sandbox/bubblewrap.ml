@@ -119,7 +119,7 @@ let prefix policy =
     | None -> assert false
   in
   (executable :: namespace) @ filesystem_args policy @ network
-  @ [ "--proc"; "/proc"; "--" ]
+  @ [ "--proc"; "/proc" ]
 
 let prepare policy =
   let prefix = prefix policy in
@@ -132,7 +132,9 @@ let prepare policy =
         | None -> assert false)
         (List.length prefix));
   let hash_input = String.concat "\x00" prefix in
-  Ok (Backend.prepared ~prefix ~profile:(Spice_digest.string hash_input))
+  Ok
+    (Backend.prepared ~chdir:true ~prefix
+       ~profile:(Spice_digest.string hash_input))
 
 let make ~probe_executable ~probe () =
   Backend.make ~id:"linux-bubblewrap"

@@ -283,6 +283,8 @@ let prepare policy =
         String.concat "\x00"
           (profile :: List.map (fun (key, value) -> key ^ "=" ^ value) params)
       in
-      Ok (Backend.prepared ~prefix ~profile:(Spice_digest.string canonical))
+      Ok
+        (Backend.prepared ~chdir:false ~prefix
+           ~profile:(Spice_digest.string canonical))
 
 let backend = Backend.make ~id:"macos-seatbelt" ~available ~prepare ()

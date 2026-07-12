@@ -199,43 +199,49 @@ let backend_validates () =
         ~available:(fun () -> Ok ())
         ~prepare:(fun policy ->
           Ok
-            (Sandbox.Backend.prepared ~prefix:[] ~profile:(policy_digest policy)))
+            (Sandbox.Backend.prepared ~chdir:false ~prefix:[]
+               ~profile:(policy_digest policy)))
         ())
 
 let backend_prepared_validates_prefix_program () =
   raises_match
     (function Invalid_argument _ -> true | _ -> false)
     (fun () ->
-      Sandbox.Backend.prepared ~prefix:[ ""; "--" ]
+      Sandbox.Backend.prepared ~chdir:false ~prefix:[ ""; "--" ]
         ~profile:(Digest.string "bad-prefix"))
 
 let backend_wraps_non_empty_argv () =
   let prepared =
-    Sandbox.Backend.prepared ~prefix:[ "fake-wrap" ]
+    Sandbox.Backend.prepared ~chdir:false ~prefix:[ "fake-wrap" ]
       ~profile:(Digest.string "wrap")
   in
   equal (list string) ~msg:"wrapper receives and returns non-empty argv"
     [ "fake-wrap"; "true"; "--version" ]
-    (Sandbox.Backend.wrap prepared ~argv:(argv "true" [ "--version" ])
+    (Sandbox.Backend.wrap prepared ~cwd:(abs "/tmp")
+       ~argv:(argv "true" [ "--version" ])
     |> Sandbox.Argv.to_list)
 
 let backend_prefix_preserves_command () =
   let identity =
-    Sandbox.Backend.prepared ~prefix:[] ~profile:(Digest.string "identity")
+    Sandbox.Backend.prepared ~chdir:false ~prefix:[]
+      ~profile:(Digest.string "identity")
   in
   equal (list string) ~msg:"empty prefix leaves the command unchanged"
     [ "true"; "--version" ]
-    (Sandbox.Backend.wrap identity ~argv:(argv "true" [ "--version" ])
+    (Sandbox.Backend.wrap identity ~cwd:(abs "/tmp")
+       ~argv:(argv "true" [ "--version" ])
     |> Sandbox.Argv.to_list);
   let multi =
-    Sandbox.Backend.prepared ~prefix:[ "wrapper"; "-p"; "--" ]
+    Sandbox.Backend.prepared ~chdir:false
+      ~prefix:[ "wrapper"; "-p"; "--" ]
       ~profile:(Digest.string "multi")
   in
   equal (list string)
     ~msg:
       "multi-token prefix prepends in order and preserves the command verbatim"
     [ "wrapper"; "-p"; "--"; "cmd"; "a"; "b" ]
-    (Sandbox.Backend.wrap multi ~argv:(argv "cmd" [ "a"; "b" ])
+    (Sandbox.Backend.wrap multi ~cwd:(abs "/tmp")
+       ~argv:(argv "cmd" [ "a"; "b" ])
     |> Sandbox.Argv.to_list)
 
 let bubblewrap_backend_identity () =
@@ -252,6 +258,7 @@ let bubblewrap_wrap policy = function
   | program :: args ->
       Sandbox.Backend.wrap
         (bubblewrap_prepared policy)
+        ~cwd:(abs "/tmp")
         ~argv:(argv program args)
       |> Sandbox.Argv.to_list
 
@@ -293,6 +300,8 @@ let bubblewrap_read_only_wrap_shape () =
       "--unshare-net";
       "--proc";
       "/proc";
+      "--chdir";
+      "/tmp";
       "--";
       "/bin/sh";
       "-c";
@@ -386,7 +395,7 @@ let fake_backend =
     ~available:(fun () -> Ok ())
     ~prepare:(fun policy ->
       Ok
-        (Sandbox.Backend.prepared ~prefix:[ "fake-wrap" ]
+        (Sandbox.Backend.prepared ~chdir:false ~prefix:[ "fake-wrap" ]
            ~profile:(policy_digest policy)))
     ()
 
@@ -397,7 +406,8 @@ let exec_passes_unconfined () =
   let environment = environment () in
   let exec = Sandbox.seal (Policy.direct ~environment) in
   (match
-     Sandbox.spawn exec ~argv:(argv "sh" [ "-c"; "true" ])
+     Sandbox.spawn exec ~cwd:(abs "/tmp")
+       ~argv:(argv "sh" [ "-c"; "true" ])
    with
   | Ok spawn ->
       equal (list string) ~msg:"argv passes through" [ "sh"; "-c"; "true" ]
@@ -419,7 +429,7 @@ let exec_passes_unconfined () =
 let exec_passes_external () =
   let environment = environment () in
   let exec = Sandbox.seal (Policy.external_ ~environment) in
-  match Sandbox.spawn exec ~argv:(argv "true" []) with
+  match Sandbox.spawn exec ~cwd:(abs "/tmp") ~argv:(argv "true" []) with
   | Ok spawn ->
       equal (list string) ~msg:"argv passes through" [ "true" ]
         (Sandbox.Spawn.argv spawn |> argv_list);
@@ -431,14 +441,21 @@ let exec_passes_external () =
 let exec_fails_closed_by_default () =
   let exec = Sandbox.seal workspace_policy in
   is_true ~msg:"confined without a backend refuses"
-    (Result.is_error (Sandbox.spawn exec ~argv:(argv "true" [])))
+    (Result.is_error
+       (Sandbox.spawn exec ~cwd:(abs "/tmp") ~argv:(argv "true" [])))
 
 let exec_seals_confined () =
   let exec =
     Sandbox.seal ~backend:fake_backend workspace_policy
   in
-  match Sandbox.spawn exec ~argv:(argv "sh" [ "-c"; "true" ]) with
+  match
+    Sandbox.spawn exec ~cwd:(abs "/tmp")
+      ~argv:(argv "sh" [ "-c"; "true" ])
+  with
   | Ok spawn ->
+      equal abs_value ~msg:"spawn carries canonical cwd"
+        (Unix.realpath "/tmp" |> abs)
+        (Sandbox.Spawn.cwd spawn);
       equal (list string) ~msg:"argv is wrapped"
         [ "fake-wrap"; "sh"; "-c"; "true" ]
         (Sandbox.Spawn.argv spawn |> argv_list);
@@ -461,7 +478,10 @@ let exec_escalation_stances () =
     (match Sandbox.escalation workspace_write with
     | Sandbox.Available -> true
     | Sandbox.Denied _ | Sandbox.Ignored -> false);
-  (match Sandbox.spawn_escalated workspace_write ~argv:(argv "true" []) with
+  (match
+     Sandbox.spawn_escalated workspace_write ~cwd:(abs "/tmp")
+       ~argv:(argv "true" [])
+   with
   | Error error -> fail (Sandbox.Error.message error)
   | Ok spawn ->
       equal
@@ -477,6 +497,21 @@ let exec_escalation_stances () =
     | Sandbox.Denied _ -> true
     | Sandbox.Available | Sandbox.Ignored -> false)
 
+let exec_validates_working_directory () =
+  let tmp = Unix.realpath "/tmp" |> abs in
+  let confined =
+    Sandbox.seal ~backend:fake_backend
+      (confined ~reads:(Policy.Only [ tmp ]) ())
+  in
+  is_true ~msg:"cwd outside scoped reads is refused"
+    (Result.is_error
+       (Sandbox.spawn confined ~cwd:(abs "/") ~argv:(argv "true" [])));
+  let direct = Sandbox.seal (Policy.direct ~environment:(environment ())) in
+  is_true ~msg:"missing cwd is refused"
+    (Result.is_error
+       (Sandbox.spawn direct ~cwd:(abs "/spice-missing-cwd")
+          ~argv:(argv "true" [])))
+
 let exec_refuses_unavailable_backend_before_preparing () =
   let backend =
     Sandbox.Backend.make ~id:"unavailable"
@@ -488,7 +523,7 @@ let exec_refuses_unavailable_backend_before_preparing () =
       ()
   in
   let exec = Sandbox.seal ~backend workspace_policy in
-  match Sandbox.spawn exec ~argv:(argv "true" []) with
+  match Sandbox.spawn exec ~cwd:(abs "/tmp") ~argv:(argv "true" []) with
   | Error error ->
       equal error_value ~msg:"availability error"
         (Sandbox.Error.unavailable "not available")
@@ -497,7 +532,7 @@ let exec_refuses_unavailable_backend_before_preparing () =
 
 let exec_refusal_evidence () =
   let exec = Sandbox.seal workspace_policy in
-  match Sandbox.spawn exec ~argv:(argv "true" []) with
+  match Sandbox.spawn exec ~cwd:(abs "/tmp") ~argv:(argv "true" []) with
   | Error error ->
       begin match Sandbox.Evidence.refused error with
       | Sandbox.Evidence.Refused refused ->
@@ -670,6 +705,7 @@ let seatbelt_wrap_shape () =
       | Ok prepared -> (
           let argv =
             Sandbox.Backend.wrap prepared
+              ~cwd:(abs "/tmp")
               ~argv:(argv "/bin/sh" [ "-c"; "true" ])
             |> Sandbox.Argv.to_list
           in
@@ -728,6 +764,8 @@ let () =
       test "sealing fails closed without a backend" exec_fails_closed_by_default;
       test "sealing enforces confined commands" exec_seals_confined;
       test "sealing fixes the escalation stance" exec_escalation_stances;
+      test "sealing validates working directories"
+        exec_validates_working_directory;
       test "sealing checks backend availability before prepare"
         exec_refuses_unavailable_backend_before_preparing;
       test "spawn refusal evidence comes from error" exec_refusal_evidence;

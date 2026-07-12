@@ -1229,10 +1229,10 @@ let read_in_workspace_unit ~fs ~workspace ~max_bytes unit =
    covers overviews and nested-in-main modules; wrapped sublibrary submodules in
    a switch install are not resolved (their per-module source may not be
    installed) — such a query returns a not-found result. *)
-let ocamlfind_query ~sandbox ~ocamlfind_program ~cancelled library =
+let ocamlfind_query ~sandbox ~cwd ~ocamlfind_program ~cancelled library =
   let result =
-    Process.run_sandboxed ~sandbox ~timeout_ms:ocamlfind_timeout_ms ~cancelled
-      [ ocamlfind_program; "query"; "-format"; "%d\n%v"; library ]
+    Process.run_sandboxed ~sandbox ~cwd ~timeout_ms:ocamlfind_timeout_ms
+      ~cancelled [ ocamlfind_program; "query"; "-format"; "%d\n%v"; library ]
   in
   match result.Process.status with
   | Process.Exited 0 -> (
@@ -1250,9 +1250,9 @@ let ocamlfind_query ~sandbox ~ocamlfind_program ~cancelled library =
   | Process.Failed _ ->
       Ok None
 
-let read_switch_source ~sandbox ~ocamlfind_program ~opam_switch_prefix
+let read_switch_source ~sandbox ~cwd ~ocamlfind_program ~opam_switch_prefix
     ~max_bytes ~cancelled ~library ~main rel =
-  match ocamlfind_query ~sandbox ~ocamlfind_program ~cancelled library with
+  match ocamlfind_query ~sandbox ~cwd ~ocamlfind_program ~cancelled library with
   | Error _ as error -> error
   | Ok None ->
       fail `Not_found
@@ -1664,7 +1664,7 @@ let dependency_origin ~library read =
         install = Output.Opam_switch { prefix = "unknown" };
       }
 
-let resolve_name_form ~sandbox ?describe_freshness ~fs ~workspace ~max_bytes
+let resolve_name_form ~sandbox ~cwd ?describe_freshness ~fs ~workspace ~max_bytes
     ~ocamlfind_program ~opam_switch_prefix ~project ~cancelled input form =
   let scope = Input.scope input in
   let package = Input.package input in
@@ -1772,7 +1772,7 @@ let resolve_name_form ~sandbox ?describe_freshness ~fs ~workspace ~max_bytes
                 (Printf.sprintf "could not locate the source of %S" library)
             else
               match
-                read_switch_source ~sandbox ~ocamlfind_program
+                read_switch_source ~sandbox ~cwd ~ocamlfind_program
                   ~opam_switch_prefix ~max_bytes ~cancelled ~library ~main rel
               with
               | Error failure -> Error failure
@@ -1851,8 +1851,13 @@ let blocked_message endpoint =
        the build lock and no boot snapshot is available; run `dune describe` \
        yourself or stop the build"
 
-let prepare sandbox ~argv =
-  Process.prepare ~sandbox argv
+let prepare sandbox ~cwd ~argv =
+  Process.prepare ~sandbox ~cwd argv
+  |> Result.map (fun spawn ->
+      ( Spice_sandbox.Spawn.argv spawn |> Spice_sandbox.Argv.to_list,
+        Spice_sandbox.Spawn.env spawn
+        |> List.map (fun (name, value) -> name ^ "=" ^ value)
+        |> Array.of_list ))
   |> Result.map_error Spice_sandbox.Error.message
 
 (* Resolve the describe-backed project universe, routing through the boot
@@ -1884,6 +1889,14 @@ let run ~sandbox ?(program = default_program)
   if cancelled () then
     Tool.Result.interrupted ~reason:"tool call cancelled" ~cancelled:true ()
   else
+    let cwd_abs =
+      let path = Eio.Path.native_exn cwd in
+      let path =
+        if Filename.is_relative path then Filename.concat (Sys.getcwd ()) path
+        else path
+      in
+      Spice_path.Abs.of_string_exn path
+    in
     let max_bytes =
       Option.value
         (Input.max_source_bytes input)
@@ -1906,7 +1919,8 @@ let run ~sandbox ?(program = default_program)
             Tool.Result.failed `Unavailable (blocked_message endpoint)
         | Ok (project, describe_freshness) -> (
             match
-              resolve_name_form ~sandbox ?describe_freshness ~fs ~workspace
+              resolve_name_form ~sandbox ~cwd:cwd_abs
+                ?describe_freshness ~fs ~workspace
                 ~max_bytes ~ocamlfind_program ~opam_switch_prefix ~project
                 ~cancelled input form
             with

@@ -34,6 +34,9 @@ module Spawn : sig
   type t
   (** A spawn plan. The command has not been started. *)
 
+  val cwd : t -> Spice_path.Abs.t
+  (** [cwd t] is the canonical working directory the process must use. *)
+
   val argv : t -> Argv.t
   (** [argv t] is the argv the host should spawn. *)
 
@@ -55,8 +58,9 @@ val seal : ?backend:Backend.t -> Policy.t -> t
 val policy : t -> Policy.t
 (** [policy t] is the exact policy sealed in [t]. *)
 
-val spawn : t -> argv:Argv.t -> (Spawn.t, Error.t) result
-(** [spawn t ~argv] is the complete spawn decision for one command.
+val spawn :
+  t -> cwd:Spice_path.Abs.t -> argv:Argv.t -> (Spawn.t, Error.t) result
+(** [spawn t ~cwd ~argv] is the complete spawn decision for one command.
 
     [Ok spawn] carries the argv to spawn, the policy's exact environment, and the
     evidence the result must report. [Error refusal] is a structured refusal
@@ -66,8 +70,9 @@ val spawn : t -> argv:Argv.t -> (Spawn.t, Error.t) result
     The returned [Spawn.t] is a plan only; this module never starts a process.
 *)
 
-val spawn_escalated : t -> argv:Argv.t -> (Spawn.t, Error.t) result
-(** [spawn_escalated t ~argv] drops filesystem and network confinement only
+val spawn_escalated :
+  t -> cwd:Spice_path.Abs.t -> argv:Argv.t -> (Spawn.t, Error.t) result
+(** [spawn_escalated t ~cwd ~argv] drops filesystem and network confinement only
     when {!escalation}[ t] is {!Available}. The returned spawn still uses the
     policy's exact environment. Denied and nonsensical escalation requests are
     structured errors and start no process. *)

@@ -16,11 +16,13 @@ type escalation = Available | Denied of Error.t | Ignored
 
 module Spawn = struct
   type t = {
+    cwd : Spice_path.Abs.t;
     argv : Argv.t;
     env : (string * string) list;
     evidence : Evidence.t;
   }
 
+  let cwd t = t.cwd
   let argv t = t.argv
   let env t = t.env
   let evidence t = t.evidence
@@ -102,51 +104,81 @@ let seal ?backend policy =
 
 let policy t = t.policy
 
-let spawn t ~argv:command_argv =
+let cwd_under roots cwd =
+  List.exists
+    (fun root -> Option.is_some (Spice_path.Abs.relativize ~root cwd))
+    roots
+
+let resolve_cwd policy cwd =
+  let spelling = Spice_path.Abs.to_string cwd in
+  match Unix.stat spelling with
+  | { Unix.st_kind = Unix.S_DIR; _ } -> (
+      match Unix.realpath spelling |> Spice_path.Abs.of_string with
+      | Error error ->
+          Error
+            (Error.invalid_cwd
+               ("could not canonicalize cwd: " ^ Spice_path.Error.message error))
+      | Ok cwd -> (
+          match Policy.reads policy with
+          | Some (Policy.Only roots) when not (cwd_under roots cwd) ->
+              Error (Error.invalid_cwd "cwd is outside confined readable roots")
+          | Some Policy.All | Some (Policy.Only _) | None -> Ok cwd))
+  | _ -> Error (Error.invalid_cwd "cwd is not a directory")
+  | exception Unix.Unix_error (error, _, _) ->
+      Error
+        (Error.invalid_cwd
+           ("could not inspect cwd: " ^ Unix.error_message error))
+
+let spawn t ~cwd ~argv:command_argv =
+  let ( let* ) = Result.bind in
+  let* cwd = resolve_cwd t.policy cwd in
   let environment = Environment.bindings (Policy.environment t.policy) in
   match t.decision with
   | Unconfined ->
       Ok
-        Spawn.
-          {
-            argv = command_argv;
-            env = environment;
-            evidence = Evidence.not_requested;
-          }
+        {
+          Spawn.cwd = cwd;
+          argv = command_argv;
+          env = environment;
+          evidence = Evidence.not_requested;
+        }
 
   | Declared_external ->
       Ok
-        Spawn.
-          {
-            argv = command_argv;
-            env = environment;
-            evidence = Evidence.declared_external;
-          }
+        {
+          Spawn.cwd = cwd;
+          argv = command_argv;
+          env = environment;
+          evidence = Evidence.declared_external;
+        }
   | Refuse error -> Error error
   | Confine { prepared; evidence = command_evidence } ->
-      let wrapped_argv = Backend.wrap prepared ~argv:command_argv in
+      let wrapped_argv = Backend.wrap prepared ~cwd ~argv:command_argv in
       Log.debug (fun m ->
           m "confined spawn program=%s environment_names=%d"
             (Argv.program command_argv)
             (List.length (Environment.names (Policy.environment t.policy))));
       Ok
-        Spawn.
-          {
-            argv = wrapped_argv;
-            env = environment;
-            evidence = command_evidence;
-          }
+        {
+          Spawn.cwd = cwd;
+          argv = wrapped_argv;
+          env = environment;
+          evidence = command_evidence;
+        }
 
-let spawn_escalated t ~argv:command_argv =
+let spawn_escalated t ~cwd ~argv:command_argv =
+  let ( let* ) = Result.bind in
+  let direct = Policy.direct ~environment:(Policy.environment t.policy) in
+  let* cwd = resolve_cwd direct cwd in
   match t.escalation with
   | Available ->
       Ok
-        Spawn.
-          {
-            argv = command_argv;
-            env = Environment.bindings (Policy.environment t.policy);
-            evidence = Evidence.not_requested;
-          }
+        {
+          Spawn.cwd = cwd;
+          argv = command_argv;
+          env = Environment.bindings (Policy.environment t.policy);
+          evidence = Evidence.not_requested;
+        }
   | Denied error -> Error error
   | Ignored ->
       Error

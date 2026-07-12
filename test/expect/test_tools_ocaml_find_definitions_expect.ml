@@ -29,7 +29,7 @@ let fake_backend =
     ~available:(fun () -> Ok ())
     ~prepare:(fun _policy ->
       Ok
-        (Spice_sandbox.Backend.prepared ~prefix:[]
+        (Spice_sandbox.Backend.prepared ~chdir:false ~prefix:[]
            ~profile:(Spice_digest.string "canonical")))
     ()
 

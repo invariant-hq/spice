@@ -31,7 +31,7 @@ let fake_backend =
     ~available:(fun () -> Ok ())
     ~prepare:(fun _policy ->
       Ok
-        (Spice_sandbox.Backend.prepared ~prefix:[]
+        (Spice_sandbox.Backend.prepared ~chdir:false ~prefix:[]
            ~profile:(Spice_digest.string "canonical")))
     ()
 
@@ -41,7 +41,9 @@ let enforced_sandbox =
 let external_sandbox =
   Spice_sandbox.seal (Spice_sandbox.Policy.external_ ~environment)
 
-let prepare ~argv = Ok (argv, Unix.environment ())
+let prepare ~cwd ~argv =
+  let () = Unix.access (Spice_path.Abs.to_string cwd) [ Unix.F_OK ] in
+  Ok (argv, Unix.environment ())
 
 let json_obj fields =
   Json.object'

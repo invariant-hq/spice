@@ -25,5 +25,6 @@
   eio_main
   logs
   spice_permission
+  spice_path
   spice_sandbox
   unix))

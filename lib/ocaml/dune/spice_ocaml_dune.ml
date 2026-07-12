@@ -172,6 +172,7 @@ module Describe = struct
   module P = Ocaml.Project
 
   type prepare =
+    cwd:Spice_path.Abs.t ->
     argv:string list ->
     (string list * string array, string) result
 
@@ -751,7 +752,10 @@ module Describe = struct
     | Some (executable, _) -> (
         try
           let command = executable :: List.tl argv in
-          match prepare ~argv:command with
+          let prepared_cwd =
+            Eio.Path.native_exn cwd |> Spice_path.Abs.of_string_exn
+          in
+          match prepare ~cwd:prepared_cwd ~argv:command with
           | Error message ->
               Error
                 (Error.Command_failed
@@ -1523,7 +1527,8 @@ module Rpc = struct
           in
           try
             let command, env =
-              match prepare ~argv:command with
+              let prepared_cwd = Spice_path.Abs.of_string_exn root in
+              match prepare ~cwd:prepared_cwd ~argv:command with
               | Ok prepared -> prepared
               | Error message -> failwith message
             in

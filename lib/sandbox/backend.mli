@@ -45,12 +45,15 @@ val make :
 
     Raises [Invalid_argument] if [id] is empty. *)
 
-val prepared : prefix:string list -> profile:Spice_digest.t -> prepared
-(** [prepared ~prefix ~profile] is a lowered confined policy. Wrapping a command
+val prepared :
+  chdir:bool -> prefix:string list -> profile:Spice_digest.t -> prepared
+(** [prepared ~chdir ~prefix ~profile] is a lowered confined policy. Wrapping a command
     yields [prefix] followed by the command's argv; because the command is a
     non-empty {!Argv.t}, the wrapped argv is always non-empty and the command's
     own tokens are preserved verbatim. [profile] is the digest of the generated
     enforcement profile. Backend implementations build this in their [prepare].
+    When [chdir] is [true], wrapping inserts Bubblewrap's
+    [--chdir CWD --] between the prefix and command.
 
     Raises [Invalid_argument] if [prefix] starts with an empty program name.
 
@@ -75,8 +78,8 @@ val prepare : t -> Policy.t -> (prepared, Error.t) result
 (** [prepare t policy] lowers the confined [policy] with [t], generating the
     enforcement profile once. *)
 
-val wrap : prepared -> argv:Argv.t -> Argv.t
-(** [wrap prepared ~argv] is the enforcing argv around [argv]: the prepared
+val wrap : prepared -> cwd:Spice_path.Abs.t -> argv:Argv.t -> Argv.t
+(** [wrap prepared ~cwd ~argv] is the enforcing argv around [argv]: the prepared
     prefix followed by [argv]'s tokens. Pure prefix application. *)
 
 val profile : prepared -> Spice_digest.t

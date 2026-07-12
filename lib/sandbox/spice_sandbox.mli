@@ -58,8 +58,9 @@ type escalation = Run.escalation =
           command may run without the sealed confinement after separate
           permission review. *)
 
-val spawn : t -> argv:Argv.t -> (Spawn.t, Error.t) result
-(** [spawn t ~argv] is the complete spawn decision for one command.
+val spawn :
+  t -> cwd:Spice_path.Abs.t -> argv:Argv.t -> (Spawn.t, Error.t) result
+(** [spawn t ~cwd ~argv] is the complete spawn decision for one command.
 
     [Ok spawn] carries the argv to execute, the environment to pass to the
     process, and the evidence that the command result must report. Every route
@@ -69,8 +70,9 @@ val spawn : t -> argv:Argv.t -> (Spawn.t, Error.t) result
     spawned; callers that produce command output should report
     {!Evidence.refused}[ error]. *)
 
-val spawn_escalated : t -> argv:Argv.t -> (Spawn.t, Error.t) result
-(** [spawn_escalated t ~argv] prepares an approved escape from confined
+val spawn_escalated :
+  t -> cwd:Spice_path.Abs.t -> argv:Argv.t -> (Spawn.t, Error.t) result
+(** [spawn_escalated t ~cwd ~argv] prepares an approved escape from confined
     execution without escaping [t]'s exact child environment. *)
 
 val escalation : t -> escalation

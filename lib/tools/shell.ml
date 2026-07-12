@@ -1003,7 +1003,8 @@ let run ~fs ~workspace ~config ?(cancelled = default_cancelled) input =
                    and network confinement while retaining its exact child
                    environment. *)
                 (match
-                   Spice_sandbox.spawn_escalated (Config.sandbox config) ~argv
+                   Spice_sandbox.spawn_escalated (Config.sandbox config)
+                     ~cwd:(Workspace.Path.abs workdir) ~argv
                  with
                 | Error error ->
                     Tool.Result.failed `Invalid_input
@@ -1016,6 +1017,7 @@ let run ~fs ~workspace ~config ?(cancelled = default_cancelled) input =
             | Enforced | External | Direct -> (
                 match
                   Spice_sandbox.spawn (Config.sandbox config) ~argv
+                    ~cwd:(Workspace.Path.abs workdir)
                 with
                 | Error error ->
                     let message = Spice_sandbox.Error.message error in

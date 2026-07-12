@@ -42,12 +42,12 @@ let is_shape_drift (event : Spice_fswatch.Event.t) =
       | _ -> false)
   | None -> false
 
-let prepare sandbox ~argv =
+let prepare sandbox ~cwd ~argv =
   match argv with
   | [] -> Error "process argv is empty"
   | program :: args ->
       let argv = Spice_sandbox.Argv.make ~program args in
-      Spice_sandbox.spawn sandbox ~argv
+      Spice_sandbox.spawn sandbox ~cwd ~argv
       |> Result.map (fun spawn ->
           ( Spice_sandbox.Spawn.argv spawn |> Spice_sandbox.Argv.to_list,
             Spice_sandbox.Spawn.env spawn

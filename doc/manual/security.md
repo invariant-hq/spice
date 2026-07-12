@@ -199,6 +199,11 @@ executors the sealed spawn capability. Shell results additionally carry
 evidence saying whether confinement was enforced, refused, not requested, or
 declared external.
 
+The spawn plan also owns the canonical working directory. Confined cwd must be
+inside the resolved readable roots; Bubblewrap enters it after mounting the
+policy, and direct process runners fork into that same directory. An invalid,
+missing, or out-of-scope cwd refuses before a child starts.
+
 Shell command facts distinguish Spice-enforced, externally confined, and direct
 execution routes. Sandbox refusal produces no route, no permission prompt, and
 no child. The default and accept-edits presets review every executable route;

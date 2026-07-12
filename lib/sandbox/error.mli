@@ -22,6 +22,10 @@ val invalid_request : string -> t
 
     Raises [Invalid_argument] if [message] is empty. *)
 
+val invalid_cwd : string -> t
+(** [invalid_cwd message] reports that a spawn working directory is missing,
+    not a directory, or outside the confined readable roots. *)
+
 val message : t -> string
 (** [message t] is the human-readable diagnostic. *)
 
@@ -30,7 +34,8 @@ val equal : t -> t -> bool
 
 val to_json : t -> Jsont.json
 (** [to_json t] is the canonical JSON projection: an object with ["kind"]
-    (["unavailable"] or ["invalid_request"]) and ["message"]. *)
+    (["unavailable"], ["invalid_request"], or ["invalid_cwd"]) and
+    ["message"]. *)
 
 val pp : Format.formatter -> t -> unit
 (** [pp] formats [message t]. *)

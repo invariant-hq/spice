@@ -718,7 +718,8 @@ let resolve_sandbox ?flag ~sw ~stdenv host ~workspace =
 
 let git_runner ~stdenv ~sandbox ~cwd args =
   let argv = Spice_sandbox.Argv.make ~program:"git" ("-C" :: cwd :: args) in
-  match Spice_sandbox.spawn sandbox ~argv with
+  let cwd_abs = Spice_path.Abs.of_string_exn cwd in
+  match Spice_sandbox.spawn sandbox ~cwd:cwd_abs ~argv with
   | Error error -> Error (Spice_sandbox.Error.message error)
   | Ok spawn ->
       let argv =
@@ -732,6 +733,7 @@ let git_runner ~stdenv ~sandbox ~cwd args =
       let stderr_buffer = Buffer.create 256 in
       match
         Eio.Process.parse_out ~env
+          ~cwd:(Eio.Path.( / ) (Eio.Stdenv.fs stdenv) cwd)
           ~stderr:(Eio.Flow.buffer_sink stderr_buffer)
           (Eio.Stdenv.process_mgr stdenv)
           Eio.Buf_read.take_all argv

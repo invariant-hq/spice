@@ -127,7 +127,8 @@ let mutations_recorder ~stdenv ~store ~sandbox ~trusted ~workspace_root =
     | [] -> Error "git process argv is empty"
     | program :: args -> (
         let argv = Spice_sandbox.Argv.make ~program args in
-        match Spice_sandbox.spawn sandbox ~argv with
+        let cwd = Spice_path.Abs.of_string_exn workspace_root in
+        match Spice_sandbox.spawn sandbox ~cwd ~argv with
         | Error error -> Error (Spice_sandbox.Error.message error)
         | Ok spawn -> (
             let argv =
@@ -140,6 +141,7 @@ let mutations_recorder ~stdenv ~store ~sandbox ~trusted ~workspace_root =
             in
             match
               Eio.Process.parse_out ~env
+                ~cwd:(Eio.Path.( / ) (Eio.Stdenv.fs stdenv) workspace_root)
                 ~stderr:(Eio.Flow.buffer_sink (Buffer.create 256))
                 (Eio.Stdenv.process_mgr stdenv)
                 Eio.Buf_read.take_all argv
