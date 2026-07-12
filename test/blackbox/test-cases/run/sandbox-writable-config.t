@@ -74,6 +74,15 @@ Broad and missing roots fail closed at resolution instead of widening reads.
   $ spice sandbox explain --cwd "$PWD" 2>&1 | grep 'too broad'
   spice: sandbox.readable_roots root / is too broad; choose sandbox.read=all explicitly
   [1]
+
+Project-only roots do not leak into routes whose confinement is direct or
+externally owned. Those routes ignore an otherwise invalid confined root.
+
+  $ SPICE_SANDBOX_MODE=danger-full-access spice sandbox explain --cwd "$PWD" | grep '^mode='
+  mode=danger-full-access (config)
+  $ SPICE_SANDBOX_MODE=external-sandbox SPICE_SANDBOX_REQUIRE=enforced-or-external spice sandbox explain --cwd "$PWD" | grep '^mode='
+  mode=external-sandbox (config)
+
   $ spice config set sandbox.readable_roots '["~/does-not-exist"]'
   $ spice sandbox explain --cwd "$PWD" 2>&1 | grep 'invalid sandbox.readable_roots'
   spice: invalid sandbox.readable_roots[0] root "~/does-not-exist": No such file or directory

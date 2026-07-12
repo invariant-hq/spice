@@ -345,17 +345,32 @@ let proper_ancestor ~ancestor path =
   (not (Spice_path.Abs.equal ancestor path))
   && Option.is_some (Spice_path.Abs.relativize ~root:ancestor path)
 
+let account_home () =
+  match (Unix.getpwuid (Unix.getuid ())).Unix.pw_dir |> Spice_path.Abs.of_string with
+  | Ok home -> Some (canonical home)
+  | Error _ -> None
+  | exception Not_found -> None
+
 let broad_root ~env ~workspace_roots path =
   let root = Spice_path.Abs.of_string_exn "/" in
   Spice_path.Abs.equal path root
   || List.exists (proper_ancestor ~ancestor:path) workspace_roots
   ||
-  match env "HOME" with
-  | None -> false
-  | Some home -> (
-      match Spice_path.Abs.of_string home with
-      | Error _ -> false
-      | Ok home -> Spice_path.Abs.equal path (canonical home))
+  let broad_account_home =
+    match account_home () with
+    | None -> false
+    | Some home ->
+        Spice_path.Abs.equal path home || proper_ancestor ~ancestor:path home
+  in
+  let configured_home =
+    match env "HOME" with
+    | None -> false
+    | Some home -> (
+        match Spice_path.Abs.of_string home with
+        | Error _ -> false
+        | Ok home -> Spice_path.Abs.equal path (canonical home))
+  in
+  broad_account_home || configured_home
 
 let user_root ~field ?index ~directory ~env ~workspace_roots spelling =
   let ( let* ) = Result.bind in
@@ -826,7 +841,7 @@ let linked_git_roots ~env ~workspace_roots =
   in
   loop [] workspace_roots
 
-let resolve_workspace_roots ~read ~env workspace =
+let resolve_workspace_roots ~scoped ~env workspace =
   let rec loop index roots = function
     | [] -> Ok (List.rev roots)
     | root :: rest ->
@@ -838,8 +853,7 @@ let resolve_workspace_roots ~read ~env workspace =
         let* path =
           physical_root ~field:"workspace" ~index ~spelling ~directory:true path
         in
-        if Read.equal read Read.Project
-           && broad_root ~env ~workspace_roots:[] path
+        if scoped && broad_root ~env ~workspace_roots:[] path
         then
           Error (Resolve_error.Broad_root { field = "workspace"; path })
         else loop (index + 1) (path :: roots) rest
@@ -857,24 +871,32 @@ let resolve ~sw ?flag ?config_mode ?(require = Require.Enforced) ?(protect = [])
     | None, Some mode -> (mode, Status.Config)
     | None, None -> (Mode.Workspace_write, Status.Default)
   in
+  let confined =
+    match mode with
+    | Mode.Read_only | Mode.Workspace_write -> true
+    | Mode.Danger_full_access | Mode.External_sandbox -> false
+  in
+  let scoped = confined && Read.equal read Read.Project in
   let* () =
-    if Read.equal read Read.All && readable_roots <> [] then
+    if confined && Read.equal read Read.All && readable_roots <> [] then
       Error Resolve_error.Redundant_readable_roots
     else Ok ()
   in
-  let* workspace_roots = resolve_workspace_roots ~read ~env workspace in
+  let* workspace_roots = resolve_workspace_roots ~scoped ~env workspace in
   let* configured_reads =
-    user_roots ~field:"sandbox.readable_roots" ~directory:false ~env
-      ~workspace_roots
-      readable_roots
+    if scoped then
+      user_roots ~field:"sandbox.readable_roots" ~directory:false ~env
+        ~workspace_roots readable_roots
+    else Ok []
   in
   let* configured_writes =
     user_roots ~field:"sandbox.writable_roots" ~directory:true ~env
       ~workspace_roots
       writable_roots
   in
-  let scoped = Read.equal read Read.Project in
-  let* executable_roots = path_roots ~scoped ~env ~workspace_roots in
+  let* executable_roots =
+    if scoped then path_roots ~scoped:true ~env ~workspace_roots else Ok []
+  in
   let* toolchain_roots =
     if scoped then toolchain_roots ~env ~workspace_roots else Ok []
   in
@@ -967,9 +989,3 @@ let mutating_tools effective =
   | Mode.Read_only -> false
   | Mode.Workspace_write | Mode.Danger_full_access | Mode.External_sandbox ->
       true
-
-let enforces_workspace_write effective =
-  match effective.Effective.mode with
-  | Mode.Workspace_write ->
-      Result.is_ok (Effective.backend_available effective)
-  | Mode.Read_only | Mode.Danger_full_access | Mode.External_sandbox -> false

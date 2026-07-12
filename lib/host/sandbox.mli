@@ -295,10 +295,13 @@ val resolve :
     [_SPICE_TEST_BUBBLEWRAP_PROBE] substitutes only the availability probe
     executable. Neither seam changes a production enforcement prefix.
 
-    [read] defaults to {!Read.All}. Under {!Read.Project}, workspace roots,
-    [readable_roots], executable search roots, OCaml toolchain roots, and the
-    platform runtime profile form the complete read allowlist. User roots must
-    exist, resolve physically, and may not name filesystem root or [$HOME].
+    [read] defaults to {!Read.All}. Under a confined {!Read.Project} mode,
+    workspace roots, [readable_roots], executable search roots, OCaml toolchain
+    roots, and the platform runtime profile form the complete read allowlist.
+    User roots must exist, resolve physically, and may not name filesystem root,
+    the account home, or an ancestor of the account home. Direct and external
+    modes do not resolve or validate confined read roots and preserve the
+    inherited executable search path.
 
     [writable_roots] are configured extra writable directories for
     workspace-write. They obey the same spelling and validation rules as
@@ -328,18 +331,3 @@ val mutating_tools : Effective.t -> bool
     {!Mode.Read_only}: a read-only run's catalog must not contain built-in
     mutating tools, so the run cannot mutate the workspace through them either.
     Pass it to the catalog builder's [mutating] parameter. *)
-
-val enforces_workspace_write : Effective.t -> bool
-(** [enforces_workspace_write effective] is [true] iff [effective] is a
-    workspace-write sandbox whose backend can enforce the confinement: the mode
-    is {!Mode.Workspace_write} and its enforcement evidence is not
-    {!Spice_sandbox.Evidence.Refused}.
-
-    It is the single predicate run assembly uses to decide whether the
-    permission posture may credit native workspace mutations to the sandbox
-    ({!Spice_host.Permission.Run.with_sandbox_backing}): only under an enforcing
-    workspace-write confinement are their writes bounded to the writable set.
-    Read-only, danger-full-access, and declared-external postures return [false].
-    Model-authored shell commands remain independently reviewable in every
-    preset that does not explicitly decide them.
-*)
