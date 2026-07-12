@@ -144,7 +144,8 @@ let decode_call tool ~name =
 
 let execution_name = function
   | Spice_permission.Access.Command.Direct -> "direct"
-  | Spice_permission.Access.Command.Sandboxed -> "sandboxed"
+  | Spice_permission.Access.Command.Enforced -> "enforced"
+  | Spice_permission.Access.Command.External -> "external"
 
 let print_command_routes label call =
   let routes =

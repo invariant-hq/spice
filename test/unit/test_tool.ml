@@ -33,7 +33,9 @@ let shell_request command =
   Spice_permission.Request.of_accesses
     [
       Spice_permission.Access.command
-        (Spice_permission.Access.Command.shell command);
+        (Spice_permission.Access.Command.shell
+           ~cwd:(Spice_permission.Access.Path_scope.unknown "test-cwd")
+           ~execution:Spice_permission.Access.Command.Direct command);
     ]
 
 let request = shell_request "echo hi"

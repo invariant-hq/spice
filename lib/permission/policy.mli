@@ -127,20 +127,24 @@ module Match : sig
         by shell syntax. It is host command-safety policy, not a proof: a match
         is worth review, and a non-match is not a guarantee of safety. *)
 
-    val sandboxed : t
-    (** [sandboxed] matches command accesses whose host-produced execution fact
-        proves they run through the sealed sandbox. It does not match direct or
-        otherwise unproven command routes. *)
+    val execution : Access.Command.execution -> t
+    (** [execution route] matches command accesses whose host-produced
+        execution fact is [route]. *)
 
     val exact : Access.Command.t -> t
     (** [exact command] matches command accesses equal to [command]. *)
 
     val argv_prefix :
-      ?cwd:Path.t -> program:string -> args:string list -> unit -> t
-    (** [argv_prefix ?cwd ~program ~args ()] matches direct ([Argv]) command
-        accesses whose program is [program] and whose arguments start with
-        [args] as a prefix. When [cwd] is provided, the command's working
-        directory scope must also match it. Shell commands never match.
+      execution:Access.Command.execution ->
+      cwd:Path.t ->
+      program:string ->
+      args:string list ->
+      unit ->
+      t
+    (** [argv_prefix ~execution ~cwd ~program ~args ()] matches [Argv] command
+        accesses through [execution] whose working directory matches [cwd],
+        whose program is [program], and whose arguments start with [args].
+        Shell commands never match.
 
         Raises [Invalid_argument] if [program] is empty. *)
   end

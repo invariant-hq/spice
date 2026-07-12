@@ -98,12 +98,11 @@ let access_text access =
       kind_string (Access.kind access)
       ^ " " ^ path_op_string op ^ " " ^ scope_display scope
   | Access.Command (Access.Command.Shell { text; cwd; _ }) ->
-      "command " ^ shell_arg text
-      ^ Option.fold ~none:"" ~some:(fun s -> " in " ^ scope_display s) cwd
+      "command " ^ shell_arg text ^ " in " ^ scope_display cwd
   | Access.Command (Access.Command.Argv { program; args; cwd; _ }) ->
       "exec "
       ^ String.concat " " (List.map shell_arg (program :: args))
-      ^ Option.fold ~none:"" ~some:(fun s -> " in " ^ scope_display s) cwd
+      ^ " in " ^ scope_display cwd
   | Access.Network { protocol; host; port } ->
       "network " ^ protocol_string protocol ^ "://" ^ host
       ^ Option.fold ~none:"" ~some:(fun p -> ":" ^ string_of_int p) port
@@ -169,11 +168,11 @@ let primary_allow_once = function
 
 let command_access = function
   | Access.Command (Access.Command.Shell { text; cwd; _ }) ->
-      Some (text, Option.map scope_display cwd)
+      Some (text, Some (scope_display cwd))
   | Access.Command (Access.Command.Argv { program; args; cwd; _ }) ->
       Some
         ( String.concat " " (List.map shell_arg (program :: args)),
-          Option.map scope_display cwd )
+          Some (scope_display cwd) )
   | Access.Path _ | Access.Network _ | Access.Custom _ -> None
 
 (* --- Change metadata (diff + counts) --- *)

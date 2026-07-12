@@ -34,14 +34,16 @@ val of_access : Access.t -> t option
 (** [of_access access] is the family suggestion for [access], or [None] when
     [access] has no safe generalization.
 
-    A direct ([Argv]) command generalizes to a program-and-subcommand prefix
+    An ([Argv]) command in a workspace generalizes to a
+    route-and-cwd-constrained program-and-subcommand prefix
     (["git commit -m msg"] to all ["git commit"], ["dune build @runtest"] to all
     ["dune build"]) using a small command-arity table with a program-only
-    fallback; the working directory is left unconstrained. A workspace path
+    fallback. A workspace path
     generalizes to its parent subtree, or to the exact file when the file sits
     at the workspace root. A network access generalizes to its host, across
-    every protocol and port. Shell-text commands, out-of-workspace and unknown
-    paths, and custom accesses yield [None]. *)
+    every protocol and port. Shell-text commands, commands outside or at an
+    unknown workspace, out-of-workspace and unknown paths, and custom accesses
+    yield [None]. *)
 
 val of_accesses : Access.t list -> t list
 (** [of_accesses accesses] are the suggestions for [accesses] with duplicate

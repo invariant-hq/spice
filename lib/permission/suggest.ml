@@ -42,15 +42,22 @@ let command_prefix tokens =
   in
   find (List.length tokens)
 
-let command_suggestion program args =
-  let prefix = command_prefix (program :: args) in
-  (* [prefix] holds [program] as its head, so the argument prefix is its tail. *)
-  let args_prefix = match prefix with [] -> [] | _ :: rest -> rest in
-  let matcher =
-    Policy.Match.command
-      (Policy.Match.Command.argv_prefix ~program ~args:args_prefix ())
-  in
-  Some { rule = Policy.Rule.allow matcher; summary = String.concat " " prefix }
+let command_suggestion execution cwd program args =
+  match (cwd : Access.Path_scope.t) with
+  | Access.Path_scope.Workspace { root_key; relative } ->
+      let prefix = command_prefix (program :: args) in
+      (* [prefix] holds [program] as its head, so the argument prefix is its
+         tail. *)
+      let args_prefix = match prefix with [] -> [] | _ :: rest -> rest in
+      let cwd = Policy.Match.Path.exact_key ~root_key ~relative in
+      let matcher =
+        Policy.Match.command
+          (Policy.Match.Command.argv_prefix ~execution ~cwd ~program
+             ~args:args_prefix ())
+      in
+      Some
+        { rule = Policy.Rule.allow matcher; summary = String.concat " " prefix }
+  | Access.Path_scope.Outside_workspace _ | Access.Path_scope.Unknown _ -> None
 
 let path_op_noun = function
   | `Read -> "reads"
@@ -86,8 +93,9 @@ let network_suggestion host =
 let of_access access =
   match (access : Access.t) with
   | Access.Path { op; scope } -> path_suggestion op scope
-  | Access.Command (Access.Command.Argv { program; args; _ }) ->
-      command_suggestion program args
+  | Access.Command
+      (Access.Command.Argv { program; args; cwd; execution }) ->
+      command_suggestion execution cwd program args
   | Access.Command (Access.Command.Shell _) -> None
   | Access.Network { host; _ } -> network_suggestion host
   | Access.Custom _ -> None

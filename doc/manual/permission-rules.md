@@ -131,14 +131,17 @@ already has the required runtime capability.
 
 ## Command matchers
 
-An argv-prefix rule matches a directly parsed command whose program is exact
-and whose argument list starts with the supplied arguments:
+An argv-prefix rule matches a directly parsed command on one explicit execution
+route and working-directory scope, whose program is exact and whose argument
+list starts with the supplied arguments:
 
 ```json
 {
   "type": "command",
   "pattern": {
     "type": "argv-prefix",
+    "execution": "enforced",
+    "cwd": { "type": "workspace" },
     "program": "dune",
     "args": ["build"]
   }
@@ -149,13 +152,16 @@ This matches `dune build`, `dune build @fmt`, and `dune build lib/foo.cmxa`.
 It does not match a different program spelling or a command that had to fall
 back to an opaque shell-text access because parsing was ambiguous.
 
-An argv prefix may restrict the command's working-directory scope with `cwd`:
+Both `execution` and `cwd` are required. A rule cannot silently span direct,
+externally confined, and Spice-enforced execution, or every working directory.
+Choose a broader scope explicitly when that is the intended policy:
 
 ```json
 {
   "type": "command",
   "pattern": {
     "type": "argv-prefix",
+    "execution": "direct",
     "program": "git",
     "args": ["status"],
     "cwd": { "type": "relative-under", "relative": "." }
@@ -172,7 +178,7 @@ Command working-directory scopes use one of:
 The built-in route and broad command patterns are:
 
 ```json
-{ "type": "command", "pattern": { "type": "sandboxed" } }
+{ "type": "command", "pattern": { "type": "execution", "execution": "enforced" } }
 ```
 
 ```json
@@ -183,13 +189,14 @@ The built-in route and broad command patterns are:
 { "type": "command", "pattern": { "type": "any" } }
 ```
 
-`sandboxed` matches only a host-produced command fact that proves ordinary
-execution uses the run's sealed sandbox. It never infers confinement from the
-program or source tool. Built-in presets do not automatically allow this
-matcher: confined commands can read the host, so allowing them is an explicit
-confidentiality choice. Direct routes and non-enforcing postures never match it.
-An escalation request carries a direct ordinary command fact plus the distinct
-`shell.escalate` custom access.
+The `enforced` execution matcher matches only a host-produced command fact that
+proves ordinary execution uses the run's sealed sandbox. It never infers
+confinement from the program or source tool. `external` identifies a
+user-selected boundary that Spice cannot verify, and `direct` identifies no
+confinement claim. Built-in presets do not automatically allow any route:
+confined commands can read the host, so allowing them is an explicit
+confidentiality choice. An escalation request carries a direct ordinary command
+fact plus the distinct `shell.escalate` custom access.
 
 `destructive` is the conservative built-in classifier for destructive file,
 Git, and disk operations. It recursively inspects standard shell `-c` payloads,
@@ -220,7 +227,7 @@ installed `.mli` files—put these rules in the user config, in this order:
         "action": "allow",
         "matcher": {
           "type": "command",
-          "pattern": { "type": "sandboxed" }
+          "pattern": { "type": "execution", "execution": "enforced" }
         }
       }
     ]
@@ -248,17 +255,19 @@ useful for generated policy and is less portable than an argv prefix:
       "kind": "argv",
       "program": "git",
       "args": ["status"],
-      "execution": "direct"
+      "execution": "direct",
+      "cwd": { "scope": "workspace", "root_key": "/repo", "relative": "." }
     }
   }
 }
 ```
 
 An exact shell access instead uses `"kind": "shell"` and a required `text`
-field. Either command access requires `execution:"direct"` or
-`execution:"sandboxed"` and may also carry a `cwd` scope. Execution route is
-part of exact permission identity, so a grant for a sealed operation cannot be
-reused by a direct one.
+field. Every command access requires a `cwd` scope and one of
+`execution:"enforced"`, `execution:"external"`, or `execution:"direct"`.
+Execution route and working directory are part of exact permission identity, so
+a grant for an enforced operation cannot be reused by a direct operation or in
+another workspace.
 
 ## Network matchers
 
@@ -365,6 +374,8 @@ access to one host:
           "type": "command",
           "pattern": {
             "type": "argv-prefix",
+            "execution": "enforced",
+            "cwd": { "type": "workspace" },
             "program": "dune",
             "args": ["build"]
           }

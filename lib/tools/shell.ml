@@ -474,7 +474,8 @@ let parse_shell script =
     { segments; confidence = (if confident then `Confident else `Fallback) }
 
 type command_route =
-  | Sandboxed
+  | Enforced
+  | External
   | Direct
   | Escalated
   | Sandbox_refused of Spice_sandbox.Error.t
@@ -482,10 +483,9 @@ type command_route =
 
 let sandbox_route sandbox =
   match Spice_sandbox.evidence sandbox with
-  | Spice_sandbox.Evidence.Enforced _ -> Sandboxed
-  | Spice_sandbox.Evidence.Not_requested
-  | Spice_sandbox.Evidence.Declared_external ->
-      Direct
+  | Spice_sandbox.Evidence.Enforced _ -> Enforced
+  | Spice_sandbox.Evidence.Declared_external -> External
+  | Spice_sandbox.Evidence.Not_requested -> Direct
   | Spice_sandbox.Evidence.Refused error -> Sandbox_refused error
 
 let command_route ~config input =
@@ -502,10 +502,10 @@ let access_of_argv ~cwd ~execution argv =
   | [] -> None
   | program :: args ->
       Some
-        (Permission.Access.argv ?cwd ~execution ~program args)
+        (Permission.Access.argv ~cwd ~execution ~program args)
 
 let command_accesses ~cwd ~execution command =
-  let cwd = Some (Permission.Access.Path_scope.workspace cwd) in
+  let cwd = Permission.Access.Path_scope.workspace cwd in
   match parse_shell command with
   | { confidence = `Confident; segments; _ } ->
       List.filter_map
@@ -513,7 +513,7 @@ let command_accesses ~cwd ~execution command =
           Option.bind segment.argv (access_of_argv ~cwd ~execution))
         segments
   | { confidence = `Fallback; _ } ->
-      [ Permission.Access.shell ?cwd ~execution command ]
+      [ Permission.Access.shell ~cwd ~execution command ]
 
 let escalation_access_name = "shell.escalate"
 
@@ -527,7 +527,7 @@ let escalation_access input = function
         Permission.Access.custom ~kind:`Custom ~subject:(Input.command input)
           escalation_access_name;
       ]
-  | Sandboxed | Direct | Sandbox_refused _ | Escalation_refused _ -> []
+  | Enforced | External | Direct | Sandbox_refused _ | Escalation_refused _ -> []
 
 let permissions ~workspace ~config input =
   let resolved =
@@ -548,7 +548,8 @@ let permissions ~workspace ~config input =
       in
       begin match route with
       | Sandbox_refused _ | Escalation_refused _ -> []
-      | Sandboxed -> request Permission.Access.Command.Sandboxed
+      | Enforced -> request Permission.Access.Command.Enforced
+      | External -> request Permission.Access.Command.External
       | Direct | Escalated -> request Permission.Access.Command.Direct
       end
 
@@ -1060,7 +1061,7 @@ let run ~fs ~workspace ~config ?(cancelled = default_cancelled) input =
                 let env, _stripped = Spice_sandbox.Env.partition base_env in
                 run_spawn ~argv ~env
                   ~enforcement:Spice_sandbox.Evidence.not_requested
-            | Sandboxed | Direct -> (
+            | Enforced | External | Direct -> (
                 match
                   Spice_sandbox.spawn (Config.sandbox config) ~argv
                     ~env:base_env

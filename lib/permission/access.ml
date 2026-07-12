@@ -42,17 +42,17 @@ type t =
 and command =
   | Shell of {
       text : string;
-      cwd : path_scope option;
+      cwd : path_scope;
       execution : command_execution;
     }
   | Argv of {
       program : string;
       args : string list;
-      cwd : path_scope option;
+      cwd : path_scope;
       execution : command_execution;
     }
 
-and command_execution = Direct | Sandboxed
+and command_execution = Enforced | External | Direct
 
 let workspace_scope_of_parts ~root_key ~relative =
   Workspace { root_key; relative }
@@ -117,33 +117,36 @@ let outside_workspace_path ~op path =
 let unknown_path ~op path_text = path_scope ~op (unknown_scope path_text)
 
 module Command = struct
-  type execution = command_execution = Direct | Sandboxed
+  type execution = command_execution = Enforced | External | Direct
 
   type t = command =
     | Shell of {
         text : string;
-        cwd : path_scope option;
+        cwd : path_scope;
         execution : execution;
       }
     | Argv of {
         program : string;
         args : string list;
-        cwd : path_scope option;
+        cwd : path_scope;
         execution : execution;
       }
 
-  let shell ?cwd ?(execution = Direct) text =
+  let shell ~cwd ~execution text =
     reject_empty "Command.shell" "text" text;
     Shell { text; cwd; execution }
 
-  let argv ?cwd ?(execution = Direct) ~program args =
+  let argv ~cwd ~execution ~program args =
     reject_empty "Command.argv" "program" program;
     Argv { program; args; cwd; execution }
 
   let execution = function
     | Shell { execution; _ } | Argv { execution; _ } -> execution
 
-  let stable_execution = function Direct -> "direct" | Sandboxed -> "sandboxed"
+  let execution_to_string = function
+    | Enforced -> "enforced"
+    | External -> "external"
+    | Direct -> "direct"
 
   let stable_scope = function
     | Workspace { root_key; relative } ->
@@ -157,34 +160,34 @@ module Command = struct
 
   let stable_text = function
     | Shell { text; cwd; execution } ->
-        "shell:" ^ stable_execution execution ^ ":" ^ stable_field text ^ ":"
-        ^ stable_option stable_scope cwd
+        "shell:" ^ execution_to_string execution ^ ":" ^ stable_field text ^ ":"
+        ^ stable_scope cwd
     | Argv { program; args; cwd; execution } ->
         "argv:" ^ stable_field program ^ ":"
         ^ String.concat ":" (List.map stable_field args)
-        ^ ":" ^ stable_execution execution ^ ":"
-        ^ stable_option stable_scope cwd
+        ^ ":" ^ execution_to_string execution ^ ":"
+        ^ stable_scope cwd
 
-  let pp_cwd ppf = function
-    | None -> ()
-    | Some cwd -> Format.fprintf ppf ", cwd=%a" Path_scope.pp cwd
+  let pp_execution ppf execution =
+    Format.pp_print_string ppf (execution_to_string execution)
 
   let pp ppf = function
-    | Shell { text; cwd; _ } ->
-        Format.fprintf ppf "shell(%S%a)" text pp_cwd cwd
-    | Argv { program; args; cwd; _ } ->
-        Format.fprintf ppf "argv(%S, %a%a)" program
+    | Shell { text; cwd; execution } ->
+        Format.fprintf ppf "shell(%S, cwd=%a, execution=%a)" text Path_scope.pp
+          cwd pp_execution execution
+    | Argv { program; args; cwd; execution } ->
+        Format.fprintf ppf "argv(%S, %a, cwd=%a, execution=%a)" program
           (Format.pp_print_list
              ~pp_sep:(fun ppf () -> Format.pp_print_string ppf " ")
              (fun ppf arg -> Format.fprintf ppf "%S" arg))
-          args pp_cwd cwd
+          args Path_scope.pp cwd pp_execution execution
 end
 
 let command command = Command command
-let shell ?cwd ?execution text = command (Command.shell ?cwd ?execution text)
+let shell ~cwd ~execution text = command (Command.shell ~cwd ~execution text)
 
-let argv ?cwd ?execution ~program args =
-  command (Command.argv ?cwd ?execution ~program args)
+let argv ~cwd ~execution ~program args =
+  command (Command.argv ~cwd ~execution ~program args)
 
 let network ~protocol ?port ~host () =
   check_protocol protocol;
@@ -363,17 +366,18 @@ let path_scope_jsont =
   |> Jsont.Object.error_unknown |> Jsont.Object.finish
 
 let command_execution_jsont =
-  Jsont.enum [ ("direct", Direct); ("sandboxed", Sandboxed) ]
+  Jsont.enum
+    [ ("enforced", Enforced); ("external", External); ("direct", Direct) ]
 
 let command_jsont =
   let make kind text program args cwd execution =
     match (kind, text, program, args) with
     | "shell", Some text, None, None ->
         decode_invalid_arg (fun () ->
-            command (Command.shell ?cwd ~execution text))
+            command (Command.shell ~cwd ~execution text))
     | "argv", None, Some program, Some args ->
         decode_invalid_arg (fun () ->
-            command (Command.argv ?cwd ~execution ~program args))
+            command (Command.argv ~cwd ~execution ~program args))
     | "shell", _, _, _ ->
         decode_error
           "shell command requires text and must not carry argv fields"
@@ -415,7 +419,7 @@ let command_jsont =
   |> Jsont.Object.opt_mem "text" Jsont.string ~enc:text
   |> Jsont.Object.opt_mem "program" Jsont.string ~enc:program
   |> Jsont.Object.opt_mem "args" Jsont.(list string) ~enc:args
-  |> Jsont.Object.opt_mem "cwd" path_scope_jsont ~enc:cwd
+  |> Jsont.Object.mem "cwd" path_scope_jsont ~enc:cwd
   |> Jsont.Object.mem "execution" command_execution_jsont ~enc:execution
   |> Jsont.Object.error_unknown |> Jsont.Object.finish
 

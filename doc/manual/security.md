@@ -153,6 +153,8 @@ structured rule list. For example:
           "type": "command",
           "pattern": {
             "type": "argv-prefix",
+            "execution": "enforced",
+            "cwd": { "type": "workspace" },
             "program": "dune",
             "args": ["build"]
           }
@@ -194,13 +196,13 @@ executors the sealed spawn capability. Shell results additionally carry
 evidence saying whether confinement was enforced, refused, not requested, or
 declared external.
 
-Shell command facts distinguish a proven `sandboxed` execution route from a
-`direct` route. Sandbox refusal produces neither route, no permission prompt,
-and no child. The default and accept-edits presets review both executable
-routes; users who accept read-anywhere confined execution may explicitly allow
-the sandboxed route with ordered durable rules. Fixed host tools do not expose
-their implementation argv as command facts. Shell escalation is a `direct`
-command fact plus a separate custom access, so a sealed command grant cannot be
+Shell command facts distinguish Spice-enforced, externally confined, and direct
+execution routes. Sandbox refusal produces no route, no permission prompt, and
+no child. The default and accept-edits presets review every executable route;
+users who accept read-anywhere confined execution may explicitly allow the
+enforced route with ordered durable rules. Fixed host tools do not expose their
+implementation argv as command facts. Shell escalation is a `direct` command
+fact plus a separate custom access, so an enforced command grant cannot be
 reused to approve dropping confinement.
 
 ### Modes

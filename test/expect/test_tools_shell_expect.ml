@@ -260,13 +260,12 @@ let workspace_scope_display relative =
   else Spice_path.Rel.to_string relative
 
 let cwd ?root ?outside = function
-  | None -> "-"
-  | Some (Access.Path_scope.Workspace { relative; _ }) ->
+  | Access.Path_scope.Workspace { relative; _ } ->
       relative |> workspace_scope_display |> relative_display ?root ?outside
-  | Some (Access.Path_scope.Outside_workspace path) ->
+  | Access.Path_scope.Outside_workspace path ->
       Format.asprintf "outside:%a" Spice_path.Abs.pp path
       |> relative_display ?root ?outside
-  | Some (Access.Path_scope.Unknown path) -> "unknown:" ^ path
+  | Access.Path_scope.Unknown path -> "unknown:" ^ path
 
 let argv_text argv = String.concat " " (List.map (Printf.sprintf "%S") argv)
 
@@ -311,7 +310,8 @@ let print_permissions ?root ?outside ?config ~fs workspace input =
 
 let execution = function
   | Access.Command.Direct -> "direct"
-  | Access.Command.Sandboxed -> "sandboxed"
+  | Access.Command.Enforced -> "enforced"
+  | Access.Command.External -> "external"
 
 let print_permission_routes label ~config ~fs workspace input =
   Printf.printf "-- %s --\n" label;
@@ -477,16 +477,16 @@ let%expect_test "permission command routes match exact shell execution" =
   [%expect
     {|
     -- workspace-write ordinary --
-    command: sandboxed
+    command: enforced
     -- workspace-write escalation --
     command: direct
     custom: shell.escalate
     -- danger-full-access --
     command: direct
     -- external --
-    command: direct
+    command: external
     -- read-only --
-    command: sandboxed |}]
+    command: enforced |}]
 
 let%expect_test "escalation raises a distinct reviewable access" =
   with_fixture @@ fun ~root ~outside:_ ~fs ~workspace ->

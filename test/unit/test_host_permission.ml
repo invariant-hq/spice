@@ -36,10 +36,12 @@ let expect_denied message = function
   | Policy.Decision.Allowed -> failf "%s: expected deny, got allow" message
   | Policy.Decision.Review _ -> failf "%s: expected deny, got review" message
 
-let command ?(execution = Access.Command.Direct) program args =
-  Access.argv ~execution ~program args
+let cwd = Access.Path_scope.unknown "test-cwd"
 
-let sandboxed = Access.Command.Sandboxed
+let command ?(execution = Access.Command.Direct) program args =
+  Access.argv ~cwd ~execution ~program args
+
+let enforced = Access.Command.Enforced
 
 let sealed_commands_review_by_default () =
   List.iter
@@ -47,34 +49,36 @@ let sealed_commands_review_by_default () =
       decide ~sandbox_backed:true Permission.Preset.Default [ access ]
       |> expect_review label)
     [
-      ("Dune", command ~execution:sandboxed "dune" [ "build" ]);
-      ("Merlin", command ~execution:sandboxed "ocamlmerlin" [ "type-enclosing" ]);
-      ("shell", Access.shell ~execution:sandboxed "printf ok");
+      ("Dune", command ~execution:enforced "dune" [ "build" ]);
+      ("Merlin", command ~execution:enforced "ocamlmerlin" [ "type-enclosing" ]);
+      ("shell", Access.shell ~cwd ~execution:enforced "printf ok");
     ];
   decide ~sandbox_backed:true Permission.Preset.Accept_edits
-    [ command ~execution:sandboxed "dune" [ "runtest" ] ]
+    [ command ~execution:enforced "dune" [ "runtest" ] ]
   |> expect_review "accept-edits sealed command"
 
 let explicit_read_anywhere_opt_in () =
   let review_destructive =
     Policy.Rule.review (Policy.Match.command Policy.Match.Command.destructive)
   in
-  let allow_sandboxed =
-    Policy.Rule.allow (Policy.Match.command Policy.Match.Command.sandboxed)
+  let allow_enforced =
+    Policy.Rule.allow
+      (Policy.Match.command
+         (Policy.Match.Command.execution Access.Command.Enforced))
   in
-  let durable = [ [ review_destructive; allow_sandboxed ] ] in
+  let durable = [ [ review_destructive; allow_enforced ] ] in
   decide ~durable ~sandbox_backed:true Permission.Preset.Default
-    [ Access.shell ~execution:sandboxed "cat ~/.config/raven/api.mli" ]
+    [ Access.shell ~cwd ~execution:enforced "cat ~/.config/raven/api.mli" ]
   |> expect_allowed "explicit ordinary sandboxed command";
   decide ~durable ~sandbox_backed:true Permission.Preset.Default
-    [ Access.shell ~execution:sandboxed "rm -rf _build" ]
+    [ Access.shell ~cwd ~execution:enforced "rm -rf _build" ]
   |> expect_review "destructive rule precedes sandboxed allow";
   decide ~durable ~sandbox_backed:true Permission.Preset.Plan
-    [ Access.shell ~execution:sandboxed "cat ~/.config/raven/api.mli" ]
+    [ Access.shell ~cwd ~execution:enforced "cat ~/.config/raven/api.mli" ]
   |> expect_denied "Plan command guard precedes durable sandboxed allow";
-  decide ~session:[ allow_sandboxed ] ~sandbox_backed:true
+  decide ~session:[ allow_enforced ] ~sandbox_backed:true
     Permission.Preset.Plan
-    [ Access.shell ~execution:sandboxed "cat ~/.config/raven/api.mli" ]
+    [ Access.shell ~cwd ~execution:enforced "cat ~/.config/raven/api.mli" ]
   |> expect_denied "Plan command guard precedes session sandboxed allow"
 
 let unproven_and_sensitive_commands_still_review () =
@@ -82,11 +86,11 @@ let unproven_and_sensitive_commands_still_review () =
     [ command "dune" [ "build" ] ]
   |> expect_review "direct command";
   decide ~sandbox_backed:true Permission.Preset.Default
-    [ command ~execution:sandboxed "rm" [ "-rf"; "_build" ] ]
+    [ command ~execution:enforced "rm" [ "-rf"; "_build" ] ]
   |> expect_review "destructive sealed command";
   decide ~sandbox_backed:true Permission.Preset.Default
     [
-      Access.shell ~execution:Access.Command.Direct "dune build";
+      Access.shell ~cwd ~execution:Access.Command.Direct "dune build";
       Access.custom ~kind:`Custom ~subject:"dune build" "shell.escalate";
     ]
   |> expect_review "shell escalation"
@@ -95,18 +99,18 @@ let posture_and_rule_precedence_are_preserved () =
   List.iter
     (fun posture ->
       decide ~sandbox_backed:false Permission.Preset.Default
-        [ command ~execution:sandboxed "dune" [ "build" ] ]
+        [ command ~execution:enforced "dune" [ "build" ] ]
       |> expect_review posture)
     [ "read-only"; "danger-full-access"; "external-sandbox" ];
   decide ~sandbox_backed:true Permission.Preset.Plan
-    [ command ~execution:sandboxed "dune" [ "build" ] ]
+    [ command ~execution:enforced "dune" [ "build" ] ]
   |> expect_denied "Plan";
   let durable_review =
     Policy.Rule.review (Policy.Match.kind `Command)
   in
   decide ~durable:[ [ durable_review ] ] ~sandbox_backed:true
     Permission.Preset.Default
-    [ command ~execution:sandboxed "dune" [ "build" ] ]
+    [ command ~execution:enforced "dune" [ "build" ] ]
   |> expect_review "durable review"
 
 let () =

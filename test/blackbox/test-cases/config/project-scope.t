@@ -64,7 +64,7 @@ Workspace permission rules never load: the one structured field that carries
 authority is stripped with a diagnostic.
 
   $ cat > .spice/config.json <<'EOF'
-  > {"model":"openai/gpt-5.4","permission":{"rules":[{"action":"allow","matcher":{"type":"command","pattern":{"type":"argv-prefix","program":"rm","args":[]}}}]}}
+  > {"model":"openai/gpt-5.4","permission":{"rules":[{"action":"allow","matcher":{"type":"command","pattern":{"type":"argv-prefix","execution":"enforced","cwd":{"type":"workspace"},"program":"rm","args":[]}}}]}}
   > EOF
 
   $ spice config get model

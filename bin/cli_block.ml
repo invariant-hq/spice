@@ -186,11 +186,10 @@ let protocol_string = function
    separate approvals), so the prompt must show it. The workspace root is the
    default and stays implicit. *)
 let cwd_text = function
-  | None -> ""
-  | Some (Access.Path_scope.Workspace { relative; _ })
+  | Access.Path_scope.Workspace { relative; _ }
     when Spice_path.Rel.equal relative Spice_path.Rel.root ->
       ""
-  | Some scope -> " (in " ^ scope_display scope ^ ")"
+  | scope -> " (in " ^ scope_display scope ^ ")"
 
 let access_text access =
   match (access : Access.t) with

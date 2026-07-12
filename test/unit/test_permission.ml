@@ -71,22 +71,33 @@ let workspace_modify relative =
 let outside_path op path = Access.outside_workspace_path ~op (abs path)
 let unknown_read path = Access.unknown_path ~op:`Read path
 let unknown_path op path = Access.unknown_path ~op path
-let shell ?cwd command = Access.command (Access.Command.shell ?cwd command)
+let default_cwd = Access.Path_scope.workspace (workspace_path "")
 
-let argv ?cwd ~program args =
-  Access.command (Access.Command.argv ?cwd ~program args)
+let default_cwd_match =
+  Policy.Match.Path.exact_key ~root_key:(workspace_root_key "/repo")
+    ~relative:(local "")
+
+let shell ?(cwd = default_cwd) ?(execution = Access.Command.Direct) command =
+  Access.command (Access.Command.shell ~cwd ~execution command)
+
+let argv ?(cwd = default_cwd) ?(execution = Access.Command.Direct) ~program args =
+  Access.command (Access.Command.argv ~cwd ~execution ~program args)
 
 let exec program args = argv ~program args
 
-let sandboxed_exec program args =
-  Access.argv ~execution:Access.Command.Sandboxed ~program args
+let enforced_exec program args =
+  Access.argv ~cwd:default_cwd ~execution:Access.Command.Enforced ~program args
 
-let argv_prefix ?cwd ~program ~args () =
-  Policy.Match.command (Policy.Match.Command.argv_prefix ?cwd ~program ~args ())
-
-let argv_exact ?cwd ~program ~args () =
+let argv_prefix ?(execution = Access.Command.Direct)
+    ?(cwd = default_cwd_match) ~program ~args () =
   Policy.Match.command
-    (Policy.Match.Command.exact (Access.Command.argv ?cwd ~program args))
+    (Policy.Match.Command.argv_prefix ~execution ~cwd ~program ~args ())
+
+let argv_exact ?(cwd = default_cwd) ?(execution = Access.Command.Direct)
+    ~program ~args () =
+  Policy.Match.command
+    (Policy.Match.Command.exact
+       (Access.Command.argv ~cwd ~execution ~program args))
 
 let extension name = Access.custom ~kind:`Custom name
 let request access = Request.of_accesses [ access ]
@@ -549,8 +560,11 @@ let rule_matchers_cover_common_policy_patterns () =
                 ~cwd:(Access.Path_scope.outside_workspace (abs "/tmp/repo"))
                 ~program:"dune" [ "build" ]))));
   ignore
-    (expect_review "exec cwd matcher rejects missing cwd"
-       (Policy.decide cwd_policy (request (argv ~program:"dune" [ "build" ]))));
+    (expect_review "exec cwd matcher rejects unknown cwd"
+       (Policy.decide cwd_policy
+          (request
+             (argv ~cwd:(Access.Path_scope.unknown "unresolved")
+                ~program:"dune" [ "build" ]))));
   let network_policy =
     Policy.make
       [
@@ -800,7 +814,8 @@ let json_roundtrips_core_values () =
       argv
         ~cwd:(Access.Path_scope.workspace (workspace_path ""))
         ~program:"dune" [ "runtest" ];
-      Access.argv ~execution:Access.Command.Sandboxed ~program:"dune"
+      Access.argv ~cwd:default_cwd ~execution:Access.Command.Enforced
+        ~program:"dune"
         [ "build" ];
       Access.network ~protocol:`Https ~port:443 ~host:"example.com" ();
       Access.network ~protocol:(`Other "unix") ~host:"socket" ();
@@ -924,6 +939,26 @@ let json_rejects_invalid_state () =
   in
   expect_decode_error "path-under relatives cannot be empty" Policy.Rule.jsont
     bad_empty_path_under;
+  let incomplete_argv_prefix =
+    json_object
+      [
+        ("action", Json.string "allow");
+        ( "matcher",
+          json_object
+            [
+              ("type", Json.string "command");
+              ( "pattern",
+                json_object
+                  [
+                    ("type", Json.string "argv-prefix");
+                    ("program", Json.string "dune");
+                    ("args", Json.list [ Json.string "build" ]);
+                  ] );
+            ] );
+      ]
+  in
+  expect_decode_error "argv prefixes require execution and cwd"
+    Policy.Rule.jsont incomplete_argv_prefix;
   let bad_policy_version =
     json_object [ ("version", Json.int 2); ("rules", Json.list []) ]
   in
@@ -1089,13 +1124,15 @@ let rule_ids_are_stable_digests () =
     Policy.Rule.allow (Policy.Match.path ~op:`Read Policy.Match.Path.workspace)
   in
   let allow_dune_build =
-    Policy.Rule.allow (argv_prefix ~program:"dune" ~args:[ "build" ] ())
+    Policy.Rule.allow
+      (argv_prefix ~execution:Access.Command.Enforced
+         ~cwd:Policy.Match.Path.workspace ~program:"dune" ~args:[ "build" ] ())
   in
   equal string ~msg:"deny .env rule id is stable" "b62807796201"
     (rule_id deny_env);
   equal string ~msg:"allow workspace read rule id is stable" "be7bf2b60ce9"
     (rule_id allow_workspace_read);
-  equal string ~msg:"allow dune build rule id is stable" "39dabbb6bf76"
+  equal string ~msg:"allow dune build rule id is stable" "28dbaad94980"
     (rule_id allow_dune_build)
 
 let rule_observers_and_match_eliminator () =
@@ -1244,24 +1281,52 @@ let destructive_command_matcher () =
     Policy.Rule.jsont
     (Policy.Rule.review destructive)
 
-let sandboxed_command_matcher () =
-  let matcher = Policy.Match.command Policy.Match.Command.sandboxed in
+let enforced_command_matcher () =
+  let matcher =
+    Policy.Match.command
+      (Policy.Match.Command.execution Access.Command.Enforced)
+  in
   let direct = exec "dune" [ "build" ] in
-  let sandboxed = sandboxed_exec "dune" [ "build" ] in
-  check "direct construction is fail-safe"
+  let enforced = enforced_exec "dune" [ "build" ] in
+  check "direct route is explicit"
     (match direct with
     | Access.Command command ->
         Access.Command.execution command = Access.Command.Direct
     | Access.Path _ | Access.Network _ | Access.Custom _ -> false);
-  check "sandboxed matcher rejects a direct route"
+  check "enforced matcher rejects a direct route"
     (not (Policy.Match.matches matcher direct));
-  check "sandboxed matcher accepts explicit sealed evidence"
-    (Policy.Match.matches matcher sandboxed);
+  check "enforced matcher accepts explicit sealed evidence"
+    (Policy.Match.matches matcher enforced);
   not_equal access_value ~msg:"execution route is part of permission identity"
-    direct sandboxed;
-  roundtrip "sandboxed access roundtrips" access_value Access.jsont sandboxed;
-  roundtrip "sandboxed matcher roundtrips" rule_value Policy.Rule.jsont
+    direct enforced;
+  roundtrip "enforced access roundtrips" access_value Access.jsont enforced;
+  roundtrip "enforced matcher roundtrips" rule_value Policy.Rule.jsont
     (Policy.Rule.allow matcher)
+
+let command_prefixes_preserve_execution_and_cwd () =
+  let matcher =
+    argv_prefix ~execution:Access.Command.Enforced ~program:"dune"
+      ~args:[ "build" ] ()
+  in
+  let other_cwd =
+    Access.Path_scope.workspace
+      (workspace_path ~root_key:"/other" ~root:"/other" "")
+  in
+  let matches = Policy.Match.matches matcher in
+  check "prefix accepts its execution route and cwd"
+    (matches (enforced_exec "dune" [ "build"; "@all" ]));
+  check "prefix rejects direct execution"
+    (not (matches (exec "dune" [ "build"; "@all" ])));
+  check "prefix rejects externally confined execution"
+    (not
+       (matches
+          (argv ~execution:Access.Command.External ~program:"dune"
+             [ "build"; "@all" ])));
+  check "prefix rejects another workspace"
+    (not
+       (matches
+          (argv ~cwd:other_cwd ~execution:Access.Command.Enforced
+             ~program:"dune" [ "build"; "@all" ])))
 
 let suggest_generalizes_reviewed_accesses () =
   let matches rule access =
@@ -1284,6 +1349,17 @@ let suggest_generalizes_reviewed_accesses () =
     (matches (Suggest.rule git) (exec "git" [ "commit"; "-m"; "other" ]));
   equal bool ~msg:"git commit family does not widen to git push" false
     (matches (Suggest.rule git) (exec "git" [ "push" ]));
+  equal bool ~msg:"git commit family does not cross execution routes" false
+    (matches (Suggest.rule git)
+       (argv ~execution:Access.Command.Enforced ~program:"git"
+          [ "commit"; "-m"; "other" ]));
+  equal bool ~msg:"git commit family does not cross workspaces" false
+    (matches (Suggest.rule git)
+       (argv
+          ~cwd:
+            (Access.Path_scope.workspace
+               (workspace_path ~root_key:"/other" ~root:"/other" ""))
+          ~program:"git" [ "commit"; "-m"; "other" ]));
   (* [dune build @runtest] generalizes to all [dune build], the argv-prefix form
      hand-authored in the rules cram test. *)
   let dune = suggest_exn "dune build" (exec "dune" [ "build"; "@runtest" ]) in
@@ -1397,6 +1473,8 @@ let () =
       test "change is inert and durable" change_is_inert_and_durable;
       test "destructive command matcher classifies irreversible commands"
         destructive_command_matcher;
-      test "sandboxed command matcher requires explicit execution evidence"
-        sandboxed_command_matcher;
+      test "enforced command matcher requires explicit execution evidence"
+        enforced_command_matcher;
+      test "command prefixes preserve execution route and cwd"
+        command_prefixes_preserve_execution_and_cwd;
     ]
