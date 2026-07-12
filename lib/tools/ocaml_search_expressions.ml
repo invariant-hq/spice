@@ -113,7 +113,9 @@ module Input = struct
                     ("type", Json.string "string");
                     ( "description",
                       Json.string
-                        "OCaml expression pattern. __ matches any expression, \
+                        "One complete OCaml expression pattern. __ replaces \
+                         any expression but does not relax OCaml grammar; a \
+                         match still needs complete PATTERN -> EXPR clauses. \
                          __1/__2 are unification metavariables, f ?arg:PRESENT \
                          / f ?arg:MISSING constrain optional arguments, and \
                          match/record clauses match as sets." );
@@ -160,6 +162,17 @@ module Input = struct
 end
 
 let input_text input = json_to_string (Input.to_json input)
+
+let pattern_error_message error =
+  let diagnostic = Format.asprintf "%a" Grep.Pattern.pp_error error in
+  match error with
+  | Grep.Pattern.Syntax _ ->
+      diagnostic
+      ^ ". A pattern must be one complete OCaml expression; `__` replaces an \
+         expression but does not relax OCaml grammar. Match clauses require \
+         `PATTERN -> EXPR`, for example: `match __ with Some x -> __ | None -> \
+         __`."
+  | Grep.Pattern.Unsupported _ -> diagnostic
 
 module Output = struct
   type partial_reason = Limit
@@ -638,7 +651,7 @@ let run ~sandbox ~fs ~workspace ?(anchors = Anchor.Source.deterministic)
   else
     match Grep.Pattern.parse (Input.pattern input) with
     | Error error ->
-        Tool.Result.failed `Invalid_input (Grep.Pattern.error_message error)
+        Tool.Result.failed `Invalid_input (pattern_error_message error)
     | Ok pattern -> (
         match resolve_roots ~fs ~workspace input with
         | Error error -> failed error

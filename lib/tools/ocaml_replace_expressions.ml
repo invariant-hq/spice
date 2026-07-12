@@ -25,6 +25,17 @@ let json_obj fields =
 let json_null = Json.null ()
 let is_metavar = Grep.Pattern.is_metavariable_name
 
+let pattern_error_message error =
+  let diagnostic = Format.asprintf "%a" Grep.Pattern.pp_error error in
+  match error with
+  | Grep.Pattern.Syntax _ ->
+      diagnostic
+      ^ ". A pattern must be one complete OCaml expression; `__` replaces an \
+         expression but does not relax OCaml grammar. Match clauses require \
+         `PATTERN -> EXPR`, for example: `match __ with Some x -> __ | None -> \
+         __`."
+  | Grep.Pattern.Unsupported _ -> diagnostic
+
 (* {1 Pure template parsing and validation} *)
 
 let parse_expr text =
@@ -607,7 +618,9 @@ module Input = struct
                     ("type", Json.string "string");
                     ( "description",
                       Json.string
-                        "OCaml expression pattern. __ matches any expression, \
+                        "One complete OCaml expression pattern. __ replaces \
+                         any expression but does not relax OCaml grammar; a \
+                         match still needs complete PATTERN -> EXPR clauses. \
                          __1/__2 are unification metavariables reused by the \
                          template, and match/record clauses match as sets." );
                   ] );
@@ -1132,7 +1145,7 @@ let run ~sandbox ~fs ~workspace ?(max_bytes = default_max_bytes)
   else
     match Grep.Pattern.parse (Input.pattern input) with
     | Error error ->
-        Tool.Result.failed `Invalid_input (Grep.Pattern.error_message error)
+        Tool.Result.failed `Invalid_input (pattern_error_message error)
     | Ok pattern -> (
         let pattern_metavars = Grep.Pattern.metavariables pattern in
         match validate_template ~pattern_metavars (Input.template input) with

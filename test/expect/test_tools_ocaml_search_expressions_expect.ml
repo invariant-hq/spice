@@ -217,6 +217,7 @@ let%expect_test "invalid patterns and roots fail loudly" =
     [
       ("type constraint", Search.Input.make "(__ : int)");
       ("syntax error", Search.Input.make "let x");
+      ("incomplete match clause", Search.Input.make "match __ with __");
       ("missing root", Search.Input.make ~paths:[ "missing" ] "List.filter");
     ]
   in
@@ -230,7 +231,9 @@ let%expect_test "invalid patterns and roots fail loudly" =
     -- type constraint --
     failed invalid_input: type-constrained expression (e : t) is not supported: type-constrained patterns require a typed backend
     -- syntax error --
-    failed invalid_input: the query is not a valid OCaml expression
+    failed invalid_input: Syntax error at line 1, column 5. A pattern must be one complete OCaml expression; `__` replaces an expression but does not relax OCaml grammar. Match clauses require `PATTERN -> EXPR`, for example: `match __ with Some x -> __ | None -> __`.
+    -- incomplete match clause --
+    failed invalid_input: Syntax error at line 1, column 16. A pattern must be one complete OCaml expression; `__` replaces an expression but does not relax OCaml grammar. Match clauses require `PATTERN -> EXPR`, for example: `match __ with Some x -> __ | None -> __`.
     -- missing root --
     failed not_found: missing: path does not exist |}]
 

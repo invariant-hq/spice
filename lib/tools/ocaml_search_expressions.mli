@@ -37,12 +37,14 @@ module Input : sig
   val make : ?paths:string list -> ?offset:int -> ?limit:int -> string -> t
   (** [make pattern] searches for the OCaml expression pattern [pattern].
 
-      [pattern] is non-empty {!Spice_ocaml_grep.Pattern} syntax; it is parsed
-      and validated at execution time. [paths] are workspace-relative or
-      workspace-contained absolute files or directories; absent [paths] means
-      the workspace root. [offset] is the one-based first finding to return and
-      defaults to [1] at execution time. [limit] is the maximum number of
-      findings and defaults to {!default_limit} at execution time.
+      [pattern] is one complete, non-empty OCaml expression in
+      {!Spice_ocaml_grep.Pattern} syntax; wildcards replace expressions but do
+      not relax the surrounding OCaml grammar. It is parsed and validated at
+      execution time. [paths] are workspace-relative or workspace-contained
+      absolute files or directories; absent [paths] means the workspace root.
+      [offset] is the one-based first finding to return and defaults to [1] at
+      execution time. [limit] is the maximum number of findings and defaults to
+      {!default_limit} at execution time.
 
       Raises [Invalid_argument] if [pattern] is empty or contains NUL, any path
       is empty or contains NUL, [paths] is explicitly empty, [offset < 1],

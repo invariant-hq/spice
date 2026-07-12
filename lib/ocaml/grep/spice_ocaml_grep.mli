@@ -45,16 +45,29 @@ module Pattern : sig
   type t
   (** A parsed, validated search pattern. *)
 
+  type syntax_error = {
+    message : string;
+        (** Compiler parser diagnostic. The text is not stable enough for
+            programmatic matching. *)
+    position : Spice_ocaml.Position.t option;
+        (** Parser-reported start position, if available. *)
+  }
+  (** A failure to parse a query as one OCaml expression. *)
+
   type error =
-    | Syntax of string
-        (** The query is not a parseable OCaml expression. The string is a
-            human-readable diagnostic. *)
+    | Syntax of syntax_error
+        (** The query is not a parseable OCaml expression. *)
     | Unsupported of string
         (** The query parses but uses a construct this engine cannot match, such
             as a type constraint. The string explains the construct. *)
 
   val error_message : error -> string
-  (** [error_message e] is the human-readable message of [e]. *)
+  (** [error_message e] is a human-readable diagnostic for [e], including the
+      parser position for [Syntax] when available. The text is not stable enough
+      for programmatic matching. *)
+
+  val pp_error : Format.formatter -> error -> unit
+  (** [pp_error ppf e] formats {!error_message} [e]. *)
 
   val is_metavariable_name : string -> bool
   (** [is_metavariable_name name] is [true] iff [name] is a numbered
@@ -65,9 +78,10 @@ module Pattern : sig
   (** [parse query] parses [query] as one OCaml expression and validates it as a
       search pattern.
 
-      Errors with [Syntax _] when [query] is not a valid expression and with
-      [Unsupported _] when it contains a type constraint or coercion ([(e : t)],
-      [(p : t)], [(e :> t)], [let x : t = ...]). *)
+      Errors with [Syntax e] when [query] is not a valid expression; [e]
+      preserves the compiler parser message and position. Errors with
+      [Unsupported _] when the query contains a type constraint or coercion
+      ([(e : t)], [(p : t)], [(e :> t)], [let x : t = ...]). *)
 
   val source : t -> string
   (** [source t] is the query text [t] was parsed from. *)

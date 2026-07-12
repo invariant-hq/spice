@@ -51,14 +51,16 @@ module Input : sig
       [template]. (The trailing [unit] keeps the leading optional arguments
       erasable; the design note's signature omits it.)
 
-      [pattern] is non-empty {!Spice_ocaml_grep.Pattern} syntax. [template] is a
-      non-empty OCaml expression whose metavariable holes are a subset of
-      [pattern]'s; both are parsed and validated at execution time. [paths] are
-      workspace-relative or workspace-contained files or directories; absent
-      [paths] means the workspace root. [max_sites] bounds the total rewritten
-      sites and defaults to {!default_max_sites}. [dry_run] defaults to [false]
-      (the tool applies in one call; see the design note §2.9); when [true],
-      {!run} validates and renders but writes nothing.
+      [pattern] is one complete, non-empty OCaml expression in
+      {!Spice_ocaml_grep.Pattern} syntax; wildcards replace expressions but do
+      not relax the surrounding OCaml grammar. [template] is a non-empty OCaml
+      expression whose metavariable holes are a subset of [pattern]'s; both are
+      parsed and validated at execution time. [paths] are workspace-relative or
+      workspace-contained files or directories; absent [paths] means the
+      workspace root. [max_sites] bounds the total rewritten sites and defaults
+      to {!default_max_sites}. [dry_run] defaults to [false] (the tool applies
+      in one call; see the design note §2.9); when [true], {!run} validates and
+      renders but writes nothing.
 
       Raises [Invalid_argument] if [pattern] or [template] is empty or contains
       NUL, any path is empty or contains NUL, [paths] is explicitly empty, or

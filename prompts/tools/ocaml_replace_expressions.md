@@ -1,5 +1,8 @@
 Rewrite workspace OCaml expressions by structure: find every expression
-matching an OCaml `pattern` and replace it using a `template`. The template is
+matching a `pattern` that is one complete OCaml expression and replace it using
+a `template`. The wildcard `__` replaces an expression inside otherwise valid
+OCaml grammar; it does not stand for a match clause or make incomplete syntax
+valid. The template is
 OCaml source with the same metavariable holes as the pattern — `__1`, `__2`,
 … — and each hole is filled with the exact source text that metavariable
 matched at that site, so comments and formatting inside fragments are preserved.

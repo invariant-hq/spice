@@ -449,9 +449,50 @@ let match_pat_expr (pexpr : Parsetree.expression) tpat =
 
 module Pattern = struct
   type t = { source : string; parsed : Parsetree.expression }
-  type error = Syntax of string | Unsupported of string
 
-  let error_message = function Syntax m -> m | Unsupported m -> m
+  type syntax_error = {
+    message : string;
+    position : Spice_ocaml.Position.t option;
+  }
+
+  type error = Syntax of syntax_error | Unsupported of string
+
+  let position_of_loc loc =
+    let start = loc.Location.loc_start in
+    Some
+      (Spice_ocaml.Position.make ~line:start.Lexing.pos_lnum
+         ~column:(start.Lexing.pos_cnum - start.Lexing.pos_bol))
+
+  let syntax_error exn =
+    match Location.error_of_exn exn with
+    | Some (`Ok report) ->
+        let main = report.Location.main in
+        {
+          message = Format.asprintf "%a" Format_doc.Doc.format main.Location.txt;
+          position = position_of_loc main.Location.loc;
+        }
+    | Some `Already_displayed | None ->
+        let position =
+          match exn with
+          | Syntaxerr.Error error ->
+              position_of_loc (Syntaxerr.location_of_error error)
+          | _ -> None
+        in
+        { message = Printexc.to_string exn; position }
+
+  let syntax_error_message error =
+    match error.position with
+    | None -> error.message
+    | Some position ->
+        Printf.sprintf "%s at line %d, column %d" error.message
+          (Spice_ocaml.Position.line position)
+          (Spice_ocaml.Position.column position)
+
+  let error_message = function
+    | Syntax error -> syntax_error_message error
+    | Unsupported message -> message
+
+  let pp_error ppf error = Format.pp_print_string ppf (error_message error)
   let source t = t.source
   let is_metavariable_name = is_metavar
   let metavariables t = metavariables_in_expr t.parsed
@@ -499,7 +540,7 @@ module Pattern = struct
 
   let parse query =
     match Parse.expression (Lexing.from_string query) with
-    | exception _ -> Error (Syntax "the query is not a valid OCaml expression")
+    | exception exn -> Error (Syntax (syntax_error exn))
     | parsed -> (
         match validate parsed with
         | Ok () -> Ok { source = query; parsed }

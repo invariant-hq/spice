@@ -199,8 +199,9 @@ let unsupported_patterns () =
   let expect_unsupported pattern =
     match Grep.Pattern.parse pattern with
     | Error (Grep.Pattern.Unsupported _) -> ()
-    | Error (Grep.Pattern.Syntax message) ->
-        failf "%s: expected Unsupported, got Syntax %s" pattern message
+    | Error (Grep.Pattern.Syntax error) ->
+        failf "%s: expected Unsupported, got Syntax %s" pattern
+          error.Grep.Pattern.message
     | Ok _ -> failf "%s: expected Unsupported, got Ok" pattern
   in
   expect_unsupported "(__ : int list)";
@@ -209,6 +210,24 @@ let unsupported_patterns () =
   expect_unsupported "fun (x : int) -> x";
   match Grep.Pattern.parse "let x =" with
   | Error (Grep.Pattern.Syntax _) -> ()
+  | Error (Grep.Pattern.Unsupported message) ->
+      failf "expected Syntax, got Unsupported %s" message
+  | Ok _ -> failf "expected Syntax error, got Ok"
+
+let pattern_syntax_errors () =
+  match Grep.Pattern.parse "match __ with __" with
+  | Error (Grep.Pattern.Syntax error) ->
+      equal string ~msg:"compiler message" "Syntax error"
+        error.Grep.Pattern.message;
+      begin match error.Grep.Pattern.position with
+      | Some position ->
+          equal int ~msg:"line" 1 (Ocaml.Position.line position);
+          equal int ~msg:"column" 16 (Ocaml.Position.column position)
+      | None -> failf "expected parser error position"
+      end;
+      equal string ~msg:"diagnostic formatter"
+        "Syntax error at line 1, column 16"
+        (Format.asprintf "%a" Grep.Pattern.pp_error (Grep.Pattern.Syntax error))
   | Error (Grep.Pattern.Unsupported message) ->
       failf "expected Syntax, got Unsupported %s" message
   | Ok _ -> failf "expected Syntax error, got Ok"
@@ -301,5 +320,7 @@ let () =
       test "type annotation transparency" annotation_transparency;
       test "value binding sets" binding_sets;
       test "unsupported patterns are rejected" unsupported_patterns;
+      test "pattern syntax errors preserve compiler diagnostics"
+        pattern_syntax_errors;
       test "source parse errors are reported" source_parse_errors;
     ]

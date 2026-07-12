@@ -287,6 +287,14 @@ let%expect_test "template validation rejects unsound templates" =
     receipt: M x.ml
     final_identities: x.ml |}]
 
+let%expect_test "pattern syntax errors explain complete match clauses" =
+  with_files [ ("x.ml", "let a = f b\n") ] @@ fun ~dir:_ ~fs ~workspace ->
+  run ~fs ~workspace
+    (Replace.Input.make ~pattern:"match __ with __" ~template:"f __1" ());
+  [%expect
+    {|
+    failed invalid_input: Syntax error at line 1, column 16. A pattern must be one complete OCaml expression; `__` replaces an expression but does not relax OCaml grammar. Match clauses require `PATTERN -> EXPR`, for example: `match __ with Some x -> __ | None -> __`. |}]
+
 let%expect_test "dry run previews without writing" =
   with_files [ ("d.ml", "let a = x + 1 :: rest\n") ]
   @@ fun ~dir ~fs ~workspace ->

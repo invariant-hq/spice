@@ -154,7 +154,10 @@ the apply_patch family.
   ## ocaml_replace_expressions
   
   Rewrite workspace OCaml expressions by structure: find every expression
-  matching an OCaml `pattern` and replace it using a `template`. The template is
+  matching a `pattern` that is one complete OCaml expression and replace it using
+  a `template`. The wildcard `__` replaces an expression inside otherwise valid
+  OCaml grammar; it does not stand for a match clause or make incomplete syntax
+  valid. The template is
   OCaml source with the same metavariable holes as the pattern — `__1`, `__2`,
   … — and each hole is filled with the exact source text that metavariable
   matched at that site, so comments and formatting inside fragments are preserved.
@@ -184,7 +187,7 @@ the apply_patch family.
   skipped. For plain-text replacements or non-OCaml files, use the text editor;
   for a single tricky site, ocaml_ast_edit is more surgical.
   
-  Input schema: {"type":"object","properties":{"pattern":{"type":"string","description":"OCaml expression pattern. __ matches any expression, __1/__2 are unification metavariables reused by the template, and match/record clauses match as sets."},"template":{"type":"string","description":"OCaml expression with the same __1/__2 holes as the pattern. Each hole is filled with the exact source text the metavariable matched."},"paths":{"type":"array","items":{"type":"string"},"minItems":1,"description":"Workspace-relative or workspace-contained file or directory roots. Defaults to the workspace current directory."},"max_sites":{"type":"integer","minimum":1,"maximum":1000,"description":"Maximum rewritten sites across all files. If exceeded, nothing is written. Defaults to 200."},"dry_run":{"type":"boolean","description":"When true, validate and render but write nothing, returning per-site before/after and the diff. Defaults to false (the tool applies in one call)."}},"required":["pattern","template"],"additionalProperties":false}
+  Input schema: {"type":"object","properties":{"pattern":{"type":"string","description":"One complete OCaml expression pattern. __ replaces any expression but does not relax OCaml grammar; a match still needs complete PATTERN -> EXPR clauses. __1/__2 are unification metavariables reused by the template, and match/record clauses match as sets."},"template":{"type":"string","description":"OCaml expression with the same __1/__2 holes as the pattern. Each hole is filled with the exact source text the metavariable matched."},"paths":{"type":"array","items":{"type":"string"},"minItems":1,"description":"Workspace-relative or workspace-contained file or directory roots. Defaults to the workspace current directory."},"max_sites":{"type":"integer","minimum":1,"maximum":1000,"description":"Maximum rewritten sites across all files. If exceeded, nothing is written. Defaults to 200."},"dry_run":{"type":"boolean","description":"When true, validate and render but write nothing, returning per-site before/after and the diff. Defaults to false (the tool applies in one call)."}},"required":["pattern","template"],"additionalProperties":false}
   
   ## ocaml_dune_describe
   
@@ -273,13 +276,14 @@ the apply_patch family.
   
   ## ocaml_search_expressions
   
-  Search workspace OCaml sources for code shaped like an OCaml expression
-  pattern. Matching is structural, not textual: it is invariant to
-  formatting and line breaks, `__` matches any expression, `__1`/`__2`
-  force structurally equal sub-expressions, pattern arguments may omit
-  call arguments, `f ?arg:PRESENT` / `f ?arg:MISSING` constrain optional
-  arguments, and match/try/function clauses and record fields match as
-  order-independent sets. Example: `List.rev __ @ __` or
+  Search workspace OCaml sources for code shaped like one complete OCaml
+  expression. The wildcard `__` replaces an expression inside otherwise valid
+  OCaml grammar; it does not stand for a match clause or make incomplete syntax
+  valid. Matching is structural, not textual: it is invariant to formatting and
+  line breaks, `__1`/`__2` force structurally equal sub-expressions, pattern
+  arguments may omit call arguments, `f ?arg:PRESENT` / `f ?arg:MISSING`
+  constrain optional arguments, and match/try/function clauses and record fields
+  match as order-independent sets. Example: `List.rev __ @ __` or
   `match __ with None -> __ | Some __1 -> Some __1`.
   
   Matching is syntactic — identifiers match as written (with path-suffix
@@ -291,7 +295,7 @@ the apply_patch family.
   supported. For plain text or regex searches, and for non-OCaml files,
   use search_text.
   
-  Input schema: {"type":"object","properties":{"pattern":{"type":"string","description":"OCaml expression pattern. __ matches any expression, __1/__2 are unification metavariables, f ?arg:PRESENT / f ?arg:MISSING constrain optional arguments, and match/record clauses match as sets."},"paths":{"type":"array","items":{"type":"string"},"minItems":1,"description":"Workspace-relative or workspace-contained absolute file or directory roots. Defaults to the workspace current directory."},"offset":{"type":"integer","minimum":1,"description":"1-based first finding to return. Defaults to 1."},"limit":{"type":"integer","minimum":1,"maximum":1000,"description":"Maximum number of findings to return. Defaults to 100."}},"required":["pattern"],"additionalProperties":false}
+  Input schema: {"type":"object","properties":{"pattern":{"type":"string","description":"One complete OCaml expression pattern. __ replaces any expression but does not relax OCaml grammar; a match still needs complete PATTERN -> EXPR clauses. __1/__2 are unification metavariables, f ?arg:PRESENT / f ?arg:MISSING constrain optional arguments, and match/record clauses match as sets."},"paths":{"type":"array","items":{"type":"string"},"minItems":1,"description":"Workspace-relative or workspace-contained absolute file or directory roots. Defaults to the workspace current directory."},"offset":{"type":"integer","minimum":1,"description":"1-based first finding to return. Defaults to 1."},"limit":{"type":"integer","minimum":1,"maximum":1000,"description":"Maximum number of findings to return. Defaults to 100."}},"required":["pattern"],"additionalProperties":false}
   
   ## ocaml_type_at
   
