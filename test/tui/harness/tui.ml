@@ -372,6 +372,17 @@ let keys t bytes =
 let enter t = keys t Key.enter
 let paste t text = keys t (Key.bracketed_paste text)
 
+let click t ~column ~row =
+  let x = column - 1 and y = row - 1 in
+  Matrix_test.feed_event t.backend
+    (Matrix.Input.mouse_press x y Matrix.Input.Mouse.Left);
+  wake t;
+  breathe t;
+  Matrix_test.feed_event t.backend
+    (Matrix.Input.mouse_release x y (Some Matrix.Input.Mouse.Left));
+  wake t;
+  breathe t
+
 let resize t ~width ~height =
   Matrix_test.resize t.backend ~width ~height;
   wake t

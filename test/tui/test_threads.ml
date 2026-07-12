@@ -129,7 +129,37 @@ let%expect_test "a spawned child shows the agents count and settles as a notice"
 21 |   $PROJECT · gpt-5.5 medium · dune: ✗     ? for shortcuts
 22 |
 23 |     ◯ main
-24 |     ✓ Explore   survey the code · 0s · ↓ 0 tokens|}]
+24 |     ✓ Explore   survey the code · 0s · ↓ 0 tokens|}];
+  (* The lower-strip mount keeps the shared click route: a settled child opens
+     its durable read-only transcript. *)
+  Tui.click t ~column:20 ~row:24;
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 |
+02 |   ▂▄▆▄▂ @explore — survey the code
+03 |   started by main
+04 | ❯ Role: explore
+05 |
+06 |   Task:
+07 |   survey the code
+08 |
+09 | ⏺ Found 3 call sites.
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 |
+22 |
+23 |
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗⏴ @explore · esc for m|}]
 
 let%expect_test "an idle parent consumes a settled child in one wake turn" =
   let script =
@@ -275,6 +305,8 @@ let%expect_test "a wide terminal hosts the switcher in the side pane" =
   ignore (Tui.await_request t 1 : string);
   ignore (Tui.await_request t 3 : string);
   Tui.release t "parent";
+  (* The running row honestly carries no open hint; only settled children have
+     a quiescent document that the shared click route may load. *)
   Tui.settle t;
   Tui.print t;
   [%expect

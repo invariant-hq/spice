@@ -2013,9 +2013,13 @@ let update msg t =
       else (t, [])
   | Thread_strip_hovered hover -> ({ t with strip_hover = hover }, [])
   | Thread_strip_clicked i ->
-      (* A click selects the row and drills in when it is a settled child — the
-         same action as [↵] (doc/plans/tui-next-threads.md §2.3, fix 5). *)
-      drill_selected { t with strip_focus = Some i }
+      (* A settled row selects and drills in with the same action as [↵]. A
+         live row selects only: its document is still changing, so clicking it
+         must not claim or attempt the unavailable open action. *)
+      let t = { t with strip_focus = Some i } in
+      (match selected_run t with
+      | Some run when thread_openable run -> drill_selected t
+      | Some _ | None -> (t, []))
   | Thread_document_loaded { run; events; now } -> (
       (* Drop a load that outlived its session: a resume or fork sets
          [drill = None] and replaces [thread_runs] for a different session, and
@@ -2900,6 +2904,7 @@ let threads_rows ~now t =
 let strip_mouse index ev =
   match Mosaic.Event.Mouse.kind ev with
   | Mosaic.Event.Mouse.Down { button = Mosaic.Event.Mouse.Left; _ } ->
+      Mosaic.Event.Mouse.prevent_default ev;
       Some (Thread_strip_clicked index)
   | Mosaic.Event.Mouse.Move -> Some (Thread_strip_hovered (Some index))
   | _ -> None
@@ -2985,14 +2990,13 @@ let pane_right ~now t chat =
     let agents_section =
       match threads_rows ~now t with
       | [] -> None
-      | rows ->
+      | _ ->
           Some
             (Pane_sections.section ~label:"agents" ~facts:(agents_facts t)
                (fun ~max_rows ->
-                 Threads_strip.view ~can_open:false ~rows
-                   ~selected:t.strip_focus
+                 threads_strip_render ~now
                    ~width:(max 1 (width - 2))
-                   ~rows_avail:max_rows ()
+                   ~rows_avail:max_rows t
                  |> List.map (fun row ->
                      box ~padding:(padding_lrtb 2 0 0 0) [ row ])))
     in

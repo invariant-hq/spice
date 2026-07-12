@@ -41,6 +41,10 @@ val enter : t -> unit
 val paste : t -> string -> unit
 (** [paste session text] sends [text] using terminal bracketed-paste framing. *)
 
+val click : t -> column:int -> row:int -> unit
+(** [click session ~column ~row] sends a left-button press and release at the
+    one-based terminal cell [column, row] through the headless backend. *)
+
 val resize : t -> width:int -> height:int -> unit
 (** [resize session ~width ~height] changes the headless terminal size. *)
 
