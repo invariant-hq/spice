@@ -355,7 +355,11 @@ let after_save json ~projection_digest ~context_warnings ~permission_of =
                      session revision request)
             | Session.Event.Permission_resolved resolved ->
                 print_json (permission_resolved_json session revision resolved)
+            (* Assistant text is reported once by the terminal [final_text]
+               projection; completed and interrupted assistant events do not
+               emit standalone saved-event JSONL records. *)
             | Session.Event.Response_appended _
+            | Session.Event.Assistant_interrupted _
             | Session.Event.Message_appended _
             | Session.Event.Tool_claim_started _
             | Session.Event.Tool_claim_finished _
@@ -471,7 +475,11 @@ let render_timeline ~json ~session_id event =
           (lifecycle_json ~type_:"workspace.degraded" session_id
              [ ("message", Jsont.Json.string message) ])
       else stdout_printf "workspace evidence degraded: %s\n" message
+  (* Assistant prose is rendered once from the terminal session projection.
+     Ignoring both event shapes here avoids duplicating streamed or retained
+     text while preserving interrupted prose in [turn.finished.final_text]. *)
   | Spice_protocol.Event.Turn_started _ | Spice_protocol.Event.Assistant _
+  | Spice_protocol.Event.Assistant_interrupted _
   | Spice_protocol.Event.Host_call _
   | Spice_protocol.Event.Permission_requested _
   | Spice_protocol.Event.Permission_resolved _

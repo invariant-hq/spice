@@ -28,7 +28,9 @@ let of_timeline = function
       Some (Finished { execution = claim; result })
   | Event.Workspace_changed { claim; checkpoint; changes; total } ->
       Some (Workspace_changed { execution = claim; checkpoint; changes; total })
-  | Event.Turn_started _ | Event.Assistant _ | Event.Host_call _
+  (* Interrupted prose is an assistant transcript fact, never tool lifecycle. *)
+  | Event.Turn_started _ | Event.Assistant _ | Event.Assistant_interrupted _
+  | Event.Host_call _
   | Event.Permission_requested _ | Event.Permission_resolved _
   | Event.Compaction _ | Event.Turn_finished _ | Event.Assistant_delta _
   | Event.Reasoning_delta _ | Event.Usage_updated _ | Event.Model_started _

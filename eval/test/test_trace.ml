@@ -299,6 +299,29 @@ let segments_split_on_compaction () =
   equal (list int) ~msg:"step segment indices" [ 0; 1 ]
     (List.map Trace.Step.segment_index (Trace.steps t))
 
+let interrupted_prose_is_not_a_provider_step () =
+  let tid = turn_id "turn-interrupted" in
+  let partial = "Visible prose before cancellation." in
+  let document =
+    session
+      [
+        turn_started ~declarations:[ "read_file" ] tid;
+        Session.Event.assistant_interrupted ~text:partial;
+        Session.Event.turn_finished ~turn:tid
+          (Session.Turn.Outcome.interrupted ~cancelled:true ());
+      ]
+  in
+  let t = Trace.of_session document in
+  equal int ~msg:"interrupted prose adds no completed response step" 0
+    (List.length (Trace.steps t));
+  equal int ~msg:"interrupted prose adds no tool call" 0
+    (List.length (Trace.calls t));
+  equal (list string) ~msg:"turn declarations remain visible"
+    [ "read_file" ] (Trace.declared_tools t);
+  equal (option string) ~msg:"session replay still retains the prose"
+    (Some partial)
+    (Session.State.turn_final_text tid (Session.state document))
+
 let repeated_call_count () =
   let repeats_of doc =
     (Metrics.of_trace (Trace.of_session doc)).Metrics.repeated_call_count
@@ -499,6 +522,8 @@ let () =
       test "excludes host tool calls" host_tool_calls_excluded;
       test "counts rejections" rejections_counted;
       test "splits segments on compaction" segments_split_on_compaction;
+      test "does not count interrupted prose as a provider step"
+        interrupted_prose_is_not_a_provider_step;
       test "counts repeated calls" repeated_call_count;
       test "counts failure streaks" failure_streak_count;
       test "counts unchanged rereads" reread_count;

@@ -169,8 +169,12 @@ let of_session ?(timing = Timing.empty) session =
           | Permission.Resolved.Denied result ->
               Hashtbl.replace rejected (Tool.Result.call_id result) result
           | Permission.Resolved.Allowed _ -> ())
+      (* Interrupted prose answers no tool call and carries no provider step
+         metadata, so it contributes to neither result correlation nor the
+         response-step trace below. *)
       | Event.Turn_started _ | Event.Message_appended _
-      | Event.Response_appended _ | Event.Compaction_installed _
+      | Event.Response_appended _ | Event.Assistant_interrupted _
+      | Event.Compaction_installed _
       | Event.Permission_requested _ | Event.Tool_claim_started _
       | Event.Turn_finished _ ->
           ())
@@ -255,7 +259,11 @@ let of_session ?(timing = Timing.empty) session =
               ~usage:(Response.usage response) ~calls
               ~duration_s:(step_duration calls)
             :: !steps
-      | Event.Message_appended _ | Event.Permission_requested _
+      (* A trace step is a completed provider response with optional usage and
+         tool calls. Interrupted prose remains transcript context but is not a
+         response-shaped step. *)
+      | Event.Message_appended _ | Event.Assistant_interrupted _
+      | Event.Permission_requested _
       | Event.Permission_resolved _ | Event.Tool_claim_started _
       | Event.Tool_claim_finished _ | Event.Turn_finished _ ->
           ())
