@@ -10,7 +10,6 @@ module Policy = struct
     auto_limit : int option;
     keep_turns : int;
     keep_tokens : int option;
-    summary_max_output_tokens : int option;
   }
 
   let invalid parameter value =
@@ -27,20 +26,11 @@ module Policy = struct
         invalid (parameter ^ " must be non-negative") value
     | Some _ | None -> ()
 
-  let make ?model ?prelude ?auto_limit ?(keep_turns = 2) ?keep_tokens
-      ?summary_max_output_tokens () =
+  let make ?model ?prelude ?auto_limit ?(keep_turns = 2) ?keep_tokens () =
     require_positive "auto_limit" auto_limit;
     if keep_turns < 0 then invalid "keep_turns must be non-negative" keep_turns;
     require_non_negative "keep_tokens" keep_tokens;
-    require_positive "summary_max_output_tokens" summary_max_output_tokens;
-    {
-      model;
-      prelude;
-      auto_limit;
-      keep_turns;
-      keep_tokens;
-      summary_max_output_tokens;
-    }
+    { model; prelude; auto_limit; keep_turns; keep_tokens }
 
   let default =
     {
@@ -49,7 +39,6 @@ module Policy = struct
       auto_limit = None;
       keep_turns = 2;
       keep_tokens = None;
-      summary_max_output_tokens = None;
     }
 
   let model t = t.model
@@ -57,7 +46,6 @@ module Policy = struct
   let auto_limit t = t.auto_limit
   let keep_turns t = t.keep_turns
   let keep_tokens t = t.keep_tokens
-  let summary_max_output_tokens t = t.summary_max_output_tokens
 
   (* The automatic limit reserves an output buffer under the declared context
      window, capped at 20_000 tokens. A window that cannot fund a buffer
@@ -85,18 +73,13 @@ module Policy = struct
              compaction disabled")
 
   let of_model ?prelude model =
-    let summary_max_output_tokens =
-      match Spice_provider.Model.max_output_tokens model with
-      | None -> 4096
-      | Some value -> min value 4096
-    in
     let auto_limit = auto_limit_of_model model in
     let keep_tokens =
       Option.map (fun limit -> min 8_000 (max 2_000 (limit / 4))) auto_limit
     in
     make
       ~model:(Spice_provider.Model.llm model)
-      ?prelude ?auto_limit ?keep_tokens ~summary_max_output_tokens ()
+      ?prelude ?auto_limit ?keep_tokens ()
 end
 
 module Pressure = struct

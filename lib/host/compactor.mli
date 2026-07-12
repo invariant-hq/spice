@@ -28,8 +28,7 @@ module Policy : sig
       maximum number of trailing user-turn groups retained verbatim.
       [keep_tokens], when present, additionally caps that retained tail by the
       approximate token estimate. A summary request is sent to [model] when
-      present (otherwise the turn's own model), prefixed by [prelude] when
-      present, and capped at [summary_max_output_tokens] output tokens when
+      present (otherwise the turn's own model) and prefixed by [prelude] when
       present. *)
 
   (** {1:constructors Constructors} *)
@@ -40,15 +39,14 @@ module Policy : sig
     ?auto_limit:int ->
     ?keep_turns:int ->
     ?keep_tokens:int ->
-    ?summary_max_output_tokens:int ->
     unit ->
     t
   (** [make ()] is a policy with the given parameters. [keep_turns] defaults to
       [2]; every other parameter defaults to absent — no automatic limit, no
-      tail-token cap, no explicit summary model, prelude, or output cap.
+      tail-token cap, explicit summary model, or prelude.
 
-      Raises [Invalid_argument] if [auto_limit] or [summary_max_output_tokens]
-      is not positive, or if [keep_turns] or [keep_tokens] is negative. *)
+      Raises [Invalid_argument] if [auto_limit] is not positive, or if
+      [keep_turns] or [keep_tokens] is negative. *)
 
   val default : t
   (** [default] configures no summary model, prelude, or limits and retains
@@ -60,7 +58,7 @@ module Policy : sig
   (** [of_model ?prelude model] is the standard execution policy derived from
       [model]'s declared catalog facts: {!auto_limit_of_model} as the automatic
       limit, a proportional [keep_tokens] tail budget when that limit is
-      derivable, and a summary output cap bounded by the model's own maximum.
+      derivable, and [model]'s provider-neutral identifier for summary requests.
       This is the sole source of a runtime policy's [auto_limit], so the
       enforced trigger and any model-derived display of the limit agree. *)
 
@@ -81,10 +79,6 @@ module Policy : sig
   val keep_tokens : t -> int option
   (** [keep_tokens t] is [t]'s additional token cap on the retained tail, if
       any. *)
-
-  val summary_max_output_tokens : t -> int option
-  (** [summary_max_output_tokens t] is [t]'s model output cap for the summary
-      request, if any. *)
 
   val prelude : t -> Spice_llm.Request.Prelude.t option
   (** [prelude t] is [t]'s request prelude for summary requests, if any. *)

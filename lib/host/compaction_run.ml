@@ -192,9 +192,7 @@ let summary_request policy model messages =
   in
   let options =
     Spice_llm.Request.Options.make
-      ~tool_choice:Spice_llm.Request.Options.No_tools
-      ?max_output_tokens:(Compactor.Policy.summary_max_output_tokens policy)
-      ~temperature:0.0 ()
+      ~tool_choice:Spice_llm.Request.Options.No_tools ()
   in
   Spice_llm.Request.make ~model ~prelude ~options transcript |> internal_request
 

@@ -12,6 +12,7 @@ module Compactor = Spice_host.Compactor
 module Llm = Spice_llm
 module Session = Spice_session
 module State = Spice_session.State
+module Store = Spice_session_store
 
 let provider = Llm.Provider.make "openai"
 let api = Llm.Model.Api.make "responses"
@@ -41,6 +42,36 @@ let turn ?(id = "turn-1") ?(input = "Refactor.") () =
 let response ?usage text =
   Llm.Response.make ~model:llm_model ?usage (Llm.Message.Assistant.text text)
 
+let complete_turn index =
+  let id = Printf.sprintf "turn-%d" index in
+  let turn = turn ~id ~input:(Printf.sprintf "Request %d." index) () in
+  [
+    Session.Event.turn_started turn;
+    Session.Event.response_appended
+      (response (Printf.sprintf "Reply %d." index));
+    Session.Event.turn_finished ~turn:(Session.Turn.id turn)
+      Session.Turn.Outcome.completed;
+  ]
+
+let provider_without_optional_knobs () =
+  Llm.Client.make ~provider
+    ~run:(fun ~cancelled:_ ~on_event:_ request ->
+      let options = Llm.Request.options request in
+      match
+        ( Llm.Request.Options.max_output_tokens options,
+          Llm.Request.Options.temperature options )
+      with
+      | None, None -> Ok (response "Portable summary.")
+      | Some _, _ ->
+          Error
+            (Llm.Error.make ~kind:Llm.Error.Unsupported
+               "Unsupported parameter: max_output_tokens")
+      | _, Some _ ->
+          Error
+            (Llm.Error.make ~kind:Llm.Error.Unsupported
+               "Unsupported parameter: temperature"))
+    ()
+
 (* Policy.of_model *)
 
 let of_model_reserves_output_headroom () =
@@ -50,8 +81,6 @@ let of_model_reserves_output_headroom () =
   in
   equal (option int) ~msg:"limit reserves 20k of output headroom" (Some 380_000)
     (Compactor.Policy.auto_limit policy);
-  equal (option int) ~msg:"summary output capped at 4096" (Some 4096)
-    (Compactor.Policy.summary_max_output_tokens policy);
   equal
     (option (testable ~pp:Llm.Model.pp ~equal:Llm.Model.equal ()))
     ~msg:"summary model is the request model" (Some llm_model)
@@ -64,10 +93,7 @@ let of_model_small_output_cap () =
   in
   equal (option int) ~msg:"headroom is the declared cap when smaller"
     (Some 98_000)
-    (Compactor.Policy.auto_limit policy);
-  equal (option int) ~msg:"summary cap is the declared cap when smaller"
-    (Some 2_000)
-    (Compactor.Policy.summary_max_output_tokens policy)
+    (Compactor.Policy.auto_limit policy)
 
 let of_model_unknown_window_disables_auto () =
   let policy =
@@ -84,6 +110,45 @@ let of_model_tiny_window_disables_auto () =
   in
   equal (option int) ~msg:"window at or under headroom disables the limit" None
     (Compactor.Policy.auto_limit policy)
+
+let compaction_omits_optional_provider_knobs () =
+  Eio_main.run @@ fun env ->
+  let root = Filename.temp_dir "spice_portable_compaction" "" in
+  let cwd = Spice_path.Abs.of_string_exn root in
+  let store =
+    Store.make ~fs:(Eio.Stdenv.fs env) ~clock:(Eio.Stdenv.clock env) ~root:cwd
+  in
+  let session =
+    Session.create
+      ~id:(Session.Id.of_string "portable-compaction")
+      ~cwd
+      ~created_at:(Session.Time.of_unix_ms 1L)
+      ()
+  in
+  let document =
+    match Store.create store session with
+    | Ok document -> document
+    | Error error -> failf "session create failed: %a" Store.Error.pp error
+  in
+  let events = List.concat_map complete_turn [ 1; 2; 3 ] in
+  let document =
+    match Store.append store document events with
+    | Ok document -> document
+    | Error error -> failf "session append failed: %a" Store.Error.pp error
+  in
+  let policy =
+    Compactor.Policy.of_model
+      (catalog_model ~context_window:400_000 ~max_output_tokens:128_000 ())
+  in
+  match
+    Spice_host.Session.compact ~store
+      ~client:(provider_without_optional_knobs ())
+      ~policy document
+  with
+  | Ok _ -> ()
+  | Error error ->
+      failf "portable provider rejected compaction: %a" Spice_protocol.Error.pp
+        error
 
 (* Pressure.of_state *)
 
@@ -154,6 +219,8 @@ let () =
         of_model_unknown_window_disables_auto;
       test "of_model with a tiny window disables the automatic limit"
         of_model_tiny_window_disables_auto;
+      test "compaction omits optional provider knobs"
+        compaction_omits_optional_provider_knobs;
       test "pressure without usage is estimate-based"
         pressure_estimate_basis_without_usage;
       test "pressure with usage grounds the projection"
