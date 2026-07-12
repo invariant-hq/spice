@@ -1372,7 +1372,7 @@ module Event_tests = struct
     | Ok transcript -> transcript
     | Error error -> failf "transcript failed: %a" Llm.Transcript.Error.pp error
 
-  let extension_access name = Permission.Access.custom ~kind:`Custom name
+  let extension_access name = Permission.Access.custom name
 
   let permission_request ~turn ~tool_call access =
     let request = Permission.Request.of_accesses [ access ] in

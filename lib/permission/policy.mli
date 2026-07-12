@@ -144,7 +144,7 @@ module Match : sig
     (** [argv_prefix ~execution ~cwd ~program ~args ()] matches [Argv] command
         accesses through [execution] whose working directory matches [cwd],
         whose program is [program], and whose arguments start with [args].
-        Shell commands never match.
+        Shell and code commands never match.
 
         Raises [Invalid_argument] if [program] is empty. *)
   end
@@ -167,9 +167,9 @@ module Match : sig
       Raises [Invalid_argument] if [host] is empty, if [protocol] is
       [`Other ""], or if [port] is outside \[[1];[65535]\]. *)
 
-  val custom : ?kind:Access.kind -> ?subject:string -> string -> t
-  (** [custom ?kind ?subject name] matches caller-defined accesses with [name],
-      restricted by [kind] and [subject] when provided.
+  val custom : ?subject:string -> string -> t
+  (** [custom ?subject name] matches caller-defined accesses with [name],
+      restricted by [subject] when provided.
 
       Raises [Invalid_argument] if [name] or [subject] is empty when present. *)
 

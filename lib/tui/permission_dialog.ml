@@ -103,16 +103,14 @@ let access_text access =
       "exec "
       ^ String.concat " " (List.map shell_arg (program :: args))
       ^ " in " ^ scope_display cwd
+  | Access.Command (Access.Command.Code { language; source; cwd; _ }) ->
+      "evaluate " ^ language ^ " " ^ shell_arg source ^ " in "
+      ^ scope_display cwd
   | Access.Network { protocol; host; port } ->
       "network " ^ protocol_string protocol ^ "://" ^ host
       ^ Option.fold ~none:"" ~some:(fun p -> ":" ^ string_of_int p) port
-  | Access.Custom { kind; name; subject } ->
-      (* A [`Custom]-kind custom access prints one "custom", not the kind twice
-         ("custom custom shell.escalate"); a built-in kind still leads, so a
-         custom write-class access reads "write custom <name>". *)
-      (match kind with
-        | `Custom -> "custom " ^ name
-        | kind -> kind_string kind ^ " custom " ^ name)
+  | Access.Custom { name; subject } ->
+      "custom " ^ name
       ^ Option.fold ~none:"" ~some:(fun s -> " " ^ shell_arg s) subject
 
 let is_path = function
@@ -173,6 +171,8 @@ let command_access = function
       Some
         ( String.concat " " (List.map shell_arg (program :: args)),
           Some (scope_display cwd) )
+  | Access.Command (Access.Command.Code { language; source; cwd; _ }) ->
+      Some (language ^ " " ^ shell_arg source, Some (scope_display cwd))
   | Access.Path _ | Access.Network _ | Access.Custom _ -> None
 
 (* --- Change metadata (diff + counts) --- *)

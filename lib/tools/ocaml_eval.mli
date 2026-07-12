@@ -119,16 +119,19 @@ module Config : sig
 end
 
 val permissions :
+  sandbox:Spice_sandbox.t ->
   workspace:Spice_workspace.t ->
   Input.t ->
   Spice_permission.Request.t list
-(** [permissions ~workspace input] declares the workspace read and
-    model-authored OCaml execution operation needed to evaluate [input]. The
-    latter is a custom command-kind fact whose subject is the submitted code;
-    fixed Dune and OCaml argv remain sealed implementation details.
+(** [permissions ~sandbox ~workspace input] declares the workspace read and
+    model-authored OCaml code command needed to evaluate [input]. The command's
+    exact identity includes its source, language, working directory, and the
+    execution route proved by [sandbox]. Fixed Dune and OCaml argv remain sealed
+    implementation details.
 
-    If [dir] cannot be resolved inside [workspace], the returned list is empty;
-    {!run} reports the same problem as an invalid-input tool result. *)
+    If [dir] cannot be resolved inside [workspace] or sandbox enforcement was
+    refused, the returned list is empty; {!run} reports the corresponding
+    invalid-input or sandbox failure without opening a permission review. *)
 
 module Output : sig
   type stage =

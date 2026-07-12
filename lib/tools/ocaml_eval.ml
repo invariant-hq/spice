@@ -208,21 +208,32 @@ let resolve_dir ~fs ~workspace input =
       | Ok _ -> Ok dir
       | Error error -> Error (Fs.Error.message error))
 
-let permissions ~workspace input =
+let command_execution sandbox =
+  match Spice_sandbox.evidence sandbox with
+  | Spice_sandbox.Evidence.Enforced _ ->
+      Some Permission.Access.Command.Enforced
+  | Spice_sandbox.Evidence.Declared_external ->
+      Some Permission.Access.Command.External
+  | Spice_sandbox.Evidence.Not_requested ->
+      Some Permission.Access.Command.Direct
+  | Spice_sandbox.Evidence.Refused _ -> None
+
+let permissions ~sandbox ~workspace input =
   let resolved =
     match Input.dir input with
     | None -> Ok (Workspace.root_path workspace)
     | Some dir -> Fs.resolve ~workspace dir
   in
-  match resolved with
-  | Error _ -> []
-  | Ok dir ->
+  match (resolved, command_execution sandbox) with
+  | Error _, _ | _, None -> []
+  | Ok dir, Some execution ->
+      let cwd = Permission.Access.Path_scope.workspace dir in
       [
         Permission.Request.of_accesses ~source:name
           [
             Permission.Access.path ~op:`Read dir;
-            Permission.Access.custom ~kind:`Command ~subject:(Input.code input)
-              "ocaml.eval";
+            Permission.Access.code ~cwd ~execution ~language:"ocaml"
+              (Input.code input);
           ];
       ]
 
@@ -547,7 +558,7 @@ let run ~sandbox ~fs ~workspace ~config ?watch
 
 let tool ~sandbox ~fs ~workspace ~config ?watch () =
   Tool.make ~name ~description ~input:Input.contract ~output:Output.encode
-    ~permissions:(permissions ~workspace)
+    ~permissions:(permissions ~sandbox ~workspace)
     ~run:(fun ctx input ->
       run ~sandbox ~fs ~workspace ~config ?watch
         ~cancelled:(fun () -> Tool.Context.cancelled ctx)

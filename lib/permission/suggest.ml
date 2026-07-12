@@ -96,7 +96,7 @@ let of_access access =
   | Access.Command
       (Access.Command.Argv { program; args; cwd; execution }) ->
       command_suggestion execution cwd program args
-  | Access.Command (Access.Command.Shell _) -> None
+  | Access.Command (Access.Command.Shell _ | Access.Command.Code _) -> None
   | Access.Network { host; _ } -> network_suggestion host
   | Access.Custom _ -> None
 

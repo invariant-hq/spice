@@ -524,7 +524,7 @@ let escalation_access_name = "shell.escalate"
 let escalation_access input = function
   | Escalated ->
       [
-        Permission.Access.custom ~kind:`Custom ~subject:(Input.command input)
+        Permission.Access.custom ~subject:(Input.command input)
           escalation_access_name;
       ]
   | Enforced | External | Direct | Sandbox_refused _ | Escalation_refused _ -> []

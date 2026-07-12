@@ -298,6 +298,7 @@ module Command_match = struct
     | Access.Command.Argv { program; args; _ } ->
         tokens_contain_destructive (program :: args)
     | Access.Command.Shell { text; _ } -> shell_text_is_destructive text
+    | Access.Command.Code _ -> false
 
   let list_has_prefix ~prefix values =
     let rec loop prefix values =
@@ -327,7 +328,7 @@ module Command_match = struct
         && String.equal access_program program
         && list_has_prefix ~prefix:args access_args
         && Path_match.matches cwd access_cwd
-    | Argv_prefix _, Access.Command.Shell _ -> false
+    | Argv_prefix _, (Access.Command.Shell _ | Access.Command.Code _) -> false
     | Execution execution, command ->
         Access.Command.execution command = execution
     | Destructive, command -> command_is_destructive command
@@ -375,11 +376,7 @@ module Rule = struct
         host : string;
         port : int option;
       }
-    | Custom of {
-        kind : Access.kind option;
-        name : string;
-        subject : string option;
-      }
+    | Custom of { name : string; subject : string option }
 
   type action = Allow | Review | Deny
   type t = { action : action; matcher : matcher }
@@ -396,11 +393,11 @@ module Rule = struct
     check_port fn port;
     Network_host { protocol; host; port }
 
-  let custom ?kind ?subject name =
+  let custom ?subject name =
     let fn = "Rule.custom" in
     reject_empty fn "name" name;
     reject_empty_option fn "subject" subject;
-    Custom { kind; name; subject }
+    Custom { name; subject }
 
   let allow matcher = { action = Allow; matcher }
   let review matcher = { action = Review; matcher }
@@ -446,13 +443,10 @@ module Rule = struct
                 | Some access_port -> Int.equal access_port port
                 | None -> false))
         | Access.Path _ | Access.Command _ | Access.Custom _ -> false)
-    | Custom { kind; name; subject } -> (
+    | Custom { name; subject } -> (
         match access with
-        | Access.Custom
-            { kind = access_kind; name = access_name; subject = access_subject }
-          -> (
-            Option.for_all (( = ) access_kind) kind
-            && String.equal access_name name
+        | Access.Custom { name = access_name; subject = access_subject } -> (
+            String.equal access_name name
             &&
             match subject with
             | None -> true
@@ -478,10 +472,8 @@ module Rule = struct
         ^ stable_option stable_protocol protocol
         ^ ":" ^ stable_field host ^ ":"
         ^ stable_option string_of_int port
-    | Custom { kind; name; subject } ->
-        "custom:"
-        ^ stable_option stable_kind kind
-        ^ ":" ^ stable_field name ^ ":"
+    | Custom { name; subject } ->
+        "custom:" ^ stable_field name ^ ":"
         ^ stable_option stable_field subject
 
   let stable_action = function
@@ -532,11 +524,8 @@ module Rule = struct
           (fun ppf -> function
             | None -> () | Some port -> Format.fprintf ppf ":%d" port)
           port
-    | Custom { kind; name; subject } ->
-        Format.fprintf ppf "custom(%a%S%a)"
-          (fun ppf -> function
-            | None -> () | Some kind -> Format.fprintf ppf "%a, " pp_kind kind)
-          kind name
+    | Custom { name; subject } ->
+        Format.fprintf ppf "custom(%S%a)" name
           (fun ppf -> function
             | None -> ()
             | Some subject -> Format.fprintf ppf ", subject=%S" subject)
@@ -956,14 +945,10 @@ module Rule = struct
     |> Jsont.Object.error_unknown |> Jsont.Object.finish
 
   let custom_matcher_jsont =
-    let make kind name subject =
-      decode_invalid_arg (fun () -> custom ?kind ?subject name)
+    let make name subject =
+      decode_invalid_arg (fun () -> custom ?subject name)
     in
     Jsont.Object.map ~kind:"custom permission matcher" make
-    |> Jsont.Object.opt_mem "kind" kind_jsont ~enc:(function
-      | Custom { kind; _ } -> kind
-      | Any | Kind _ | Exact _ | Path_scope _ | Command _ | Network_host _ ->
-          assert false)
     |> Jsont.Object.mem "name" Jsont.string ~enc:(function
       | Custom { name; _ } -> name
       | Any | Kind _ | Exact _ | Path_scope _ | Command _ | Network_host _ ->

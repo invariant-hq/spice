@@ -77,7 +77,7 @@ let transcript messages =
   | Error error ->
       failf "transcript construction failed: %a" Llm.Transcript.Error.pp error
 
-let extension_access name = Permission.Access.custom ~kind:`Custom name
+let extension_access name = Permission.Access.custom name
 
 let permission_request ?(id = "permission-1") ?(grantable = true) ~turn
     ~tool_call access =

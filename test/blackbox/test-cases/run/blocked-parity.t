@@ -12,7 +12,7 @@ report the waiting boundary before any model request.
 A pending permission request.
 
   $ make_session blocked-perm <<JSON
-  > {"version":1,"id":"blocked-perm","metadata":{"cwd":"$PWD","title":"Blocked permission","status":"active","created_at":1,"updated_at":1},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"Use the tool"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"declarations":[],"host_tools":[],"max_steps":100}},{"type":"response_appended","response":{"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"reasoning_summary":[],"assistant":{"parts":[{"type":"tool_call","tool_call":{"id":"call-1","name":"write_file","input":{"path":"blocked.txt","contents":"blocked"}}}]}}},{"type":"permission_requested","request":{"id":"permission-1","turn":"turn-1","tool_call":{"id":"call-1","name":"write_file","input":{"path":"blocked.txt","contents":"blocked"}},"request":{"version":2,"items":[{"access":{"type":"custom","kind":"write","name":"write_file"}}]},"asked":[{"type":"custom","kind":"write","name":"write_file"}]}}]}
+  > {"version":1,"id":"blocked-perm","metadata":{"cwd":"$PWD","title":"Blocked permission","status":"active","created_at":1,"updated_at":1},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"Use the tool"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"declarations":[],"host_tools":[],"max_steps":100}},{"type":"response_appended","response":{"model":{"provider":"openai","api":"responses","id":"gpt-5.5"},"reasoning_summary":[],"assistant":{"parts":[{"type":"tool_call","tool_call":{"id":"call-1","name":"write_file","input":{"path":"blocked.txt","contents":"blocked"}}}]}}},{"type":"permission_requested","request":{"id":"permission-1","turn":"turn-1","tool_call":{"id":"call-1","name":"write_file","input":{"path":"blocked.txt","contents":"blocked"}},"request":{"version":2,"items":[{"access":{"type":"custom","name":"write_file"}}]},"asked":[{"type":"custom","name":"write_file"}]}}]}
   > JSON
 
   $ spice session show --json blocked-perm | grep -o '"waiting":{[^}]*}' >perm.status
@@ -20,7 +20,7 @@ A pending permission request.
   exit:3
   $ grep -o '"waiting":{[^}]*}' perm.out >perm.exec
   $ cat perm.status
-  "waiting":{"kind":"permission","permission_id":"permission-1","turn":"turn-1","tool_call_id":"call-1","tool":"write_file","mode":"default","reviewed":[{"access":{"type":"custom","kind":"write","name":"write_file"}
+  "waiting":{"kind":"permission","permission_id":"permission-1","turn":"turn-1","tool_call_id":"call-1","tool":"write_file","mode":"default","reviewed":[{"access":{"type":"custom","name":"write_file"}
   $ [ "$(cat perm.status)" = "$(cat perm.exec)" ] && echo identical
   identical
 

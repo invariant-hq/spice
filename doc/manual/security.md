@@ -201,9 +201,11 @@ execution routes. Sandbox refusal produces no route, no permission prompt, and
 no child. The default and accept-edits presets review every executable route;
 users who accept read-anywhere confined execution may explicitly allow the
 enforced route with ordered durable rules. Fixed host tools do not expose their
-implementation argv as command facts. Shell escalation is a `direct` command
-fact plus a separate custom access, so an enforced command grant cannot be
-reused to approve dropping confinement.
+implementation argv as command facts. Model-authored evaluator source is itself
+a command fact, with its language, source, cwd, and route in exact permission
+identity. Shell escalation is a `direct` command fact plus a separate custom
+access, so an enforced command grant cannot be reused to approve dropping
+confinement.
 
 ### Modes
 

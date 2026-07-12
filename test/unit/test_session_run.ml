@@ -76,7 +76,7 @@ let executable_tool ?(subject = "alpha") () =
   let permissions () =
     [
       Permission.Request.of_accesses
-        [ Permission.Access.custom ~kind:`Write ~subject "review_tool" ];
+        [ Permission.Access.custom ~subject "review_tool" ];
     ]
   in
   Tool.make ~name:"review_tool" ~description:"Reviewed test tool."
@@ -86,7 +86,7 @@ let executable_tool ?(subject = "alpha") () =
 
 let repeated_access_tool () =
   let access =
-    Permission.Access.custom ~kind:`Write ~subject:"same" "review_tool"
+    Permission.Access.custom ~subject:"same" "review_tool"
   in
   let permissions () =
     [
@@ -201,7 +201,7 @@ let permission_ids_include_request_position () =
 
 let permission_ids_include_full_request () =
   let access =
-    Permission.Access.custom ~kind:`Write ~subject:"same" "review_tool"
+    Permission.Access.custom ~subject:"same" "review_tool"
   in
   let ids_after_change first_request second_request =
     let request = ref first_request in
@@ -1159,7 +1159,7 @@ let interrupt_finishes_pending_claim () =
 
 let policy_denial_uses_configured_message () =
   let deny_rule =
-    Permission.Policy.Rule.deny (Permission.Policy.Match.kind `Write)
+    Permission.Policy.Rule.deny (Permission.Policy.Match.kind `Custom)
   in
   let policy = Permission.Policy.make [ deny_rule ] in
   let seen = ref None in
@@ -1200,7 +1200,7 @@ let current_policy_is_checked_after_permission_allow () =
   let blocked = run_response blocked_config (response (call ())) in
   let request = permission_from_step blocked in
   let deny_rule =
-    Permission.Policy.Rule.deny (Permission.Policy.Match.kind `Write)
+    Permission.Policy.Rule.deny (Permission.Policy.Match.kind `Custom)
   in
   let deny_policy = Permission.Policy.make [ deny_rule ] in
   let deny_config =
@@ -1232,10 +1232,10 @@ let current_policy_is_checked_after_permission_allow () =
 
 let permission_allow_requires_same_reviewed_accesses () =
   let first_access =
-    Permission.Access.custom ~kind:`Write ~subject:"alpha" "review_tool"
+    Permission.Access.custom ~subject:"alpha" "review_tool"
   in
   let second_access =
-    Permission.Access.custom ~kind:`Write ~subject:"beta" "review_tool"
+    Permission.Access.custom ~subject:"beta" "review_tool"
   in
   let tool =
     let permissions () =
@@ -1341,7 +1341,7 @@ let unattended_denials_record_provenance () =
 let change_tool () =
   let permissions () =
     let access =
-      Permission.Access.custom ~kind:`Write ~subject:"alpha" "review_tool"
+      Permission.Access.custom ~subject:"alpha" "review_tool"
     in
     [
       Permission.Request.make

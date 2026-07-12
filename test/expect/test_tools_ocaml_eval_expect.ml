@@ -27,6 +27,10 @@ let enforced_sandbox =
 let external_sandbox =
   Spice_sandbox.seal Spice_sandbox.Spec.Declared_external
 
+let refused_sandbox =
+  Spice_sandbox.seal
+    (Spice_sandbox.Spec.Confined Spice_sandbox.Confinement.read_only)
+
 let json_obj fields =
   Json.object'
     (List.map (fun (name, value) -> Json.mem (Json.name name) value) fields)
@@ -174,11 +178,16 @@ let%expect_test "ocaml_eval evaluates code in a Dune library context" =
     Tool.Call.permissions call
     |> List.concat_map Spice_permission.Request.accesses
     |> List.exists (function
-         | Spice_permission.Access.Custom
-             { kind = `Command; name = "ocaml.eval"; subject = Some _ } ->
-             true
-         | Spice_permission.Access.Path _ | Spice_permission.Access.Command _
-         | Spice_permission.Access.Network _ | Spice_permission.Access.Custom _ ->
+         | Spice_permission.Access.Command
+             (Spice_permission.Access.Command.Code
+               { language = "ocaml"; source; _ }) ->
+             String.equal source
+               {|Printf.printf "%d\n%!" (Fixture_lib.answer + 1)|}
+         | Spice_permission.Access.Command _ ->
+             false
+         | Spice_permission.Access.Path _
+         | Spice_permission.Access.Network _
+         | Spice_permission.Access.Custom _ ->
              false)
   in
   Printf.printf "model code access: %b\n" model_code_access;
@@ -194,7 +203,7 @@ let%expect_test "ocaml_eval evaluates code in a Dune library context" =
     stdout has answer: true
     truncated: false |}]
 
-let%expect_test "eval implementation argv is not a permission fact" =
+let%expect_test "eval source carries the exact sandbox route" =
   with_project @@ fun ~root:_ ~fs ~workspace ->
   let config = Eval.Config.make () in
   let input = json_obj [ ("code", Json.string "1 + 1") ] in
@@ -205,11 +214,13 @@ let%expect_test "eval implementation argv is not a permission fact" =
   print_command_routes "unconfined" (call sandbox);
   print_command_routes "external" (call external_sandbox);
   print_command_routes "enforced" (call enforced_sandbox);
+  print_command_routes "refused" (call refused_sandbox);
   [%expect
     {|
-    unconfined:
-    external:
-    enforced: |}]
+    unconfined: direct
+    external: external
+    enforced: enforced
+    refused: |}]
 
 let%expect_test "ocaml_eval rejects unknown input fields" =
   with_project @@ fun ~root:_ ~fs ~workspace ->

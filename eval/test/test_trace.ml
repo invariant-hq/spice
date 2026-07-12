@@ -95,7 +95,7 @@ let permission_denied ?(id = "permission-1") call =
        (Llm.Tool.Result.text ~error:true call "denied"))
 
 let permission_requested ?(id = "permission-1") ~turn call =
-  let access = Permission.Access.custom ~kind:`Custom "tool.trace" in
+  let access = Permission.Access.custom "tool.trace" in
   let request = Permission.Request.of_accesses [ access ] in
   let review =
     match

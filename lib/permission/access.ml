@@ -37,7 +37,7 @@ type t =
   | Path of { op : path_op; scope : path_scope }
   | Command of command
   | Network of { protocol : network_protocol; host : string; port : int option }
-  | Custom of { kind : kind; name : string; subject : string option }
+  | Custom of { name : string; subject : string option }
 
 and command =
   | Shell of {
@@ -48,6 +48,12 @@ and command =
   | Argv of {
       program : string;
       args : string list;
+      cwd : path_scope;
+      execution : command_execution;
+    }
+  | Code of {
+      language : string;
+      source : string;
       cwd : path_scope;
       execution : command_execution;
     }
@@ -131,6 +137,12 @@ module Command = struct
         cwd : path_scope;
         execution : execution;
       }
+    | Code of {
+        language : string;
+        source : string;
+        cwd : path_scope;
+        execution : execution;
+      }
 
   let shell ~cwd ~execution text =
     reject_empty "Command.shell" "text" text;
@@ -140,8 +152,16 @@ module Command = struct
     reject_empty "Command.argv" "program" program;
     Argv { program; args; cwd; execution }
 
+  let code ~cwd ~execution ~language source =
+    reject_empty "Command.code" "language" language;
+    reject_empty "Command.code" "source" source;
+    Code { language; source; cwd; execution }
+
   let execution = function
-    | Shell { execution; _ } | Argv { execution; _ } -> execution
+    | Shell { execution; _ }
+    | Argv { execution; _ }
+    | Code { execution; _ } ->
+        execution
 
   let execution_to_string = function
     | Enforced -> "enforced"
@@ -167,6 +187,9 @@ module Command = struct
         ^ String.concat ":" (List.map stable_field args)
         ^ ":" ^ execution_to_string execution ^ ":"
         ^ stable_scope cwd
+    | Code { language; source; cwd; execution } ->
+        "code:" ^ stable_field language ^ ":" ^ stable_field source ^ ":"
+        ^ execution_to_string execution ^ ":" ^ stable_scope cwd
 
   let pp_execution ppf execution =
     Format.pp_print_string ppf (execution_to_string execution)
@@ -181,6 +204,9 @@ module Command = struct
              ~pp_sep:(fun ppf () -> Format.pp_print_string ppf " ")
              (fun ppf arg -> Format.fprintf ppf "%S" arg))
           args Path_scope.pp cwd pp_execution execution
+    | Code { language; source; cwd; execution } ->
+        Format.fprintf ppf "code(language=%S, source=%S, cwd=%a, execution=%a)"
+          language source Path_scope.pp cwd pp_execution execution
 end
 
 let command command = Command command
@@ -189,23 +215,26 @@ let shell ~cwd ~execution text = command (Command.shell ~cwd ~execution text)
 let argv ~cwd ~execution ~program args =
   command (Command.argv ~cwd ~execution ~program args)
 
+let code ~cwd ~execution ~language source =
+  command (Command.code ~cwd ~execution ~language source)
+
 let network ~protocol ?port ~host () =
   check_protocol protocol;
   reject_empty "network" "host" host;
   check_port port;
   Network { protocol; host; port }
 
-let custom ~kind ?subject name =
+let custom ?subject name =
   reject_empty "custom" "name" name;
   reject_empty_option "custom" "subject" subject;
-  Custom { kind; name; subject }
+  Custom { name; subject }
 
 let kind = function
   | Path { op = `Read; _ } -> `Read
   | Path { op = `Create | `Modify | `Delete; _ } -> `Write
   | Command _ -> `Command
   | Network _ -> `Network
-  | Custom { kind; _ } -> kind
+  | Custom _ -> `Custom
 
 let equal a b = a = b
 let compare a b = Stdlib.compare a b
@@ -259,8 +288,8 @@ let stable_text = function
   | Network { protocol; host; port } ->
       "network:" ^ stable_protocol protocol ^ ":" ^ stable_field host ^ ":"
       ^ stable_option string_of_int port
-  | Custom { kind; name; subject } ->
-      "custom:" ^ stable_kind kind ^ ":" ^ stable_field name ^ ":"
+  | Custom { name; subject } ->
+      "custom:" ^ stable_field name ^ ":"
       ^ stable_option stable_field subject
 
 let path_jsont =
@@ -370,44 +399,63 @@ let command_execution_jsont =
     [ ("enforced", Enforced); ("external", External); ("direct", Direct) ]
 
 let command_jsont =
-  let make kind text program args cwd execution =
-    match (kind, text, program, args) with
-    | "shell", Some text, None, None ->
+  let make kind text program args language source cwd execution =
+    match (kind, text, program, args, language, source) with
+    | "shell", Some text, None, None, None, None ->
         decode_invalid_arg (fun () ->
             command (Command.shell ~cwd ~execution text))
-    | "argv", None, Some program, Some args ->
+    | "argv", None, Some program, Some args, None, None ->
         decode_invalid_arg (fun () ->
             command (Command.argv ~cwd ~execution ~program args))
-    | "shell", _, _, _ ->
+    | "code", None, None, None, Some language, Some source ->
+        decode_invalid_arg (fun () ->
+            command (Command.code ~cwd ~execution ~language source))
+    | "shell", _, _, _, _, _ ->
         decode_error
-          "shell command requires text and must not carry argv fields"
-    | "argv", _, _, _ ->
+          "shell command requires text and must not carry argv or code fields"
+    | "argv", _, _, _, _, _ ->
         decode_error
-          "argv command requires program and args and must not carry text"
-    | kind, _, _, _ -> decode_error ("unknown command kind: " ^ kind)
+          "argv command requires program and args and must not carry shell or \
+           code fields"
+    | "code", _, _, _, _, _ ->
+        decode_error
+          "code command requires language and source and must not carry shell \
+           or argv fields"
+    | kind, _, _, _, _, _ -> decode_error ("unknown command kind: " ^ kind)
   in
   let kind = function
     | Command (Shell _) -> "shell"
     | Command (Argv _) -> "argv"
+    | Command (Code _) -> "code"
     | _ -> assert false
   in
   let text = function
     | Command (Shell { text; _ }) -> Some text
-    | Command (Argv _) -> None
+    | Command (Argv _ | Code _) -> None
     | _ -> assert false
   in
   let program = function
     | Command (Argv { program; _ }) -> Some program
-    | Command (Shell _) -> None
+    | Command (Shell _ | Code _) -> None
     | _ -> assert false
   in
   let args = function
     | Command (Argv { args; _ }) -> Some args
-    | Command (Shell _) -> None
+    | Command (Shell _ | Code _) -> None
+    | _ -> assert false
+  in
+  let language = function
+    | Command (Code { language; _ }) -> Some language
+    | Command (Shell _ | Argv _) -> None
+    | _ -> assert false
+  in
+  let source = function
+    | Command (Code { source; _ }) -> Some source
+    | Command (Shell _ | Argv _) -> None
     | _ -> assert false
   in
   let cwd = function
-    | Command (Shell { cwd; _ } | Argv { cwd; _ }) -> cwd
+    | Command (Shell { cwd; _ } | Argv { cwd; _ } | Code { cwd; _ }) -> cwd
     | _ -> assert false
   in
   let execution = function
@@ -419,6 +467,8 @@ let command_jsont =
   |> Jsont.Object.opt_mem "text" Jsont.string ~enc:text
   |> Jsont.Object.opt_mem "program" Jsont.string ~enc:program
   |> Jsont.Object.opt_mem "args" Jsont.(list string) ~enc:args
+  |> Jsont.Object.opt_mem "language" Jsont.string ~enc:language
+  |> Jsont.Object.opt_mem "source" Jsont.string ~enc:source
   |> Jsont.Object.mem "cwd" path_scope_jsont ~enc:cwd
   |> Jsont.Object.mem "execution" command_execution_jsont ~enc:execution
   |> Jsont.Object.error_unknown |> Jsont.Object.finish
@@ -440,13 +490,10 @@ let network_jsont =
   |> Jsont.Object.error_unknown |> Jsont.Object.finish
 
 let custom_jsont =
-  let make kind name subject =
-    decode_invalid_arg (fun () -> custom ~kind ?subject name)
+  let make name subject =
+    decode_invalid_arg (fun () -> custom ?subject name)
   in
   Jsont.Object.map ~kind:"custom access" make
-  |> Jsont.Object.mem "kind" kind_jsont ~enc:(function
-    | Custom { kind; _ } -> kind
-    | _ -> assert false)
   |> Jsont.Object.mem "name" Jsont.string ~enc:(function
     | Custom { name; _ } -> name
     | _ -> assert false)
@@ -477,13 +524,6 @@ let jsont =
   Jsont.Object.map ~kind:"permission access" Fun.id
   |> Jsont.Object.case_mem "type" Jsont.string ~enc:Fun.id ~enc_case cases
   |> Jsont.Object.error_unknown |> Jsont.Object.finish
-
-let pp_kind ppf = function
-  | `Read -> Format.pp_print_string ppf "read"
-  | `Write -> Format.pp_print_string ppf "write"
-  | `Command -> Format.pp_print_string ppf "command"
-  | `Network -> Format.pp_print_string ppf "network"
-  | `Custom -> Format.pp_print_string ppf "custom"
 
 let pp_path_op ppf = function
   | `Read -> Format.pp_print_string ppf "read"
@@ -523,5 +563,5 @@ let pp ppf = function
   | Network { protocol; host; port } ->
       Format.fprintf ppf "network(%a://%s%a)" pp_protocol protocol host pp_port
         port
-  | Custom { kind; name; subject } ->
-      Format.fprintf ppf "custom(%a, %S%a)" pp_kind kind name pp_subject subject
+  | Custom { name; subject } ->
+      Format.fprintf ppf "custom(%S%a)" name pp_subject subject

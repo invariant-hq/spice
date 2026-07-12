@@ -25,7 +25,7 @@ flow is deterministic on every platform via the seam.
   mode: default
   accesses:
   - command exec 'printf' 'esc-one'  [review: no rule or grant]
-  - custom custom shell.escalate 'printf esc-one'  [review: no rule or grant]
+  - custom shell.escalate 'printf esc-one'  [review: no rule or grant]
   allow once: spice run reply 'esc-run' --allow 'perm:$ID'
   allow session: spice run reply 'esc-run' --allow-session 'perm:$ID'
   deny: spice run reply 'esc-run' --deny 'perm:$ID'
@@ -68,7 +68,7 @@ broadens.
   mode: default
   accesses:
   - command exec 'printf' 'esc-two'  [review: no rule or grant]
-  - custom custom shell.escalate 'printf esc-two'  [review: no rule or grant]
+  - custom shell.escalate 'printf esc-two'  [review: no rule or grant]
   allow once: spice run reply 'esc-run' --allow 'perm:$ID'
   allow session: spice run reply 'esc-run' --allow-session 'perm:$ID'
   deny: spice run reply 'esc-run' --deny 'perm:$ID'

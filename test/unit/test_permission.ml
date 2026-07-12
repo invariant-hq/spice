@@ -85,6 +85,10 @@ let argv ?(cwd = default_cwd) ?(execution = Access.Command.Direct) ~program args
 
 let exec program args = argv ~program args
 
+let code ?(cwd = default_cwd) ?(execution = Access.Command.Direct) ~language
+    source =
+  Access.code ~cwd ~execution ~language source
+
 let enforced_exec program args =
   Access.argv ~cwd:default_cwd ~execution:Access.Command.Enforced ~program args
 
@@ -99,7 +103,7 @@ let argv_exact ?(cwd = default_cwd) ?(execution = Access.Command.Direct)
     (Policy.Match.Command.exact
        (Access.Command.argv ~cwd ~execution ~program args))
 
-let extension name = Access.custom ~kind:`Custom name
+let extension name = Access.custom name
 let request access = Request.of_accesses [ access ]
 
 type answer_scope = Allow_once | Allow_session | Deny
@@ -164,6 +168,10 @@ let access_constructor_validation () =
   expect_invalid_arg "exec program cannot be empty" (fun () ->
       ignore (argv ~program:"" []));
   ignore (argv ~program:"printf" [ "" ]);
+  expect_invalid_arg "code language cannot be empty" (fun () ->
+      ignore (code ~language:"" "1 + 1"));
+  expect_invalid_arg "code source cannot be empty" (fun () ->
+      ignore (code ~language:"ocaml" ""));
   expect_invalid_arg "unknown cwd cannot be empty" (fun () ->
       ignore (Access.Path_scope.unknown ""));
   (match Workspace.Root.Key.of_string "" with
@@ -176,9 +184,9 @@ let access_constructor_validation () =
   expect_invalid_arg "network port must be in range" (fun () ->
       ignore (Access.network ~protocol:`Https ~port:0 ~host:"example.com" ()));
   expect_invalid_arg "extension name cannot be empty" (fun () ->
-      ignore (Access.custom ~kind:`Custom ""));
+      ignore (Access.custom ""));
   expect_invalid_arg "extension subject cannot be empty" (fun () ->
-      ignore (Access.custom ~kind:`Custom ~subject:"" "capability"))
+      ignore (Access.custom ~subject:"" "capability"))
 
 let validation_errors_name_the_function_and_constraint () =
   expect_invalid_message "shell command error is actionable"
@@ -194,6 +202,25 @@ let shell_and_exec_have_distinct_keys () =
   check "shell is command class" (Access.kind shell = `Command);
   check "exec is command class" (Access.kind exec = `Command);
   not_equal access_value ~msg:"shell and exec do not match exactly" shell exec
+
+let code_identity_includes_source_language_cwd_and_route () =
+  let ocaml = code ~language:"ocaml" "1 + 1" in
+  let other_source = code ~language:"ocaml" "2 + 2" in
+  let other_language = code ~language:"reason" "1 + 1" in
+  let other_cwd =
+    code
+      ~cwd:(Access.Path_scope.workspace (workspace_path "lib"))
+      ~language:"ocaml" "1 + 1"
+  in
+  let other_route =
+    code ~execution:Access.Command.Enforced ~language:"ocaml" "1 + 1"
+  in
+  check "code is command class" (Access.kind ocaml = `Command);
+  List.iter
+    (fun distinct ->
+      not_equal access_value ~msg:"code identity preserves every execution fact"
+        ocaml distinct)
+    [ other_source; other_language; other_cwd; other_route ]
 
 let workspace_access_is_stable_identity () =
   let first = Access.path_scope ~op:`Modify (workspace_scope_key "lib/a.ml") in
@@ -586,16 +613,16 @@ let rule_matchers_cover_common_policy_patterns () =
     Policy.make
       [
         Policy.Rule.allow
-          (Policy.Match.custom ~kind:`Custom ~subject:"todo" "todo_write");
+          (Policy.Match.custom ~subject:"todo" "todo_write");
       ]
   in
   expect_allow "extension matcher allows matching extension facts"
     (Policy.decide extension_policy
-       (request (Access.custom ~kind:`Custom ~subject:"todo" "todo_write")));
+       (request (Access.custom ~subject:"todo" "todo_write")));
   ignore
     (expect_review "extension matcher checks subject when provided"
        (Policy.decide extension_policy
-          (request (Access.custom ~kind:`Custom ~subject:"note" "todo_write"))))
+          (request (Access.custom ~subject:"note" "todo_write"))))
 
 let grants_allow_reviewed_accesses () =
   let command = shell "make test" in
@@ -817,9 +844,10 @@ let json_roundtrips_core_values () =
       Access.argv ~cwd:default_cwd ~execution:Access.Command.Enforced
         ~program:"dune"
         [ "build" ];
+      code ~execution:Access.Command.Enforced ~language:"ocaml" "1 + 1;;";
       Access.network ~protocol:`Https ~port:443 ~host:"example.com" ();
       Access.network ~protocol:(`Other "unix") ~host:"socket" ();
-      Access.custom ~kind:`Custom ~subject:"todo" "todo_write";
+      Access.custom ~subject:"todo" "todo_write";
     ]
   in
   List.iter
@@ -959,6 +987,32 @@ let json_rejects_invalid_state () =
   in
   expect_decode_error "argv prefixes require execution and cwd"
     Policy.Rule.jsont incomplete_argv_prefix;
+  let legacy_custom_command =
+    json_object
+      [
+        ("type", Json.string "custom");
+        ("kind", Json.string "command");
+        ("name", Json.string "ocaml.eval");
+        ("subject", Json.string "1 + 1");
+      ]
+  in
+  expect_decode_error "custom accesses cannot impersonate commands"
+    Access.jsont legacy_custom_command;
+  let legacy_custom_command_matcher =
+    json_object
+      [
+        ("action", Json.string "allow");
+        ( "matcher",
+          json_object
+            [
+              ("type", Json.string "custom");
+              ("kind", Json.string "command");
+              ("name", Json.string "ocaml.eval");
+            ] );
+      ]
+  in
+  expect_decode_error "custom matchers cannot select command work"
+    Policy.Rule.jsont legacy_custom_command_matcher;
   let bad_policy_version =
     json_object [ ("version", Json.int 2); ("rules", Json.list []) ]
   in
@@ -1276,6 +1330,8 @@ let destructive_command_matcher () =
   no "a benign command with a redirect is not flagged"
     (shell "dune build 2> log.txt");
   no "a read-only shell command is not flagged" (shell "git status");
+  no "opaque language source is not classified by shell heuristics"
+    (code ~language:"ocaml" "Sys.remove \"important\"");
   no "the matcher ignores non-command accesses" (workspace_read "README.md");
   roundtrip "the destructive rule roundtrips through json" rule_value
     Policy.Rule.jsont
@@ -1430,6 +1486,8 @@ let () =
       test "validation errors name the function and constraint"
         validation_errors_name_the_function_and_constraint;
       test "shell and exec have distinct keys" shell_and_exec_have_distinct_keys;
+      test "code identity includes source language cwd and route"
+        code_identity_includes_source_language_cwd_and_route;
       test "workspace access is stable identity"
         workspace_access_is_stable_identity;
       test "workspace root key is used by live paths"

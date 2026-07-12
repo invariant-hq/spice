@@ -109,8 +109,9 @@ module Command : sig
   (** Command execution facts.
 
       [Shell] preserves ambiguous shell text. [Argv] is a structured process
-      invocation with no shell interpretation. Both are command facts; policy
-      decides how to match them. *)
+      invocation with no shell interpretation. [Code] is language source
+      evaluated as a process. All are command facts; policy decides how to
+      match them. *)
 
   type execution = Enforced | External | Direct
   (** The runtime route the command fact describes.
@@ -129,6 +130,12 @@ module Command : sig
     | Argv of {
         program : string;
         args : string list;
+        cwd : Path_scope.t;
+        execution : execution;
+      }
+    | Code of {
+        language : string;
+        source : string;
         cwd : Path_scope.t;
         execution : execution;
       }
@@ -152,6 +159,17 @@ module Command : sig
       arguments.
 
       Raises [Invalid_argument] if [program] is empty. *)
+
+  val code :
+    cwd:Path_scope.t ->
+    execution:execution ->
+    language:string ->
+    string ->
+    t
+  (** [code ~cwd ~execution ~language source] is evaluation of [source] as
+      [language] code in [cwd] through [execution].
+
+      Raises [Invalid_argument] if [language] or [source] is empty. *)
 
   val execution : t -> execution
   (** [execution command] is the command's claimed runtime route. *)
@@ -183,16 +201,16 @@ end
     alone grants no capability.
 
     Invariant: path [root_key], outside-workspace path, unknown path, command
-    text, command programs, unknown [cwd] text, network protocol names, hosts,
-    custom access names, and subjects are non-empty when present. Command
-    execution route participates in access identity. Ports are in
-    \[[1];[65535]\]. *)
+    text, command programs, code languages and sources, unknown [cwd] text,
+    network protocol names, hosts, custom access names, and subjects are
+    non-empty when present. Command execution route participates in access
+    identity. Ports are in \[[1];[65535]\]. *)
 type t = private
   | Path of { op : path_op; scope : Path_scope.t }  (** Filesystem access. *)
   | Command of Command.t  (** Command execution. *)
   | Network of { protocol : network_protocol; host : string; port : int option }
       (** Network access. *)
-  | Custom of { kind : kind; name : string; subject : string option }
+  | Custom of { name : string; subject : string option }
       (** Caller-defined access. *)
 
 (** {1:constructing Constructing access facts} *)
@@ -249,6 +267,18 @@ val argv :
 
     Raises [Invalid_argument] if [program] is empty. *)
 
+val code :
+  cwd:Path_scope.t ->
+  execution:Command.execution ->
+  language:string ->
+  string ->
+  t
+(** [code ~cwd ~execution ~language source] is command execution access for
+    evaluating [source] as [language] code. It is
+    [command (Command.code ~cwd ~execution ~language source)].
+
+    Raises [Invalid_argument] if [language] or [source] is empty. *)
+
 val network : protocol:network_protocol -> ?port:int -> host:string -> unit -> t
 (** [network ~protocol ?port ~host ()] is network access to [host].
 
@@ -259,8 +289,8 @@ val network : protocol:network_protocol -> ?port:int -> host:string -> unit -> t
     Raises [Invalid_argument] if [host] is empty, if [protocol] is [`Other ""],
     or if [port] is outside \[[1];[65535]\]. *)
 
-val custom : kind:kind -> ?subject:string -> string -> t
-(** [custom ~kind ?subject name] is a caller-defined access.
+val custom : ?subject:string -> string -> t
+(** [custom ?subject name] is a caller-defined custom access.
 
     Raises [Invalid_argument] if [name] is empty or if [subject] is empty when
     present. *)

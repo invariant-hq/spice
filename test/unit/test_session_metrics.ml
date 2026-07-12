@@ -53,7 +53,7 @@ let permission_denied ?(id = "permission-1") call =
        (Llm.Tool.Result.text ~error:true call "denied"))
 
 let permission_requested ?(id = "permission-1") ~turn call =
-  let access = Spice_permission.Access.custom ~kind:`Custom "tool.metrics" in
+  let access = Spice_permission.Access.custom "tool.metrics" in
   let request = Spice_permission.Request.of_accesses [ access ] in
   let review =
     match

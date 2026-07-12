@@ -263,7 +263,10 @@ useful for generated policy and is less portable than an argv prefix:
 ```
 
 An exact shell access instead uses `"kind": "shell"` and a required `text`
-field. Every command access requires a `cwd` scope and one of
+field. Evaluated source uses `"kind":"code"` with required `language` and
+`source` fields; source is represented as a command because evaluating it is
+arbitrary process execution, even when the implementation argv is fixed. Every
+command access requires a `cwd` scope and one of
 `execution:"enforced"`, `execution:"external"`, or `execution:"direct"`.
 Execution route and working directory are part of exact permission identity, so
 a grant for an enforced operation cannot be reused by a direct operation or in
@@ -324,18 +327,18 @@ Access objects have these forms:
 
 - path: `type`, `op`, `scope`, and either `root_key` plus `relative` for
   `scope:"workspace"`, or `path` for `scope:"outside"` or `"unknown"`;
-- command: `type`, `kind`, argv fields or shell `text`, required `execution`,
-  and optional `cwd`;
+- command: `type`, `kind`, argv fields, shell `text`, or code `language` plus
+  `source`, and required `execution` and `cwd`;
 - network: `type`, `protocol`, `host`, and optional `port`;
-- custom: `type`, `kind`, `name`, and optional `subject`.
+- custom: `type`, `name`, and optional `subject`.
 
-Custom matchers select host-defined operations by exact name, optional access
-kind, and optional exact subject:
+Custom matchers select host-defined operations by exact name and optional exact
+subject. Custom facts are always custom; read, write, command, and network
+semantics use their built-in representations:
 
 ```json
 {
   "type": "custom",
-  "kind": "custom",
   "name": "shell.escalate",
   "subject": "git status"
 }

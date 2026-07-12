@@ -279,6 +279,11 @@ let access ?root ?outside = function
       Printf.sprintf "shell cwd=%s command=%S"
         (cwd ?root ?outside access_cwd)
         text
+  | Access.Command
+      (Access.Command.Code { language; source; cwd = access_cwd; _ }) ->
+      Printf.sprintf "code cwd=%s language=%S source=%S"
+        (cwd ?root ?outside access_cwd)
+        language source
   | Access.Path { op; scope } -> (
       ignore scope;
       match op with

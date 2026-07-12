@@ -202,11 +202,14 @@ let access_text access =
       "command exec "
       ^ String.concat " " (List.map shell_arg (program :: args))
       ^ cwd_text cwd
+  | Access.Command (Access.Command.Code { language; source; cwd; _ }) ->
+      "command code " ^ shell_arg language ^ " " ^ shell_arg source
+      ^ cwd_text cwd
   | Access.Network { protocol; host; port } -> (
       "network " ^ protocol_string protocol ^ "://" ^ host
       ^ match port with None -> "" | Some port -> ":" ^ string_of_int port)
-  | Access.Custom { kind; name; subject } -> (
-      kind_string kind ^ " custom " ^ name
+  | Access.Custom { name; subject } -> (
+      "custom " ^ name
       ^
       match subject with
       | None -> ""
