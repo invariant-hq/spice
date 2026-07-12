@@ -752,6 +752,87 @@ let%expect_test "overflow paging and wheel scrolling preserve the transcript" =
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗   ? for shortcuts|}]
 
+(* Manual paging disengages sticky-bottom follow. Background turn ticks must
+   leave that deliberate reading position alone; submitting the next prompt is
+   the user-owned transition that returns to the tail, where its optimistic
+   echo and working row are visible immediately. *)
+let%expect_test "submitting after PageUp reveals the pending turn" =
+  let script =
+    [
+      Provider_script.stream_hold ~expect:[ "overflow" ] ~gate:"first"
+        ~id:"resp-submit-scroll-1" overflow_answer;
+      Provider_script.message ~expect:[ "follow up" ] ~gate:"second"
+        ~id:"resp-submit-scroll-2" "The follow-up is complete.";
+    ]
+  in
+  Tui.run ~name:"transcript-submit-scroll" ~provider:script @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "overflow the viewport";
+  Tui.enter t;
+  ignore (Tui.await_request t 1 : string);
+  Tui.settle t;
+  Tui.keys t page_up;
+  Tui.settle t;
+  Tui.advance t 0.5;
+  Tui.print t;
+  [%expect
+    {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ overflow the viewport
+07 |
+08 | ⏺ Retries begin at the base delay.
+09 |
+10 |   The delay doubles on each failure.
+11 |
+12 |   A jitter term spreads the retries apart.
+13 |
+14 |   The ceiling caps the longest wait.
+15 |
+16 |   Idempotent requests retry safely.
+17 |
+18 |   Non-idempotent ones need an idempotency key.
+19 |
+20 |
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ queue a message — sends after this turn
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}];
+  Tui.release t "first";
+  Tui.settle t;
+  Tui.keys t "follow up from here";
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 |   Idempotent requests retry safely.
+02 |
+03 |   Non-idempotent ones need an idempotency key.
+04 |
+05 |   The budget bounds the total attempts.
+06 |
+07 |   Giving up surfaces the last error.
+08 |
+09 |   Metrics record every retry attempt.
+10 |
+11 |   Backpressure slows the caller down.
+12 |
+13 |   Circuit breakers trip on sustained failure.
+14 |
+15 |   The final word is to cap the ceiling.
+16 |
+17 | ❯ follow up from here
+18 |
+19 | ⠴ Working… (0s · esc to interrupt)
+20 |
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ❯ follow up from here
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
+
 (* Ctrl+O expands the complete streamed reasoning buffer while the terminal
    event is held, including a leading line outside the normal three-line ticker. *)
 let%expect_test "ctrl+o pins the streamed reasoning ticker open" =

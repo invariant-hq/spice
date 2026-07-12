@@ -736,8 +736,21 @@ let apply_health ~now ~health ~file chat =
       | Build_clean | Build_unknown ->
           { chat with build = Build_clean; broken_since = None })
 
+(* Issue a one-shot transcript reveal with a fresh identity. The scrollport
+   remembers applied keys so a repeated coordinate still needs a new serial to
+   take effect after a manual scroll. *)
+let reveal_transcript ~at chat =
+  let serial =
+    match chat.reveal with Some (serial, _) -> serial + 1 | None -> 0
+  in
+  { chat with reveal = Some (serial, at) }
+
 (* Start a turn from a submitted prompt: the drop from the prelude, or a
-   mid-chat submit (the host queues one made while a turn is in flight). *)
+   mid-chat submit (the host queues one made while a turn is in flight). A
+   mid-chat user submission deliberately returns to the tail: [max_int] is a
+   content coordinate that the scrollport clamps to its current bottom, which
+   also re-engages sticky-bottom follow. Background events do not take this
+   path, so they preserve a manually selected reading position. *)
 let start_turn value t =
   match t.phase with
   | Prelude ->
@@ -769,8 +782,9 @@ let start_turn value t =
          never handed to the host early, so the queue remains the user's.
          Otherwise the prompt echoes optimistically, exactly as the drop
          does. *)
+      let chat = reveal_transcript ~at:max_int chat in
       if Turn.in_flight chat.turn || t.shell <> None then
-        ({ t with queued = t.queued @ [ value ] }, [])
+        ({ t with phase = Chat chat; queued = t.queued @ [ value ] }, [])
       else
         let turn = Turn.request ~now:chat.now ~prompt:value chat.turn in
         ({ t with phase = Chat { chat with turn } }, [ Start_turn value ])
@@ -1585,10 +1599,7 @@ let scroll_transcript ~delta t =
   match t.phase with
   | Chat chat ->
       let target = max 0 (chat.scroll + delta) in
-      let serial =
-        match chat.reveal with Some (serial, _) -> serial + 1 | None -> 0
-      in
-      { t with phase = Chat { chat with reveal = Some (serial, target) } }
+      { t with phase = Chat (reveal_transcript ~at:target chat) }
   | Prelude -> t
 
 (* Upsert a run's latest ledger record by child id: the registry re-emits the
