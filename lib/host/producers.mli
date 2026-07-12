@@ -24,14 +24,15 @@ val start :
   stdenv:Eio_unix.Stdenv.base ->
   Host.t ->
   inbox:Notice_queue.t ->
+  on_fswatch:(Spice_fswatch.Event.t list -> unit) ->
   workspace:Spice_workspace.t ->
   sandbox:Sandbox.Effective.t ->
   cwd:Eio.Fs.dir_ty Eio.Path.t ->
   root:string ->
   unit ->
   t
-(** [start ~sw ~stdenv host ~inbox ~workspace ~sandbox ~cwd ~root ()] starts the enabled
-    notice producers for [host] over [inbox].
+(** [start ~sw ~stdenv host ~inbox ~on_fswatch ~workspace ~sandbox ~cwd ~root ()]
+    starts the enabled notice producers for [host] over [inbox].
 
     Each producer is gated on its [Config.Notices] flag. The filesystem watcher
     and CR-comment observer watch [root] (the workspace root path); the Dune
@@ -42,7 +43,12 @@ val start :
     the mutating build watcher. Unknown and untrusted workspaces start no
     project producer. Repository-executing producers begin disabled and run
     only while {!set_build_enabled} owns them for a Build workflow. Startup
-    failures degrade to warning notices rather than failing the run. *)
+    failures degrade to warning notices rather than failing the run.
+
+    [on_fswatch] receives each raw non-empty filesystem batch when filesystem
+    notices are enabled. The run uses it to attribute mutation origins before
+    calling {!Watchers.Fswatch.publish}; CR comments and project-shape drift
+    continue to observe the unfiltered batch. *)
 
 val dune : t -> Spice_ocaml_dune.Rpc.Instance.t
 (** [dune t] is the shared workspace Dune RPC instance [t] owns. Pass it to

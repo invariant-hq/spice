@@ -55,7 +55,7 @@ let prepare sandbox ~cwd ~argv =
             |> Array.of_list ))
       |> Result.map_error Spice_sandbox.Error.message
 
-let start ~sw ~stdenv host ~inbox ~workspace ~sandbox ~cwd ~root () =
+let start ~sw ~stdenv host ~inbox ~on_fswatch ~workspace ~sandbox ~cwd ~root () =
   let config = Host.config host in
   let notices = Config.notices config in
   let trusted = Trust.is_trusted (Config.workspace_trust config) in
@@ -219,6 +219,7 @@ let start ~sw ~stdenv host ~inbox ~workspace ~sandbox ~cwd ~root () =
           Spice_ocaml_dune.Project_source.set_drifted project_source true
       in
       let on_events =
+        let publish events = if fswatch_notice then on_fswatch events in
         if cr_notice then begin
           let cr_comments =
             Watchers.Cr_comments.create ~fs:(Eio.Stdenv.fs stdenv) ~root ~inbox
@@ -228,11 +229,16 @@ let start ~sw ~stdenv host ~inbox ~workspace ~sandbox ~cwd ~root () =
           Some
             (fun events ->
               observe events;
-              flag_drift events)
+              flag_drift events;
+              publish events)
         end
-        else Some flag_drift
+        else
+          Some
+            (fun events ->
+              flag_drift events;
+              publish events)
       in
-      Watchers.Fswatch.start ?on_events ~notice:fswatch_notice ~sw
+      Watchers.Fswatch.start ?on_events ~notice:false ~sw
         ~clock:(Eio.Stdenv.clock stdenv) ~inbox ~root ()
     end
     else ignore

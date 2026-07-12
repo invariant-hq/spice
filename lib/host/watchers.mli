@@ -20,6 +20,13 @@ module Fswatch : sig
       is [".git"], ["_build"], ["_opam"], or [".spice"]. The workspace root
       itself is not ignored. *)
 
+  val publish :
+    Notice_queue.t -> root:string -> Spice_fswatch.Event.t list -> unit
+  (** [publish inbox ~root events] enqueues the ordinary filesystem-change
+      notice for a non-empty raw event batch. This host-side formatter is
+      separate from {!start} so run composition may delay or filter publication
+      without teaching the generic filesystem watcher about mutation origins. *)
+
   val start :
     ?notice:bool ->
     ?on_events:(Spice_fswatch.Event.t list -> unit) ->

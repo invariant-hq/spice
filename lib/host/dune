@@ -2,6 +2,7 @@
  (name spice_host)
  (private_modules
   compaction_run
+  mutation_attribution
   producers
   session_loop
   token_heuristic

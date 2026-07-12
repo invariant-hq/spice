@@ -165,10 +165,40 @@ let mutations_recorder ~stdenv ~store ~sandbox ~trusted ~workspace_root =
         Mutations.Backend.git_tree ~fs ~run:run_git ~data_root:store_root
           ~workspace_root () )
   in
-  Mutations.recorder
-    ~log:(Mutations.Log.make ~fs ~root:store_root)
-    ?checkpoint
-    ~workspace_root ()
+  let shell_changes () =
+    match checkpoint with
+    | None -> fun () -> []
+    | Some backend -> (
+        match backend.Mutations.Backend.capture () with
+        | Error message ->
+            Log.warn (fun m ->
+                m "shell attribution start checkpoint failed: %s" message);
+            fun () -> []
+        | Ok before -> (
+            fun () ->
+              match backend.Mutations.Backend.capture () with
+              | Error message ->
+                  Log.warn (fun m ->
+                      m "shell attribution end checkpoint failed: %s" message);
+                  []
+              | Ok after -> (
+                  match
+                    backend.Mutations.Backend.paths
+                      ~from_:before.Mutations.Backend.reference
+                      ~to_:after.Mutations.Backend.reference
+                  with
+                  | Ok paths -> List.map fst paths
+                  | Error message ->
+                      Log.warn (fun m ->
+                          m "shell attribution checkpoint diff failed: %s"
+                            message);
+                      [])))
+  in
+  ( Mutations.recorder
+      ~log:(Mutations.Log.make ~fs ~root:store_root)
+      ?checkpoint
+      ~workspace_root (),
+    shell_changes )
 
 (* Planning *)
 
@@ -240,9 +270,15 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
   let cwd_eio = Context.eio_cwd ~stdenv ?override:cwd_override context in
   let notices = Notice_queue.create () in
   let workspace_root = workspace_root_string workspace in
+  let mutation_attribution =
+    Mutation_attribution.create
+      ~publish:(Watchers.Fswatch.publish notices ~root:workspace_root)
+      ()
+  in
   let producers =
-    Producers.start ~sw ~stdenv host ~inbox:notices ~workspace ~cwd:cwd_eio
-      ~sandbox ~root:workspace_root ()
+    Producers.start ~sw ~stdenv host ~inbox:notices
+      ~on_fswatch:(Mutation_attribution.observe mutation_attribution)
+      ~workspace ~cwd:cwd_eio ~sandbox ~root:workspace_root ()
   in
   let denial_message =
     Permission.Run.denial_message ~source:Config.Source.kind_string permission
@@ -262,7 +298,7 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
   in
   let fs = Eio.Stdenv.fs stdenv in
   let root = Spice_session_store.root store |> Spice_path.Abs.to_string in
-  let mutations =
+  let mutations, shell_changes =
     mutations_recorder ~stdenv ~store
       ~sandbox:(Sandbox.Effective.sandbox sandbox)
       ~trusted:(Trust.is_trusted (Config.workspace_trust config))
@@ -439,6 +475,7 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
          ~before_request:(Producers.before_request producers)
          notices
     |> Mutations.hook mutations
+    |> Mutation_attribution.hook ~shell_changes mutation_attribution
     (* Each saved step re-evaluates the workspace-tooling latch, so a turn
        that scaffolds a dune project (any tool — a shell [dune init] included,
        its result is a saved step too) engages describe/Merlin/watch for its
