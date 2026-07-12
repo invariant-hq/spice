@@ -14,8 +14,7 @@
 - composer cursor not blinking (possibly bug fix to make in mosaic/matrix, runtime fix in matrix didn't fix it)
 - on resize, inserts a massive blank space that is several screen high, sometimes, need a repro
 - why are the dialogs taking all the height?
-- tab to switch agents (build/plan) (?) we have shift+tab to switch permission mode
-  - this is a UX question, what's the right UX here?
+- consider tab to switch agents (build/plan)
 - implement text selection (see for claude code semantics. or maybe just say Shift select is enough)
   - claude code text selection is different than opencode, and feels more like the native terminal. See how they do that.
 

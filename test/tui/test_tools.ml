@@ -9,10 +9,10 @@ open Tui_harness
    full-frame goldens. A turn runs a real tool in the temp project: the fake
    provider returns a [function_call] item the host executes for real, then a
    follow-up completion the host requests with the tool result folded in
-   (matched on [function_call_output]). Two harness facts shape the fixtures:
-   the gpt-5.5 pin selects the apply_patch editor family (so edit_file/write_file
-   need a [tools.editor] override to exist), and writes/shell prompt for
-   permission under the default posture (reads auto-allow). Where the old pty
+   (matched on [function_call_output]). The gpt-5.5 pin selects the apply_patch
+   editor family, so edit_file/write_file need a [tools.editor] override to
+   exist. Native workspace writes are product allowances; direct shell remains
+   reviewable. Where the old pty
    suite retreated to substring facts against noisy diff gutters and elapsed
    clocks, the virtual clock makes the whole frame stable.
 
@@ -25,13 +25,6 @@ open Tui_harness
 let configure_edits project =
   Project.write project ".spice/config.json"
     {|{"tools":{"editor":"string-replace"}}|}
-
-(* Auto-allow the write so it runs for real: a project config cannot escalate
-   permission (self-grant protection), but SPICE_PERMISSION_MODE — the one
-   escalation-trusted channel — can. Only the tests whose write must run
-   unprompted set it. Shell prompts under every posture, so the permission test
-   below needs nothing: it runs under the default one. *)
-let edit_env = [ ("SPICE_PERMISSION_MODE", "accept-edits") ]
 
 (* The follow-up completion: the model's request now carries the tool result, so
    it matches on [function_call_output] and settles the answer. It is held on a
@@ -71,7 +64,7 @@ let%expect_test "an edit renders a real inline diff" =
       final ~id:"resp-update-final" "Bumped y to three.";
     ]
   in
-  Tui.run ~name:"tools-update" ~env:edit_env ~provider:script
+  Tui.run ~name:"tools-update" ~provider:script
     ~seed:(fun project ->
       configure_edits project;
       Project.write project "notes.ml" "let x = 1\nlet y = 2\n")
@@ -83,20 +76,20 @@ let%expect_test "an edit renders a real inline diff" =
     {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
-04 |        permission: auto edits
-05 |        sandbox: danger-full-access (config)
-06 |
-07 | ❯ bump the value
-08 |
-09 | ⏺ Update(notes.ml)
-10 |   ⎿  Added 1 line, removed 1 line
-11 |      1   let x = 1
-12 |      2 - let y = 2
-13 |      2 + let y = 3
-14 |
-15 | ⏺ Bumped y to three.
-16 |
-17 | ⊙ workspace changed · 1 files · +1 −1 · /review
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ bump the value
+07 |
+08 | ⏺ Update(notes.ml)
+09 |   ⎿  Added 1 line, removed 1 line
+10 |      1   let x = 1
+11 |      2 - let y = 2
+12 |      2 + let y = 3
+13 |
+14 | ⏺ Bumped y to three.
+15 |
+16 | ⊙ workspace changed · 1 files · +1 −1 · /review
+17 |
 18 |
 19 |
 20 |
@@ -120,7 +113,7 @@ let%expect_test "a write shows a capped content preview" =
       final ~id:"resp-create-final" "Wrote the scaffold.";
     ]
   in
-  Tui.run ~name:"tools-create" ~env:edit_env ~provider:script
+  Tui.run ~name:"tools-create" ~provider:script
     ~seed:configure_edits
   @@ fun t ->
   Tui.settle t;
@@ -130,22 +123,22 @@ let%expect_test "a write shows a capped content preview" =
     {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
-04 |        permission: auto edits
-05 |        sandbox: danger-full-access (config)
-06 |
-07 | ❯ scaffold the file
-08 |
-09 | ⏺ Create(fresh.txt)
-10 |   ⎿  Wrote 6 lines
-11 |       line1
-12 |       line2
-13 |       line3
-14 |       line4
-15 |       … +2 lines
-16 |
-17 | ⏺ Wrote the scaffold.
-18 |
-19 | ⊙ workspace changed · 1 files · +6 −0 · /review
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ scaffold the file
+07 |
+08 | ⏺ Create(fresh.txt)
+09 |   ⎿  Wrote 6 lines
+10 |       line1
+11 |       line2
+12 |       line3
+13 |       line4
+14 |       … +2 lines
+15 |
+16 | ⏺ Wrote the scaffold.
+17 |
+18 | ⊙ workspace changed · 1 files · +6 −0 · /review
+19 |
 20 |
 21 | ────────────────────────────────────────────────────────────────────────────────
 22 | ❯ message spice
@@ -212,7 +205,7 @@ let%expect_test "a failed edit renders no diff" =
       final ~id:"resp-failed-final" "The edit could not apply.";
     ]
   in
-  Tui.run ~name:"tools-failed" ~env:edit_env ~provider:script
+  Tui.run ~name:"tools-failed" ~provider:script
     ~seed:(fun project ->
       configure_edits project;
       Project.write project "src.ml" "alpha\nbeta\n")
@@ -224,15 +217,15 @@ let%expect_test "a failed edit renders no diff" =
     {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
-04 |        permission: auto edits
-05 |        sandbox: danger-full-access (config)
-06 |
-07 | ❯ rename the symbol
-08 |
-09 | ⏺ Update(src.ml)
-10 |   ⎿  src.ml: old_string was not found
-11 |
-12 | ⏺ The edit could not apply.
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ rename the symbol
+07 |
+08 | ⏺ Update(src.ml)
+09 |   ⎿  src.ml: old_string was not found
+10 |
+11 | ⏺ The edit could not apply.
+12 |
 13 |
 14 |
 15 |

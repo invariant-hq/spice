@@ -22,7 +22,7 @@ subcommand name can be passed after `--` (`spice run -- resume`).
 | `--model provider/model` | Model selector for this run. |
 | `--reasoning EFFORT` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. |
 | `--mode MODE` | Workflow mode: `build`, `plan`, or `review`. |
-| `--permission MODE` | Permission preset override (`default`, `accept-edits`, `plan`, `bypass`). |
+| `--permission MODE` | Review behavior for this run: `default` asks when policy requires review; `bypass` allows reviews but never denials. |
 | `--permission-unattended POLICY` | `block` parks the session and exits 3; `deny` records a model-visible denial and continues. |
 | `--sandbox MODE` | `read-only`, `workspace-write` (default), `danger-full-access`, or `external-sandbox`. Restricted modes fail closed when unenforceable. |
 | `--require-sandbox` | Fail before credentials and session creation unless the sandbox is enforceable. |
@@ -64,15 +64,17 @@ spice trust /path/to/project
 spice run --cwd /path/to/project "PROMPT"
 ```
 
-`--permission-mode bypass` and `--sandbox danger-full-access` do not activate a
+`--permission bypass` and `--sandbox danger-full-access` do not activate a
 repository, and there is no per-run trust shortcut. `spice untrust` records a
 persistent restricted choice rather than returning the repository to the
 interactive unknown state.
 
-In an activated repository, a model-authored shell command still follows the
-permission policy even when `workspace-write` will confine it. Activation makes
-the execution surface available; it does not itself approve a command or widen
-the sandbox.
+In an activated repository, ordinary commands run without review only when
+their host-produced identity proves project-scoped reads and restricted
+networking, or when the user selected an external boundary. Read-all, direct,
+network-enabled, and high-impact commands still follow the review policy.
+Activation makes the execution surface available; it does not widen the
+sandbox.
 
 ## Exit codes
 

@@ -134,18 +134,16 @@ never of the runs before it in the same executable.**
 Time is not the only thing that leaks between runs. `Project.apply` pins names
 with `Unix.putenv` and never restores them, so a name one run sets is still set
 for the next. That is harmless for the names *every* run pins, and a
-determinism bug for the conditional ones: `OPENAI_API_KEY` is added only for a
-run with a provider script, and `SPICE_PERMISSION_MODE` only where a test asks
-for it.
+determinism bug for conditional ones such as `OPENAI_API_KEY`, which is added
+only for a run with a provider script.
 
 The failure is quiet, and it does not look like an environment bug. A
 provider-less run that inherits a credential sees a connected account and
 renders the *logged-in* stage — no account line, no login nudge, and the whole
 stage one row lower, because a shorter workspace block re-centers. That frame
 reads exactly like a layout bug, and it was investigated as one. The same leak
-had rewritten goldens across the suite: auth frames asserting `env
-OPENAI_API_KEY still active` in tests that set no key, and tool frames showing
-`permission: auto edits` under the default posture.
+had rewritten goldens across the suite: auth frames asserted `env
+OPENAI_API_KEY still active` in tests that set no key.
 
 `Project` therefore records every name `apply` pins, and `env_snapshot` and
 `env_array` subtract the pinned names this run does not override. This needs no

@@ -35,7 +35,7 @@ dune exec spice-eval -- compare <baseline-rows> _evals/results/<dir>
 ```
 
 `run` drives the locally built spice binary (`_build/default/bin/main.exe`)
-through `spice run --json --permission-mode bypass` and reads the metrics
+through `spice run --json --permission bypass` and reads the metrics
 member of the final JSONL event. Auth and model configuration come from your
 normal spice environment.
 

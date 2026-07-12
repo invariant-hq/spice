@@ -250,8 +250,8 @@ let list_command =
   CCmd.v
     (CCmd.info "list" ~exits
        ~doc:
-         "List effective durable permission rules in evaluation order, then \
-          the active preset's rules.")
+         "List durable permission rules in evaluation order followed by the \
+          fixed product rules.")
     (exit_term CTerm.(const list $ json_flag $ cwd))
 
 let remove_command =
@@ -271,7 +271,7 @@ let group =
            `S CManpage.s_description;
            `P
              "Durable rules are hand-authored in user or extra config files; \
-              this group lists them in evaluation order alongside the active \
-              preset's rules, and prunes writable rules by id.";
+              this group lists them in evaluation order alongside fixed \
+              product rules, and prunes writable rules by id.";
          ])
     [ list_command; remove_command ]

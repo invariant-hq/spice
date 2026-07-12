@@ -187,11 +187,9 @@ spice permission remove RULE_ID
 ```
 
 Rule ids are derived from rule content, not list position. `permission list`
-shows durable rules followed by the selected preset. Sandbox-backed runtime
-rules are derived while a run is planned and are instead visible through the
-run's permission provenance. `permission remove` edits writable user config;
-rules from an explicitly supplied extra config must be removed from that file
-directly.
+shows durable rules followed by fixed product rules. `permission remove` edits
+writable user config; rules from an explicitly supplied extra config must be
+removed from that file directly.
 
 ## Command sandbox
 
@@ -209,15 +207,15 @@ policy, and direct process runners fork into that same directory. An invalid,
 missing, or out-of-scope cwd refuses before a child starts.
 
 Shell command facts distinguish Spice-enforced, externally confined, and direct
-execution routes. Sandbox refusal produces no route, no permission prompt, and
-no child. The default and accept-edits presets review every executable route;
-users who accept read-anywhere confined execution may explicitly allow the
-enforced route with ordered durable rules. Fixed host tools do not expose their
-implementation argv as command facts. Model-authored evaluator source is itself
-a command fact, with its language, source, cwd, and route in exact permission
-identity. Shell escalation is a `direct` command fact plus a separate custom
-access, so an enforced command grant cannot be reused to approve dropping
-confinement.
+execution routes. Enforced identity includes its exact read, write, and network
+posture. Sandbox refusal produces no route, no permission prompt, and no child.
+Project-read, restricted-network execution and explicitly selected external
+boundaries receive product credit; read-all, network-enabled, and direct routes
+remain reviewable. Fixed host tools do not expose their implementation argv as
+command facts. Model-authored evaluator source is itself a command fact, with
+its language, source, cwd, and confinement in exact permission identity. Shell
+escalation is a `direct` command fact plus a separate custom access, so an
+enforced command grant cannot approve dropping confinement.
 
 ### Modes
 
@@ -464,7 +462,7 @@ credentials or creating a session.
 protected entries, network state, environment-filter counts, toolchain
 resolution, and config origin. Both commands support `--json`.
 
-At run start, text and JSONL output record the effective permission preset and
+At run start, text and JSONL output record the effective review behavior and
 sandbox posture. Each shell result records its actual enforcement evidence.
 Permission requests and replies are durable session events, including whether a
 denial came from a reviewer or unattended policy. Inspect them with:

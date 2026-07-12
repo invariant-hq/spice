@@ -1,5 +1,6 @@
-Under an enforcing workspace-write sandbox, the default permission behavior
-runs native workspace edits without review. It also runs ordinary commands
+Execution credit under an enforcing workspace-write sandbox lets the default
+permission behavior run native workspace edits without review. It also runs
+ordinary commands
 without review when the sealed boundary restricts reads to the project and
 network access. Read-all commands remain reviewable.
 

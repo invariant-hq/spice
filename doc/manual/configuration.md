@@ -70,7 +70,6 @@ Keys supported by `get`, `set`, and `unset`:
 | `tui.thinking` | Whether the TUI shows thinking summaries. |
 | `providers.ID.base_url` | API root override for provider `ID`. |
 | `run.max_steps` | Maximum model/tool cycles per run. |
-| `permission.mode` | Durable permission preset: `default`, `accept-edits`, or `plan`. `bypass` is available only through the per-run `--permission-mode` flag. |
 | `permission.unattended` | Headless review policy: `block` (default) or `deny`. |
 | `sandbox.mode` | Command sandbox: `read-only`, `workspace-write`, `danger-full-access`, or `external-sandbox`. |
 | `sandbox.require` | Enforcement gate: `enforced` (default), `enforced-or-external`, or `off`. |

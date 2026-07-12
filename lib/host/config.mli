@@ -590,8 +590,7 @@ val load :
     decode error fails the load before project input can activate.
 
     The recognized environment settings are [SPICE_MODEL], [SPICE_SMALL_MODEL],
-    [SPICE_REASONING], [SPICE_MAX_STEPS], [SPICE_PERMISSION_MODE] (which rejects
-    [bypass]), [SPICE_PERMISSION_UNATTENDED], [SPICE_SANDBOX_MODE],
+    [SPICE_REASONING], [SPICE_MAX_STEPS], [SPICE_PERMISSION_UNATTENDED], [SPICE_SANDBOX_MODE],
     [SPICE_SANDBOX_REQUIRE], [SPICE_SHELL], [SPICE_OPENAI_BASE_URL],
     [SPICE_ANTHROPIC_BASE_URL], [SPICE_OLLAMA_BASE_URL], [SPICE_CONFIG], and
     config-home variables used to find user config and the credential store.

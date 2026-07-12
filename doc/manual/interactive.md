@@ -123,9 +123,10 @@ composer with a decision surface. The decision is a session fact: the turn
 continues after the answer, and a saved blocked session can be resumed without
 losing the pending request.
 
-Permission dialogs distinguish a one-time answer from an exact session grant.
-The footer shows the current approval posture; `shift+tab` cycles the available
-postures. Permission is separate from command confinement: see
+Permission dialogs distinguish a one-time answer from an exact conversation
+grant. Review behavior is selected explicitly when the run starts; workflow
+mode independently limits writes and commands. Permission is separate from
+command confinement: see
 [Security](security.md) for the effective policy and sandbox behavior, and
 [Permission rules](permission-rules.md) for durable matcher configuration.
 

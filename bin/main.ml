@@ -62,10 +62,6 @@ let command =
         ~doc:"Auxiliary small-model selector override.";
       Cmd.Env.info "SPICE_REASONING" ~doc:"Reasoning effort override.";
       Cmd.Env.info "SPICE_MAX_STEPS" ~doc:"Maximum model/tool steps override.";
-      Cmd.Env.info "SPICE_PERMISSION_MODE"
-        ~doc:
-          "Permission preset override. $(b,bypass) is rejected from the \
-           environment.";
       Cmd.Env.info "SPICE_PERMISSION_UNATTENDED"
         ~doc:"Unattended permission policy override: $(b,block) or $(b,deny).";
       Cmd.Env.info "SPICE_SANDBOX_MODE" ~doc:"Sandbox mode override.";

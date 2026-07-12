@@ -31,11 +31,12 @@ loaded.
   spice: --max-steps must be positive, got 0
   [2]
 
-The permission-mode alias is accepted before runtime assembly.
+Permission behavior accepts only the two per-run review choices.
 
-  $ SPICE_MODEL=openai/gpt-5.5 spice run --permission plan --max-steps 0 hello
-  spice: --max-steps must be positive, got 0
-  [2]
+  $ spice run --permission plan hello
+  Usage: spice run [--help] [COMMAND] …
+  spice: option '--permission': unknown permission review behavior: plan
+  [124]
 
 Misspelled workflow modes get a spelling hint from the declared mode
 spellings, before provider credentials are loaded.
@@ -50,7 +51,7 @@ Misspelled model references get spelling hints from the provider catalog,
 before provider credentials are loaded.
 
   $ SPICE_MODEL=openai/gpt-55 spice run hello
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -61,7 +62,7 @@ before provider credentials are loaded.
   [1]
 
   $ spice run --model openai/gpt-55 hello
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -71,7 +72,7 @@ before provider credentials are loaded.
   [2]
 
   $ spice run --model nope/gpt-5.5 hello
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -82,7 +83,7 @@ before provider credentials are loaded.
 Bare model ids on --model recover in one round trip.
 
   $ spice run --model gpt-5.5 hello
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -95,7 +96,7 @@ Coding runs require tool calling. Capability gates fail before session
 creation.
 
   $ spice run --model openai/gpt-image-1.5 --id gated hello
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -110,7 +111,7 @@ creation.
 Unavailable models are rejected for runs with their declared reason.
 
   $ spice run --model openai/gpt-5-chat-latest hello
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -123,7 +124,7 @@ The same gate failure caused by configured state is a runtime error, not a
 usage error.
 
   $ SPICE_MODEL=openai/gpt-image-1.5 spice run hello
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -138,7 +139,7 @@ request always comes from the --reasoning flag, so the failure is a usage
 error even when the model itself came from configuration.
 
   $ spice run --model anthropic/claude-haiku-4-5 --reasoning low hello
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -148,7 +149,7 @@ error even when the model itself came from configuration.
   [2]
 
   $ SPICE_MODEL=anthropic/claude-haiku-4-5 spice run --reasoning low hello
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -161,7 +162,7 @@ A supported effort on a reasoning-effort model passes the gate; the run then
 proceeds to credential resolution as usual.
 
   $ spice run --model anthropic/claude-sonnet-4-6 --reasoning high hello
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -182,7 +183,7 @@ credential kind.
   $ mkdir -p "$XDG_CONFIG_HOME/spice"
   $ printf '{"version":1,"credentials":{"google":{"default":{"kind":"bearer","token":"secret-token"}}}}' > "$XDG_CONFIG_HOME/spice/auth.json"
   $ SPICE_MODEL=google/gemini-3-flash-preview spice run hello
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -195,7 +196,7 @@ A prompt that collides with a verb name is passed after the positional
 separator.
 
   $ SPICE_MODEL=openai/gpt-5.5 spice run -- resume
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -207,7 +208,7 @@ separator.
 Without credentials, run fails before creating the requested session document.
 
   $ SPICE_MODEL=openai/gpt-5.5 spice run --id demo hello
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -234,7 +235,7 @@ would fail differently.
   $ spice session archive archived-run
   archived-run
   $ OPENAI_API_KEY=test-key SPICE_OPENAI_BASE_URL=http://127.0.0.1:9/v1 spice run resume archived-run --cwd "$PWD" hello
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -248,7 +249,7 @@ would fail differently.
   $ spice session delete --yes deleted-run
   deleted-run
   $ OPENAI_API_KEY=test-key SPICE_OPENAI_BASE_URL=http://127.0.0.1:9/v1 spice run resume deleted-run --cwd "$PWD" hello
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -320,7 +321,7 @@ credentials exist.
 
   $ make_permission_session allow-once
   $ SPICE_MODEL=openai/gpt-5.5 spice run reply allow-once --allow permission-1
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -333,7 +334,7 @@ credentials exist.
 
   $ make_permission_session allow-exact-for-conversation
   $ SPICE_MODEL=openai/gpt-5.5 spice run reply allow-exact-for-conversation --allow-conversation permission-1
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -346,7 +347,7 @@ credentials exist.
 
   $ make_permission_session deny
   $ SPICE_MODEL=openai/gpt-5.5 spice run reply deny --deny permission-1
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -359,7 +360,7 @@ credentials exist.
 
   $ make_permission_session deny-message
   $ SPICE_MODEL=openai/gpt-5.5 spice run reply deny-message --deny permission-1 --message "not now"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -375,7 +376,7 @@ without recording anything or calling the provider.
 
   $ make_permission_session unknown-permission
   $ OPENAI_API_KEY=test-key SPICE_OPENAI_BASE_URL=http://127.0.0.1:9/v1 spice run reply unknown-permission --cwd "$PWD" --allow permission-9
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -400,7 +401,7 @@ and an assembled recovery naming no pending tool claim fails with a structured
 error without recording anything or calling the provider.
 
   $ SPICE_MODEL=openai/gpt-5.5 spice run reply inactive --tool-interrupted execution-1
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -409,7 +410,7 @@ error without recording anything or calling the provider.
   Hint: run `spice auth login openai` to add a credential
   [1]
   $ OPENAI_API_KEY=test-key SPICE_OPENAI_BASE_URL=http://127.0.0.1:9/v1 spice run reply inactive --cwd "$PWD" --tool-interrupted execution-1
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -424,7 +425,7 @@ Inactive resume with a prompt still assembles the runtime before mutating the
 session.
 
   $ SPICE_MODEL=openai/gpt-5.5 spice run resume inactive hello
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled

@@ -8,7 +8,7 @@
   (= %{system} macosx)))
 
 (cram
- (applies_to sandbox-backed-default)
+ (applies_to execution-credit)
  (enabled_if
   (= %{system} macosx)))
 

@@ -152,13 +152,13 @@ These are three different controls:
   instructions, skills, notices, and built-in tooling may activate. It grants
   no tool permission and does not weaken sandbox confinement.
 
-An enforcing workspace-write sandbox may be credited into the permission
-posture for native creates, modifications, and deletions because those
-operations use the same bounded workspace capability. A non-destructive command
-receives the same credit only when its permission fact proves that its executor
-uses the sealed sandbox. Direct routes, destructive commands, escalation,
-danger-full-access, and declared external boundaries receive no such automatic
-allowance.
+Native workspace operations are fixed product allowances because their typed
+implementations enforce the workspace boundary. Ordinary command execution is
+credited only when its permission fact proves project reads and restricted
+networking through the sealed sandbox, or records an explicitly selected
+external boundary. Read-all, network-enabled, direct, and escalated routes do
+not receive that credit. A narrow high-impact review rule precedes command
+credit as an accident interlock.
 
 Trust resolves once while configuration loads. Every ambient consumer reads
 that immutable value, so an unknown or explicitly untrusted workspace can

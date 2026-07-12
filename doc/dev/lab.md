@@ -21,7 +21,7 @@ instrument is frozen.
 
 ## The measurement pipeline
 
-One eval run drives `spice run --json --permission-mode bypass --sandbox
+One eval run drives `spice run --json --permission bypass --sandbox
 danger-full-access` against a materialized workspace and writes a per-run
 artifact directory `<task>-<n>/` (under `_evals/results/<timestamp>/`, or the
 `--output` directory):
