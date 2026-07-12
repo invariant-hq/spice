@@ -249,7 +249,7 @@ let%expect_test "an oversized watcher snapshot warns and run close stays bounded
         List.hd notices)
   in
   Printf.printf "watcher limit visible: %b\n"
-    (String.equal (Protocol.Notice.title warning) "Filesystem watcher stopped"
+    (String.equal (Protocol.Notice.title warning) "Filesystem watcher error"
     &&
     match Protocol.Notice.body warning with
     | Some body -> String.includes ~affix:"depth" body

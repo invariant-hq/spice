@@ -670,6 +670,42 @@ let watch_reports_construction_failure () =
   | Error.Invalid_root { root = "relative"; _ } -> ()
   | error -> failf "unexpected construction error: %a" Error.pp error
 
+let watch_recovers_after_runtime_scan_error () =
+  with_temp_dir @@ fun root ->
+  with_eio @@ fun ~sw ~clock ->
+  let events = Eio.Stream.create max_int in
+  let errors = Eio.Stream.create max_int in
+  let ready = Eio.Stream.create max_int in
+  let deep = path root "deep" in
+  let stop =
+    Fswatch.watch ~sw ~clock ~backend:`Polling ~poll_interval:0.01 ~root
+      ~on_ready:(fun _ -> Eio.Stream.add ready ())
+      ~on_error:(fun error ->
+        Eio.Stream.add errors error;
+        rm_rf deep;
+        write_file (path root "recovered") "recovered")
+      ~f:(fun batch -> List.iter (Eio.Stream.add events) batch)
+      ()
+  in
+  ignore (stream_take ~clock ready);
+  let rec make_deep_tree parent remaining =
+    if remaining > 0 then begin
+      let child = path parent "nested" in
+      Unix.mkdir child 0o755;
+      make_deep_tree child (remaining - 1)
+    end
+  in
+  Unix.mkdir deep 0o755;
+  make_deep_tree deep 65;
+  begin match stream_take ~clock errors with
+  | Error.Scan_limit { limit = Error.Depth { max_depth = 64 }; _ } -> ()
+  | error -> failf "unexpected runtime error: %a" Error.pp error
+  end;
+  equal event ~msg:"watch delivers changes after the scan recovers"
+    (ev Event.Created "recovered")
+    (stream_take ~clock events);
+  stop ()
+
 let watch_stops_when_switch_released () =
   with_temp_dir @@ fun root ->
   with_eio @@ fun ~sw:_ ~clock ->
@@ -814,6 +850,8 @@ let () =
           test ~timeout:3.0 "stop during callback" watch_stop_during_callback;
           test ~timeout:3.0 "reports construction failure to on_error"
             watch_reports_construction_failure;
+          test ~timeout:3.0 "recovers after a runtime scan error"
+            watch_recovers_after_runtime_scan_error;
           test ~timeout:3.0 "stops when the switch is released"
             watch_stops_when_switch_released;
         ];

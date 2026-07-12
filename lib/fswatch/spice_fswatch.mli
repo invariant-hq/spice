@@ -24,7 +24,7 @@
 (** {1:errors Errors} *)
 
 module Error : sig
-  (** Recoverable watcher errors. *)
+  (** Watcher errors. *)
 
   type scan_limit =
     | Directory_entries of { path : string; max_entries : int }
@@ -221,9 +221,13 @@ val watch :
     delivered as events. [on_ready t], when supplied, is called after the
     baseline has been captured and before [f] receives any batch.
 
-    A construction failure, or a later filesystem failure that ends the loop, is
-    passed to [on_error]. [f], [on_ready], and [on_error] run in the watcher's
-    own fiber; exceptions raised by these callbacks are not caught.
+    Construction failures are passed to [on_error] and end the watcher. Runtime
+    scan failures are passed to [on_error], leave the last complete baseline in
+    place, and are retried after a bounded backoff. A required native backend
+    becoming unavailable is terminal; [`Best] instead falls back to polling as
+    documented by {!backend_preference}. [f], [on_ready], and [on_error] run in
+    the watcher's own fiber; exceptions raised by these callbacks are not
+    caught.
 
     Calling the returned function, or releasing [sw], stops the watcher; both
     are idempotent. Stop also cancels a snapshot under construction at its next

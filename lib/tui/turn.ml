@@ -68,10 +68,11 @@ type t = {
          its settled [Host_call] arrives. In start order. *)
   workspace : Spice_mutation.Change.totals option;
       (* coalesced, flushed at settle *)
-  injected : string list;
-      (* injected-notice titles, accumulated and flushed at settle: a live-only
-         event may not create a document block, so this waits for the durable
-         Turn_finished. In arrival order. *)
+  injected : Spice_protocol.Notice.t list;
+      (* injected notices, accumulated and flushed at settle: a live-only event
+         may not create a document block, so this waits for the durable
+         Turn_finished. Retaining the notice rather than only its title keeps
+         actionable warning and error detail visible. In arrival order. *)
   waiting : bool; (* a dialog or host question owns the keyboard *)
   drain : drain;
   committed_output : int;
@@ -435,11 +436,7 @@ let apply ~now ~show_reasoning event t =
         [ Transcript.Notice (Notice.Seam "compacted") ] )
   | Notices_injected notices ->
       (* Live-only: accumulate, flush at Turn_finished — no block here. *)
-      ( {
-          t with
-          injected = t.injected @ List.map Spice_protocol.Notice.title notices;
-        },
-        [] )
+      ({ t with injected = t.injected @ notices }, [])
   | Permission_requested requested ->
       (* Record the blocked call so the tail shows what is awaiting permission
          (02-tools.md §Header, Awaiting permission); the working line's
@@ -500,7 +497,14 @@ let apply ~now ~show_reasoning event t =
       in
       let injected_blocks =
         List.map
-          (fun title -> Transcript.Notice (Notice.Event title))
+          (fun injected ->
+            let title = Spice_protocol.Notice.title injected in
+            let message =
+              match Spice_protocol.Notice.body injected with
+              | None -> title
+              | Some body -> title ^ " — " ^ body
+            in
+            Transcript.Notice (Notice.Event message))
           t.injected
       in
       ( idle,

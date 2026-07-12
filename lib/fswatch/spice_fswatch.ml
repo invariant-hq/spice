@@ -942,6 +942,26 @@ let iter t ~f =
   in
   loop ()
 
+let retryable_runtime_error = function
+  | Error.Invalid_path _ | Error.Io _ | Error.Scan_limit _ -> true
+  | Error.Invalid_root _ | Error.Backend_unavailable _ -> false
+
+let iter_recovering t ~on_error ~f =
+  let rec loop () =
+    match iter t ~f with
+    | Ok () -> ()
+    | Error error ->
+        on_error error;
+        if retryable_runtime_error error && not (is_closed t) then begin
+          (* A persistent scan failure must not turn the watcher into a busy
+             diagnostic loop. Bound the retry rate independently of a caller's
+             aggressive polling interval, while keeping close latency short. *)
+          t.sleep (Float.max 0.25 t.polling_interval);
+          loop ()
+        end
+  in
+  loop ()
+
 let watch ~sw ~clock ?backend ?(poll_interval = 0.25) ?(settle_delay = 0.05)
     ?ignore ?on_ready ~on_error ~root ~f () =
   check_timing ~caller:"watch" "poll_interval" poll_interval;
@@ -981,6 +1001,6 @@ let watch ~sw ~clock ?backend ?(poll_interval = 0.25) ?(settle_delay = 0.05)
               | `Stopped -> close w
               | `Ready -> (
                   Option.iter (fun on_ready -> on_ready w) on_ready;
-                  match iter w ~f with Ok () -> () | Error e -> on_error e)));
+                  iter_recovering w ~on_error ~f)));
       `Stop_daemon);
   stop
