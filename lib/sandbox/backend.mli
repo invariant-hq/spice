@@ -5,8 +5,8 @@
 
 (** Sandbox enforcement backends.
 
-    A backend is a confinement interpreter as a value: an identity, an
-    availability probe, and a preparation step that lowers one confinement to an
+    A backend is a confined-policy interpreter as a value: an identity, an
+    availability probe, and a preparation step that lowers one confined policy to an
     enforcement profile exactly once. Backends are consumed by hosts when
     sealing a sandbox; tools never see one.
 
@@ -19,7 +19,7 @@ type t
 (** The type for backends. *)
 
 type prepared
-(** A confinement lowered by one backend: the enforcing argv prefix and the
+(** A confined policy lowered by one backend: the enforcing argv prefix and the
     profile digest, generated together.
 
     Prepared values are intentionally opaque. Backend implementations create
@@ -30,12 +30,12 @@ type prepared
 val make :
   id:string ->
   available:(unit -> (unit, Error.t) result) ->
-  prepare:(Confinement.t -> (prepared, Error.t) result) ->
+  prepare:(Policy.t -> (prepared, Error.t) result) ->
   unit ->
   t
 (** [make ~id ~available ~prepare ()] is a backend.
 
-    [prepare confinement] generates the enforcement profile for [confinement],
+    [prepare policy] generates the enforcement profile for [policy],
     or a structured error explaining why it cannot.
 
     Constructing a backend asserts enforcement authority: {!Spice_sandbox.seal}
@@ -46,7 +46,7 @@ val make :
     Raises [Invalid_argument] if [id] is empty. *)
 
 val prepared : prefix:string list -> profile:Spice_digest.t -> prepared
-(** [prepared ~prefix ~profile] is a lowered confinement. Wrapping a command
+(** [prepared ~prefix ~profile] is a lowered confined policy. Wrapping a command
     yields [prefix] followed by the command's argv; because the command is a
     non-empty {!Argv.t}, the wrapped argv is always non-empty and the command's
     own tokens are preserved verbatim. [profile] is the digest of the generated
@@ -71,8 +71,8 @@ val id : t -> string
 val available : t -> (unit, Error.t) result
 (** [available t] probes whether [t] can enforce policies on this host. *)
 
-val prepare : t -> Confinement.t -> (prepared, Error.t) result
-(** [prepare t confinement] lowers [confinement] with [t], generating the
+val prepare : t -> Policy.t -> (prepared, Error.t) result
+(** [prepare t policy] lowers the confined [policy] with [t], generating the
     enforcement profile once. *)
 
 val wrap : prepared -> argv:Argv.t -> Argv.t

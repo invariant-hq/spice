@@ -4,7 +4,7 @@
  ---------------------------------------------------------------------------*)
 
 module Error = Error
-module Confinement = Confinement
+module Policy = Policy
 module Env = Env
 module Evidence = Evidence
 module Argv = Argv
@@ -19,27 +19,7 @@ module Bubblewrap = Bubblewrap
 type escalation = Run.escalation = Available | Denied of Error.t | Ignored
 
 let spawn = Run.spawn
+let policy = Run.policy
 let escalation = Run.escalation
 let evidence = Run.evidence
-
-module Spec = struct
-  type t = Unconfined | Declared_external | Confined of Confinement.t
-
-  let equal a b =
-    match (a, b) with
-    | Unconfined, Unconfined -> true
-    | Declared_external, Declared_external -> true
-    | Confined a, Confined b -> Confinement.equal a b
-    | (Unconfined | Declared_external | Confined _), _ -> false
-
-  let pp ppf = function
-    | Unconfined -> Format.pp_print_string ppf "unconfined"
-    | Declared_external -> Format.pp_print_string ppf "external"
-    | Confined confinement ->
-        Format.fprintf ppf "confined@ (%a)" Confinement.pp confinement
-end
-
-let seal ?backend = function
-  | Spec.Unconfined -> Run.unconfined
-  | Spec.Declared_external -> Run.external_
-  | Spec.Confined confinement -> Run.confined ?backend confinement
+let seal = Run.seal

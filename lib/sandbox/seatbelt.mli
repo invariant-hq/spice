@@ -5,7 +5,7 @@
 
 (** macOS Seatbelt backend.
 
-    Lowers a {!Confinement.t} to a [sandbox-exec] invocation: an SBPL profile
+    Lowers a confined {!Policy.t} to a [sandbox-exec] invocation: an SBPL profile
     string plus [-D] path parameters around the command argv. Profile generation
     is pure and canonical, so equal policies produce equal profiles and equal
     hashes; only the availability probe touches the host.
@@ -16,16 +16,16 @@
     protected metadata names and protected absolute paths carved out; network is
     denied unless the policy enables it.
 
-    Confinement paths are used as given. Hosts canonicalize writable and
+    Policy paths are used as given. Hosts canonicalize writable and
     protected paths (for example [/tmp] to [/private/tmp]) before building the
-    policy; see {!Confinement}. *)
+    policy; see {!Policy}. *)
 
 val executable : string
 (** [executable] is ["/usr/bin/sandbox-exec"]: the absolute path is fixed so a
     malicious [PATH] cannot inject a different binary. *)
 
-val profile : Confinement.t -> string * (string * string) list
-(** [profile confinement] is the SBPL profile text and the ordered [-D]
+val profile : Policy.t -> string * (string * string) list
+(** [profile policy] is the SBPL profile text and the ordered [-D]
     parameters (key, absolute path) it references. Pure and deterministic. *)
 
 val backend : Backend.t

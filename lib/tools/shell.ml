@@ -184,7 +184,9 @@ module Config = struct
      command. The host passes real authority in. *)
   let default_sandbox () =
     Spice_sandbox.seal
-      (Spice_sandbox.Spec.Confined Spice_sandbox.Confinement.read_only)
+      (Spice_sandbox.Policy.confined ~reads:Spice_sandbox.Policy.All
+         ~writable_roots:[] ~protected_meta:[] ~protected_paths:[]
+         ~network:Spice_sandbox.Policy.Network.Restricted)
 
   let make ?(shell = default_shell) ?sandbox ?(network_restricted = false)
       ?(default_timeout_ms = 60_000) ?(max_timeout_ms = 600_000)

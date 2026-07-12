@@ -45,19 +45,15 @@ module Spawn : sig
       command result. *)
 end
 
-val unconfined : t
-(** [unconfined] is a sealed sandbox that does not request command confinement.
-*)
+val seal : ?backend:Backend.t -> Policy.t -> t
+(** [seal ?backend policy] seals [policy].
 
-val external_ : t
-(** [external_] is a sealed sandbox whose confinement boundary is declared
-    external. *)
+    Direct and external policies need no backend. Confined policies are lowered
+    once by [backend]. [backend] defaults to a refusing backend, so a confined
+    zero-configuration result is fail-closed. *)
 
-val confined : ?backend:Backend.t -> Confinement.t -> t
-(** [confined ?backend confinement] seals [confinement] against [backend].
-
-    [backend] defaults to a refusing backend, so the zero-configuration result
-    is fail-closed. Backend availability is evaluated once here. *)
+val policy : t -> Policy.t
+(** [policy t] is the exact policy sealed in [t]. *)
 
 val spawn :
   t -> argv:Argv.t -> env:(string * string) list -> (Spawn.t, Error.t) result

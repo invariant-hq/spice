@@ -3,14 +3,14 @@
   SPDX-License-Identifier: ISC
  ---------------------------------------------------------------------------*)
 
-(** Pure command-sandbox modelling and platform lowering.
+(** Command sandbox policies and platform lowering.
 
-    This library defines what a spawned command may touch ({!Confinement}), the
-    enforcement evidence ({!Evidence}), backends that lower confinement to
+    This library defines what a spawned command may touch ({!Policy}), the
+    enforcement evidence ({!Evidence}), backends that lower confined policies to
     platform enforcement ({!Backend}), and the sealed sandbox value tools
     consume.
 
-    The usual flow is: the host resolves product configuration to a {!Spec.t},
+    The usual flow is: the host resolves product configuration to a {!Policy.t},
     selects a backend, seals the sandbox with {!seal}, and hands the resulting
     {!type:t} to the shell tool. Status and explain commands render the same
     sandbox and backend facts instead of executing them.
@@ -23,8 +23,8 @@
 module Error = Error
 (** Structured sandbox errors. *)
 
-module Confinement = Confinement
-(** Pure confinement descriptions. *)
+module Policy = Policy
+(** Pure command sandbox policies. *)
 
 module Env = Env
 (** Diagnostic environment filtering policy.
@@ -46,7 +46,7 @@ module Argv = Argv
     command facts to [Spice_permission]. *)
 
 module Backend = Backend
-(** Confinement interpreters as values. *)
+(** Confined-policy interpreters as values. *)
 
 module Spawn = Run.Spawn
 (** Prepared command spawn plans. *)
@@ -86,26 +86,15 @@ val evidence : t -> Evidence.t
     reports, fixed at seal time before any command runs. Status, explain,
     run-start metadata, and the host require gate all read this. *)
 
-module Spec : sig
-  type t =
-    | Unconfined
-    | Declared_external
-    | Confined of Confinement.t
-        (** Host-resolved command sandbox posture before backend sealing. *)
+val policy : t -> Policy.t
+(** [policy t] is the exact policy sealed in [t]. *)
 
-  val equal : t -> t -> bool
-  (** [equal a b] is [true] iff [a] and [b] are the same sandbox posture. *)
-
-  val pp : Format.formatter -> t -> unit
-  (** [pp] formats a sandbox posture for diagnostics. *)
-end
-
-val seal : ?backend:Backend.t -> Spec.t -> t
-(** [seal ?backend spec] seals [spec].
+val seal : ?backend:Backend.t -> Policy.t -> t
+(** [seal ?backend policy] seals [policy].
 
     [backend] defaults to a refusing backend, so the zero-configuration result
-    is fail-closed for confined requests. Backend availability is evaluated
-    here, once, not per spawn. *)
+    is fail-closed for confined policies. Backend availability is evaluated
+    here once, not per spawn. *)
 
 module Seatbelt = Seatbelt
 (** macOS Seatbelt lowering: pure profile generation plus the backend. *)

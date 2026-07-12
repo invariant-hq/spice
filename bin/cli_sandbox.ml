@@ -175,17 +175,17 @@ let display_path ~workspace path =
     | None -> Spice_path.Abs.to_string path
 
 let environment_counts effective =
-  match Effective.spec effective with
-  | Sandbox.Spec.Unconfined | Sandbox.Spec.Declared_external -> None
-  | Sandbox.Spec.Confined _ ->
+  match Effective.policy effective with
+  | Sandbox.Policy.Direct | Sandbox.Policy.External -> None
+  | Sandbox.Policy.Confined _ ->
       let bindings = Spice_host.Env.current () |> Spice_host.Env.to_list in
       let kept, stripped = Sandbox.Env.partition bindings in
       Some (List.length kept, List.length stripped)
 
 let policy_facts effective =
-  match Effective.spec effective with
-  | Sandbox.Spec.Confined policy -> Some policy
-  | Sandbox.Spec.Unconfined | Sandbox.Spec.Declared_external -> None
+  match Effective.policy effective with
+  | Sandbox.Policy.Confined _ as policy -> Some policy
+  | Sandbox.Policy.Direct | Sandbox.Policy.External -> None
 
 (* The confined mount keeps the whole host readable (see [readable=] below), so
    a missing toolchain is never the sandbox's doing; this line shows where
@@ -227,14 +227,14 @@ let explain_text host workspace effective =
          toolchain; only writes are scoped. *)
       stdout_printf "readable=/ (read-only)\n";
       stdout_printf "writable=%s\n"
-        (match Sandbox.Confinement.writable_roots policy with
+        (match Sandbox.Policy.writable_roots policy with
         | [] -> "(none)"
         | roots -> String.concat "," (List.map (display_path ~workspace) roots));
       stdout_printf "protected=%s\n"
         (String.concat ","
-           (Sandbox.Confinement.protected_meta policy
+           (Sandbox.Policy.protected_meta policy
            @ List.map (display_path ~workspace)
-               (Sandbox.Confinement.protected_paths policy))));
+               (Sandbox.Policy.protected_paths policy))));
   (match environment_counts effective with
   | None -> ()
   | Some (kept, stripped) ->
@@ -278,7 +278,7 @@ let explain_json host workspace effective =
           | Some policy ->
               List.map
                 (fun path -> Jsont.Json.string (Spice_path.Abs.to_string path))
-                (Sandbox.Confinement.writable_roots policy)) );
+                (Sandbox.Policy.writable_roots policy)) );
       ( "protected_meta",
         json_list
           (match policy with
@@ -286,7 +286,7 @@ let explain_json host workspace effective =
           | Some policy ->
               List.map
                 (fun value -> Jsont.Json.string value)
-                (Sandbox.Confinement.protected_meta policy)) );
+                (Sandbox.Policy.protected_meta policy)) );
       ( "protected_paths",
         json_list
           (match policy with
@@ -294,7 +294,7 @@ let explain_json host workspace effective =
           | Some policy ->
               List.map
                 (fun path -> Jsont.Json.string (Spice_path.Abs.to_string path))
-                (Sandbox.Confinement.protected_paths policy)) );
+                (Sandbox.Policy.protected_paths policy)) );
       ( "environment",
         match environment_counts effective with
         | None -> json_null

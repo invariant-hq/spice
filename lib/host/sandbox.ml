@@ -61,24 +61,7 @@ module Require = struct
   let pp ppf t = Format.pp_print_string ppf (to_string t)
 end
 
-module Network = struct
-  type t = Restricted | Enabled
-
-  let all = [ Restricted; Enabled ]
-  let to_string = function Restricted -> "restricted" | Enabled -> "enabled"
-
-  let of_string = function
-    | "restricted" -> Some Restricted
-    | "enabled" -> Some Enabled
-    | _ -> None
-
-  let equal a b =
-    match (a, b) with
-    | Restricted, Restricted | Enabled, Enabled -> true
-    | (Restricted | Enabled), _ -> false
-
-  let pp ppf t = Format.pp_print_string ppf (to_string t)
-end
+module Network = Spice_sandbox.Policy.Network
 
 module Gate_error = struct
   type t =
@@ -146,39 +129,31 @@ end
    native edit tools protect exactly the same metadata. *)
 let protected_meta_names = Spice_workspace_fs.protected_meta_names
 
-let confinement_network = function
-  | Network.Restricted -> Spice_sandbox.Confinement.Restricted
-  | Network.Enabled -> Spice_sandbox.Confinement.Enabled
-
 (* Network applies to both confined modes: read-only and workspace-write can
    each opt into outbound access without becoming unconfined. Unconfined and
    declared-external already own network by construction. *)
 let sandbox_of_mode ~writable ~protect ~network = function
   | Mode.Read_only ->
-      Spice_sandbox.Spec.Confined
-        (Spice_sandbox.Confinement.read_only
-        |> Spice_sandbox.Confinement.network (confinement_network network))
+      Spice_sandbox.Policy.confined ~reads:Spice_sandbox.Policy.All
+        ~writable_roots:[] ~protected_meta:[] ~protected_paths:[] ~network
   | Mode.Workspace_write ->
-      Spice_sandbox.Spec.Confined
-        (Spice_sandbox.Confinement.read_only
-        |> Spice_sandbox.Confinement.writable writable
-        |> Spice_sandbox.Confinement.protect_meta protected_meta_names
-        |> Spice_sandbox.Confinement.protect protect
-        |> Spice_sandbox.Confinement.network (confinement_network network))
-  | Mode.Danger_full_access -> Spice_sandbox.Spec.Unconfined
-  | Mode.External_sandbox -> Spice_sandbox.Spec.Declared_external
+      Spice_sandbox.Policy.confined ~reads:Spice_sandbox.Policy.All
+        ~writable_roots:writable ~protected_meta:protected_meta_names
+        ~protected_paths:protect ~network
+  | Mode.Danger_full_access -> Spice_sandbox.Policy.direct
+  | Mode.External_sandbox -> Spice_sandbox.Policy.external_
 
 module Effective = struct
   type t = {
     mode : Mode.t;
     origin : Status.origin;
     require : Require.t;
-    spec : Spice_sandbox.Spec.t;
+    policy : Spice_sandbox.Policy.t;
     backend : Spice_sandbox.Backend.t;
     sandbox : Spice_sandbox.t;
   }
 
-  let spec t = t.spec
+  let policy t = t.policy
   let backend t = t.backend
   let sandbox t = t.sandbox
 
@@ -192,21 +167,21 @@ module Effective = struct
         Ok ()
 
   let network t =
-    match t.spec with
-    | Spice_sandbox.Spec.Unconfined -> Status.Enabled
-    | Spice_sandbox.Spec.Declared_external -> Status.External
-    | Spice_sandbox.Spec.Confined policy -> (
-        match Spice_sandbox.Confinement.network_state policy with
-        | Spice_sandbox.Confinement.Restricted -> Status.Restricted
-        | Spice_sandbox.Confinement.Enabled -> Status.Enabled)
+    match t.policy with
+    | Spice_sandbox.Policy.Direct -> Status.Enabled
+    | Spice_sandbox.Policy.External -> Status.External
+    | Spice_sandbox.Policy.Confined policy -> (
+        match policy.network with
+        | Spice_sandbox.Policy.Network.Restricted -> Status.Restricted
+        | Spice_sandbox.Policy.Network.Enabled -> Status.Enabled)
 
   (* Unconfined and declared-external runs have no enforcing backend; naming
      the platform's candidate would be misleading and platform-dependent. *)
   let backend_display t =
-    match t.spec with
-    | Spice_sandbox.Spec.Unconfined -> "none"
-    | Spice_sandbox.Spec.Declared_external -> "external"
-    | Spice_sandbox.Spec.Confined _ -> Spice_sandbox.Backend.id t.backend
+    match t.policy with
+    | Spice_sandbox.Policy.Direct -> "none"
+    | Spice_sandbox.Policy.External -> "external"
+    | Spice_sandbox.Policy.Confined _ -> Spice_sandbox.Backend.id t.backend
 
   let status t =
     {
@@ -404,21 +379,21 @@ let resolve ?flag ?config_mode ?(require = Require.Enforced) ?(protect = [])
     @ List.map canonical preset_roots
   in
   let protect = List.map canonical protect in
-  let spec = sandbox_of_mode ~writable ~protect ~network mode in
+  let policy = sandbox_of_mode ~writable ~protect ~network mode in
   let backend = host_backend ~stdenv ~env in
-  let sandbox = Spice_sandbox.seal ~backend spec in
-  { Effective.mode; origin; require; spec; backend; sandbox }
+  let sandbox = Spice_sandbox.seal ~backend policy in
+  { Effective.mode; origin; require; policy; backend; sandbox }
 
 let gate effective =
   match
-    (Effective.spec effective, (effective.Effective.require : Require.t))
+    (Effective.policy effective, (effective.Effective.require : Require.t))
   with
   | _, Require.Off -> Ok ()
-  | Spice_sandbox.Spec.Unconfined, _ -> Ok ()
-  | Spice_sandbox.Spec.Declared_external, Require.Enforced_or_external -> Ok ()
-  | Spice_sandbox.Spec.Declared_external, Require.Enforced ->
+  | Spice_sandbox.Policy.Direct, _ -> Ok ()
+  | Spice_sandbox.Policy.External, Require.Enforced_or_external -> Ok ()
+  | Spice_sandbox.Policy.External, Require.Enforced ->
       Error Gate_error.External_not_enforced
-  | Spice_sandbox.Spec.Confined _, _ -> (
+  | Spice_sandbox.Policy.Confined _, _ -> (
       match Effective.backend_available effective with
       | Ok () -> Ok ()
       | Error reason ->

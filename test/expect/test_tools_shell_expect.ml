@@ -102,7 +102,7 @@ let call ~fs ~workspace ~config input =
 let unconfined ?default_timeout_ms ?max_timeout_ms ?max_output_bytes
     ?(environment = []) () =
   Shell.Config.make ?default_timeout_ms ?max_timeout_ms ?max_output_bytes
-    ~sandbox:(Spice_sandbox.seal Spice_sandbox.Spec.Unconfined)
+    ~sandbox:(Spice_sandbox.seal Spice_sandbox.Policy.direct)
     ~environment ()
 
 let normalize_paths ?root ?outside message =
@@ -425,13 +425,17 @@ let fake_backend =
            ~profile:(Spice_digest.string "canonical")))
     ()
 
+let confined ?(writable_roots = []) () =
+  Spice_sandbox.Policy.confined ~reads:Spice_sandbox.Policy.All
+    ~writable_roots ~protected_meta:[] ~protected_paths:[]
+    ~network:Spice_sandbox.Policy.Network.Restricted
+
 let%expect_test "confined command reports enforced evidence and strips env" =
   with_fixture @@ fun ~root ~outside ~fs ~workspace ->
   Unix.putenv "SPICE_EXPECT_FAKE_TOKEN" "tok-value";
   let sandbox =
     Spice_sandbox.seal ~backend:fake_backend
-      (Spice_sandbox.Spec.Confined
-         Spice_sandbox.Confinement.(read_only |> writable [ abs root ]))
+      (confined ~writable_roots:[ abs root ] ())
   in
   let config = Shell.Config.make ~sandbox () in
   run ~root ~outside ~fs ~workspace ~config
@@ -450,15 +454,14 @@ let workspace_write_config ~root =
   Shell.Config.make
     ~sandbox:
       (Spice_sandbox.seal ~backend:fake_backend
-         (Spice_sandbox.Spec.Confined
-            Spice_sandbox.Confinement.(read_only |> writable [ abs root ])))
+         (confined ~writable_roots:[ abs root ] ()))
     ()
 
 let read_only_config =
   Shell.Config.make
     ~sandbox:
       (Spice_sandbox.seal ~backend:fake_backend
-         (Spice_sandbox.Spec.Confined Spice_sandbox.Confinement.read_only))
+         (confined ()))
     ()
 
 let%expect_test "permission command routes match exact shell execution" =
@@ -466,7 +469,7 @@ let%expect_test "permission command routes match exact shell execution" =
   let workspace_write = workspace_write_config ~root in
   let external_config =
     Shell.Config.make
-      ~sandbox:(Spice_sandbox.seal Spice_sandbox.Spec.Declared_external)
+      ~sandbox:(Spice_sandbox.seal Spice_sandbox.Policy.external_)
       ()
   in
   print_permission_routes "workspace-write ordinary" ~config:workspace_write
@@ -578,7 +581,7 @@ let%expect_test
     \                 declaration" =
   with_fixture @@ fun ~root ~outside ~fs ~workspace ->
   Unix.putenv "SPICE_EXPECT_FAKE_TOKEN" "tok-value";
-  let sandbox = Spice_sandbox.seal Spice_sandbox.Spec.Declared_external in
+  let sandbox = Spice_sandbox.seal Spice_sandbox.Policy.external_ in
   let config = Shell.Config.make ~sandbox () in
   run ~root ~outside ~fs ~workspace ~config
     (input "echo ${SPICE_EXPECT_FAKE_TOKEN:-stripped}");

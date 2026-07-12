@@ -11,7 +11,12 @@ module Json = Jsont.Json
 module Tool = Spice_tool
 module Workspace = Spice_workspace
 
-let sandbox = Spice_sandbox.seal Spice_sandbox.Spec.Unconfined
+let sandbox = Spice_sandbox.seal Spice_sandbox.Policy.direct
+
+let confined () =
+  Spice_sandbox.Policy.confined ~reads:Spice_sandbox.Policy.All
+    ~writable_roots:[] ~protected_meta:[] ~protected_paths:[]
+    ~network:Spice_sandbox.Policy.Network.Restricted
 
 let fake_backend =
   Spice_sandbox.Backend.make ~id:"fake"
@@ -23,11 +28,10 @@ let fake_backend =
     ()
 
 let enforced_sandbox =
-  Spice_sandbox.seal ~backend:fake_backend
-    (Spice_sandbox.Spec.Confined Spice_sandbox.Confinement.read_only)
+  Spice_sandbox.seal ~backend:fake_backend (confined ())
 
 let external_sandbox =
-  Spice_sandbox.seal Spice_sandbox.Spec.Declared_external
+  Spice_sandbox.seal Spice_sandbox.Policy.external_
 
 let prepare ~argv ~env = Ok (argv, env)
 

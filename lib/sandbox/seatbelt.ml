@@ -174,10 +174,10 @@ let excluded_param index excluded_index =
   Printf.sprintf "WRITABLE_ROOT_%d_EXCLUDED_%d" index excluded_index
 
 let file_write_policy policy =
-  match Confinement.writable_roots policy with
+  match Policy.writable_roots policy with
   | [] -> ("", [])
   | roots ->
-      let carveouts = Confinement.write_carveouts policy in
+      let carveouts = Policy.write_carveouts policy in
       let components, params =
         List.fold_left
           (fun (components, params) root ->
@@ -226,11 +226,12 @@ let file_write_policy policy =
         List.rev params )
 
 let network_section policy =
-  match Confinement.network_state policy with
-  | Confinement.Restricted -> ""
-  | Confinement.Enabled ->
+  match Policy.network policy with
+  | Some Policy.Network.Restricted -> ""
+  | Some Policy.Network.Enabled ->
       Printf.sprintf "(allow network-outbound)\n(allow network-inbound)\n%s"
         network_policy
+  | None -> assert false
 
 let profile policy =
   let write_policy, params = file_write_policy policy in
@@ -263,10 +264,11 @@ let prepare policy =
           m
             "seatbelt profile generated writable_roots=%d network=%s bytes=%d \
              params=%d"
-            (List.length (Confinement.writable_roots policy))
-            (match Confinement.network_state policy with
-            | Confinement.Restricted -> "restricted"
-            | Confinement.Enabled -> "enabled")
+            (List.length (Policy.writable_roots policy))
+            (match Policy.network policy with
+            | Some Policy.Network.Restricted -> "restricted"
+            | Some Policy.Network.Enabled -> "enabled"
+            | None -> assert false)
             (String.length profile) (List.length params));
       let prefix =
         (executable :: [ "-p"; profile ])

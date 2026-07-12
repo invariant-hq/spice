@@ -9,8 +9,8 @@ let log_src =
 module Log = (val Logs.src_log log_src : Logs.LOG)
 
 let network_name = function
-  | Confinement.Restricted -> "restricted"
-  | Confinement.Enabled -> "enabled"
+  | Policy.Network.Restricted -> "restricted"
+  | Policy.Network.Enabled -> "enabled"
 
 type escalation = Available | Denied of Error.t | Ignored
 
@@ -32,7 +32,7 @@ type decision =
   | Confine of { prepared : Backend.prepared; evidence : Evidence.t }
   | Refuse of Error.t
 
-type t = { decision : decision; escalation : escalation }
+type t = { policy : Policy.t; decision : decision; escalation : escalation }
 
 let default_backend =
   lazy (Backend.none ~reason:"no sandbox backend configured")
@@ -44,9 +44,6 @@ let read_only_escalation_reason =
 let read_only_escalation_error =
   lazy (Error.invalid_request read_only_escalation_reason)
 
-let unconfined = { decision = Unconfined; escalation = Ignored }
-let external_ = { decision = Declared_external; escalation = Ignored }
-
 let confined ?backend policy =
   let backend =
     match backend with
@@ -54,15 +51,17 @@ let confined ?backend policy =
     | None -> Lazy.force default_backend
   in
   let escalation =
-    match Confinement.writable_roots policy with
+    match Policy.writable_roots policy with
     | [] -> Denied (Lazy.force read_only_escalation_error)
     | _ :: _ -> Available
   in
   Log.debug (fun m ->
       m "sealing confinement backend=%s writable_roots=%d network=%s"
         (Backend.id backend)
-        (List.length (Confinement.writable_roots policy))
-        (network_name (Confinement.network_state policy)));
+        (List.length (Policy.writable_roots policy))
+        (match Policy.network policy with
+        | Some network -> network_name network
+        | None -> assert false));
   let decision =
     match Backend.available backend with
     | Error reason ->
@@ -92,7 +91,16 @@ let confined ?backend policy =
                     ~profile:(Backend.profile prepared);
               })
   in
-  { decision; escalation }
+  { policy; decision; escalation }
+
+let seal ?backend policy =
+  match policy with
+  | Policy.Direct -> { policy; decision = Unconfined; escalation = Ignored }
+  | Policy.External ->
+      { policy; decision = Declared_external; escalation = Ignored }
+  | Policy.Confined _ -> confined ?backend policy
+
+let policy t = t.policy
 
 let spawn t ~argv:command_argv ~env:bindings =
   match t.decision with

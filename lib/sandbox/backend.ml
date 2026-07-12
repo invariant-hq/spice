@@ -11,7 +11,7 @@ type prepared = { prefix : string list; profile : Spice_digest.t }
 type t = {
   id : string;
   available : unit -> (unit, Error.t) result;
-  prepare : Confinement.t -> (prepared, Error.t) result;
+  prepare : Policy.t -> (prepared, Error.t) result;
 }
 
 let make ~id ~available ~prepare () =
@@ -30,7 +30,7 @@ let none ~reason =
   {
     id = "none";
     available = (fun () -> Error error);
-    prepare = (fun _confinement -> Error error);
+    prepare = (fun _policy -> Error error);
   }
 
 let id t = t.id

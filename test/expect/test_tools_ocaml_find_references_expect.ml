@@ -9,7 +9,7 @@ module Json = Jsont.Json
 module Tool = Spice_tool
 module Workspace = Spice_workspace
 
-let sandbox = Spice_sandbox.seal Spice_sandbox.Spec.Unconfined
+let sandbox = Spice_sandbox.seal Spice_sandbox.Policy.direct
 
 let json_obj fields =
   Json.object'

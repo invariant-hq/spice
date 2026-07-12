@@ -13,7 +13,7 @@
     Two types carry the result, split by what they hold:
 
     - {!Effective.t} is authority. It holds the sealed {!Spice_sandbox.t} a tool
-      spawns through, the host-resolved {!Spice_sandbox.Spec.t}, and the
+      spawns through, the host-resolved {!Spice_sandbox.Policy.t}, and the
       selected backend. Tools and the gate read it.
     - {!Status.t} is display. It is a detached record of posture facts with no
       sealed sandbox, safe to snapshot across a boundary — for example into TUI
@@ -74,28 +74,8 @@ module Require : sig
   (** [pp ppf t] formats [t]'s spelling. *)
 end
 
-module Network : sig
-  (** Requested outbound-network capability for confined runs. *)
-
-  type t = Restricted | Enabled
-
-  val all : t list
-  (** [all] are the capabilities in declaration order. *)
-
-  val to_string : t -> string
-  (** [to_string t] is [t]'s CLI and config spelling, ["restricted"] or
-      ["enabled"]. *)
-
-  val of_string : string -> t option
-  (** [of_string s] is the capability spelled [s], or [None] for an unknown
-      spelling. Error wording belongs to the configuration boundary. *)
-
-  val equal : t -> t -> bool
-  (** [equal a b] is [true] iff [a] and [b] are the same capability. *)
-
-  val pp : Format.formatter -> t -> unit
-  (** [pp ppf t] formats [t]'s spelling. *)
-end
+module Network = Spice_sandbox.Policy.Network
+(** Requested command network access. *)
 
 (** {1:gate Gate rejection} *)
 
@@ -180,7 +160,7 @@ module Effective : sig
   (** The resolved sandbox posture handed to a run and to status surfaces.
 
       An effective value is authority: it retains the host-resolved
-      {!Spice_sandbox.Spec.t}, the selected backend, and the sealed
+      {!Spice_sandbox.Policy.t}, the selected backend, and the sealed
       {!Spice_sandbox.t}. Status surfaces project {!status}; tools receive only
       {!sandbox}. *)
 
@@ -188,8 +168,8 @@ module Effective : sig
   (** The type for a resolved sandbox posture for one run or one status query.
   *)
 
-  val spec : t -> Spice_sandbox.Spec.t
-  (** [spec t] is the mode lowered to a sandbox posture with canonicalized
+  val policy : t -> Spice_sandbox.Policy.t
+  (** [policy t] is the mode lowered to a sandbox policy with canonicalized
       writable and protected paths. This is status metadata, not spawn
       authority. *)
 
@@ -200,12 +180,12 @@ module Effective : sig
       display name. *)
 
   val sandbox : t -> Spice_sandbox.t
-  (** [sandbox t] is {!spec} sealed against {!backend}: the value the shell tool
+  (** [sandbox t] is {!policy} sealed against {!backend}: the value the shell tool
       spawns through. *)
 
   val status : t -> Status.t
   (** [status t] is the derived {!Status.t} for product output and detached
-      snapshots. It is recomputed from {!spec}, {!sandbox}, and {!backend}; it
+      snapshots. It is recomputed from {!policy}, {!sandbox}, and {!backend}; it
       does not grant authority to spawn. *)
 end
 

@@ -83,7 +83,7 @@ let path path = Spice_path.Abs.to_string path
    root — a fresh checkout, or a cache root added by config that has no such
    metadata. [--ro-bind] aborts the spawn on a missing source; the [-try]
    variant skips it, which is the right semantics: absent metadata needs no
-   protection. Confinement stays pure (it proves no existence); the backend
+   protection. The policy stays pure (it proves no existence); the backend
    tolerates absence at the platform boundary. *)
 let bind_read_only root = [ "--ro-bind-try"; path root; path root ]
 let bind_writable root = [ "--bind"; path root; path root ]
@@ -97,8 +97,8 @@ let existing root = Sys.file_exists (path root)
    a required toolchain binary has to be a readable root, or confined commands
    lose the toolchain. *)
 let filesystem_args policy =
-  let roots = List.filter existing (Confinement.writable_roots policy) in
-  let carveouts = Confinement.write_carveouts policy in
+  let roots = List.filter existing (Policy.writable_roots policy) in
+  let carveouts = Policy.write_carveouts policy in
   [ "--ro-bind"; "/"; "/"; "--dev"; "/dev" ]
   @ List.concat_map bind_writable roots
   @ List.concat_map bind_read_only carveouts
@@ -108,9 +108,10 @@ let prefix policy =
     [ "--new-session"; "--die-with-parent"; "--unshare-user"; "--unshare-pid" ]
   in
   let network =
-    match Confinement.network_state policy with
-    | Confinement.Restricted -> [ "--unshare-net" ]
-    | Confinement.Enabled -> []
+    match Policy.network policy with
+    | Some Policy.Network.Restricted -> [ "--unshare-net" ]
+    | Some Policy.Network.Enabled -> []
+    | None -> assert false
   in
   (executable :: namespace) @ filesystem_args policy @ network
   @ [ "--proc"; "/proc"; "--" ]
@@ -119,10 +120,11 @@ let prepare policy =
   let prefix = prefix policy in
   Log.debug (fun m ->
       m "bubblewrap prefix built writable_roots=%d network=%s args=%d"
-        (List.length (Confinement.writable_roots policy))
-        (match Confinement.network_state policy with
-        | Confinement.Restricted -> "restricted"
-        | Confinement.Enabled -> "enabled")
+        (List.length (Policy.writable_roots policy))
+        (match Policy.network policy with
+        | Some Policy.Network.Restricted -> "restricted"
+        | Some Policy.Network.Enabled -> "enabled"
+        | None -> assert false)
         (List.length prefix));
   let hash_input = String.concat "\x00" prefix in
   Ok (Backend.prepared ~prefix ~profile:(Spice_digest.string hash_input))

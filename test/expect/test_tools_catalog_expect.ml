@@ -10,7 +10,7 @@ module Shell = Spice_tools.Shell
 module Tool = Spice_tool
 module Workspace = Spice_workspace
 
-let sandbox = Spice_sandbox.seal Spice_sandbox.Spec.Unconfined
+let sandbox = Spice_sandbox.seal Spice_sandbox.Policy.direct
 
 let abs path =
   match Spice_path.Abs.of_string path with

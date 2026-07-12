@@ -5,7 +5,7 @@
 
 open Windtrap
 module Sandbox = Spice_sandbox
-module Confinement = Spice_sandbox.Confinement
+module Policy = Spice_sandbox.Policy
 module Seatbelt = Spice_sandbox.Seatbelt
 module Bubblewrap = Spice_sandbox.Bubblewrap
 module Abs = Spice_path.Abs
@@ -29,7 +29,13 @@ let json_obj fields =
   Json.object'
     (List.map (fun (name, value) -> Json.mem (Json.name name) value) fields)
 
-let confinement_value = testable ~pp:Confinement.pp ~equal:Confinement.equal ()
+let policy_value = testable ~pp:Policy.pp ~equal:Policy.equal ()
+
+let confined ?(reads = Policy.All) ?(writable_roots = [])
+    ?(protected_meta = []) ?(protected_paths = [])
+    ?(network = Policy.Network.Restricted) () =
+  Policy.confined ~reads ~writable_roots ~protected_meta ~protected_paths
+    ~network
 
 let evidence_value =
   testable ~pp:Sandbox.Evidence.pp ~equal:Sandbox.Evidence.equal ()
@@ -37,52 +43,47 @@ let evidence_value =
 let error_value = testable ~pp:Sandbox.Error.pp ~equal:Sandbox.Error.equal ()
 let abs_value = testable ~pp:Abs.pp ~equal:Abs.equal ()
 
-(* Confinement *)
+(* Policy *)
 
 let policy_normalizes () =
   let a =
-    Confinement.read_only
-    |> Confinement.writable [ abs "/work"; abs "/tmp" ]
-    |> Confinement.writable [ abs "/work" ]
+    confined ~writable_roots:[ abs "/work"; abs "/tmp"; abs "/work" ] ()
   in
-  let b =
-    Confinement.read_only |> Confinement.writable [ abs "/tmp"; abs "/work" ]
-  in
-  equal confinement_value ~msg:"writable roots dedup and order canonically" a b;
+  let b = confined ~writable_roots:[ abs "/tmp"; abs "/work" ] () in
+  equal policy_value ~msg:"writable roots dedup and order canonically" a b;
   equal (list abs_value) ~msg:"accessor reports canonical order"
     [ abs "/tmp"; abs "/work" ]
-    (Confinement.writable_roots a)
+    (Policy.writable_roots a)
 
 let policy_protect_meta_validates () =
   raises_match
     (function Invalid_argument _ -> true | _ -> false)
-    (fun () -> Confinement.protect_meta [ "a/b" ] Confinement.read_only);
+    (fun () -> confined ~protected_meta:[ "a/b" ] ());
   raises_match
     (function Invalid_argument _ -> true | _ -> false)
-    (fun () -> Confinement.protect_meta [ ".." ] Confinement.read_only);
+    (fun () -> confined ~protected_meta:[ ".." ] ());
   raises_match
     (function Invalid_argument _ -> true | _ -> false)
-    (fun () -> Confinement.protect_meta [ "" ] Confinement.read_only)
+    (fun () -> confined ~protected_meta:[ "" ] ())
 
 let policy_distinguishes_network () =
-  let restricted = Confinement.read_only in
-  let enabled =
-    Confinement.read_only |> Confinement.network Confinement.Enabled
-  in
+  let restricted = confined () in
+  let enabled = confined ~network:Policy.Network.Enabled () in
   is_false ~msg:"network state participates in equality"
-    (Confinement.equal restricted enabled);
+    (Policy.equal restricted enabled);
   is_true ~msg:"read_only is restricted"
-    (match Confinement.network_state restricted with
-    | Confinement.Restricted -> true
-    | Confinement.Enabled -> false)
+    (match Policy.network restricted with
+    | Some Policy.Network.Restricted -> true
+    | Some Policy.Network.Enabled | None -> false)
 
 let policy_write_carveouts_are_backend_independent () =
   let policy =
-    Confinement.read_only
-    |> Confinement.writable [ abs "/private/tmp"; abs "/private/tmp/ws" ]
-    |> Confinement.protect_meta [ ".git" ]
-    |> Confinement.protect
-         [ abs "/outside/.spice"; abs "/private/tmp/ws/.spice" ]
+    confined
+      ~writable_roots:[ abs "/private/tmp"; abs "/private/tmp/ws" ]
+      ~protected_meta:[ ".git" ]
+      ~protected_paths:
+        [ abs "/outside/.spice"; abs "/private/tmp/ws/.spice" ]
+      ()
   in
   equal (list abs_value) ~msg:"write carveouts are canonical and scoped"
     [
@@ -90,7 +91,7 @@ let policy_write_carveouts_are_backend_independent () =
       abs "/private/tmp/ws/.git";
       abs "/private/tmp/ws/.spice";
     ]
-    (Confinement.write_carveouts policy)
+    (Policy.write_carveouts policy)
 
 (* Env *)
 
@@ -104,8 +105,7 @@ let env_partition_strips_credentials () =
   in
   let sandbox =
     Sandbox.seal ~backend
-      (Sandbox.Spec.Confined
-         (Confinement.read_only |> Confinement.writable [ abs "/work" ]))
+      (confined ~writable_roots:[ abs "/work" ] ())
   in
   let bindings =
     [
@@ -159,10 +159,10 @@ let backend_none_refuses () =
   is_true ~msg:"refusing backend is unavailable"
     (Result.is_error (Sandbox.Backend.available backend));
   is_true ~msg:"refusing backend never prepares"
-    (Result.is_error (Sandbox.Backend.prepare backend Confinement.read_only))
+    (Result.is_error (Sandbox.Backend.prepare backend (confined ())))
 
 let policy_digest policy =
-  Digest.string (Format.asprintf "%a" Confinement.pp policy)
+  Digest.string (Format.asprintf "%a" Policy.pp policy)
 
 let backend_validates () =
   raises_match
@@ -229,10 +229,9 @@ let bubblewrap_wrap policy = function
       |> Sandbox.Argv.to_list
 
 let bubblewrap_policy =
-  Confinement.read_only
-  |> Confinement.writable [ abs "/usr"; abs "/tmp" ]
-  |> Confinement.protect_meta [ ".git"; ".spice" ]
-  |> Confinement.protect [ abs "/usr/.spice/store" ]
+  confined ~writable_roots:[ abs "/usr"; abs "/tmp" ]
+    ~protected_meta:[ ".git"; ".spice" ]
+    ~protected_paths:[ abs "/usr/.spice/store" ] ()
 
 let has_sequence sequence values =
   let rec starts_with sequence values =
@@ -250,7 +249,7 @@ let has_sequence sequence values =
 
 let bubblewrap_read_only_wrap_shape () =
   let argv =
-    bubblewrap_wrap Confinement.read_only [ "/bin/sh"; "-c"; "true" ]
+    bubblewrap_wrap (confined ()) [ "/bin/sh"; "-c"; "true" ]
   in
   equal (list string) ~msg:"read-only bubblewrap argv"
     [
@@ -291,7 +290,7 @@ let bubblewrap_skips_missing_writable_roots () =
   let missing = Filename.temp_file "spice-sandbox-missing-" "-root" in
   Sys.remove missing;
   let policy =
-    Confinement.read_only |> Confinement.writable [ abs "/tmp"; abs missing ]
+    confined ~writable_roots:[ abs "/tmp"; abs missing ] ()
   in
   let argv = bubblewrap_wrap policy [ "true" ] in
   is_true ~msg:"existing root is bound"
@@ -301,9 +300,8 @@ let bubblewrap_skips_missing_writable_roots () =
 
 let bubblewrap_nested_roots_share_carveouts () =
   let policy =
-    Confinement.read_only
-    |> Confinement.writable [ abs "/tmp"; abs "/tmp/ws" ]
-    |> Confinement.protect_meta [ ".git" ]
+    confined ~writable_roots:[ abs "/tmp"; abs "/tmp/ws" ]
+      ~protected_meta:[ ".git" ] ()
   in
   let argv = bubblewrap_wrap policy [ "true" ] in
   is_true ~msg:"enclosing root carves out nested metadata"
@@ -311,9 +309,8 @@ let bubblewrap_nested_roots_share_carveouts () =
 
 let bubblewrap_ignores_protected_paths_outside_writable_roots () =
   let policy =
-    Confinement.read_only
-    |> Confinement.writable [ abs "/tmp" ]
-    |> Confinement.protect [ abs "/outside/.spice" ]
+    confined ~writable_roots:[ abs "/tmp" ]
+      ~protected_paths:[ abs "/outside/.spice" ] ()
   in
   let argv = bubblewrap_wrap policy [ "true" ] in
   is_false ~msg:"outside protected path is not mounted"
@@ -336,9 +333,7 @@ let bubblewrap_carveouts_follow_writable_binds () =
       fail "expected bind and carveout"
 
 let bubblewrap_network_enabled_keeps_host_network () =
-  let policy =
-    Confinement.read_only |> Confinement.network Confinement.Enabled
-  in
+  let policy = confined ~network:Policy.Network.Enabled () in
   let argv = bubblewrap_wrap policy [ "true" ] in
   is_false ~msg:"enabled network does not unshare net"
     (List.exists (String.equal "--unshare-net") argv)
@@ -348,15 +343,14 @@ let bubblewrap_hash_is_stable () =
   let hash_b =
     profile_hash
       (bubblewrap_prepared
-         (Confinement.read_only
-         |> Confinement.protect [ abs "/usr/.spice/store" ]
-         |> Confinement.protect_meta [ ".spice"; ".git" ]
-         |> Confinement.writable [ abs "/tmp"; abs "/usr" ]))
+         (confined ~protected_paths:[ abs "/usr/.spice/store" ]
+            ~protected_meta:[ ".spice"; ".git" ]
+            ~writable_roots:[ abs "/tmp"; abs "/usr" ] ()))
   in
   equal string ~msg:"equal policies hash equally" hash_a hash_b;
   is_false ~msg:"different policies hash differently"
     (String.equal hash_a
-       (profile_hash (bubblewrap_prepared Confinement.read_only)))
+       (profile_hash (bubblewrap_prepared (confined ()))))
 
 (* Exec sealing *)
 
@@ -370,10 +364,10 @@ let fake_backend =
     ()
 
 let workspace_policy =
-  Confinement.read_only |> Confinement.writable [ abs "/work" ]
+  confined ~writable_roots:[ abs "/work" ] ()
 
 let exec_passes_unconfined () =
-  let exec = Sandbox.seal Sandbox.Spec.Unconfined in
+  let exec = Sandbox.seal Policy.direct in
   let bindings = [ ("ANTHROPIC_API_KEY", "sk") ] in
   (match
      Sandbox.spawn exec ~argv:(argv "sh" [ "-c"; "true" ]) ~env:bindings
@@ -395,7 +389,7 @@ let exec_passes_unconfined () =
     | Sandbox.Available | Sandbox.Denied _ -> false)
 
 let exec_passes_external () =
-  let exec = Sandbox.seal Sandbox.Spec.Declared_external in
+  let exec = Sandbox.seal Policy.external_ in
   match Sandbox.spawn exec ~argv:(argv "true" []) ~env:[] with
   | Ok spawn ->
       equal (list string) ~msg:"argv passes through" [ "true" ]
@@ -406,13 +400,13 @@ let exec_passes_external () =
   | Error error -> fail (Sandbox.Error.message error)
 
 let exec_fails_closed_by_default () =
-  let exec = Sandbox.seal (Sandbox.Spec.Confined workspace_policy) in
+  let exec = Sandbox.seal workspace_policy in
   is_true ~msg:"confined without a backend refuses"
     (Result.is_error (Sandbox.spawn exec ~argv:(argv "true" []) ~env:[]))
 
 let exec_seals_confined () =
   let exec =
-    Sandbox.seal ~backend:fake_backend (Sandbox.Spec.Confined workspace_policy)
+    Sandbox.seal ~backend:fake_backend workspace_policy
   in
   let bindings = [ ("PATH", "/usr/bin"); ("AWS_SECRET", "x") ] in
   match Sandbox.spawn exec ~argv:(argv "sh" [ "-c"; "true" ]) ~env:bindings with
@@ -436,15 +430,14 @@ let exec_seals_confined () =
 
 let exec_escalation_stances () =
   let workspace_write =
-    Sandbox.seal ~backend:fake_backend (Sandbox.Spec.Confined workspace_policy)
+    Sandbox.seal ~backend:fake_backend workspace_policy
   in
   is_true ~msg:"workspace-write escalation is available"
     (match Sandbox.escalation workspace_write with
     | Sandbox.Available -> true
     | Sandbox.Denied _ | Sandbox.Ignored -> false);
   let read_only =
-    Sandbox.seal ~backend:fake_backend
-      (Sandbox.Spec.Confined Confinement.read_only)
+    Sandbox.seal ~backend:fake_backend (confined ())
   in
   is_true ~msg:"read-only escalation is refused"
     (match Sandbox.escalation read_only with
@@ -458,10 +451,10 @@ let exec_refuses_unavailable_backend_before_preparing () =
       ~prepare:(fun policy ->
         fail
           ("prepare must not be called for "
-          ^ Format.asprintf "%a" Confinement.pp policy))
+          ^ Format.asprintf "%a" Policy.pp policy))
       ()
   in
-  let exec = Sandbox.seal ~backend (Sandbox.Spec.Confined workspace_policy) in
+  let exec = Sandbox.seal ~backend workspace_policy in
   match Sandbox.spawn exec ~argv:(argv "true" []) ~env:[] with
   | Error error ->
       equal error_value ~msg:"availability error"
@@ -470,7 +463,7 @@ let exec_refuses_unavailable_backend_before_preparing () =
   | Ok _ -> fail "unavailable backend must refuse"
 
 let exec_refusal_evidence () =
-  let exec = Sandbox.seal (Sandbox.Spec.Confined workspace_policy) in
+  let exec = Sandbox.seal workspace_policy in
   match Sandbox.spawn exec ~argv:(argv "true" []) ~env:[] with
   | Error error ->
       begin match Sandbox.Evidence.refused error with
@@ -550,10 +543,9 @@ let evidence_cases_are_distinct () =
 (* Seatbelt lowering *)
 
 let seatbelt_policy =
-  Confinement.read_only
-  |> Confinement.writable [ abs "/work"; abs "/private/tmp" ]
-  |> Confinement.protect_meta [ ".git"; ".spice" ]
-  |> Confinement.protect [ abs "/work/.spice/store" ]
+  confined ~writable_roots:[ abs "/work"; abs "/private/tmp" ]
+    ~protected_meta:[ ".git"; ".spice" ]
+    ~protected_paths:[ abs "/work/.spice/store" ] ()
 
 let seatbelt_profile_shapes () =
   let profile, params = Seatbelt.profile seatbelt_policy in
@@ -590,9 +582,9 @@ let seatbelt_nested_roots_share_carveouts () =
   (* A workspace nested under another writable root (the temp dir) must not
      have its protected metadata reachable through the enclosing root. *)
   let policy =
-    Confinement.read_only
-    |> Confinement.writable [ abs "/private/tmp"; abs "/private/tmp/ws" ]
-    |> Confinement.protect_meta [ ".git" ]
+    confined
+      ~writable_roots:[ abs "/private/tmp"; abs "/private/tmp/ws" ]
+      ~protected_meta:[ ".git" ] ()
   in
   let _profile, params = Seatbelt.profile policy in
   is_true ~msg:"enclosing root carves out the nested root's .git"
@@ -604,15 +596,13 @@ let seatbelt_nested_roots_share_carveouts () =
        params)
 
 let seatbelt_read_only_profile () =
-  let profile, params = Seatbelt.profile Confinement.read_only in
+  let profile, params = Seatbelt.profile (confined ()) in
   is_false ~msg:"read-only has no write allowance section"
     (String.includes ~affix:"(allow file-write*\n" profile);
   equal (list (pair string string)) ~msg:"read-only binds no params" [] params
 
 let seatbelt_network_enabled () =
-  let policy =
-    Confinement.read_only |> Confinement.network Confinement.Enabled
-  in
+  let policy = confined ~network:Policy.Network.Enabled () in
   let profile, _params = Seatbelt.profile policy in
   is_true ~msg:"enabled network allows outbound"
     (String.includes ~affix:"(allow network-outbound)" profile);
@@ -628,14 +618,13 @@ let seatbelt_hash_is_stable () =
   let hash_a = seatbelt_hash seatbelt_policy in
   let hash_b =
     seatbelt_hash
-      (Confinement.read_only
-      |> Confinement.protect [ abs "/work/.spice/store" ]
-      |> Confinement.protect_meta [ ".spice"; ".git" ]
-      |> Confinement.writable [ abs "/private/tmp"; abs "/work" ])
+      (confined ~protected_paths:[ abs "/work/.spice/store" ]
+         ~protected_meta:[ ".spice"; ".git" ]
+         ~writable_roots:[ abs "/private/tmp"; abs "/work" ] ())
   in
   equal string ~msg:"equal policies hash equally" hash_a hash_b;
   is_false ~msg:"different policies hash differently"
-    (String.equal hash_a (seatbelt_hash Confinement.read_only))
+    (String.equal hash_a (seatbelt_hash (confined ())))
 
 let seatbelt_wrap_shape () =
   match Sandbox.Backend.available Seatbelt.backend with
