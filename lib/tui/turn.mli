@@ -80,7 +80,9 @@ val apply :
     {!Spice_protocol.Event.Turn_finished}'s [final_text] is ignored: every model
     step's durable {!Spice_protocol.Event.Assistant} is already rendered, so the
     turn's last text is on the document and reconciling [final_text] would
-    double it. *)
+    double it. A durable {!Spice_protocol.Event.Assistant_interrupted} settles
+    its text as an assistant block and clears the matching live delta buffer
+    before the interruption notice arrives. *)
 
 val interrupting : t -> t
 (** [interrupting t] marks the turn as draining after a cooperative interrupt.

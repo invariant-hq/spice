@@ -376,6 +376,16 @@ let apply ~now ~show_reasoning event t =
           step_output = 0;
         },
         blocks )
+  | Assistant_interrupted { text } ->
+      ( {
+          t with
+          assistant_stable = "";
+          assistant_open = "";
+          reasoning = "";
+          step_started = None;
+          step_output = 0;
+        },
+        [ Transcript.Assistant text ] )
   | Tool_started claim ->
       ( {
           t with

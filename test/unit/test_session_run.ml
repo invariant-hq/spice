@@ -669,6 +669,60 @@ let interrupt_finishes_turn_as_cancelled () =
   | Error Run.Error.No_active_turn -> ()
   | Error error -> failf "unexpected interrupt error: %a" Run.Error.pp error
 
+let interrupt_retains_partial_assistant_context () =
+  let partial = "The sequence reached 10, 20, 30, and 40." in
+  let interrupted =
+    match
+      Run.interrupt ~reason:"user interrupt" ~assistant_text:partial (session ())
+    with
+    | Ok step -> step
+    | Error error -> failf "interrupt failed: %a" Run.Error.pp error
+  in
+  (match Run.Step.events interrupted with
+  | [
+   Session.Event.Assistant_interrupted { text };
+   Session.Event.Turn_finished _;
+  ] ->
+      equal string ~msg:"interrupt retains exact visible prose" partial text
+  | events ->
+      failf "unexpected interrupted event count: %d" (List.length events));
+  let interrupted_session = Run.Step.session interrupted in
+  let metrics = Session.metrics interrupted_session in
+  equal int ~msg:"partial prose is not a completed provider response" 0
+    metrics.Session.Metrics.responses;
+  let follow_up =
+    match
+      Run.start (config []) ~id:(Session.Turn.Id.of_string "turn-follow-up")
+        ~input:(Session.Turn.Input.user_text "What was the last number?")
+        ~model interrupted_session
+    with
+    | Ok step -> step
+    | Error error -> failf "follow-up start failed: %a" Run.Error.pp error
+  in
+  let request =
+    match Run.Step.next follow_up with
+    | Run.Step.Request_model request -> request
+    | next ->
+        failf "expected follow-up model request, got %a" Run.Step.pp_next next
+  in
+  let texts =
+    Llm.Request.messages request
+    |> List.concat_map (function
+      | Llm.Message.Assistant assistant -> Llm.Message.Assistant.texts assistant
+      | Llm.Message.System _ | Llm.Message.Developer _ | Llm.Message.User _
+      | Llm.Message.Tool_result _ ->
+          [])
+  in
+  equal (list string) ~msg:"follow-up request replays interrupted assistant"
+    [ partial ] texts;
+  let empty =
+    match Run.interrupt ~assistant_text:" \n " (session ()) with
+    | Ok step -> step
+    | Error error -> failf "empty interrupt failed: %a" Run.Error.pp error
+  in
+  equal int ~msg:"whitespace-only partial produces no semantic event" 1
+    (List.length (Run.Step.events empty))
+
 (* The drive's repair: a turn whose model call failed terminally must still
    reach a terminal event, or it stays active in the saved session and every
    later command is refused against it. *)
@@ -1559,6 +1613,8 @@ let () =
         block_accessors_identify_call_and_turn;
       test "interrupt finishes turn as cancelled"
         interrupt_finishes_turn_as_cancelled;
+      test "interrupt retains partial assistant context"
+        interrupt_retains_partial_assistant_context;
       test "fail finishes turn as failed" fail_finishes_turn_as_failed;
       test "config prelude reaches model request" prelude_reaches_model_request;
       test "resumed turn keeps accepted tool declarations"

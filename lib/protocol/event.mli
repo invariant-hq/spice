@@ -65,6 +65,9 @@ type t =
   | Turn_started of Spice_session.Turn.t  (** A turn began. *)
   | Assistant of Spice_llm.Response.t
       (** The model produced an assistant response. *)
+  | Assistant_interrupted of { text : string }
+      (** Visible assistant prose retained from an interrupted provider stream.
+          It is text-only and is not a completed provider response. *)
   | Tool_started of Spice_session.Tool_claim.Started.t
       (** An executable tool claim was saved and is about to run. The started
           claim carries the model call and the claim id, so no separate

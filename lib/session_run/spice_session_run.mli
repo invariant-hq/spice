@@ -262,9 +262,19 @@ val finish_tool_preflight :
 
     Raises [Invalid_argument] if [preparation] belongs to another preflight. *)
 
-val interrupt : ?reason:string -> session -> (Step.t, Error.t) result
-(** [interrupt ?reason session] finishes [session]'s active turn as
-    interrupted by cancellation.
+val interrupt :
+  ?reason:string ->
+  ?assistant_text:string ->
+  session ->
+  (Step.t, Error.t) result
+(** [interrupt ?reason ?assistant_text session] finishes [session]'s active turn
+    as interrupted by cancellation.
+
+    When [assistant_text] contains non-whitespace visible prose streamed before
+    cancellation, the returned events first retain it as
+    {!Spice_session.Event.Assistant_interrupted}. Empty and whitespace-only
+    values produce no event. This text-only fact does not fabricate a completed
+    provider response, stop reason, usage, reasoning, or tool-call input.
 
     The host owns the cancellation signal; when it fires between planning
     steps, the host calls [interrupt] instead of continuing. The recorded

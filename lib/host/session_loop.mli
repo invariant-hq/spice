@@ -80,6 +80,11 @@ type hooks = {
   cancelled : unit -> bool;
       (** Sampled between effects; [true] finishes the active turn as
           interrupted instead of performing the next planned effect. *)
+  interrupted_assistant : unit -> string option;
+      (** Returns visible assistant prose accumulated for the provider step
+          being interrupted, if any. The Live attachment owns this ephemeral
+          stream buffer; the interpreter consumes it only when constructing the
+          durable interrupted-assistant event. *)
 }
 (** The interpreter's optional side effects, threaded through {!execute}. Not
     session state. The record is transparent here so the interpreter reads its
@@ -163,6 +168,10 @@ val with_terminal_observed :
 
 val with_cancelled : (unit -> bool) -> hooks -> hooks
 (** [with_cancelled cancelled hooks] replaces {!field:cancelled}. *)
+
+val with_interrupted_assistant : (unit -> string option) -> hooks -> hooks
+(** [with_interrupted_assistant buffered hooks] replaces the callback that
+    supplies visible prose for an interrupt. Internal to the Live attachment. *)
 
 val with_notices :
   ?before_request:(unit -> unit) -> Notice_queue.t -> hooks -> hooks

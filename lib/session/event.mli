@@ -32,6 +32,11 @@ type t = private
   | Response_appended of Spice_llm.Response.t
       (** A completed provider response was appended. Applying this event
           appends {!Spice_llm.Response.message} to the transcript. *)
+  | Assistant_interrupted of { text : string }
+      (** Visible assistant prose retained when its provider stream was
+          interrupted before producing a completed response. Applying this
+          event appends a text-only assistant message to the transcript; it
+          carries no provider stop, usage, reasoning, or tool-call metadata. *)
   | Compaction_installed of Compaction.t
       (** Model replay history was replaced by a compacted transcript. *)
   | Permission_requested of Permission.Requested.t
@@ -65,6 +70,12 @@ val message_appended : Spice_llm.Message.t -> t
 
 val response_appended : Spice_llm.Response.t -> t
 (** [response_appended response] records a completed provider response. *)
+
+val assistant_interrupted : text:string -> t
+(** [assistant_interrupted ~text] records non-whitespace visible assistant prose
+    from an interrupted provider stream.
+
+    Raises [Invalid_argument] if [text] is empty or whitespace-only. *)
 
 val compaction_installed : Compaction.t -> t
 (** [compaction_installed compaction] records a model replay replacement. *)

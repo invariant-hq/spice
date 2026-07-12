@@ -182,6 +182,8 @@ type t
     - at most one turn is active;
     - turn starts append their user input to the transcript;
     - completed responses append their assistant message to the transcript;
+    - interrupted assistant prose appends a text-only assistant message without
+      incrementing the completed-response count or inventing provider metadata;
     - active-turn tool results are checked by {!Spice_llm.Transcript};
     - compactions require a request-ready current transcript and a request-ready
       replacement transcript, and leave any active turn active;
@@ -276,7 +278,8 @@ val turn_outcome : Turn.Id.t -> t -> Turn.Outcome.t option
 val turn_response_count : Turn.Id.t -> t -> int option
 (** [turn_response_count id t] is the number of model responses appended for
     turn [id], if [id] is known. The active turn's count increases on
-    {!Event.Response_appended} only. *)
+    {!Event.Response_appended} only; interrupted assistant prose is not a
+    completed response. *)
 
 val turn_final_text : Turn.Id.t -> t -> string option
 (** [turn_final_text id t] is the latest non-empty assistant text appended

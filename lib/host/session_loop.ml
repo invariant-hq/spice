@@ -145,6 +145,7 @@ type hooks = {
     Spice_session_store.Document.t * Spice_protocol.Outcome.t ->
     unit;
   cancelled : unit -> bool;
+  interrupted_assistant : unit -> string option;
 }
 
 let no_prepare_request ~observe:_ request =
@@ -160,6 +161,7 @@ let no_hooks =
     observe = no_observe;
     terminal = (fun ~observe:_ _ -> ());
     cancelled = not_cancelled;
+    interrupted_assistant = (fun () -> None);
   }
 
 let with_prepare_request prepare_request hooks = { hooks with prepare_request }
@@ -190,6 +192,8 @@ let with_terminal_observed terminal hooks =
   }
 
 let with_cancelled cancelled hooks = { hooks with cancelled }
+let with_interrupted_assistant interrupted_assistant hooks =
+  { hooks with interrupted_assistant }
 
 let request_with_notices request notices =
   match notices with
@@ -302,6 +306,8 @@ let emit_saved projector observe events =
                   projector.host_tool_names
               then register_answer projector call)
             (Spice_llm.Response.tool_calls response)
+      | Spice_session.Event.Assistant_interrupted { text } ->
+          observe (Spice_protocol.Event.Assistant_interrupted { text })
       | Spice_session.Event.Tool_claim_started claim ->
           observe (Spice_protocol.Event.Tool_started claim)
       | Spice_session.Event.Tool_claim_finished _ -> ()
@@ -456,8 +462,9 @@ and handle_saved_step ~store ~projector ~pressure_compacted ~overflow_compacted
          interrupted instead of performing the planned effect. The interrupt
          step always reports [Finished]. *)
       let session = Spice_session_store.Document.session document in
+      let assistant_text = hooks.interrupted_assistant () in
       let* step =
-        Spice_session_run.interrupt ~reason:"cancelled" session
+        Spice_session_run.interrupt ~reason:"cancelled" ?assistant_text session
         |> map_run session
       in
       handle_step ~store ~projector ~pressure_compacted ~overflow_compacted
@@ -855,8 +862,10 @@ let execute ~store ~client ~host_tool ~resolve_plan ~save_user_permission_rules
         continue_step document step)
     | Spice_protocol.Command.Interrupt { reason } ->
         let* () = check_active_document session in
+        let assistant_text = hooks.interrupted_assistant () in
         let* step =
-          Spice_session_run.interrupt ?reason session |> map_run session
+          Spice_session_run.interrupt ?reason ?assistant_text session
+          |> map_run session
         in
         continue_step document step
   in

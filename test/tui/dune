@@ -35,6 +35,7 @@
   spice_path
   spice_protocol
   spice_session
+  spice_session_store
   spice_workspace)
  (preprocess
   (pps ppx_windtrap)))

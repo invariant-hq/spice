@@ -406,6 +406,7 @@ module Metrics = struct
             }
         | Permission.Resolved.Allowed _ -> acc)
     | Event.Turn_started _ | Event.Message_appended _
+    | Event.Assistant_interrupted _
     | Event.Compaction_installed _ | Event.Permission_requested _
     | Event.Tool_claim_started _ ->
         acc

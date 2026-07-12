@@ -558,6 +558,25 @@ let apply_response_appended response t =
             Ok { t with replay_usage; turns = Turn_map.add active turn t.turns }
       )
 
+let apply_assistant_interrupted text t =
+  match require_active_turn t with
+  | Error _ as error -> error
+  | Ok active -> (
+      let message = Spice_llm.Message.assistant_text text in
+      match add_transcript message t with
+      | Error _ as error -> error
+      | Ok t ->
+          let turn = Turn_map.find active t.turns in
+          let final_text =
+            let text = String.trim text in
+            if String.is_empty text then turn.final_text else Some text
+          in
+          Ok
+            {
+              t with
+              turns = Turn_map.add active { turn with final_text } t.turns;
+            })
+
 let apply_compaction_installed compaction t =
   match Transcript.require_ready t.transcript with
   | Error error -> transcript_error error
@@ -784,6 +803,7 @@ let apply event t =
   | Event.Turn_started turn -> apply_turn_started turn t
   | Event.Message_appended message -> apply_message_appended message t
   | Event.Response_appended response -> apply_response_appended response t
+  | Event.Assistant_interrupted { text } -> apply_assistant_interrupted text t
   | Event.Compaction_installed compaction ->
       apply_compaction_installed compaction t
   | Event.Permission_requested request -> apply_permission_requested request t

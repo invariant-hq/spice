@@ -11,6 +11,7 @@ type t =
   | Turn_started of Turn.t
   | Message_appended of Spice_llm.Message.t
   | Response_appended of Spice_llm.Response.t
+  | Assistant_interrupted of { text : string }
   | Compaction_installed of Compaction.t
   | Permission_requested of Permission.Requested.t
   | Permission_resolved of Permission.Resolved.t
@@ -33,6 +34,12 @@ let message_appended message =
   Message_appended message
 
 let response_appended response = Response_appended response
+
+let assistant_interrupted ~text =
+  if String.is_empty (String.trim text) then
+    invalid "assistant_interrupted" "text must contain visible prose";
+  Assistant_interrupted { text }
+
 let compaction_installed compaction = Compaction_installed compaction
 let permission_requested request = Permission_requested request
 let permission_resolved reply = Permission_resolved reply
@@ -45,6 +52,8 @@ let equal a b =
   | Turn_started a, Turn_started b -> Turn.equal a b
   | Message_appended a, Message_appended b -> Spice_llm.Message.equal a b
   | Response_appended a, Response_appended b -> Spice_llm.Response.equal a b
+  | Assistant_interrupted a, Assistant_interrupted b ->
+      String.equal a.text b.text
   | Compaction_installed a, Compaction_installed b -> Compaction.equal a b
   | Permission_requested a, Permission_requested b ->
       Permission.Requested.equal a b
@@ -58,6 +67,7 @@ let equal a b =
   | Turn_started _, _
   | Message_appended _, _
   | Response_appended _, _
+  | Assistant_interrupted _, _
   | Compaction_installed _, _
   | Permission_requested _, _
   | Permission_resolved _, _
@@ -80,6 +90,8 @@ let pp ppf = function
   | Response_appended response ->
       Format.fprintf ppf "response-appended(%S)"
         (Spice_llm.Response.text response)
+  | Assistant_interrupted { text } ->
+      Format.fprintf ppf "assistant-interrupted(%S)" text
   | Compaction_installed compaction ->
       Format.fprintf ppf "compaction-installed(%a)" Compaction.pp compaction
   | Permission_requested request ->
@@ -123,6 +135,15 @@ let jsont =
       | _ -> assert false)
     |> Jsont.Object.error_unknown |> Jsont.Object.finish
     |> Jsont.Object.Case.map "response_appended" ~dec:Fun.id
+  in
+  let assistant_interrupted_case =
+    Jsont.Object.map ~kind:"assistant-interrupted event" (fun text ->
+        decode_invalid_arg (fun () -> assistant_interrupted ~text))
+    |> Jsont.Object.mem "text" Jsont.string ~enc:(function
+      | Assistant_interrupted { text } -> text
+      | _ -> assert false)
+    |> Jsont.Object.error_unknown |> Jsont.Object.finish
+    |> Jsont.Object.Case.map "assistant_interrupted" ~dec:Fun.id
   in
   let compaction_installed_case =
     Jsont.Object.map ~kind:"compaction-installed event" (fun compaction ->
@@ -187,6 +208,7 @@ let jsont =
         turn_started_case;
         message_appended_case;
         response_appended_case;
+        assistant_interrupted_case;
         compaction_installed_case;
         permission_requested_case;
         permission_resolved_case;
@@ -201,6 +223,8 @@ let jsont =
         Jsont.Object.Case.value message_appended_case event
     | Response_appended _ as event ->
         Jsont.Object.Case.value response_appended_case event
+    | Assistant_interrupted _ as event ->
+        Jsont.Object.Case.value assistant_interrupted_case event
     | Compaction_installed _ as event ->
         Jsont.Object.Case.value compaction_installed_case event
     | Permission_requested _ as event ->

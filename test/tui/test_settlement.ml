@@ -8,6 +8,7 @@ module Llm = Spice_llm
 module Host = Spice_host
 module Protocol = Spice_protocol
 module Session = Spice_session
+module Store = Spice_session_store
 
 let obj fields =
   Jsont.Json.object'
@@ -53,12 +54,19 @@ let request_contains request fragment =
 let resolve_once resolver value =
   ignore (Eio.Promise.try_resolve resolver value : bool)
 
-let blocked_stream ~started ~model =
+let blocked_stream ?partial ~started ~model () =
   let never, _never_resolver = Eio.Promise.create () in
+  let partial = ref partial in
   Llm.Stream.make (fun () ->
-      resolve_once started ();
-      Eio.Promise.await never;
-      Some (Llm.Stream.Finished (response ~model "unreachable")))
+      match !partial with
+      | Some text ->
+          partial := None;
+          resolve_once started ();
+          Some (Llm.Stream.Event (Llm.Stream.Event.text_delta text))
+      | None ->
+          resolve_once started ();
+          Eio.Promise.await never;
+          Some (Llm.Stream.Finished (response ~model "unreachable")))
 
 let scripted_client ~child_started ~next_root_started =
   let provider = Llm.Provider.make "openai" in
@@ -67,9 +75,9 @@ let scripted_client ~child_started ~next_root_started =
       let model = Llm.Request.model request in
       let stream =
         if request_contains request "child never settles" then
-          blocked_stream ~started:child_started ~model
+          blocked_stream ~started:child_started ~model ()
         else if request_contains request "root follow-up" then
-          blocked_stream ~started:next_root_started ~model
+          blocked_stream ~started:next_root_started ~model ()
         else if request_contains request "launched" then
           Llm.Stream.of_list
             [ Llm.Stream.Finished (response ~model "root settled") ]
@@ -85,7 +93,7 @@ let cancellation_client ~child_started =
       let model = Llm.Request.model request in
       let stream =
         if request_contains request "first child stalls" then
-          blocked_stream ~started:child_started ~model
+          blocked_stream ~started:child_started ~model ()
         else
           Llm.Stream.of_list
             [ Llm.Stream.Finished (response ~model "second child completed") ]
@@ -93,12 +101,13 @@ let cancellation_client ~child_started =
       Llm.Stream.iter_events stream ~f:on_event)
     ()
 
-let blocked_client ~started =
+let blocked_client ?partial ~started () =
   let provider = Llm.Provider.make "openai" in
   Llm.Client.make ~provider
     ~run:(fun ~cancelled:_ ~on_event request ->
       let model = Llm.Request.model request in
-      Llm.Stream.iter_events (blocked_stream ~started ~model) ~f:on_event)
+      Llm.Stream.iter_events (blocked_stream ?partial ~started ~model ())
+        ~f:on_event)
     ()
 
 let get_or_fail pp = function
@@ -607,7 +616,8 @@ let%expect_test "closing a live session interrupts and joins its blocked turn" =
         |> get_or_fail Host.Host.Error.pp
       in
       let started, resolve_started = Eio.Promise.create () in
-      let client = blocked_client ~started:resolve_started in
+      let partial = "Persist this visible partial answer." in
+      let client = blocked_client ~partial ~started:resolve_started () in
       let runner =
         Host.Run.runner run ~mode:Protocol.Mode.Build ~model ~client
         |> get_or_fail Host.Host.Error.pp
@@ -630,6 +640,30 @@ let%expect_test "closing a live session interrupts and joins its blocked turn" =
       Eio.Time.with_timeout_exn clock 5. (fun () -> Eio.Promise.await started);
       Eio.Time.with_timeout_exn clock 2. (fun () -> Host.Live.close live);
       Host.Live.close live;
+      let reloaded =
+        Host.Session.load store session |> get_or_fail Protocol.Error.pp
+      in
+      let reloaded_session = Store.Document.session reloaded in
+      let persisted_event =
+        List.exists
+          (function
+            | Session.Event.Assistant_interrupted { text } ->
+                String.equal text partial
+            | _ -> false)
+          (Session.events reloaded_session)
+      in
+      let replayed_partial =
+        Session.State.transcript (Session.state reloaded_session)
+        |> Llm.Transcript.messages
+        |> List.exists (function
+          | Llm.Message.Assistant assistant ->
+              List.exists (String.equal partial)
+                (Llm.Message.Assistant.texts assistant)
+          | Llm.Message.System _ | Llm.Message.Developer _ | Llm.Message.User _
+          | Llm.Message.Tool_result _ ->
+              false)
+      in
+      let persisted_partial = persisted_event && replayed_partial in
       let interrupted =
         match !settlements with
         | [ Ok (_, Protocol.Outcome.Finished { outcome; _ }) ] -> (
@@ -645,9 +679,11 @@ let%expect_test "closing a live session interrupts and joins its blocked turn" =
       in
       Printf.printf "settlements: %d\n" (List.length !settlements);
       Printf.printf "interrupted: %b\n" interrupted;
+      Printf.printf "partial persisted after reload: %b\n" persisted_partial;
       Printf.printf "pending: %b\n" (Host.Live.is_pending live);
       [%expect
         {|
         settlements: 1
         interrupted: true
+        partial persisted after reload: true
         pending: false|}])

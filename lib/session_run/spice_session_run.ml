@@ -268,7 +268,7 @@ let tool_result_text ?(error = false) call text =
    missing tool results. A planned-but-unrun executable claim is finished with
    the terminal result (recording the claim outcome and its transcript
    message); a host-tool or not-yet-claimed call gets a direct tool result. *)
-let terminate ~outcome ~result ~text session =
+let terminate ?assistant_text ~outcome ~result ~text session =
   let* turn = active_turn_id session in
   let st = state session in
   let pending_claims = State.pending_tool_claims st in
@@ -295,13 +295,20 @@ let terminate ~outcome ~result ~text session =
   let result_events =
     List.map result_event (Llm.Transcript.pending (State.transcript st))
   in
+  let assistant_events =
+    match assistant_text with
+    | Some text when not (String.is_empty (String.trim text)) ->
+        [ Event.assistant_interrupted ~text ]
+    | None | Some _ -> []
+  in
   Step.make ~session
-    ~events:(result_events @ [ Event.turn_finished ~turn outcome ])
+    ~events:
+      (assistant_events @ result_events @ [ Event.turn_finished ~turn outcome ])
     ~next:(Step.Finished { turn; outcome })
 
-let interrupt ?reason session =
+let interrupt ?reason ?assistant_text session =
   let text = Option.value reason ~default:"interrupted" in
-  terminate
+  terminate ?assistant_text
     ~outcome:(Turn.Outcome.interrupted ?reason ~cancelled:true ())
     ~result:(Tool.Result.interrupted ~reason:text ~cancelled:true ())
     ~text session

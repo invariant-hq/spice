@@ -23,6 +23,7 @@ type t =
   (* Durable — also produced by {!of_session}. *)
   | Turn_started of Session.Turn.t
   | Assistant of Spice_llm.Response.t
+  | Assistant_interrupted of { text : string }
   | Tool_started of Session.Tool_claim.Started.t
   | Tool_finished of {
       claim : Session.Tool_claim.Started.t;
@@ -62,7 +63,8 @@ type t =
   | Notices_injected of Notice.t list
 
 let is_durable = function
-  | Turn_started _ | Assistant _ | Tool_started _ | Tool_finished _
+  | Turn_started _ | Assistant _ | Assistant_interrupted _ | Tool_started _
+  | Tool_finished _
   | Host_call _ | Permission_requested _ | Permission_resolved _ | Compaction _
   | Turn_finished _ ->
       true
@@ -146,6 +148,8 @@ let of_session session =
                     (Spice_llm.Tool.Call.id call)
                     call !pending_calls)
             (Spice_llm.Response.tool_calls response)
+      | Session.Event.Assistant_interrupted { text } ->
+          emit (Assistant_interrupted { text })
       | Session.Event.Tool_claim_started claim ->
           started :=
             String_map.add

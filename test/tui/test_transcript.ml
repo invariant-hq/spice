@@ -278,6 +278,77 @@ let%expect_test "esc interrupts an in-flight turn, forcing on the third press" =
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
 
+(* Interrupting after visible prose streamed retains that prose as a durable
+   assistant block before the interruption marker. The follow-up request must
+   carry the same prose: this checks the screen and the model context through
+   the real provider/store/host/TUI path, including the force-cancel rung that
+   unwinds a blocked stream before the queued interrupt command runs. *)
+let%expect_test
+    "interrupt retains streamed prose on screen and in follow-up context" =
+  let partial = "The sequence reached 10, 20, 30, and 40." in
+  let script =
+    [
+      Provider_script.stream_hold ~expect:[ "count upward" ] ~gate:"held"
+        ~id:"resp-partial" partial;
+      Provider_script.message
+        ~expect:[ "what was the last number"; partial ] ~gate:"fin"
+        ~id:"resp-follow-up" "The last number was 40.";
+    ]
+  in
+  Tui.run ~name:"transcript-interrupted-partial" ~provider:script @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "count upward";
+  Tui.enter t;
+  ignore (Tui.await_request t 1 : string);
+  Tui.settle t;
+  Tui.keys t Key.escape;
+  Tui.settle t;
+  Tui.keys t Key.escape;
+  Tui.settle t;
+  Tui.keys t Key.escape;
+  Tui.settle_turn t;
+  Tui.print t;
+  [%expect
+    {|
+    01 |
+    02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+    03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+    04 |        sandbox: danger-full-access (config)
+    05 |
+    06 | ❯ count upward
+    07 |
+    08 | ⏺ The sequence reached 10, 20, 30, and 40.
+    09 |
+    10 | ◌ Interrupted — tell spice what to do differently.
+    11 |
+    12 |
+    13 |
+    14 |
+    15 |
+    16 |
+    17 |
+    18 |
+    19 |
+    20 |
+    21 | ────────────────────────────────────────────────────────────────────────────────
+    22 | ❯ message spice
+    23 | ────────────────────────────────────────────────────────────────────────────────
+    24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts
+    |}];
+  (* The interrupted client no longer reads this terminal event, but releasing
+     the scripted server gate lets it accept the follow-up connection. *)
+  Tui.release t "held";
+  Tui.keys t "what was the last number";
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin";
+  Tui.settle t;
+  print_endline
+    (if Screen.contains (Tui.screen t) "The last number was 40." then
+       "follow-up completed with interrupted context"
+     else "follow-up response missing");
+  [%expect {| follow-up completed with interrupted context |}]
+
 (* Ctrl+C is the quit chord, never an interrupt: pressed while a turn is in
    flight it arms "Press Ctrl+C again to exit" — never the esc interrupt notice —
    and the turn keeps running to its real answer once released. *)

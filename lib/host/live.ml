@@ -67,6 +67,11 @@ type t = {
   mutable closing : bool;
   mutable working : bool;
   mutable drain_cancel : Eio.Switch.t option;
+  assistant_partial : Buffer.t;
+      (* Visible text deltas for the current model step. This is deliberately
+         narrower than an Assistant message: reasoning and tool input never
+         enter it. A durable Assistant clears it; an interrupt consumes it
+         through the interpreter hook. *)
   signal : Eio.Condition.t;
   stopped : unit Eio.Promise.t;
   stop : unit Eio.Promise.u;
@@ -92,6 +97,21 @@ let deliver subscribers value =
               m "subscriber raised, isolated: %s" (Printexc.to_string exn)))
     subscribers
 
+let capture_assistant_partial t = function
+  | Spice_protocol.Event.Turn_started _
+  | Spice_protocol.Event.Model_started _
+  | Spice_protocol.Event.Assistant _
+  | Spice_protocol.Event.Assistant_interrupted _
+  | Spice_protocol.Event.Turn_finished _ ->
+      Buffer.clear t.assistant_partial
+  | Spice_protocol.Event.Assistant_delta { text } ->
+      Buffer.add_string t.assistant_partial text
+  | _ -> ()
+
+let interrupted_assistant t =
+  let text = Buffer.contents t.assistant_partial in
+  if String.is_empty (String.trim text) then None else Some text
+
 (* Tap a runner's hooks with Live's own: forward every event to subscribers
    (after the consumer's own observer, which stays installed), own cancellation
    through the Live flag, and track the latest saved document for interrupt
@@ -104,12 +124,15 @@ let tapped t runner =
       let prior_observe event = Session.observe hooks event in
       hooks
       |> Session.with_observe (fun event ->
+          capture_assistant_partial t event;
           deliver t.events event;
           prior_observe event)
       |> Session.with_after_save (fun document events ->
           t.last_saved <- document;
           Session.after_save hooks document events)
-      |> Session.with_cancelled (fun () -> t.cancelling))
+      |> Session.with_cancelled (fun () -> t.cancelling)
+      |> Session_loop.with_interrupted_assistant (fun () ->
+          interrupted_assistant t))
     runner
 
 let drain t command =
@@ -277,6 +300,7 @@ let attach ~sw ~runner document =
       closing = false;
       working = false;
       drain_cancel = None;
+      assistant_partial = Buffer.create 256;
       signal = Eio.Condition.create ();
       stopped;
       stop;
