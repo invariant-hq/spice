@@ -111,6 +111,6 @@ retries without any usage.
   $ SPICE_OPENAI_BASE_URL="http://127.0.0.1:9/v1" spice run --cwd "$PWD" --json --id failed-metrics "failed metrics prompt" >failed-metrics.out 2>failed-metrics.err; echo exit:$?
   exit:1
   $ sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/g; s/"duration_ms":[0-9]+/"duration_ms":$TIME/g; s/"message":"([^"\\]|\\.)*"/"message":"$MESSAGE"/' failed-metrics.out | grep '"type":"session.failed"'
-  {"schema_version":1,"type":"session.failed","session_id":"failed-metrics","revision":"sha256:$HASH","metrics":{"usage":{"input":0,"output":0,"reasoning":0,"cache_read":0,"cache_write":0},"responses":0,"turns":0,"tool_calls":0,"tool_failures":0,"tool_rejections":0,"tool_calls_by_name":[],"permission_denials":0},"error":{"kind":"provider_transport","message":"$MESSAGE"},"duration_ms":$TIME}
+  {"schema_version":1,"type":"session.failed","session_id":"failed-metrics","revision":"sha256:$HASH","metrics":{"usage":{"input":0,"output":0,"reasoning":0,"cache_read":0,"cache_write":0},"responses":0,"turns":1,"tool_calls":0,"tool_failures":0,"tool_rejections":0,"tool_calls_by_name":[],"permission_denials":0},"error":{"kind":"provider_transport","message":"$MESSAGE"},"duration_ms":$TIME}
   $ grep -c '"type":"session.failed"' failed-metrics.out
   1
