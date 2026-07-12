@@ -230,6 +230,7 @@ type t = {
   notices : Notice_queue.t;
   producers : Producers.t;
   jobs : Jobs.t;
+  permission_review : Permission.Review_behavior.t ref;
   runner_for :
     mode:Spice_protocol.Mode.t ->
     model:Spice_provider.Model.t ->
@@ -261,6 +262,7 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
   let workspace = Plan.workspace plan in
   let sandbox = Plan.sandbox plan in
   let permission = Plan.permission plan in
+  let permission_review = ref (Permission.Run.review_behavior permission) in
   let* context = Context.load ~stdenv config in
   let skills =
     match preloaded_skills with
@@ -540,7 +542,7 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
     in
     let run_config =
       Spice_session_run.Config.make ~tools ~host_tools ~policy
-        ~on_review:(Permission.Run.on_review permission)
+        ~on_review:(Permission.Review_behavior.on_review !permission_review)
         ~denial_message ~prelude ?safety_step_cap:max_steps ()
     in
     (* Disabling automatic compaction is the absence of the policy: the
@@ -578,7 +580,7 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
          applies the shared depth and running-capacity bounds. *)
       Ok
         (Spice_session_run.Config.make ~tools:child_tools ~policy:child_policy
-           ~on_review:(Permission.Run.on_review permission)
+           ~on_review:(Permission.Review_behavior.on_review !permission_review)
            ~host_tools:
              [
                Spice_protocol.Call.Kind.tool
@@ -677,6 +679,7 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
       notices;
       producers;
       jobs;
+      permission_review;
       runner_for;
     }
 
@@ -687,6 +690,8 @@ let close t =
         (fun () -> Jobs.close t.jobs))
 
 let jobs t = t.jobs
+let permission_review t = !(t.permission_review)
+let set_permission_review t review = t.permission_review := review
 let runner t ~mode ~model ~client = t.runner_for ~mode ~model ~client
 let workspace t = t.workspace
 let cwd t = t.cwd

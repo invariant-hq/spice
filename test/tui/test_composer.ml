@@ -394,15 +394,15 @@ let%expect_test
 12 |
 13 |
 14 |
-15 |
-16 | ────────────────────────────────────────────────────────────────────────────────
-17 | ❯ message spice
-18 | ────────────────────────────────────────────────────────────────────────────────
-19 |   composer       history                      controls
-20 |   /  commands    shift+enter  newline         ←                focus agents
-21 |   @  file paths  ↑ ↓          prompt history  ctrl+o           verbose reasoning
-22 |   !  shell mode  ctrl+r       search history  pageup pagedown  scroll
-23 |   ?  this help   esc esc      interrupt turn  ctrl+c ctrl+c    quit
+15 | ────────────────────────────────────────────────────────────────────────────────
+16 | ❯ message spice
+17 | ────────────────────────────────────────────────────────────────────────────────
+18 |   composer       history                      controls
+19 |   /  commands    shift+enter  newline         ←                focus agents
+20 |   @  file paths  ↑ ↓          prompt history  ctrl+o           verbose reasoning
+21 |   !  shell mode  ctrl+r       search history  shift+tab        toggle approvals
+22 |   ?  this help   esc esc      interrupt turn  pageup pagedown  scroll
+23 |                                               ctrl+c ctrl+c    quit
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}];
   Tui.keys t Key.escape;
   Tui.settle t;

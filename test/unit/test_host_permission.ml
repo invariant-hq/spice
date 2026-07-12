@@ -98,6 +98,21 @@ let bypass_allows_review_but_not_deny () =
     [ command "dune" [ "build" ] ]
   |> expect_denied "explicit deny"
 
+let review_behavior_matches_native_edits_and_direct_shells () =
+  let root =
+    Spice_workspace.Root.make (Spice_path.Abs.of_string_exn "/workspace")
+  in
+  let path = Spice_workspace.Path.make ~root Spice_path.Rel.root in
+  let edit = Access.path ~op:`Modify path in
+  decide [ edit ] |> expect_allowed "default native edit";
+  decide ~review:Permission.Review_behavior.Bypass [ edit ]
+  |> expect_allowed "bypass native edit";
+  decide [ Access.shell ~cwd ~execution:Access.Command.Direct "echo ask" ]
+  |> expect_review "default direct shell";
+  decide ~review:Permission.Review_behavior.Bypass
+    [ Access.shell ~cwd ~execution:Access.Command.Direct "echo bypass" ]
+  |> expect_allowed "bypass direct shell"
+
 let durable_rules_precede_conversation_and_product () =
   let commands = Policy.Match.kind `Command in
   let allow = Policy.Rule.allow commands in
@@ -132,6 +147,8 @@ let () =
         default_credits_only_safe_execution_boundaries;
       test "bypass allows reviews but preserves denials"
         bypass_allows_review_but_not_deny;
+      test "review behavior keeps native edits and controls direct shells"
+        review_behavior_matches_native_edits_and_direct_shells;
       test "durable rules precede conversation and product rules"
         durable_rules_precede_conversation_and_product;
       test "product rows carry stable identity and provenance"

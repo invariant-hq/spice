@@ -186,6 +186,80 @@ let%expect_test "esc on the question dialog borrows the composer" =
 
 (* {2 Permission dialog} *)
 
+let%expect_test "shift-tab acknowledges never-ask before attachment" =
+  let script =
+    [
+      Provider_script.tool_call ~expect:[ "run without asking" ]
+        ~id:"review-pre-attach-1" ~call_id:"review-pre-attach-call"
+        ~name:"shell" ~arguments:{|{"command":"echo bypassed"}|} ();
+      resume ~expect:[ "function_call_output"; "bypassed" ]
+        ~id:"review-pre-attach-2" "Ran without asking.";
+    ]
+  in
+  Tui.run ~name:"permission-review-before-attach" ~provider:script @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "\027[Z";
+  Tui.settle t;
+  Printf.printf "never-ask acknowledged: %b\n"
+    (String.includes ~affix:"never ask on" (Tui.screen t));
+  [%expect {| never-ask acknowledged: true |}];
+  Tui.keys t "run without asking";
+  Tui.enter t;
+  ignore (Tui.await_request t 1 : string);
+  ignore (Tui.await_request t 2 : string);
+  Printf.printf "permission dialog absent: %b\n"
+    (not (String.includes ~affix:"Run this command?" (Tui.screen t)));
+  [%expect {| permission dialog absent: true |}];
+  Tui.release t "fin";
+  Tui.settle t
+
+let%expect_test "shift-tab swaps an attached runner before acknowledging" =
+  let script =
+    [
+      Provider_script.message ~expect:[ "attach first" ] ~id:"review-attached-1"
+        "Attached.";
+      Provider_script.tool_call ~expect:[ "run after attachment" ]
+        ~id:"review-attached-2" ~call_id:"review-attached-call" ~name:"shell"
+        ~arguments:{|{"command":"echo swapped"}|} ();
+      resume ~expect:[ "function_call_output"; "swapped" ]
+        ~id:"review-attached-3" "Ran on the swapped runner.";
+      Provider_script.tool_call ~expect:[ "ask after restoring" ]
+        ~id:"review-attached-4" ~call_id:"review-restored-call" ~name:"shell"
+        ~arguments:{|{"command":"echo reviewed"}|} ();
+    ]
+  in
+  Tui.run ~name:"permission-review-attached" ~provider:script @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "attach first";
+  Tui.enter t;
+  ignore (Tui.await_turn t 1 : string);
+  Tui.keys t "\027[Z";
+  Tui.settle t;
+  Printf.printf "attached never-ask acknowledged: %b\n"
+    (String.includes ~affix:"never ask on" (Tui.screen t));
+  [%expect {| attached never-ask acknowledged: true |}];
+  Tui.keys t "run after attachment";
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  ignore (Tui.await_request t 3 : string);
+  Printf.printf "attached permission dialog absent: %b\n"
+    (not (String.includes ~affix:"Run this command?" (Tui.screen t)));
+  [%expect {| attached permission dialog absent: true |}];
+  Tui.release t "fin";
+  Tui.settle t;
+  Tui.keys t "\027[Z";
+  Tui.settle t;
+  Printf.printf "default pill hidden: %b\n"
+    (not (String.includes ~affix:"never ask on" (Tui.screen t)));
+  [%expect {| default pill hidden: true |}];
+  Tui.keys t "ask after restoring";
+  Tui.enter t;
+  ignore (Tui.await_request t 4 : string);
+  Tui.await_suspend t;
+  Printf.printf "restored default asks: %b\n"
+    (String.includes ~affix:"Run this command?" (Tui.screen t));
+  [%expect {| restored default asks: true |}]
+
 (* A [shell] call under the default ask-first posture opens a permission dialog
    naming the command; ↵ approves the highlighted "run it once", the shell runs
    for real, and the resume carries the tool result. *)

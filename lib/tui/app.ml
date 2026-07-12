@@ -171,6 +171,10 @@ type t = {
   (* The declared turn mode (10-commands.md §Mode switches): the composer frame
      wears it; /plan and /build set it for the next turn. *)
   mode : Spice_protocol.Mode.t;
+  (* The runtime-acknowledged, Run-owned permission review behavior. A request
+     in flight never changes this displayed value. *)
+  permission_review : Spice_host.Permission.Review_behavior.t;
+  permission_review_pending : bool;
   (* Whether the composer is borrowed to collect a dialog's feedback answer
      ([For_answer] while a deny/adjust/custom-answer composer is open). *)
   borrow : borrow;
@@ -292,6 +296,8 @@ type msg =
   | Model_facts_failed of string
   | Model_switched of string
   | Snapshot_refreshed of Snapshot.t
+  | Permission_review_set of Spice_host.Permission.Review_behavior.t
+  | Permission_review_failed of string
   | Dir_loaded of {
       dir : Spice_path.Rel.t;
       result : (Mention.item list, string) result;
@@ -302,6 +308,7 @@ type msg =
     }
   | Prompt_history_appended of History.Entry.t
   | Ctrl_r
+  | Shift_tab
   (* A key routed to an open decision dialog while it owns the keyboard, and the
      esc that steps back from a borrowed feedback composer to the dialog. *)
   | Dialog_key of Matrix.Input.Key.event
@@ -400,6 +407,7 @@ type command =
   | Load_prompt_history
   | Append_prompt_history of Draft.History_entry.t
   | Set_mode of Spice_protocol.Mode.t
+  | Set_permission_review of Spice_host.Permission.Review_behavior.t
   (* Resolve a blocked decision dialog by submitting its continuation command to
      the attached session (doc/plans/tui-next-dialog-seam.md). *)
   | Reply_permission of {
@@ -476,6 +484,8 @@ let model_facts_loaded facts = Model_facts_loaded facts
 let model_facts_failed message = Model_facts_failed message
 let model_switched notice = Model_switched notice
 let snapshot_refreshed snapshot = Snapshot_refreshed snapshot
+let permission_review_set review = Permission_review_set review
+let permission_review_failed message = Permission_review_failed message
 let thread_runs_loaded ~session runs = Thread_runs_loaded { session; runs }
 let thread_started run = Thread_started run
 let thread_asked ~now ~message run = Thread_asked { run; message; now }
@@ -570,6 +580,8 @@ let init_model ~snapshot ~reduced_motion ~show_reasoning =
     session_id = None;
     queued = [];
     mode = Spice_protocol.Mode.default;
+    permission_review = Spice_host.Permission.Review_behavior.Default;
+    permission_review_pending = false;
     borrow = Free;
     shell = None;
     cols = 80;
@@ -2401,6 +2413,11 @@ let update msg t =
   | Snapshot_refreshed snapshot ->
       ( (if Snapshot.equal snapshot t.snapshot then t else { t with snapshot }),
         [] )
+  | Permission_review_set permission_review ->
+      ({ t with permission_review; permission_review_pending = false }, [])
+  | Permission_review_failed message ->
+      ( { t with permission_review_pending = false; flash = Some message },
+        [] )
   | Auth_panel_msg m -> (
       match t.surface with
       | Panel (Auth panel) ->
@@ -2680,6 +2697,18 @@ let update msg t =
             | Some Clear_armed | Some Interrupt_armed | None ->
                 ({ t with armed = Some Quit_armed }, [])))
   | Armed_expired -> ({ t with armed = None }, [])
+  | Shift_tab ->
+      if t.permission_review_pending then (t, [])
+      else
+        let review =
+          match t.permission_review with
+          | Spice_host.Permission.Review_behavior.Default ->
+              Spice_host.Permission.Review_behavior.Bypass
+          | Spice_host.Permission.Review_behavior.Bypass ->
+              Spice_host.Permission.Review_behavior.Default
+        in
+        ( { t with permission_review_pending = true },
+          [ Set_permission_review review ] )
   | Shell_finished block -> (
       (* The shell result settles as one durable tool block; the turn boundary
          then drains the queue exactly as a finished turn does (03-composer.md
@@ -2802,7 +2831,8 @@ let footer t =
         | Composer.Input_mode.Shell -> Some Footer.Shell
         | Composer.Input_mode.History_search -> Some Footer.History_search
       in
-      Footer.view ?input_mode ?agents:(agents_active t)
+      Footer.view ~permission_review:t.permission_review ?input_mode
+        ?agents:(agents_active t)
         ~account_absent:(account_absent t) t.snapshot ~dune:(dune t)
         ~width:t.cols
 
@@ -3159,7 +3189,8 @@ let thread_footer t id =
                 (Spice_protocol.Subagent_run.role run)
         | None -> "@agent"
       in
-      Footer.view ?agents:(agents_active t)
+      Footer.view ~permission_review:t.permission_review
+        ?agents:(agents_active t)
         ~home_badge:("⏴ " ^ handle ^ " · esc for main")
         ~account_absent:(account_absent t) t.snapshot ~dune:(dune t)
         ~width:t.cols
@@ -3429,8 +3460,14 @@ let key_msg t ev =
         Mosaic.Event.Key.prevent_default ev;
         Option.map (fun m -> Review_msg m) (Spice_tui_review.key review data)
     | Conversing ->
+        let is_shift_tab =
+          match data.Key.key with
+          | Key.Tab -> data.Key.modifier.Modifier.shift
+          | _ -> false
+        in
         if in_chat && ctrl 'o' then emit Toggle_expanded
         else if ctrl 'r' && not (completion_open t) then emit Ctrl_r
+        else if is_shift_tab && not (completion_open t) then emit Shift_tab
         else if is_escape then emit Escape
         else if in_chat && is_page_up then emit (Transcript_paged `Up)
         else if in_chat && is_page_down then emit (Transcript_paged `Down)

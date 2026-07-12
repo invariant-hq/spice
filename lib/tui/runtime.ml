@@ -749,7 +749,7 @@ let restricted_git_runner ~cwd args =
    assembly happens once per session and a login, model switch, or mode switch
    needs no reassembly. [Run.close] releases the whole owned run when it is
    superseded or the TUI exits. *)
-let build_run ?sandbox_flag ~sw ~stdenv ~host ~session_id () =
+let build_run ?sandbox_flag ~sw ~stdenv ~host ~session_id ~permission_review () =
   let config = Spice_host.Host.config host in
   let workspace =
     Spice_workspace.single
@@ -759,7 +759,9 @@ let build_run ?sandbox_flag ~sw ~stdenv ~host ~session_id () =
     resolve_sandbox ?flag:sandbox_flag ~sw ~stdenv host ~workspace
     |> Result.map_error Spice_host.Sandbox.Resolve_error.message
   in
-  let permission = Spice_host.Config.permission_posture config in
+  let permission =
+    Spice_host.Config.permission_posture ~review:permission_review config
+  in
   let* plan =
     Spice_host.Run.plan ~workspace ~sandbox ~permission ()
     |> Result.map_error Spice_host.Sandbox.Gate_error.message
@@ -1316,6 +1318,12 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
            contract). Read on the perform fibers between scheduler yields, like
            the other runtime refs. *)
         let current_mode = ref startup.App.mode in
+        (* Before a session is assembled this is the requested run posture;
+           once attached, {!Spice_host.Run.permission_review} is authoritative
+           and this ref mirrors only successfully installed values. *)
+        let current_permission_review =
+          ref Spice_host.Permission.Review_behavior.Default
+        in
         (* The cancel flag the one in-flight user shell polls; the shell
            surface admits a single command at a time (app.ml). *)
         let shell_cancelled = ref false in
@@ -1539,7 +1547,10 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
            TUI launch, and every failure before transfer closes the run. *)
         let attach_fresh () =
           let session_id = !fresh_session in
-          match build_run ?sandbox_flag ~sw ~stdenv ~host ~session_id () with
+          match
+            build_run ?sandbox_flag ~sw ~stdenv ~host ~session_id
+              ~permission_review:!current_permission_review ()
+          with
           | Error _ as error -> error
           | Ok run ->
               with_owned_run run (fun () ->
@@ -1608,7 +1619,8 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
                       (Spice_session_store.Document.session document)
                   in
                   (match
-                     build_run ?sandbox_flag ~sw ~stdenv ~host ~session_id ()
+                     build_run ?sandbox_flag ~sw ~stdenv ~host ~session_id
+                       ~permission_review:!current_permission_review ()
                   with
                   | Error _ as error -> error
                   | Ok run ->
@@ -2321,6 +2333,23 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
                             (App.settled ~now:(Eio.Time.now clock)
                                (failed_settle message)))
                   | None -> ())
+          | App.Set_permission_review review ->
+              perform (fun () ->
+                  match !attachment with
+                  | None ->
+                      current_permission_review := review;
+                      deliver (App.permission_review_set review)
+                  | Some (live, run) ->
+                      let previous = Spice_host.Run.permission_review run in
+                      Spice_host.Run.set_permission_review run review;
+                      (match bind_runner run with
+                      | Ok (runner, _model, _effort) ->
+                          Spice_host.Live.set_runner live runner;
+                          current_permission_review := review;
+                          deliver (App.permission_review_set review)
+                      | Error message ->
+                          Spice_host.Run.set_permission_review run previous;
+                          deliver (App.permission_review_failed message)))
           | App.Run_shell input ->
               shell_cancelled := false;
               perform (fun () ->

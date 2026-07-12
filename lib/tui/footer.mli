@@ -15,6 +15,8 @@
     On top of that idle row the footer grows three composer-facing states, all
     passed as pure data by the shell (which owns the underlying state):
 
+    - the acknowledged permission review behavior, rendered as a safety pill
+      only while bypass is active;
     - a composer {!type-input_mode} badge, which claims the right hint slot and
       replaces the fact segments with the mode's key hints
       (03-ia-screens-overlays.md §Composer input modes).
@@ -34,6 +36,7 @@ type input_mode =
 (** {1:view View} *)
 
 val view :
+  permission_review:Spice_host.Permission.Review_behavior.t ->
   ?input_mode:input_mode ->
   ?agents:int ->
   ?home_badge:string ->
@@ -42,10 +45,13 @@ val view :
   dune:Spice_ocaml_dune.Rpc.Instance.Health.t ->
   width:int ->
   _ Mosaic.t
-(** [view ?input_mode snapshot ~dune ~width] renders the footer at
+(** [view ~permission_review ?input_mode snapshot ~dune ~width] renders the footer at
     [width] columns. With no optional arguments it is the idle fact row (the
     pre-existing call [view snapshot ~dune ~width] is unchanged).
 
+    - [permission_review] renders no pill for [Default] and a red, leftmost
+      [never ask on] pill for [Bypass]. The shell passes only runtime-acknowledged
+      state.
     - [input_mode] defaults to none. When set, the right slot shows the mode
       badge and the left segment shows the mode's key hints in [faint] instead
       of the cwd and facts.

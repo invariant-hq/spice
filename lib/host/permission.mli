@@ -25,6 +25,10 @@ module Review_behavior : sig
 
   val equal : t -> t -> bool
   val pp : Format.formatter -> t -> unit
+
+  val on_review : t -> Spice_permission.Policy.on_review
+  (** [on_review t] maps [Default] to policy review and [Bypass] to allowing
+      review outcomes. Denials are never bypassed. *)
 end
 
 module Unattended : sig

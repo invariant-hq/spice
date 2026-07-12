@@ -128,6 +128,17 @@ val jobs : t -> Jobs.t
     Surfaces subscribe to it for identity-tagged child progress and settlement
     events; its children run on [start]'s [sw]. *)
 
+val permission_review : t -> Permission.Review_behavior.t
+(** [permission_review t] is the session-scoped handling of permission review
+    outcomes used by the next {!runner} derivation. *)
+
+val set_permission_review : t -> Permission.Review_behavior.t -> unit
+(** [set_permission_review t review] changes the review behavior used by future
+    {!runner} derivations. It does not rebuild the workspace, restart producers
+    or jobs, mutate configuration, or alter an already-derived runner. A live
+    caller re-derives and installs a runner with {!Live.set_runner} before
+    acknowledging the change to its UI. *)
+
 val close : t -> (unit, Jobs.Close_error.t) result
 (** [close t] closes the child registry and then stops every notice producer
     and Dune RPC instance created by {!start}. It returns only after child

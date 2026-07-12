@@ -232,7 +232,7 @@
 (test
  (name test_host_permission)
  (modules test_host_permission)
- (libraries windtrap spice_host spice_permission))
+ (libraries windtrap spice_host spice_permission spice_workspace spice_path))
 
 (test
  (name test_permission_transaction)

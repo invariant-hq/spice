@@ -21,6 +21,10 @@ module Review_behavior = struct
   let to_string = function Default -> "default" | Bypass -> "bypass"
   let equal = ( = )
   let pp ppf t = Format.pp_print_string ppf (to_string t)
+
+  let on_review = function
+    | Default -> Spice_permission.Policy.Ask
+    | Bypass -> Spice_permission.Policy.Allow
 end
 
 module Unattended = struct
@@ -131,10 +135,7 @@ module Run = struct
 
   let review_behavior t = t.review_behavior
 
-  let on_review t =
-    match t.review_behavior with
-    | Review_behavior.Default -> Spice_permission.Policy.Ask
-    | Review_behavior.Bypass -> Spice_permission.Policy.Allow
+  let on_review t = Review_behavior.on_review t.review_behavior
 
   let rows t = t.durable @ t.product
 

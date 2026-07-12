@@ -185,6 +185,10 @@ type command =
           switches): the runtime builds subsequent runners under it and, when a
           session is attached, rebuilds and swaps the live runner
           ({!Spice_host.Live.set_runner}). *)
+  | Set_permission_review of Spice_host.Permission.Review_behavior.t
+      (** Request a session-scoped permission review behavior. The runtime
+          updates the authoritative {!Spice_host.Run}, swaps an attached runner,
+          and only then acknowledges it with {!permission_review_set}. *)
   | Reply_permission of {
       permission : Spice_session.Permission.Id.t;
       answer : Spice_session.Permission.Resolved.answer;
@@ -420,6 +424,14 @@ val snapshot_refreshed : Snapshot.t -> msg
     changed, so the footer tracks the model the next turn would use while an
     unchanged push stays render-inert. Banners already appended to the
     transcript keep the facts they recorded. *)
+
+val permission_review_set : Spice_host.Permission.Review_behavior.t -> msg
+(** [permission_review_set review] acknowledges that the Run-owned behavior and
+    any attached live runner now use [review]. *)
+
+val permission_review_failed : string -> msg
+(** [permission_review_failed message] rejects a pending behavior change. The
+    footer retains its last acknowledged state and flashes [message]. *)
 
 val thread_runs_loaded :
   session:Spice_session.Id.t -> Spice_protocol.Subagent_run.t list -> msg
