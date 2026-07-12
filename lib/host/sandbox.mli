@@ -302,7 +302,10 @@ val resolve :
     and non-system, non-broad installation prefixes containing [bin]/[sbin].
     Conventional system prefixes contribute only existing [etc], [lib],
     [libexec], and [share] siblings. OCaml toolchain roots and the platform
-    runtime profile complete the read allowlist.
+    runtime profile complete the read allowlist. The executable path uses the
+    same [SPICE_DUNE], [PATH], [OPAM_SWITCH_PREFIX], and local [_opam] resolver
+    as the OCaml tools, so an explicit or recovered Dune executable is admitted
+    before the sandbox is sealed.
     [project_root] identifies the enclosing project for reads, linked Git
     metadata, and trusted local executables; only workspace roots become
     automatically writable.

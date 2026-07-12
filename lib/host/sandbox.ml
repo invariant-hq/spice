@@ -645,6 +645,31 @@ let path_roots ~scoped ~env ~workspace_roots =
   in
   loop 0 [] segments
 
+let dune_environment ~env ~project_root =
+  let bindings =
+    List.filter_map
+      (fun name -> Option.map (fun value -> name ^ "=" ^ value) (env name))
+      [ "PATH"; "OPAM_SWITCH_PREFIX"; "SPICE_DUNE" ]
+    |> Array.of_list
+  in
+  let toolchain =
+    Spice_ocaml_toolchain.discover ~env:bindings
+      ~workspace_root:(Some (Spice_path.Abs.to_string project_root))
+  in
+  let bindings = Spice_ocaml_toolchain.env toolchain ~program:"dune" in
+  fun name ->
+    Array.find_map
+      (fun binding ->
+        match String.index_opt binding '=' with
+        | Some index
+          when String.equal (String.sub binding 0 index) name ->
+            Some
+              (String.sub binding (index + 1)
+                 (String.length binding - index - 1))
+        | Some _ | None -> None)
+      bindings
+    |> Option.fold ~none:(env name) ~some:Option.some
+
 let executable_runtime_roots ~env ~scope_roots executable_roots =
   List.concat_map
     (fun executable_root ->
@@ -915,6 +940,9 @@ let resolve ~sw ?flag ?config_mode ?(require = Require.Enforced) ?(protect = [])
     if scoped then resolve_project_root ~env project_root else Ok project_root
   in
   let scope_roots = project_root :: workspace_roots in
+  let executable_env =
+    if scoped then dune_environment ~env ~project_root else env
+  in
   let* configured_reads =
     if scoped then
       user_roots ~field:"sandbox.readable_roots" ~directory:false ~env
@@ -927,7 +955,9 @@ let resolve ~sw ?flag ?config_mode ?(require = Require.Enforced) ?(protect = [])
       writable_roots
   in
   let* executable_roots =
-    if scoped then path_roots ~scoped:true ~env ~workspace_roots:scope_roots
+    if scoped then
+      path_roots ~scoped:true ~env:executable_env
+        ~workspace_roots:scope_roots
     else Ok []
   in
   let executable_runtime_roots =
@@ -948,7 +978,7 @@ let resolve ~sw ?flag ?config_mode ?(require = Require.Enforced) ?(protect = [])
   let toolchain_paths = List.map snd toolchain_roots in
   let environment_path =
     environment_path ~scoped ~workspace_trusted ~path_roots:executable_roots
-      ~toolchain_roots ~env ~project_root
+      ~toolchain_roots ~env:executable_env ~project_root
   in
   let* environment =
     Spice_sandbox.Environment.make ~path:environment_path ~scratch

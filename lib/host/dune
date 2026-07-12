@@ -24,6 +24,7 @@
   spice_llm
   spice_ocaml
   spice_ocaml_dune
+  spice_ocaml_toolchain
   spice_path
   spice_permission
   spice_prompts

@@ -47,12 +47,19 @@ Seatbelt boundary.
 
   $ mkdir -p nested/work
   $ echo ancestor > ancestor-readable
+  $ dune_override="${TMPDIR:-/tmp}/spice-dune-override-$$"
+  $ mkdir -p "$dune_override/bin"
+  $ cat > "$dune_override/bin/dune" <<'EOF'
+  > #!/bin/sh
+  > echo explicit-dune-ok
+  > EOF
+  $ chmod +x "$dune_override/bin/dune"
   $ cat > nested.jsonl <<'JSONL'
-  > {"expect":{"body_contains":["nested prompt","\"name\":\"shell\""]},"response":{"id":"resp-nested-1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-n1","call_id":"call-n1","name":"shell","arguments":"{\"command\":\"git --no-optional-locks status --short >/dev/null 2>&1; git_exit=$?; cat ../../ancestor-readable >/dev/null 2>&1; read_exit=$?; touch ../../ancestor-denied 2>/dev/null; write_exit=$?; touch local-write; echo git-exit=$git_exit read-exit=$read_exit write-exit=$write_exit\"}"}]}}
-  > {"expect":{"body_contains":["call-n1","git-exit=0","read-exit=0","write-exit=1","exited 0","enforced backend=macos-seatbelt"]},"response":{"id":"resp-nested-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"nested final"}]}]}}
+  > {"expect":{"body_contains":["nested prompt","\"name\":\"shell\""]},"response":{"id":"resp-nested-1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-n1","call_id":"call-n1","name":"shell","arguments":"{\"command\":\"git --no-optional-locks status --short >/dev/null 2>&1; git_exit=$?; cat ../../ancestor-readable >/dev/null 2>&1; read_exit=$?; touch ../../ancestor-denied 2>/dev/null; write_exit=$?; touch local-write; dune; dune_exit=$?; echo git-exit=$git_exit read-exit=$read_exit write-exit=$write_exit dune-exit=$dune_exit\"}"}]}}
+  > {"expect":{"body_contains":["call-n1","explicit-dune-ok","git-exit=0","read-exit=0","write-exit=1","dune-exit=0","exited 0","enforced backend=macos-seatbelt"]},"response":{"id":"resp-nested-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"nested final"}]}]}}
   > JSONL
   $ start_fake_openai nested.jsonl nested-capture nested-port
-  $ SPICE_TRUSTED_WORKSPACE="$PWD" spice run --cwd "$PWD/nested/work" --json --permission bypass --id nested-run "nested prompt" | grep -o '"final_text":"nested final"'
+  $ SPICE_DUNE="$dune_override/bin/dune" SPICE_TRUSTED_WORKSPACE="$PWD" spice run --cwd "$PWD/nested/work" --json --permission bypass --id nested-run "nested prompt" | grep -o '"final_text":"nested final"'
   spice: session saved; resume with: spice resume 'nested-run'
   "final_text":"nested final"
   $ wait_fake_server
@@ -60,6 +67,7 @@ Seatbelt boundary.
   local-write-ok
   $ test -e ancestor-denied || echo ancestor-write-denied
   ancestor-write-denied
+  $ rm -rf "$dune_override"
 
 An approved escalation runs that one command unconfined: under bypass the
 escalation access is auto-allowed, the previously denied .git write
