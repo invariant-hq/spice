@@ -73,6 +73,11 @@ let unknown_read path = Access.unknown_path ~op:`Read path
 let unknown_path op path = Access.unknown_path ~op path
 let default_cwd = Access.Path_scope.workspace (workspace_path "")
 
+let enforced ?(read = Access.Command.Confinement.Project)
+    ?(write = Access.Command.Confinement.Read_only)
+    ?(network = Access.Command.Confinement.Restricted) () =
+  Access.Command.Enforced Access.Command.Confinement.{ read; write; network }
+
 let default_cwd_match =
   Policy.Match.Path.exact_key ~root_key:(workspace_root_key "/repo")
     ~relative:(local "")
@@ -90,7 +95,7 @@ let code ?(cwd = default_cwd) ?(execution = Access.Command.Direct) ~language
   Access.code ~cwd ~execution ~language source
 
 let enforced_exec program args =
-  Access.argv ~cwd:default_cwd ~execution:Access.Command.Enforced ~program args
+  Access.argv ~cwd:default_cwd ~execution:(enforced ()) ~program args
 
 let argv_prefix ?(execution = Access.Command.Direct)
     ?(cwd = default_cwd_match) ~program ~args () =
@@ -198,7 +203,7 @@ let code_identity_includes_source_language_cwd_and_route () =
       ~language:"ocaml" "1 + 1"
   in
   let other_route =
-    code ~execution:Access.Command.Enforced ~language:"ocaml" "1 + 1"
+    code ~execution:(enforced ()) ~language:"ocaml" "1 + 1"
   in
   check "code is command class" (Access.kind ocaml = `Command);
   List.iter
@@ -809,10 +814,10 @@ let json_roundtrips_core_values () =
       argv
         ~cwd:(Access.Path_scope.workspace (workspace_path ""))
         ~program:"dune" [ "runtest" ];
-      Access.argv ~cwd:default_cwd ~execution:Access.Command.Enforced
+      Access.argv ~cwd:default_cwd ~execution:(enforced ())
         ~program:"dune"
         [ "build" ];
-      code ~execution:Access.Command.Enforced ~language:"ocaml" "1 + 1;;";
+      code ~execution:(enforced ()) ~language:"ocaml" "1 + 1;;";
       Access.network ~protocol:`Https ~port:443 ~host:"example.com" ();
       Access.network ~protocol:(`Other "unix") ~host:"socket" ();
       Access.custom ~subject:"todo" "todo_write";
@@ -879,6 +884,20 @@ let json_rejects_invalid_state () =
   in
   expect_decode_error "invalid decoded accesses are rejected" Access.jsont
     bad_shell;
+  let flat_enforced =
+    json_object
+      [
+        ("type", Json.string "command");
+        ("kind", Json.string "shell");
+        ("text", Json.string "dune build");
+        ("execution", Json.string "enforced");
+        ( "cwd",
+          json_object
+            [ ("scope", Json.string "unknown"); ("path", Json.string ".") ] );
+      ]
+  in
+  expect_decode_error "flat enforced execution identities are rejected"
+    Access.jsont flat_enforced;
   let bad_workspace_path =
     json_object
       [
@@ -1006,7 +1025,7 @@ let access_json_normalizes_outside_workspace_paths () =
         ("type", Json.string "command");
         ("kind", Json.string "shell");
         ("text", Json.string "make");
-        ("execution", Json.string "direct");
+        ("execution", json_object [ ("kind", Json.string "direct") ]);
         ( "cwd",
           json_object
             [
@@ -1147,14 +1166,14 @@ let rule_ids_are_stable_digests () =
   in
   let allow_dune_build =
     Policy.Rule.allow
-      (argv_prefix ~execution:Access.Command.Enforced
+      (argv_prefix ~execution:(enforced ())
          ~cwd:Policy.Match.Path.workspace ~program:"dune" ~args:[ "build" ] ())
   in
   equal string ~msg:"deny .env rule id is stable" "b62807796201"
     (rule_id deny_env);
   equal string ~msg:"allow workspace read rule id is stable" "be7bf2b60ce9"
     (rule_id allow_workspace_read);
-  equal string ~msg:"allow dune build rule id is stable" "28dbaad94980"
+  equal string ~msg:"allow dune build rule id is stable" "b54551f76f68"
     (rule_id allow_dune_build)
 
 let rule_observers_and_match_eliminator () =
@@ -1312,7 +1331,7 @@ let high_impact_command_matcher () =
 let enforced_command_matcher () =
   let matcher =
     Policy.Match.command
-      (Policy.Match.Command.execution Access.Command.Enforced)
+      (Policy.Match.Command.execution (enforced ()))
   in
   let direct = exec "dune" [ "build" ] in
   let enforced = enforced_exec "dune" [ "build" ] in
@@ -1331,9 +1350,45 @@ let enforced_command_matcher () =
   roundtrip "enforced matcher roundtrips" rule_value Policy.Rule.jsont
     (Policy.Rule.allow matcher)
 
+let confinement_is_exact_command_and_grant_identity () =
+  let project_read_only = enforced_exec "dune" [ "build" ] in
+  let project_write =
+    argv
+      ~execution:(enforced ~write:Access.Command.Confinement.Workspace ())
+      ~program:"dune" [ "build" ]
+  in
+  let read_all =
+    argv ~execution:(enforced ~read:Access.Command.Confinement.All ())
+      ~program:"dune" [ "build" ]
+  in
+  let network_enabled =
+    argv ~execution:(enforced ~network:Access.Command.Confinement.Enabled ())
+      ~program:"dune" [ "build" ]
+  in
+  List.iter
+    (fun access ->
+      not_equal access_value ~msg:"confinement changes command identity"
+        project_read_only access;
+      not_equal string ~msg:"confinement changes stable identity"
+        (Access.stable_text project_read_only)
+        (Access.stable_text access))
+    [ project_write; read_all; network_enabled ];
+  let review =
+    expect_review "project command needs review under the pure default"
+      (Policy.decide Policy.default (request project_read_only))
+  in
+  let grants = Policy.Review.remember review Policy.Grants.empty in
+  check "exact grant remembers its confinement"
+    (Policy.Grants.allows grants project_read_only);
+  List.iter
+    (fun access ->
+      check "exact grant does not span confinement"
+        (not (Policy.Grants.allows grants access)))
+    [ project_write; read_all; network_enabled ]
+
 let command_prefixes_preserve_execution_and_cwd () =
   let matcher =
-    argv_prefix ~execution:Access.Command.Enforced ~program:"dune"
+    argv_prefix ~execution:(enforced ()) ~program:"dune"
       ~args:[ "build" ] ()
   in
   let other_cwd =
@@ -1353,7 +1408,7 @@ let command_prefixes_preserve_execution_and_cwd () =
   check "prefix rejects another workspace"
     (not
        (matches
-          (argv ~cwd:other_cwd ~execution:Access.Command.Enforced
+          (argv ~cwd:other_cwd ~execution:(enforced ())
              ~program:"dune" [ "build"; "@all" ])))
 
 let () =
@@ -1411,6 +1466,8 @@ let () =
         high_impact_command_matcher;
       test "enforced command matcher requires explicit execution evidence"
         enforced_command_matcher;
+      test "confinement is exact command and grant identity"
+        confinement_is_exact_command_and_grant_identity;
       test "command prefixes preserve execution route and cwd"
         command_prefixes_preserve_execution_and_cwd;
     ]

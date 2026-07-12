@@ -39,17 +39,47 @@ let expect_denied message = function
 
 let cwd = Access.Path_scope.unknown "test-cwd"
 
+let enforced ?(read = Access.Command.Confinement.Project)
+    ?(write = Access.Command.Confinement.Read_only)
+    ?(network = Access.Command.Confinement.Restricted) () =
+  Access.Command.Enforced Access.Command.Confinement.{ read; write; network }
+
 let command ?(execution = Access.Command.Direct) program args =
   Access.argv ~cwd ~execution ~program args
 
-let default_reviews_commands () =
-  decide [ command ~execution:Access.Command.Enforced "dune" [ "build" ] ]
-  |> expect_review "enforced command";
+let default_credits_only_safe_execution_boundaries () =
+  decide [ command ~execution:(enforced ()) "dune" [ "build" ] ]
+  |> expect_allowed "project read-only command";
+  decide
+    [
+      command
+        ~execution:(enforced ~write:Access.Command.Confinement.Workspace ())
+        "dune" [ "build" ];
+    ]
+  |> expect_allowed "project workspace-write command";
+  decide
+    [ command ~execution:Access.Command.External "dune" [ "build" ] ]
+  |> expect_allowed "external command";
+  decide
+    [
+      command ~execution:(enforced ~read:Access.Command.Confinement.All ())
+        "dune" [ "build" ];
+    ]
+  |> expect_review "read-all command";
+  decide
+    [
+      command
+        ~execution:(enforced ~network:Access.Command.Confinement.Enabled ())
+        "dune" [ "build" ];
+    ]
+  |> expect_review "network-enabled command";
   decide [ Access.shell ~cwd ~execution:Access.Command.Direct "git status" ]
   |> expect_review "direct command";
   decide
-    [ Access.code ~cwd ~execution:Access.Command.Enforced ~language:"ocaml" "1" ]
-  |> expect_review "code evaluation"
+    [ Access.code ~cwd ~execution:(enforced ()) ~language:"ocaml" "1" ]
+  |> expect_allowed "confined code evaluation";
+  decide [ command ~execution:(enforced ()) "rm" [ "-rf"; "_build" ] ]
+  |> expect_review "high-impact command"
 
 let bypass_allows_review_but_not_deny () =
   let commands = Policy.Match.kind `Command in
@@ -61,6 +91,9 @@ let bypass_allows_review_but_not_deny () =
     [ Access.custom "unmatched" ]
   |> expect_allowed "unmatched access";
   decide ~review:Permission.Review_behavior.Bypass
+    [ command ~execution:(enforced ()) "rm" [ "-rf"; "_build" ] ]
+  |> expect_allowed "product high-impact review";
+  decide ~review:Permission.Review_behavior.Bypass
     ~durable:[ [ Policy.Rule.deny commands ] ]
     [ command "dune" [ "build" ] ]
   |> expect_denied "explicit deny"
@@ -71,6 +104,9 @@ let durable_rules_precede_conversation_and_product () =
   let review = Policy.Rule.review commands in
   decide ~conversation:[ allow ] [ command "dune" [ "build" ] ]
   |> expect_allowed "conversation allow precedes product fallback";
+  decide ~conversation:[ allow ]
+    [ command ~execution:(enforced ()) "rm" [ "-rf"; "_build" ] ]
+  |> expect_allowed "conversation allow precedes high-impact interlock";
   decide ~durable:[ [ review ] ] ~conversation:[ allow ]
     [ command "dune" [ "build" ] ]
   |> expect_review "durable review precedes conversation allow"
@@ -92,7 +128,8 @@ let product_rows_have_one_source_and_stable_identity () =
 let () =
   run "spice.host.permission"
     [
-      test "default behavior reviews commands" default_reviews_commands;
+      test "default credits only safe execution boundaries"
+        default_credits_only_safe_execution_boundaries;
       test "bypass allows reviews but preserves denials"
         bypass_allows_review_but_not_deny;
       test "durable rules precede conversation and product rules"

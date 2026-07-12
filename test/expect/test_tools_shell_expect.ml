@@ -322,11 +322,6 @@ let print_permissions ?root ?outside ?config ~fs workspace input =
               Printf.printf "access: %s\n" (access ?root ?outside item)))
         requests
 
-let execution = function
-  | Access.Command.Direct -> "direct"
-  | Access.Command.Enforced -> "enforced"
-  | Access.Command.External -> "external"
-
 let print_permission_routes label ~config ~fs workspace input =
   Printf.printf "-- %s --\n" label;
   Tool.Call.permissions (call ~fs ~workspace ~config input)
@@ -335,7 +330,8 @@ let print_permission_routes label ~config ~fs workspace input =
          |> List.iter (function
               | Access.Command command ->
                   Printf.printf "command: %s\n"
-                    (execution (Access.Command.execution command))
+                    (Access.Command.execution_to_string
+                       (Access.Command.execution command))
               | Access.Custom { name; _ } -> Printf.printf "custom: %s\n" name
               | Access.Path _ | Access.Network _ -> ()))
 
@@ -490,7 +486,7 @@ let%expect_test "permission command routes match exact shell execution" =
   [%expect
     {|
     -- workspace-write ordinary --
-    command: enforced
+    command: enforced(all,workspace,restricted)
     -- workspace-write escalation --
     command: direct
     custom: shell.escalate
@@ -499,7 +495,7 @@ let%expect_test "permission command routes match exact shell execution" =
     -- external --
     command: external
     -- read-only --
-    command: enforced |}]
+    command: enforced(all,read-only,restricted) |}]
 
 let%expect_test "escalation raises a distinct reviewable access" =
   with_fixture @@ fun ~root ~outside:_ ~fs ~workspace ->

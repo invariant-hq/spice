@@ -1,8 +1,8 @@
 # Permission rules
 
 Durable permission rules are ordered, hand-authored JSON policy. Use them for a
-specific exception that the built-in permission preset and sandbox-backed rules
-do not express. Read [Security](security.md) first: a rule decides whether an
+specific exception that the built-in product rules do not express. Read
+[Security](security.md) first: a rule decides whether an
 operation is allowed, reviewed, or denied, but it does not grant filesystem,
 network, sandbox, or operating-system capabilities.
 
@@ -14,10 +14,9 @@ Put rules under `permission.rules` in either:
 - the extra config selected by `SPICE_CONFIG`.
 
 The extra config's rules evaluate before user rules. Within one file, rules
-evaluate in array order. They are followed by the active preset and then any
-sandbox-backed runtime rules. The Plan preset's command-deny guard is the one
-non-configurable exception: it evaluates before durable and session rules, so a
-command allow installed for Build cannot leak execution into Plan.
+evaluate in array order. Conversation rules and then fixed product rules follow.
+The active workflow contract is a separate outer limit, so an allow installed
+for Build cannot leak execution into Plan or Review.
 
 Project `.spice/config.json` and `.spice/config.local.json` files never
 contribute permission rules. Spice strips those rules and reports an
@@ -66,7 +65,7 @@ session grants. An unmatched, ungranted access requires review. If any access
 in a grouped request is denied, the whole request is denied.
 
 This ordering makes broad durable allows powerful. For example, a durable rule
-allowing every command suppresses the normal command review outside Plan.
+allowing every command suppresses the normal command review in Build.
 Prefer the narrowest matcher that describes the intended exception.
 
 ## Path matchers
@@ -140,7 +139,12 @@ list starts with the supplied arguments:
   "type": "command",
   "pattern": {
     "type": "argv-prefix",
-    "execution": "enforced",
+    "execution": {
+      "kind": "enforced",
+      "read": "project",
+      "write": "workspace",
+      "network": "restricted"
+    },
     "cwd": { "type": "workspace" },
     "program": "dune",
     "args": ["build"]
@@ -161,7 +165,7 @@ Choose a broader scope explicitly when that is the intended policy:
   "type": "command",
   "pattern": {
     "type": "argv-prefix",
-    "execution": "direct",
+    "execution": { "kind": "direct" },
     "program": "git",
     "args": ["status"],
     "cwd": { "type": "relative-under", "relative": "." }
@@ -178,37 +182,51 @@ Command working-directory scopes use one of:
 The built-in route and broad command patterns are:
 
 ```json
-{ "type": "command", "pattern": { "type": "execution", "execution": "enforced" } }
+{
+  "type": "command",
+  "pattern": {
+    "type": "execution",
+    "execution": {
+      "kind": "enforced",
+      "read": "project",
+      "write": "workspace",
+      "network": "restricted"
+    }
+  }
+}
 ```
 
 ```json
-{ "type": "command", "pattern": { "type": "destructive" } }
+{ "type": "command", "pattern": { "type": "high_impact" } }
 ```
 
 ```json
 { "type": "command", "pattern": { "type": "any" } }
 ```
 
-The `enforced` execution matcher matches only a host-produced command fact that
-proves ordinary execution uses the run's sealed sandbox. It never infers
-confinement from the program or source tool. `external` identifies a
-user-selected boundary that Spice cannot verify, and `direct` identifies no
-confinement claim. Built-in presets do not automatically allow any route:
-confined commands can read the host, so allowing them is an explicit
-confidentiality choice. An escalation request carries a direct ordinary command
-fact plus the distinct `shell.escalate` custom access.
+An `enforced` execution identity matches only a host-produced command fact
+derived from the exact policy and evidence of the sealed sandbox. Its `read`,
+`write`, and `network` members are part of exact permission and grant identity.
+`external` identifies a user-selected boundary that Spice cannot verify, and
+`direct` identifies no confinement claim. By default, Spice automatically
+allows enforced commands only with `project` reads and `restricted` networking,
+for either `read-only` or `workspace` writes. It also allows an explicitly
+selected external boundary. Read-all, network-enabled, and direct commands stay
+reviewable. An escalation request carries a direct ordinary command fact plus
+the distinct `shell.escalate` custom access.
 
-`destructive` is the conservative built-in classifier for destructive file,
-Git, and disk operations. It recursively inspects standard shell `-c` payloads,
-`command`/`exec`, and common pass-through wrappers, and treats substitutions,
-redirects, dynamic evaluation, unsupported wrappers, and parse failures as
-reviewable. False-positive review is intentional. A non-match is not proof of
-safety. `any` matches every command access and can shadow built-in safety rules
-when placed in durable config.
+`high_impact` recognizes plainly visible bulk or irreversible operations such
+as recursive `rm`, forced Git history/worktree operations, direct-device `dd`,
+`shred`, and `mkfs`. It recursively inspects standard shell `-c` payloads and
+common pass-through wrappers. Opaque code, substitutions, dynamic evaluation,
+and parse failures are left to confinement rather than classified as high
+impact merely because they are difficult to inspect. A non-match is not proof
+of safety. `any` matches every command access and can shadow built-in safety
+rules when placed in durable config.
 
 ### Prompt-free confined shell for a local model
 
-The confined modes deliberately permit reads across the host and restrict
+The read-all confined posture permits reads across the host while restricting
 writes. If that is the policy you want—for example, so a local model can inspect
 installed `.mli` files—put these rules in the user config, in this order:
 
@@ -220,14 +238,37 @@ installed `.mli` files—put these rules in the user config, in this order:
         "action": "review",
         "matcher": {
           "type": "command",
-          "pattern": { "type": "destructive" }
+          "pattern": { "type": "high_impact" }
         }
       },
       {
         "action": "allow",
         "matcher": {
           "type": "command",
-          "pattern": { "type": "execution", "execution": "enforced" }
+          "pattern": {
+            "type": "execution",
+            "execution": {
+              "kind": "enforced",
+              "read": "all",
+              "write": "read-only",
+              "network": "restricted"
+            }
+          }
+        }
+      },
+      {
+        "action": "allow",
+        "matcher": {
+          "type": "command",
+          "pattern": {
+            "type": "execution",
+            "execution": {
+              "kind": "enforced",
+              "read": "all",
+              "write": "workspace",
+              "network": "restricted"
+            }
+          }
         }
       }
     ]
@@ -235,7 +276,7 @@ installed `.mli` files—put these rules in the user config, in this order:
 }
 ```
 
-The first matching rule wins, so the destructive review must come first. This
+The first matching rule wins, so the high-impact review must come first. This
 allows only execution proven to use Spice's sealed sandbox. It does not allow
 direct, externally confined, escalated, refused, or Plan-mode commands. The
 tradeoff is explicit: command output can contain any host file readable by the
@@ -255,7 +296,7 @@ useful for generated policy and is less portable than an argv prefix:
       "kind": "argv",
       "program": "git",
       "args": ["status"],
-      "execution": "direct",
+      "execution": { "kind": "direct" },
       "cwd": { "scope": "workspace", "root_key": "/repo", "relative": "." }
     }
   }
@@ -266,11 +307,12 @@ An exact shell access instead uses `"kind": "shell"` and a required `text`
 field. Evaluated source uses `"kind":"code"` with required `language` and
 `source` fields; source is represented as a command because evaluating it is
 arbitrary process execution, even when the implementation argv is fixed. Every
-command access requires a `cwd` scope and one of
-`execution:"enforced"`, `execution:"external"`, or `execution:"direct"`.
-Execution route and working directory are part of exact permission identity, so
-a grant for an enforced operation cannot be reused by a direct operation or in
-another workspace.
+command access requires a `cwd` scope and a tagged `execution` object. An
+enforced object also requires `read`, `write`, and `network`; external and
+direct objects carry only their `kind`. Execution confinement and working
+directory are part of exact permission identity, so a grant for one confinement
+cannot be reused by another confinement, a direct operation, or another
+workspace.
 
 ## Network matchers
 
@@ -377,7 +419,12 @@ access to one host:
           "type": "command",
           "pattern": {
             "type": "argv-prefix",
-            "execution": "enforced",
+            "execution": {
+              "kind": "enforced",
+              "read": "project",
+              "write": "workspace",
+              "network": "restricted"
+            },
             "cwd": { "type": "workspace" },
             "program": "dune",
             "args": ["build"]

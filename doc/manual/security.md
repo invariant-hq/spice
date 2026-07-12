@@ -7,21 +7,19 @@ another, but none substitutes for another.
 
 The default posture is:
 
-- permission preset `default`;
+- permission review behavior `default`;
 - unattended permission policy `block`;
 - sandbox mode `workspace-write`;
+- sandbox read scope `all`;
 - sandbox requirement `enforced`;
 - command network access `restricted`;
-- curated toolchain cache writes enabled.
 
-On a supported host, and absent an earlier durable rule, this lets ordinary
-native workspace edits run without review because their filesystem capability
-is bounded. Model-authored shell commands still require review: write
-confinement does not authorize the host files they can read. Fixed host tools
-remain low-friction because their sealed child processes implement the typed
-operation the user approved; they are not exposed as additional shell
-authority. If the platform cannot enforce the default sandbox, the run fails
-before provider credentials are loaded or a session is created.
+On a supported host, and absent an earlier durable rule, this lets native
+workspace edits run without review. Commands remain reviewable under the
+default read-all scope. Selecting project reads also lets ordinary commands run
+without review when networking is restricted; high-impact commands retain a
+review interlock. If the platform cannot enforce the requested sandbox, the run
+fails before provider credentials are loaded or a session is created.
 
 ## The three boundaries
 
@@ -48,15 +46,15 @@ and proposed diffs are review evidence; they do not change permission identity.
 
 Policy evaluation is pure and ordered:
 
-1. Plan's command-deny guard applies first when that preset is selected.
-2. Session-scoped family allows installed by a reviewer apply next.
-3. Durable rules are evaluated in order.
-4. The selected preset's ordinary rules follow the durable rules.
-5. Native-mutation rules credited from an enforcing workspace-write sandbox
-   follow the preset.
-6. For each access, the first matching rule wins.
-7. If no rule matches, an exact session grant may allow the access.
-8. Otherwise the access requires review.
+1. The active workflow contract denies commands and writes when the workflow
+   does not admit them.
+2. Durable rules are evaluated in order.
+3. Conversation rules installed by a reviewer follow.
+4. Fixed product rules review high-impact commands before granting narrow
+   execution credit, native workspace operations, and curated documentation.
+5. For each access, the first matching rule wins.
+6. If no rule matches, an exact session grant may allow the access.
+7. Otherwise the access requires review.
 
 Rules take precedence over session grants. A later deny or review rule can
 therefore override an earlier session approval. In a grouped request, any
@@ -68,30 +66,31 @@ and falls back to the original shell text when parsing is ambiguous. This
 improves rule matching and review display, but it is not a security parser:
 confinement does not depend on the parse succeeding.
 
-### Permission presets
+### Permission review behavior
 
-| Preset | Base behavior | Additional behavior under an enforcing `workspace-write` sandbox |
-| --- | --- | --- |
-| `default` | Allows workspace reads. Other accesses require review. | Also allows native workspace creates, modifications, and deletions. Shell commands remain reviewable. |
-| `accept-edits` | Allows workspace reads, creates, modifications, and deletions. Commands and other accesses require review. | No command allowance is added. |
-| `plan` | Allows workspace reads and denies workspace writes and commands. | No additional rules; the deny posture is preserved. |
-| `bypass` | Allows every access not decided by an earlier durable rule. | No additional rules are needed. |
+The default behavior applies durable and conversation rules first, then fixed
+product rules. Native workspace operations are allowed. Ordinary commands are
+allowed only when their host-produced execution identity proves project reads
+with restricted networking, or records an explicitly selected external
+boundary. Read-all, network-enabled, and direct commands require review.
 
-The destructive-command matcher deliberately errs toward review. It recognizes
-destructive file, Git, and disk operations; recursively unwraps standard
-shells, `command`, `exec`, and common pass-through wrappers; and treats
-substitutions, redirects, dynamic evaluation, and other opaque shell syntax
-conservatively. It may therefore review a harmless expression. A non-match is
-not authority and is not a proof that a command is harmless.
+Before automatic command credit, the product reviews plainly visible
+high-impact operations such as recursive `rm`, forced Git operations,
+direct-device `dd`, `shred`, and `mkfs`. Opaque source and shell syntax are left
+to confinement rather than classified as high impact merely because they are
+hard to inspect. A non-match is not authority and is not a proof that a command
+is harmless.
 
 `bypass` is intentionally per-run only:
 
 ```sh
-spice run --permission-mode bypass "PROMPT"
+spice run --permission bypass "PROMPT"
 ```
 
-Config files and `SPICE_PERMISSION_MODE` reject `bypass`. Explicit durable
-deny or review rules still precede the bypass preset and still apply.
+Config files reject permission behavior because it is a per-run choice. Under
+`bypass`, review outcomes are allowed, including outcomes from review rules;
+deny rules remain denials. Plan and review workflows independently deny command
+execution and writes, so bypass cannot make those operations available there.
 
 ### Reviews and conversation grants
 
@@ -156,7 +155,12 @@ structured rule list. For example:
           "type": "command",
           "pattern": {
             "type": "argv-prefix",
-            "execution": "enforced",
+            "execution": {
+              "kind": "enforced",
+              "read": "project",
+              "write": "workspace",
+              "network": "restricted"
+            },
             "cwd": { "type": "workspace" },
             "program": "dune",
             "args": ["build"]

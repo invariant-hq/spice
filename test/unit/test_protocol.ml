@@ -458,7 +458,11 @@ module Contract_tests = struct
     let cwd = Permission.Access.Path_scope.unknown "test-cwd" in
     let command =
       Permission.Access.argv ~cwd
-        ~execution:Permission.Access.Command.Enforced ~program:"dune"
+        ~execution:
+          (Permission.Access.Command.Enforced
+             Permission.Access.Command.Confinement.
+               { read = Project; write = Read_only; network = Restricted })
+        ~program:"dune"
         [ "build" ]
     in
     let write = Permission.Access.unknown_path ~op:`Modify "/outside" in

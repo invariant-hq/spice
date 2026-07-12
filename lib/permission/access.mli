@@ -113,13 +113,29 @@ module Command : sig
       evaluated as a process. All are command facts; policy decides how to
       match them. *)
 
-  type execution = Enforced | External | Direct
+  module Confinement : sig
+    (** The filesystem and network authority enforced for a command. *)
+
+    type read = Project | All
+    (** The command's readable filesystem scope. *)
+
+    type write = Read_only | Workspace
+    (** The command's writable filesystem scope. *)
+
+    type network = Restricted | Enabled
+    (** The command's network scope. *)
+
+    type t = { read : read; write : write; network : network }
+    (** The type for an enforced command boundary. *)
+  end
+
+  type execution = Enforced of Confinement.t | External | Direct
   (** The runtime route the command fact describes.
 
-      [Enforced] is a trusted claim that the exact operation executes through
-      Spice's sealed enforcing sandbox. [External] records a user-selected
-      boundary that Spice does not verify. [Direct] makes no confinement
-      claim. *)
+      [Enforced confinement] is a trusted claim that the exact operation
+      executes through Spice's sealed sandbox with [confinement]. [External]
+      records a user-selected boundary that Spice does not verify. [Direct]
+      makes no confinement claim. *)
 
   type t = private
     | Shell of {
@@ -177,6 +193,10 @@ module Command : sig
   val execution_to_string : execution -> string
   (** [execution_to_string execution] is [execution]'s stable configuration and
       diagnostic spelling. *)
+
+  val execution_jsont : execution Jsont.t
+  (** [execution_jsont] maps execution identities to their canonical tagged
+      JSON object. Enforced identities include every confinement dimension. *)
 
   val stable_text : t -> string
   (** [stable_text t] is a canonical textual representation of [t] suitable as

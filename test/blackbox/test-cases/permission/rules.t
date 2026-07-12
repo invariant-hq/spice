@@ -4,11 +4,11 @@ evaluation order, and removal that edits exactly one config file.
 
 The product table is visible and owns native workspace operations.
 
-  $ spice permission list | grep 'path-workspace'
-  1   be7bf2b60ce9  allow   path-workspace op=read                   default product permission policy
-  2   2d2b3c417b9f  allow   path-workspace op=create                 default product permission policy
-  3   7c47a4047294  allow   path-workspace op=modify                 default product permission policy
-  4   7f2fea3aff85  allow   path-workspace op=delete                 default product permission policy
+  $ spice permission list | grep 'path-workspace' | sed -E 's/  +/ /g'
+  5 be7bf2b60ce9 allow path-workspace op=read default product permission policy
+  6 2d2b3c417b9f allow path-workspace op=create default product permission policy
+  7 7c47a4047294 allow path-workspace op=modify default product permission policy
+  8 7f2fea3aff85 allow path-workspace op=delete default product permission policy
 
 Hand-written rules list before product rules, in file order. Relative path
 matchers carry no machine-derived workspace key.
@@ -21,10 +21,10 @@ matchers carry no machine-derived workspace key.
   >   { "action": "deny",
   >     "matcher": { "type": "path-exact-relative", "relative": ".env" } } ] } }
   > JSON
-  $ spice permission list | sed -n '2,4p'
-  1   a8623e11d63d  allow   path-under-relative relative=notes       user $TESTCASE_ROOT/xdg-config/spice/config.json
-  2   b62807796201  deny    path-exact-relative relative=.env        user $TESTCASE_ROOT/xdg-config/spice/config.json
-  3   be7bf2b60ce9  allow   path-workspace op=read                   default product permission policy
+  $ spice permission list | sed -n '2,4p' | sed -E 's/  +/ /g'
+  1 a8623e11d63d allow path-under-relative relative=notes user $TESTCASE_ROOT/xdg-config/spice/config.json
+  2 b62807796201 deny path-exact-relative relative=.env user $TESTCASE_ROOT/xdg-config/spice/config.json
+  3 c1807ef86b66 review command pattern={"type":"high_impact"} default product permission policy
 
 Reordering changes positions but not ids because identity comes from content.
 
@@ -35,9 +35,9 @@ Reordering changes positions but not ids because identity comes from content.
   >   { "action": "allow",
   >     "matcher": { "type": "path-under-relative", "relative": "notes" } } ] } }
   > JSON
-  $ spice permission list | sed -n '2,3p'
-  1   b62807796201  deny    path-exact-relative relative=.env        user $TESTCASE_ROOT/xdg-config/spice/config.json
-  2   a8623e11d63d  allow   path-under-relative relative=notes       user $TESTCASE_ROOT/xdg-config/spice/config.json
+  $ spice permission list | sed -n '2,3p' | sed -E 's/  +/ /g'
+  1 b62807796201 deny path-exact-relative relative=.env user $TESTCASE_ROOT/xdg-config/spice/config.json
+  2 a8623e11d63d allow path-under-relative relative=notes user $TESTCASE_ROOT/xdg-config/spice/config.json
   $ spice permission list --json | grep -o '"id":"[^"]*"' | head -2
   "id":"b62807796201"
   "id":"a8623e11d63d"
@@ -96,8 +96,8 @@ diagnostic, while the user layer remains effective and removable.
   > { "permission": { "rules": [
   >   { "action": "allow", "matcher": { "type": "path-exact-relative", "relative": ".env" } } ] } }
   > JSON
-  $ spice permission list | sed -n '2p'
-  1   b62807796201  deny    path-exact-relative relative=.env        user $TESTCASE_ROOT/xdg-config/spice/config.json
+  $ spice permission list | sed -n '2p' | sed -E 's/  +/ /g'
+  1 b62807796201 deny path-exact-relative relative=.env user $TESTCASE_ROOT/xdg-config/spice/config.json
   $ spice config show --json --origins | grep -o '"kind":"ignored_project_rules"'
   "kind":"ignored_project_rules"
   $ spice permission remove b62807796201

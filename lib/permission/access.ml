@@ -20,6 +20,13 @@ type path_scope =
 type network_protocol =
   [ `Http | `Https | `Ssh | `Tcp | `Udp | `Other of string ]
 
+module Command_confinement = struct
+  type read = Project | All
+  type write = Read_only | Workspace
+  type network = Restricted | Enabled
+  type t = { read : read; write : write; network : network }
+end
+
 let invalid fn message = invalid_arg' "Spice_permission.Access" fn message
 
 let reject_empty fn field value =
@@ -58,7 +65,10 @@ and command =
       execution : command_execution;
     }
 
-and command_execution = Enforced | External | Direct
+and command_execution =
+  | Enforced of Command_confinement.t
+  | External
+  | Direct
 
 let workspace_scope_of_parts ~root_key ~relative =
   Workspace { root_key; relative }
@@ -123,7 +133,12 @@ let outside_workspace_path ~op path =
 let unknown_path ~op path_text = path_scope ~op (unknown_scope path_text)
 
 module Command = struct
-  type execution = command_execution = Enforced | External | Direct
+  module Confinement = Command_confinement
+
+  type execution = command_execution =
+    | Enforced of Confinement.t
+    | External
+    | Direct
 
   type t = command =
     | Shell of {
@@ -164,9 +179,80 @@ module Command = struct
         execution
 
   let execution_to_string = function
-    | Enforced -> "enforced"
+    | Enforced Confinement.{ read; write; network } ->
+        let read =
+          match read with
+          | Confinement.Project -> "project"
+          | Confinement.All -> "all"
+        in
+        let write =
+          match write with
+          | Confinement.Read_only -> "read-only"
+          | Confinement.Workspace -> "workspace"
+        in
+        let network =
+          match network with
+          | Confinement.Restricted -> "restricted"
+          | Confinement.Enabled -> "enabled"
+        in
+        Printf.sprintf "enforced(%s,%s,%s)" read write network
     | External -> "external"
     | Direct -> "direct"
+
+  let confinement_read_jsont =
+    Jsont.enum
+      [ ("project", Confinement.Project); ("all", Confinement.All) ]
+
+  let confinement_write_jsont =
+    Jsont.enum
+      [
+        ("read-only", Confinement.Read_only);
+        ("workspace", Confinement.Workspace);
+      ]
+
+  let confinement_network_jsont =
+    Jsont.enum
+      [
+        ("restricted", Confinement.Restricted);
+        ("enabled", Confinement.Enabled);
+      ]
+
+  let execution_jsont =
+    let make kind read write network =
+      match kind, read, write, network with
+      | "enforced", Some read, Some write, Some network ->
+          Enforced Confinement.{ read; write; network }
+      | "enforced", _, _, _ ->
+          decode_error "enforced execution requires read, write, and network"
+      | "external", None, None, None -> External
+      | "direct", None, None, None -> Direct
+      | ("external" | "direct"), _, _, _ ->
+          decode_error (kind ^ " execution must not carry confinement fields")
+      | kind, _, _, _ -> decode_error ("unknown command execution: " ^ kind)
+    in
+    let kind = function
+      | Enforced _ -> "enforced"
+      | External -> "external"
+      | Direct -> "direct"
+    in
+    let read = function
+      | Enforced t -> Some t.Confinement.read
+      | External | Direct -> None
+    in
+    let write = function
+      | Enforced t -> Some t.Confinement.write
+      | External | Direct -> None
+    in
+    let network = function
+      | Enforced t -> Some t.Confinement.network
+      | External | Direct -> None
+    in
+    Jsont.Object.map ~kind:"command execution" make
+    |> Jsont.Object.mem "kind" Jsont.string ~enc:kind
+    |> Jsont.Object.opt_mem "read" confinement_read_jsont ~enc:read
+    |> Jsont.Object.opt_mem "write" confinement_write_jsont ~enc:write
+    |> Jsont.Object.opt_mem "network" confinement_network_jsont ~enc:network
+    |> Jsont.Object.error_unknown |> Jsont.Object.finish
 
   let stable_scope = function
     | Workspace { root_key; relative } ->
@@ -394,10 +480,6 @@ let path_scope_jsont =
   |> Jsont.Object.opt_mem "relative" Jsont.string ~enc:relative
   |> Jsont.Object.error_unknown |> Jsont.Object.finish
 
-let command_execution_jsont =
-  Jsont.enum
-    [ ("enforced", Enforced); ("external", External); ("direct", Direct) ]
-
 let command_jsont =
   let make kind text program args language source cwd execution =
     match (kind, text, program, args, language, source) with
@@ -470,7 +552,7 @@ let command_jsont =
   |> Jsont.Object.opt_mem "language" Jsont.string ~enc:language
   |> Jsont.Object.opt_mem "source" Jsont.string ~enc:source
   |> Jsont.Object.mem "cwd" path_scope_jsont ~enc:cwd
-  |> Jsont.Object.mem "execution" command_execution_jsont ~enc:execution
+  |> Jsont.Object.mem "execution" Command.execution_jsont ~enc:execution
   |> Jsont.Object.error_unknown |> Jsont.Object.finish
 
 let network_jsont =

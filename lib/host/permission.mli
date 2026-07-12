@@ -65,9 +65,11 @@ module Run : sig
     'src t
   (** [make ~review ~product ~durable ()] constructs the complete run table.
       Durable configured rules evaluate first. Conversation rules supplied to
-      {!policy} follow, then fixed product rules allow native workspace
-      operations and curated in-process documentation reads. [product] is the
-      provenance attached to those fixed rules.
+      {!policy} follow. Fixed product rules then keep high-impact commands
+      reviewable before allowing commands confined to project reads with
+      restricted networking, commands behind an explicit external boundary,
+      native workspace operations, and curated in-process documentation reads.
+      [product] is the provenance attached to those fixed rules.
 
       Raises [Invalid_argument] if one durable layer contains the same rule
       more than once. *)

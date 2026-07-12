@@ -93,8 +93,33 @@ module Run = struct
     Spice_permission.Policy.Rule.allow
       (Spice_permission.Policy.Match.network_host ~host ())
 
+  let command_execution_rule execution =
+    Spice_permission.Policy.Rule.allow
+      (Spice_permission.Policy.Match.command
+         (Spice_permission.Policy.Match.Command.execution execution))
+
+  let project_execution write =
+    Spice_permission.Access.Command.Enforced
+      Spice_permission.Access.Command.Confinement.
+        {
+          read = Project;
+          write;
+          network = Restricted;
+        }
+
   let product_rules =
-    List.map workspace_rule [ `Read; `Create; `Modify; `Delete ]
+    Spice_permission.Policy.Rule.review
+      (Spice_permission.Policy.Match.command
+         Spice_permission.Policy.Match.Command.high_impact)
+    :: List.map command_execution_rule
+         [
+           project_execution
+             Spice_permission.Access.Command.Confinement.Read_only;
+           project_execution
+             Spice_permission.Access.Command.Confinement.Workspace;
+           Spice_permission.Access.Command.External;
+         ]
+    @ List.map workspace_rule [ `Read; `Create; `Modify; `Delete ]
     @ List.map documentation_rule web_docs_allowlist
 
   let make ~review ~product ~durable () =

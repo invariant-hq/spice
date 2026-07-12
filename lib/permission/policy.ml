@@ -799,17 +799,10 @@ module Rule = struct
     Jsont.Object.map ~kind:"high_impact command matcher" Command_match.high_impact
     |> Jsont.Object.error_unknown |> Jsont.Object.finish
 
-  let command_execution_jsont =
-    Jsont.enum
-      [
-        ("enforced", Access.Command.Enforced);
-        ("external", Access.Command.External);
-        ("direct", Access.Command.Direct);
-      ]
-
   let command_execution_pattern_jsont =
     Jsont.Object.map ~kind:"command execution matcher" Command_match.execution
-    |> Jsont.Object.mem "execution" command_execution_jsont ~enc:(function
+    |> Jsont.Object.mem "execution" Access.Command.execution_jsont
+         ~enc:(function
       | Command_match.Execution execution -> execution
       | Command_match.Any | Command_match.Exact _
       | Command_match.Argv_prefix _ | Command_match.High_impact ->
@@ -837,7 +830,8 @@ module Rule = struct
           Command_match.argv_prefix ~execution ~cwd ~program ~args ())
     in
     Jsont.Object.map ~kind:"argv prefix command matcher" make
-    |> Jsont.Object.mem "execution" command_execution_jsont ~enc:(function
+    |> Jsont.Object.mem "execution" Access.Command.execution_jsont
+         ~enc:(function
       | Command_match.Argv_prefix { execution; _ } -> execution
       | Command_match.Any | Command_match.Exact _
       | Command_match.Execution _ | Command_match.High_impact ->

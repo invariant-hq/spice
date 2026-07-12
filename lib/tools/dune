@@ -5,6 +5,7 @@
   anchor_tracker
   apply_patch
   change_evidence
+  command_permission
   edit_error
   edit_file
   edit_lines
@@ -46,6 +47,7 @@
   text_helpers
   import
   change_evidence
+  command_permission
   edit_error
   fs_error)
  (libraries

@@ -473,26 +473,23 @@ let parse_shell script =
     { segments; confidence = (if confident then `Confident else `Fallback) }
 
 type command_route =
-  | Enforced
-  | External
-  | Direct
-  | Escalated
+  | Sandboxed of Permission.Access.Command.execution
+  | Escalated of Permission.Access.Command.execution
   | Sandbox_refused of Spice_sandbox.Error.t
   | Escalation_refused of Spice_sandbox.Error.t
 
 let sandbox_route sandbox =
-  match Spice_sandbox.evidence sandbox with
-  | Spice_sandbox.Evidence.Enforced _ -> Enforced
-  | Spice_sandbox.Evidence.Declared_external -> External
-  | Spice_sandbox.Evidence.Not_requested -> Direct
-  | Spice_sandbox.Evidence.Refused error -> Sandbox_refused error
+  match Command_permission.execution sandbox with
+  | Ok execution -> Sandboxed execution
+  | Error error -> Sandbox_refused error
 
 let command_route ~config input =
   let sandbox = Config.sandbox config in
   if not (Input.escalate input) then sandbox_route sandbox
   else
     match Spice_sandbox.escalation sandbox with
-    | Spice_sandbox.Available -> Escalated
+    | Spice_sandbox.Available ->
+        Escalated (Command_permission.escalated_execution sandbox)
     | Spice_sandbox.Denied error -> Escalation_refused error
     | Spice_sandbox.Ignored -> sandbox_route sandbox
 
@@ -521,12 +518,12 @@ let escalation_access_name = "shell.escalate"
    path refuses the input before any permission flow; under unconfined or
    declared-external requests the flag asks for what is already true. *)
 let escalation_access input = function
-  | Escalated ->
+  | Escalated _ ->
       [
         Permission.Access.custom ~subject:(Input.command input)
           escalation_access_name;
       ]
-  | Enforced | External | Direct | Sandbox_refused _ | Escalation_refused _ -> []
+  | Sandboxed _ | Sandbox_refused _ | Escalation_refused _ -> []
 
 let permissions ~workspace ~config input =
   let resolved =
@@ -548,9 +545,8 @@ let permissions ~workspace ~config input =
       in
       begin match route with
       | Sandbox_refused _ | Escalation_refused _ -> []
-      | Enforced -> request Permission.Access.Command.Enforced
-      | External -> request Permission.Access.Command.External
-      | Direct | Escalated -> request Permission.Access.Command.Direct
+      | Sandboxed execution -> request execution
+      | Escalated execution -> request execution
       end
 
 module Output = struct
@@ -997,7 +993,7 @@ let run ~fs ~workspace ~config ?(cancelled = default_cancelled) input =
                     message
                 in
                 Tool.Result.failed ~output `Unavailable message
-            | Escalated ->
+            | Escalated _ ->
                 (* Reaching execution means the escalation access was approved
                    by policy or reviewer. The sealed sandbox drops filesystem
                    and network confinement while retaining its exact child
@@ -1014,7 +1010,7 @@ let run ~fs ~workspace ~config ?(cancelled = default_cancelled) input =
                       ~argv:(Spice_sandbox.Spawn.argv spawn)
                       ~env:(Spice_sandbox.Spawn.env spawn)
                       ~enforcement:(Spice_sandbox.Spawn.evidence spawn))
-            | Enforced | External | Direct -> (
+            | Sandboxed _ -> (
                 match
                   Spice_sandbox.spawn (Config.sandbox config) ~argv
                     ~cwd:(Workspace.Path.abs workdir)

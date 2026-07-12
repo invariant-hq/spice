@@ -170,11 +170,6 @@ let decode_call tool input =
   | Ok call -> call
   | Error error -> failf "decode failed: %a" Tool.Error.pp error
 
-let execution_name = function
-  | Spice_permission.Access.Command.Direct -> "direct"
-  | Spice_permission.Access.Command.Enforced -> "enforced"
-  | Spice_permission.Access.Command.External -> "external"
-
 let print_command_routes label call =
   let routes =
     Tool.Call.permissions call
@@ -182,7 +177,7 @@ let print_command_routes label call =
     |> List.filter_map (function
          | Spice_permission.Access.Command command ->
              Some
-               (execution_name
+               (Spice_permission.Access.Command.execution_to_string
                   (Spice_permission.Access.Command.execution command))
          | Spice_permission.Access.Path _ | Spice_permission.Access.Network _
          | Spice_permission.Access.Custom _ ->
