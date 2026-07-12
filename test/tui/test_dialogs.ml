@@ -640,46 +640,141 @@ let%expect_test "the permission dialog denies and resumes without running" =
 22 |
 23 |
 24 ||}];
-  (* Confirming the deny borrows the composer for the "what to do differently"
-     feedback (like esc); typing it and submitting resumes the turn with the
-     denial as the tool result — the command never ran. *)
+  (* Confirming the deny opens its feedback field without leaving the operation
+     being reviewed. *)
   Tui.enter t;
   Tui.settle t;
   Tui.print t;
   [%expect
-    {|01 |
-02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
-03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
-04 |        sandbox: danger-full-access (config)
+    {|01 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+02 |    permission
+03 |
+04 |   Run this command?
 05 |
-06 | ❯ run it
-07 |
-08 | ⏺ Shell(echo recorded)
-09 |   ⎿  ⋯ waiting on permission
-10 |
-11 | ⋯ Waiting for your answer
+06 |   $ echo recorded
+07 |   in $PROJECT/.
+08 |
+09 |   ───────────────────────────────
+10 |   ❯ ▌
+11 |   ───────────────────────────────
 12 |
-13 |
+13 |   type feedback · enter deny · esc cancel · paste works
 14 |
 15 |
 16 |
 17 |
 18 |
 19 |
-20 |   Denying: Run this command?  echo recorded
+20 |
 21 |
-22 | ────────────────────────────────────────────────────────────────────────────────
-23 | ❯ tell Spice what to do differently
-24 | ────────────────────────────────────────────────────────────────────────────────|}];
+22 |
+23 |
+24 ||}];
   (* Submit the feedback: the turn resumes with the DENIAL as the tool result —
      the resume request carries "use a stub instead" (asserted at the wire), and
-     the command never ran. The borrow frame and wire assertion prove the deny.
-  *)
+     the command never ran. *)
   Tui.keys t "use a stub instead";
   Tui.enter t;
   ignore (Tui.await_request t 2 : string);
   Tui.release t "fin";
   Tui.settle t
+
+let%expect_test "permission feedback is inline, pasteable, and cancellable" =
+  let script =
+    [
+      Provider_script.tool_call ~expect:[ "review denial" ] ~id:"resp-pi-1"
+        ~call_id:"call-pi" ~name:"shell"
+        ~arguments:{|{"command":"printf SAFE"}|} ();
+      resume ~expect:[ "call-pi"; "use β instead" ] ~id:"resp-pi-2"
+        "Denied with feedback.";
+    ]
+  in
+  Tui.run ~name:"dialog-perm-inline" ~provider:script @@ fun t ->
+  open_dialog t "review denial";
+  Tui.keys t "3";
+  Tui.enter t;
+  Tui.paste t "discard β";
+  Tui.keys t Key.escape;
+  Tui.settle t;
+  Printf.printf "cancel restores permission options: %b\n"
+    (String.includes ~affix:"❯ 3. No" (Tui.screen t));
+  [%expect {| cancel restores permission options: true |}];
+  Tui.enter t;
+  Tui.paste t "use β instead";
+  Tui.settle t;
+  let screen = Tui.screen t in
+  Printf.printf "permission operation stays visible: %b\n"
+    (String.includes ~affix:"Run this command?" screen);
+  Printf.printf "unicode feedback renders inline: %b\n"
+    (String.includes ~affix:"❯ use β instead▌" screen);
+  [%expect
+    {|
+    permission operation stays visible: true
+    unicode feedback renders inline: true |}];
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin";
+  Tui.settle t
+
+let%expect_test "permission feedback preserves the prompt draft" =
+  let draft = "PERMISSION-FOLLOW-UP" in
+  let script =
+    [
+      Provider_script.tool_call ~expect:[ "review with draft" ] ~gate:"dialog"
+        ~id:"resp-pdf-1" ~call_id:"call-pdf" ~name:"shell"
+        ~arguments:{|{"command":"printf BLOCKED"}|} ();
+      resume ~expect:[ "call-pdf"; "use the API" ] ~id:"resp-pdf-2"
+        "Denied.";
+    ]
+  in
+  Tui.run ~name:"dialog-perm-inline-draft" ~provider:script @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "review with draft";
+  Tui.enter t;
+  ignore (Tui.await_request t 1 : string);
+  Tui.keys t draft;
+  Tui.release_response t "dialog";
+  Tui.await_suspend t;
+  Tui.keys t "3";
+  Tui.enter t;
+  Tui.keys t "use the API";
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin";
+  Printf.printf "permission draft remains once: %b\n"
+    (count_occurrences ~affix:draft (Tui.screen t) = 1);
+  [%expect {| permission draft remains once: true |}]
+
+let%expect_test "permission feedback stays out of prompt history" =
+  let prompt = "permission history prompt" in
+  let feedback = "permission feedback sentinel" in
+  let script =
+    [
+      Provider_script.tool_call ~expect:[ prompt ] ~id:"resp-ph-1"
+        ~call_id:"call-ph" ~name:"shell"
+        ~arguments:{|{"command":"printf BLOCKED"}|} ();
+      resume ~expect:[ "call-ph"; feedback ] ~id:"resp-ph-2" "Denied.";
+    ]
+  in
+  Tui.run ~name:"dialog-perm-inline-history" ~provider:script @@ fun t ->
+  open_dialog t prompt;
+  Tui.keys t "3";
+  Tui.enter t;
+  Tui.keys t feedback;
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin";
+  Tui.keys t Key.up;
+  Tui.settle t;
+  let screen = Tui.screen t in
+  Printf.printf "permission prompt is recalled: %b\n"
+    (String.includes ~affix:("❯ " ^ prompt) screen);
+  Printf.printf "permission feedback is not recalled: %b\n"
+    (not (String.includes ~affix:("❯ " ^ feedback) screen));
+  [%expect
+    {|
+    permission prompt is recalled: true
+    permission feedback is not recalled: true |}]
 
 (* A proposed plan is a real host-tool boundary in plan mode. The first option
    approves it, and the next provider request must carry the tool result before
@@ -776,6 +871,111 @@ let%expect_test "plan confirmation cannot submit a restored draft" =
     {|
     plan draft remains only in composer: true
     plan turn completed: true |}]
+
+let%expect_test "plan adjustment is inline, pasteable, and cancellable" =
+  let script =
+    [
+      Provider_script.tool_call ~expect:[ "adjust a plan" ] ~id:"resp-pai-1"
+        ~call_id:"call-pai" ~name:"propose_plan"
+        ~arguments:
+          {|{"id":"plan-adjust","title":"Adjust safely","body":"Start with the parser."}|}
+        ();
+      resume ~expect:[ "call-pai"; "preserve β" ] ~id:"resp-pai-2"
+        "Adjusted the plan.";
+    ]
+  in
+  Tui.run ~name:"dialog-plan-adjust-inline" ~provider:script @@ fun t ->
+  enter_plan_mode t;
+  open_dialog t "adjust a plan";
+  Tui.keys t "2";
+  Tui.enter t;
+  Tui.paste t "discard β";
+  Tui.keys t Key.escape;
+  Tui.settle t;
+  Printf.printf "cancel restores plan options: %b\n"
+    (String.includes ~affix:"❯ 2. adjust" (Tui.screen t));
+  [%expect {| cancel restores plan options: true |}];
+  Tui.enter t;
+  Tui.paste t "preserve β";
+  Tui.settle t;
+  let screen = Tui.screen t in
+  Printf.printf "plan stays visible: %b\n"
+    (String.includes ~affix:"Adjust safely" screen);
+  Printf.printf "unicode adjustment renders inline: %b\n"
+    (String.includes ~affix:"❯ preserve β▌" screen);
+  [%expect
+    {|
+    plan stays visible: true
+    unicode adjustment renders inline: true |}];
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin";
+  Tui.settle t
+
+let%expect_test "plan adjustment preserves the prompt draft" =
+  let draft = "PLAN-FOLLOW-UP" in
+  let script =
+    [
+      Provider_script.tool_call ~expect:[ "plan with draft" ] ~gate:"dialog"
+        ~id:"resp-pad-1" ~call_id:"call-pad" ~name:"propose_plan"
+        ~arguments:
+          {|{"id":"plan-draft-adjust","title":"Draft safely","body":"Start here."}|}
+        ();
+      resume ~expect:[ "call-pad"; "preserve callers" ] ~id:"resp-pad-2"
+        "Adjusted.";
+    ]
+  in
+  Tui.run ~name:"dialog-plan-inline-draft" ~provider:script @@ fun t ->
+  enter_plan_mode t;
+  Tui.keys t "plan with draft";
+  Tui.enter t;
+  ignore (Tui.await_request t 1 : string);
+  Tui.keys t draft;
+  Tui.release_response t "dialog";
+  Tui.await_suspend t;
+  Tui.keys t "2";
+  Tui.enter t;
+  Tui.keys t "preserve callers";
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin";
+  Printf.printf "plan draft remains once: %b\n"
+    (count_occurrences ~affix:draft (Tui.screen t) = 1);
+  [%expect {| plan draft remains once: true |}]
+
+let%expect_test "plan adjustment stays out of prompt history" =
+  let prompt = "plan history prompt" in
+  let feedback = "plan feedback sentinel" in
+  let script =
+    [
+      Provider_script.tool_call ~expect:[ prompt ] ~id:"resp-pah-1"
+        ~call_id:"call-pah" ~name:"propose_plan"
+        ~arguments:
+          {|{"id":"plan-history","title":"History safely","body":"Start here."}|}
+        ();
+      resume ~expect:[ "call-pah"; feedback ] ~id:"resp-pah-2" "Adjusted.";
+    ]
+  in
+  Tui.run ~name:"dialog-plan-inline-history" ~provider:script @@ fun t ->
+  enter_plan_mode t;
+  open_dialog t prompt;
+  Tui.keys t "2";
+  Tui.enter t;
+  Tui.keys t feedback;
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin";
+  Tui.keys t Key.up;
+  Tui.settle t;
+  let screen = Tui.screen t in
+  Printf.printf "plan prompt is recalled: %b\n"
+    (String.includes ~affix:("❯ " ^ prompt) screen);
+  Printf.printf "plan feedback is not recalled: %b\n"
+    (not (String.includes ~affix:("❯ " ^ feedback) screen));
+  [%expect
+    {|
+    plan prompt is recalled: true
+    plan feedback is not recalled: true |}]
 
 (* Escape is the safe plan decision: it rejects the proposal, keeps plan mode,
    and resumes the provider without ever emitting an approval. *)

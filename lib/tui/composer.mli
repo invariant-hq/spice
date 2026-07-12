@@ -157,7 +157,6 @@ val render :
   ?list_open:bool ->
   ?mode:mode ->
   ?agent:string ->
-  ?placeholder:string ->
   ?turn_running:bool ->
   ?top_margin:int ->
   width:int ->
@@ -181,10 +180,8 @@ val render :
       top rule; defaults to [Build].
     - [agent] renders a filled chip at the right of the top rule and heats a
       [Build] frame to accent; [None] shows no chip.
-    - [placeholder] overrides the state-derived placeholder (a borrowed-composer
-      string such as a rename or deny prompt).
-    - [turn_running] selects the queue placeholder when [true] and no override
-      or shell/agent state applies.
+    - [turn_running] selects the queue placeholder when [true] and no shell or
+      agent state applies.
     - [top_margin] is the blank rows above the frame (defaults to [1]; the shell
       collapses it to [0] under an overlay or queued rows).
     - [width] is the terminal column count; the rules span it fully. *)

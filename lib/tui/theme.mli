@@ -166,7 +166,7 @@ val kind_thread : string
 
 val own_answer : string
 (** [own_answer] (["✎"]) heads the permanent "type your own answer" row of a
-    question dialog — the composer-borrow escape a question always offers. *)
+    question dialog — the inline escape a question always offers. *)
 
 (** The transcript glyph cast: six marks, one meaning each. Each carries its
     color from the surface that draws it — the mark is the shape, the

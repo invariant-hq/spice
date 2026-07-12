@@ -21,13 +21,13 @@ val make : Spice_protocol.Plan.Proposal.t -> t
 (** [make proposal] is the plan dialog for [proposal], cursor on the first
     option and body collapsed. *)
 
-(** What a key resolves the dialog to. {!Dialog} maps {!Approve} and
-    {!Keep_planning} to {!Spice_protocol.Command.Resolve_plan}, and {!Adjust} to
-    the composer borrow. esc never approves — it is {!Keep_planning}. *)
+(** What a key resolves the dialog to. {!Dialog} maps each decision to
+    {!Spice_protocol.Command.Resolve_plan}. Choosing adjust opens an inline
+    field; esc never approves — from the option list it is {!Keep_planning}. *)
 type outcome =
   | Stay  (** Redraw; the dialog is still open (cursor move, body expand). *)
   | Approve  (** Approve the plan. *)
-  | Adjust
+  | Adjust of string
       (** Reject with feedback: the typed text becomes the rejection reason. *)
   | Keep_planning
       (** Reject with no feedback and keep the planning turn going. *)
@@ -37,6 +37,9 @@ val key : Matrix.Input.Key.event -> t -> t * outcome
     [ctrl+p]·[ctrl+n] move the cursor, and [enter] confirms it. [ctrl+o] toggles
     the body expand (a {!Stay}), and [esc] is {!Keep_planning}. Any other key is
     {!Stay}. *)
+
+val accepts_paste : t -> bool
+val paste : string -> t -> t
 
 val view : width:int -> t -> _ Mosaic.t
 (** [view ~width t] renders the whole dialog as a plan-blue panel. *)

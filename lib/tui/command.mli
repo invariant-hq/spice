@@ -143,6 +143,6 @@ val parse : string -> parsed option
     line. Matching on the slash is case-insensitive and ignores surrounding
     whitespace; an argument's case is preserved. ["/model"] is {!Exact};
     ["/rename My Title"] is {!With_argument}; ["/rename"] with no argument is
-    {!Exact} (the shell then borrows the composer). Only argument-taking
+    {!Exact} (the shell then seeds the composer with the command prefix). Only argument-taking
     commands accept a trailing argument — for the rest, trailing text yields
     [None]. *)

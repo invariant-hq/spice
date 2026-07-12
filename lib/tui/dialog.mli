@@ -9,9 +9,8 @@
 
     A dialog opens on a blocked turn's {!Spice_protocol.Pending.t} boundary,
     tagged with the owner it must answer through, and renders one of the three
-    forms as a panel. Folding a key either keeps the dialog open, resolves it to
-    a command the shell submits, or borrows the composer for permission/plan
-    feedback. The reply routes by {!owner}: the parent turn answers through
+    forms as a panel. Folding a key either keeps the dialog open or resolves it
+    to a command the shell submits. The reply routes by {!owner}: the parent turn answers through
     {!Spice_host.Live}, a child (subagent) turn through its job — only the
     parent arm is live this iteration. *)
 
@@ -55,41 +54,18 @@ type event =
   | Stay  (** Redraw; the dialog is still open. *)
   | Resolve of { resolution : resolution; echo : string }
       (** Submit [resolution] and append the [echo] event notice, then close. *)
-  | Borrow of { placeholder : string }
-      (** Borrow the composer with [placeholder]; the dialog stays open in its
-          collapsed feedback form and a later {!resolve_borrow} finishes it. *)
   | Flash of string  (** Reject the key and flash [message]. *)
 
 val key : Matrix.Input.Key.event -> t -> t * event
-(** [key ev t] folds one key into the active form. Only called while the dialog
-    owns the keyboard — never while the composer is borrowed. *)
-
-val borrowed : t -> bool
-(** [borrowed t] is [true] while the composer is borrowed for feedback. *)
-
-val borrow_summary : t -> string
-(** [borrow_summary t] is the one-line collapsed record shown above the borrowed
-    composer ("Denying: …", "Adjusting the plan", the question text). *)
-
-val resolve_borrow : text:string -> t -> (resolution * string, string) result
-(** [resolve_borrow ~text t] finishes a borrowed dialog from the submitted
-    [text]. [Ok (resolution, echo)] submits and closes it. An empty deny or
-    plan-adjust submit resolves plainly. [Error message] means no feedback is
-    being collected. *)
-
-val cancel_borrow : t -> t
-(** [cancel_borrow t] steps back from the borrowed composer to the option list,
-    restoring the dialog's own keyboard (the esc-ladder rung). *)
+(** [key ev t] folds one key into the active form while the dialog owns the
+    keyboard. *)
 
 val accepts_paste : t -> bool
-(** [accepts_paste t] is [true] while a question's inline value field is
-    active. Permission and plan feedback continue to use the composer borrow. *)
+(** [accepts_paste t] is [true] while any inline value field is active. *)
 
 val paste : string -> t -> t
-(** [paste text t] inserts [text] into an active question value field and is a
-    no-op for every other dialog state. *)
+(** [paste text t] inserts [text] into an active value field and is a no-op
+    otherwise. *)
 
 val view : width:int -> t -> _ Mosaic.t
-(** [view ~width t] renders the active form as a panel. Used while the dialog
-    owns the keyboard; a borrowed dialog renders {!borrow_summary} beside the
-    real composer instead. *)
+(** [view ~width t] renders the active form as a panel. *)

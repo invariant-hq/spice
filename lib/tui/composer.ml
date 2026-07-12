@@ -510,22 +510,19 @@ let marker_of ~mode input_mode =
   | Input_mode.History_search ->
       (Theme.history_marker ^ " ", Ansi.Style.make ~fg:Theme.color_history ())
 
-let placeholder_for ~override ~agent ~turn_running input =
-  match override with
-  | Some placeholder -> placeholder
-  | None -> (
-      match input with
-      | Input_mode.Shell -> "shell command"
-      | Input_mode.History_search -> "search history"
-      | Input_mode.Plain -> (
-          match agent with
-          | Some agent -> "message @" ^ agent
-          | None ->
-              if turn_running then "queue a message — sends after this turn"
-              else "message spice"))
+let placeholder_for ~agent ~turn_running input =
+  match input with
+  | Input_mode.Shell -> "shell command"
+  | Input_mode.History_search -> "search history"
+  | Input_mode.Plain -> (
+      match agent with
+      | Some agent -> "message @" ^ agent
+      | None ->
+          if turn_running then "queue a message — sends after this turn"
+          else "message spice")
 
 let render ?(submit_enabled = true) ?(list_open = false) ?(mode = Build) ?agent
-    ?placeholder ?(turn_running = false) ?(top_margin = 1) ~width ~on_msg t =
+    ?(turn_running = false) ?(top_margin = 1) ~width ~on_msg t =
   let stored_value = Draft.text t.draft in
   let input = input_mode t in
   let textarea_key =
@@ -535,9 +532,7 @@ let render ?(submit_enabled = true) ?(list_open = false) ?(mode = Build) ?agent
   in
   let marker_glyph, marker_style = marker_of ~mode input in
   let rule_color = frame_rule_color ~mode ~agent in
-  let textarea_placeholder =
-    placeholder_for ~override:placeholder ~agent ~turn_running input
-  in
+  let textarea_placeholder = placeholder_for ~agent ~turn_running input in
   let single_line = not (String.contains stored_value '\n') in
   (* Keys with a widget default the shell must own are intercepted on the
      textarea's own key handler: it is the only hook that runs before the

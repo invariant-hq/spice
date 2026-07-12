@@ -13,7 +13,7 @@
     the conversation — labelled honestly with the narrow scope an identical
     {!Spice_permission.Access.t} re-approves ("this command", "edits to
     lib/x.ml") since grants are exact (doc/manual/security.md) — and deny, which
-    borrows the composer for feedback. It is a pure view over a durable
+    opens an inline feedback field. It is a pure view over a durable
     {!Spice_session.Permission.Requested.t}. *)
 
 type t
@@ -23,15 +23,16 @@ val make : Spice_session.Permission.Requested.t -> t
 (** [make request] is the permission dialog for [request], cursor on allow-once
     and the diff collapsed. *)
 
-(** What a key resolves the dialog to. {!Allow} answers immediately; {!Deny}
-    borrows the composer, where an empty submit denies plainly and typed text
-    denies with feedback. esc is {!Deny}. *)
+(** What a key resolves the dialog to. {!Allow} answers immediately. Choosing
+    deny opens an inline field; submitting it yields {!Deny}, with [None] for an
+    empty value and [Some text] for feedback. *)
 type outcome =
   | Stay  (** Redraw; the dialog is still open (cursor move, diff expand). *)
   | Allow of Spice_session.Permission.Resolved.allowance
       (** Grant the request with this scope ([Once] or the exact-grant
           [Exact_for_conversation]). *)
-  | Deny  (** Deny with feedback: borrow the composer. *)
+  | Deny of string option
+      (** Deny, optionally attaching the submitted feedback. *)
 
 val key : Matrix.Input.Key.event -> t -> t * outcome
 (** [key ev t] folds one key: [1]/[2]/[3] select their numbered option, arrows
@@ -39,13 +40,12 @@ val key : Matrix.Input.Key.event -> t -> t * outcome
     mnemonics [y]/[a] allow once or for the conversation immediately;
     [d]/[n]/[esc] deny with feedback immediately. [ctrl+o] expands the diff. *)
 
-val summary : t -> string
-(** [summary t] is the one-line operation description the deny-feedback line
-    quotes ("Run a shell command? $ …", "Edit lib/x.ml?"). *)
-
 val scope_label : t -> string
 (** [scope_label t] is the exact-grant scope the session-allow echo names ("this
     command", "edits to lib/x.ml"). *)
+
+val accepts_paste : t -> bool
+val paste : string -> t -> t
 
 val view : width:int -> t -> _ Mosaic.t
 (** [view ~width t] renders the whole dialog as a panel. *)

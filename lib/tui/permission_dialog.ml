@@ -14,6 +14,7 @@ type t = {
   request : Requested.t;
   nav : Option_list.t;
   expanded : bool;
+  feedback : Inline_input.t option;
 }
 
 let option_count = 3
@@ -23,12 +24,13 @@ let make request =
     request;
     nav = Option_list.make ~count:option_count;
     expanded = false;
+    feedback = None;
   }
 
 type outcome =
   | Stay
   | Allow of Resolved.allowance
-  | Deny
+  | Deny of string option
 
 (* --- Access facts, ported from the old TUI permission prompt --- *)
 
@@ -239,35 +241,43 @@ let ctrl_o (ev : Matrix.Input.Key.event) =
 let resolve = function
   | 0 -> Allow Resolved.Once
   | 1 -> Allow Resolved.Exact_for_conversation
-  | 2 -> Deny
-  | _ -> Deny
+  | 2 -> Stay
+  | _ -> Stay
 
 let key ev t =
-  if ctrl_o ev then ({ t with expanded = not t.expanded }, Stay)
-  else if letter ev 'y' then (t, Allow Resolved.Once)
-  else if letter ev 'a' then (t, Allow Resolved.Exact_for_conversation)
-  else if letter ev 'd' || letter ev 'n' then (t, Deny)
-  else
-    match Panel.classify ev with
-    | Panel.Digit d -> ({ t with nav = Option_list.jump d t.nav }, Stay)
-    | Panel.Action Panel.Up -> ({ t with nav = Option_list.up t.nav }, Stay)
-    | Panel.Action Panel.Down -> ({ t with nav = Option_list.down t.nav }, Stay)
-    | Panel.Action Panel.Enter -> (t, resolve (Option_list.selected t.nav))
-    | Panel.Action Panel.Escape -> (t, Deny)
-    | Panel.Printable _ | Panel.Action _ -> (t, Stay)
+  match t.feedback with
+  | Some feedback -> (
+      match Inline_input.key ev feedback with
+      | Inline_input.Stay feedback -> ({ t with feedback = Some feedback }, Stay)
+      | Inline_input.Cancel -> ({ t with feedback = None }, Stay)
+      | Inline_input.Submit "" -> (t, Deny None)
+      | Inline_input.Submit text -> (t, Deny (Some text)))
+  | None ->
+      if ctrl_o ev then ({ t with expanded = not t.expanded }, Stay)
+      else if letter ev 'y' then (t, Allow Resolved.Once)
+      else if letter ev 'a' then (t, Allow Resolved.Exact_for_conversation)
+      else if letter ev 'd' || letter ev 'n' then
+        ({ t with feedback = Some Inline_input.empty }, Stay)
+      else
+        match Panel.classify ev with
+        | Panel.Digit d -> ({ t with nav = Option_list.jump d t.nav }, Stay)
+        | Panel.Action Panel.Up -> ({ t with nav = Option_list.up t.nav }, Stay)
+        | Panel.Action Panel.Down ->
+            ({ t with nav = Option_list.down t.nav }, Stay)
+        | Panel.Action Panel.Enter ->
+            if Option_list.selected t.nav = 2 then
+              ({ t with feedback = Some Inline_input.empty }, Stay)
+            else (t, resolve (Option_list.selected t.nav))
+        | Panel.Action Panel.Escape ->
+            ({ t with feedback = Some Inline_input.empty }, Stay)
+        | Panel.Printable _ | Panel.Action _ -> (t, Stay)
 
-let summary t =
-  let accesses = reviewed_accesses t in
-  let head = headline t accesses in
-  match Request.display (request_data t) with
-  | Some display -> head ^ "  " ^ display
-  | None -> (
-      match accesses with
-      | [ access ] -> (
-          match command_access access with
-          | Some (command, _) -> head ^ "  $ " ^ command
-          | None -> head)
-      | _ -> head)
+let accepts_paste t = Option.is_some t.feedback
+
+let paste text t =
+  match t.feedback with
+  | Some feedback -> { t with feedback = Some (Inline_input.paste text feedback) }
+  | None -> t
 
 let scope_label t = session_scope (reviewed_accesses t)
 
@@ -429,19 +439,26 @@ let view ~width t =
     headline_row ~counts (headline t accesses)
     :: blank
     :: preview_view ~expanded:t.expanded t accesses
-    @ [ blank; options_view t ~allow_once ~session_scope ]
+    @ [ blank ]
+    @
+    (match t.feedback with
+    | Some feedback -> Inline_input.rows feedback
+    | None -> [ options_view t ~allow_once ~session_scope ])
   in
   let hint =
-    [ "1/2/3 choose"; "enter confirm" ]
-    @
-    (if
-       (has_diff t accesses
-       || (Option.is_some (Request.display (request_data t))
-          && List.length accesses > 1))
-       && not t.expanded
-     then [ "ctrl+o details" ]
-     else [])
-    @ [ "esc deny with feedback" ]
+    if Option.is_some t.feedback then
+      [ "type feedback"; "enter deny"; "esc cancel"; "paste works" ]
+    else
+      [ "1/2/3 choose"; "enter confirm" ]
+      @
+      (if
+         (has_diff t accesses
+         || (Option.is_some (Request.display (request_data t))
+            && List.length accesses > 1))
+         && not t.expanded
+       then [ "ctrl+o details" ]
+       else [])
+      @ [ "esc deny with feedback" ]
   in
   (* The top rule is accent, not the plain [rule] gray: a decision dialog is
      spice asking, and the accent rule is its single piece of chrome (07-dialogs

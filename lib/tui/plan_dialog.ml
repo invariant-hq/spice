@@ -9,23 +9,29 @@ type t = {
   proposal : Spice_protocol.Plan.Proposal.t;
   nav : Option_list.t;
   expanded : bool;
+  adjustment : Inline_input.t option;
 }
 
 let option_count = 3
 
 let make proposal =
-  { proposal; nav = Option_list.make ~count:option_count; expanded = false }
+  {
+    proposal;
+    nav = Option_list.make ~count:option_count;
+    expanded = false;
+    adjustment = None;
+  }
 
 type outcome =
   | Stay
   | Approve
-  | Adjust
+  | Adjust of string
   | Keep_planning
 
 (* The option order the numbers name (03-ia §Dialogs, plan approval). *)
 let resolve_index = function
   | 0 -> Approve
-  | 1 -> Adjust
+  | 1 -> Stay
   | _ -> Keep_planning
 
 let ctrl_o (ev : Matrix.Input.Key.event) =
@@ -36,21 +42,45 @@ let ctrl_o (ev : Matrix.Input.Key.event) =
   | _ -> false
 
 let key ev t =
-  if ctrl_o ev then ({ t with expanded = not t.expanded }, Stay)
-  else
-    match Panel.classify ev with
-    | Panel.Digit d -> ({ t with nav = Option_list.jump d t.nav }, Stay)
-    | Panel.Action Panel.Up -> ({ t with nav = Option_list.up t.nav }, Stay)
-    | Panel.Action Panel.Down -> ({ t with nav = Option_list.down t.nav }, Stay)
-    | Panel.Action Panel.Enter -> (t, resolve_index (Option_list.selected t.nav))
-    | Panel.Action Panel.Escape -> (t, Keep_planning)
-    | Panel.Printable _ | Panel.Action _ -> (t, Stay)
+  match t.adjustment with
+  | Some adjustment -> (
+      match Inline_input.key ev adjustment with
+      | Inline_input.Stay adjustment ->
+          ({ t with adjustment = Some adjustment }, Stay)
+      | Inline_input.Cancel -> ({ t with adjustment = None }, Stay)
+      | Inline_input.Submit "" -> (t, Keep_planning)
+      | Inline_input.Submit text -> (t, Adjust text))
+  | None ->
+      if ctrl_o ev then ({ t with expanded = not t.expanded }, Stay)
+      else
+        match Panel.classify ev with
+        | Panel.Digit d -> ({ t with nav = Option_list.jump d t.nav }, Stay)
+        | Panel.Action Panel.Up -> ({ t with nav = Option_list.up t.nav }, Stay)
+        | Panel.Action Panel.Down ->
+            ({ t with nav = Option_list.down t.nav }, Stay)
+        | Panel.Action Panel.Enter ->
+            if Option_list.selected t.nav = 1 then
+              ({ t with adjustment = Some Inline_input.empty }, Stay)
+            else (t, resolve_index (Option_list.selected t.nav))
+        | Panel.Action Panel.Escape -> (t, Keep_planning)
+        | Panel.Printable _ | Panel.Action _ -> (t, Stay)
+
+let accepts_paste t = Option.is_some t.adjustment
+
+let paste text t =
+  match t.adjustment with
+  | Some adjustment ->
+      { t with adjustment = Some (Inline_input.paste text adjustment) }
+  | None -> t
 
 let max_body_lines = 8
 
 let hint t =
-  let expand = if t.expanded then [] else [ "ctrl+o expand" ] in
-  [ "1-3 choose"; "enter confirm" ] @ expand @ [ "esc keep planning" ]
+  match t.adjustment with
+  | Some _ -> [ "type adjustment"; "enter submit"; "esc cancel"; "paste works" ]
+  | None ->
+      let expand = if t.expanded then [] else [ "ctrl+o expand" ] in
+      [ "1-3 choose"; "enter confirm" ] @ expand @ [ "esc keep planning" ]
 
 let title t =
   match Spice_protocol.Plan.Proposal.title t.proposal with
@@ -115,7 +145,11 @@ let view ~width t =
       blank;
     ]
     @ body_rows t
-    @ [ blank; options_view t ]
+    @ [ blank ]
+    @
+    (match t.adjustment with
+    | Some adjustment -> Inline_input.rows adjustment
+    | None -> [ options_view t ])
   in
   Panel.view ~frame:Theme.color_mode_plan ~name:"plan" ~filter:"" ~hint:(hint t)
     ~width ~content

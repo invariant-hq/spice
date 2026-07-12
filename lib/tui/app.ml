@@ -86,8 +86,7 @@ and panel =
   | Model of model_panel
   | Dialog of Dialog.t
       (** A decision dialog (permission, plan, question). It is a panel that
-          parks the working line and, on deny/adjust, borrows the
-          composer (see {!borrow}) (03-ia §Dialogs). *)
+          parks the working line and owns any inline value being edited. *)
   | Auth of Auth_panel.t
       (** The provider login / logout drill-down (09-auth.md): a staged panel
           (provider pick, method pick, masked api-key entry, browser / device
@@ -128,15 +127,6 @@ type completion =
       saved : Draft.History_entry.t;
     }
 
-(* The composer borrow (doc/plans/tui-next-surfaces.md §The composer borrow): a
-   dialog's deny/adjust option returns the user to the real
-   composer with a scoped [placeholder]; submit resolves the pending dialog
-   instead of starting a turn, and esc restores [saved_draft] and re-opens the
-   option list. The dialog itself is still in [surface] while borrowed. *)
-type borrow =
-  | Free
-  | For_answer of { placeholder : string; saved_draft : string }
-
 type t = {
   snapshot : Snapshot.t;
   brief : Home.Brief.t option;
@@ -175,9 +165,6 @@ type t = {
      in flight never changes this displayed value. *)
   permission_review : Spice_host.Permission.Review_behavior.t;
   permission_review_pending : bool;
-  (* Whether the composer is borrowed to collect a dialog's permission or plan
-     feedback ([For_answer] while a deny/adjust composer is open). *)
-  borrow : borrow;
   (* The one in-flight user shell command ([Some] while running): its header
      renders pinned above the composer, its result settles as a transcript
      block, and further shell submits are refused meanwhile. *)
@@ -309,11 +296,9 @@ type msg =
   | Prompt_history_appended of History.Entry.t
   | Ctrl_r
   | Shift_tab
-  (* A key routed to an open decision dialog while it owns the keyboard, and the
-     esc that steps back from a borrowed feedback composer to the dialog. *)
+  (* A key or paste routed to an open decision dialog. *)
   | Dialog_key of Matrix.Input.Key.event
   | Dialog_paste of string
-  | Cancel_borrow
   | Shell_finished of Tool_block.t
   (* Transcript scroll (01-transcript.md §Seam replay, scroll, spacing): the
      scrollport reports its settled offset, PageUp/Down page, and the wheel —
@@ -583,7 +568,6 @@ let init_model ~snapshot ~reduced_motion ~show_reasoning =
     mode = Spice_protocol.Mode.default;
     permission_review = Spice_host.Permission.Review_behavior.Default;
     permission_review_pending = false;
-    borrow = Free;
     shell = None;
     cols = 80;
     rows = 24;
@@ -1285,55 +1269,24 @@ let resolve_dialog ~resolution ~echo dialog t =
         }
     | Prelude -> t
   in
-  ({ t with surface = Conversing; borrow = Free }, commands)
-
-(* Finish a borrowed permission/plan feedback composer from the submitted
-   [text]. The saved draft is restored before the composer returns. *)
-let resolve_borrow_text text t =
-  match (t.surface, t.borrow) with
-  | Panel (Dialog dialog), For_answer { saved_draft; _ } -> (
-      match Dialog.resolve_borrow ~text dialog with
-      | Ok (resolution, echo) ->
-          let t = set_draft saved_draft t in
-          resolve_dialog ~resolution ~echo dialog t
-      | Error message -> ({ t with flash = Some message }, []))
-  | _ -> (t, [])
+  ({ t with surface = Conversing }, commands)
 
 let composer_event event t =
   match event with
-  | Composer.Submitted { text; entry } -> (
-      (* A borrowed composer resolves the pending dialog instead of starting a
-         turn; feedback text is not persisted as prompt history. *)
-      match t.borrow with
-      | For_answer _ -> resolve_borrow_text text t
-      | Free ->
-          let t, commands = submit_text text t in
-          (t, commands @ [ Append_prompt_history entry ]))
-  | Composer.Shell_submitted { command; entry } -> (
-      match t.borrow with
-      | For_answer _ -> resolve_borrow_text ("!" ^ command) t
-      | Free ->
-          let t, commands = submit_shell command t in
-          (t, commands @ [ Append_prompt_history entry ]))
+  | Composer.Submitted { text; entry } ->
+      let t, commands = submit_text text t in
+      (t, commands @ [ Append_prompt_history entry ])
+  | Composer.Shell_submitted { command; entry } ->
+      let t, commands = submit_shell command t in
+      (t, commands @ [ Append_prompt_history entry ])
   | Composer.Blank_submitted -> (
-      match t.borrow with
-      | For_answer _ -> resolve_borrow_text "" t
-      | Free -> (
-          (* An empty submit on the home stage resumes the newest session
-             directly — the recognition surface is the workspace block's session
-             line (12-home.md §Keybindings, the v2 revision). With no session, and
-             in chat, it is a no-op. *)
-          match (t.phase, t.brief) with
-          | Prelude, Some { Home.Brief.session = Some session; _ } ->
-              enter_session (Resume_session session.Home.Brief.id) t
-          | (Prelude | Chat _), _ -> (t, [])))
-  | Composer.Draft_saved entry -> (
-      (* A borrowed composer holds dialog feedback, not a prompt: a discard
-         (esc/ctrl+c) must not persist it as prompt history, symmetric with the
-         [Submitted]/[Shell_submitted]/[Blank_submitted] borrow guards above. *)
-      match t.borrow with
-      | For_answer _ -> (t, [])
-      | Free -> (t, [ Append_prompt_history entry ]))
+      (* An empty submit on the home stage resumes the newest session directly
+         from the workspace block's session line. *)
+      match (t.phase, t.brief) with
+      | Prelude, Some { Home.Brief.session = Some session; _ } ->
+          enter_session (Resume_session session.Home.Brief.id) t
+      | (Prelude | Chat _), _ -> (t, []))
+  | Composer.Draft_saved entry -> (t, [ Append_prompt_history entry ])
   | Composer.Help_requested ->
       (* One overlay at a time: opening the help sheet closes any open completion
          so the two never stack (03-composer.md §Keybindings). *)
@@ -2554,12 +2507,6 @@ let update msg t =
           | Dialog.Stay -> (t, [])
           | Dialog.Resolve { resolution; echo } ->
               resolve_dialog ~resolution ~echo dialog t
-          | Dialog.Borrow { placeholder } ->
-              (* Save the in-progress draft, clear the composer for the feedback
-                 answer, and borrow it (07-dialogs §Deny with feedback). *)
-              let saved_draft = Composer.draft_text t.composer in
-              let t = set_draft "" t in
-              ({ t with borrow = For_answer { placeholder; saved_draft } }, [])
           | Dialog.Flash message -> ({ t with flash = Some message }, []))
       | Conversing | Panel (Session_switch _ | Model _ | Auth _) | Screen _ ->
           (t, []))
@@ -2569,17 +2516,6 @@ let update msg t =
           ({ t with surface = Panel (Dialog (Dialog.paste text dialog)) }, [])
       | Conversing | Panel (Session_switch _ | Model _ | Auth _) | Screen _ ->
           (t, []))
-  | Cancel_borrow -> (
-      match (t.surface, t.borrow) with
-      | Panel (Dialog dialog), For_answer { saved_draft; _ } ->
-          let t = set_draft saved_draft t in
-          ( {
-              t with
-              surface = Panel (Dialog (Dialog.cancel_borrow dialog));
-              borrow = Free;
-            },
-            [] )
-      | _ -> (t, []))
   | Dir_loaded { dir; result } -> (
       (* Fold the enumerated directory into the mention tree, but only while it
          is still up — the user may have closed the list before the load
@@ -2752,7 +2688,7 @@ let update msg t =
    vertical rhythm (zero top margin); chat spans the full width with the
    frame's own one-row margin. The component is geometry-agnostic; the frame
    wears the declared mode (03-composer.md §Mode-colored frame). *)
-let composer_element ?placeholder ~width ~top_margin t =
+let composer_element ~width ~top_margin t =
   let turn_running =
     match t.phase with
     | Chat chat -> Turn.in_flight chat.turn
@@ -2764,7 +2700,7 @@ let composer_element ?placeholder ~width ~top_margin t =
     | Spice_protocol.Mode.Plan -> Composer.Plan
     | Spice_protocol.Mode.Review -> Composer.Review
   in
-  Composer.render ?placeholder ~turn_running ~top_margin ~width ~mode
+  Composer.render ~turn_running ~top_margin ~width ~mode
     ~list_open:(completion_open t)
     ~on_msg:(fun m -> Composer_msg m)
     t.composer
@@ -2784,13 +2720,13 @@ let completion_rows ~width t =
    row — 1 in chat, 0 on the home stage (which owns its own rhythm) — and
    collapses to 0 whenever completion rows sit directly above (03-composer.md
    §Overlap). *)
-let composer_region ?placeholder ~width ~top_margin t =
+let composer_region ~width ~top_margin t =
   let top_margin = if completion_open t then 0 else top_margin in
   box ~key:"composer.region" ~flex_direction:Flex_direction.Column
     ~flex_shrink:0.
     ~size:{ width = pct 100; height = auto }
     (completion_rows ~width t
-    @ [ composer_element ?placeholder ~width ~top_margin t ])
+    @ [ composer_element ~width ~top_margin t ])
 
 (* The shortcuts sheet renders between the composer region and the footer while
    toggled ("?" — 03-composer.md §Keybindings); "?" or esc closes it. *)
@@ -3269,24 +3205,7 @@ let surface_view t panel =
           panel_state
     | Auth panel ->
         Auth_panel.view ~frame:Theme.color_rule ~width:t.cols ~rows:t.rows panel
-    | Dialog dialog -> (
-        match t.borrow with
-        (* Borrowed: the option list collapses to a one-line record and the real
-           composer returns with the scoped placeholder (07-dialogs §Deny with
-           feedback). *)
-        | For_answer { placeholder; _ } ->
-            box ~key:"dialog.borrow" ~flex_direction:Flex_direction.Column
-              ~flex_shrink:0.
-              ~size:{ width = pct 100; height = auto }
-              [
-                box ~padding:(padding_lrtb 2 2 0 0) ~flex_shrink:0.
-                  [
-                    Mosaic.text ~style:Theme.accent ~wrap:`Word
-                      (Dialog.borrow_summary dialog);
-                  ];
-                composer_region ~placeholder ~width:t.cols ~top_margin:1 t;
-              ]
-        | Free -> Dialog.view ~width:t.cols dialog)
+    | Dialog dialog -> Dialog.view ~width:t.cols dialog
   in
   (* The panel takes its natural height pinned to the bottom; the transcript
      region above it grows to fill (03-ia §Dialogs, the parked working line stays
@@ -3453,13 +3372,9 @@ let key_msg t ev =
     | Panel (Auth _) ->
         Mosaic.Event.Key.prevent_default ev;
         Option.map (fun m -> Auth_panel_msg m) (Auth_panel.key data)
-    | Panel (Dialog _) -> (
-        (* While the composer is borrowed the composer owns typing; esc steps
-           back to the option list. Otherwise the dialog is modal: every key
-           goes to it (prevented so unclaimed keys die below the boundary). *)
-        match t.borrow with
-        | For_answer _ -> if is_escape then emit Cancel_borrow else None
-        | Free -> emit (Dialog_key data))
+    | Panel (Dialog _) ->
+        (* A dialog is modal and owns every key, including inline value edits. *)
+        emit (Dialog_key data)
     | Screen (Sessions _) ->
         (* A screen owns its keyboard wholly (03-ia §Key routing): prevent
            default on every key so a claimed key stops here and an unclaimed one

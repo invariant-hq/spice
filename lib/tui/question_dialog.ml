@@ -6,71 +6,6 @@
 open Mosaic
 module Q = Spice_protocol.Question
 
-module Inline_input = struct
-  type t = { text : string; cursor : int }
-
-  type outcome = Stay of t | Submit of string | Cancel
-
-  let empty = { text = ""; cursor = 0 }
-  let text (t : t) = t.text
-  let cursor (t : t) = t.cursor
-
-  let is_boundary text pos =
-    pos = 0
-    || pos = String.length text
-    || Char.code (String.get text pos) land 0xC0 <> 0x80
-
-  let previous_boundary text pos =
-    let rec find pos =
-      if pos = 0 || is_boundary text pos then pos else find (pos - 1)
-    in
-    find (max 0 (pos - 1))
-
-  let next_boundary text pos =
-    let limit = String.length text in
-    let rec find pos =
-      if pos = limit || is_boundary text pos then pos else find (pos + 1)
-    in
-    find (min limit (pos + 1))
-
-  let insert inserted (t : t) =
-    let before = String.sub t.text 0 t.cursor in
-    let after =
-      String.sub t.text t.cursor (String.length t.text - t.cursor)
-    in
-    {
-      text = before ^ inserted ^ after;
-      cursor = t.cursor + String.length inserted;
-    }
-
-  let backspace (t : t) =
-    if t.cursor = 0 then t
-    else
-      let first = previous_boundary t.text t.cursor in
-      let before = String.sub t.text 0 first in
-      let after =
-        String.sub t.text t.cursor (String.length t.text - t.cursor)
-      in
-      { text = before ^ after; cursor = first }
-
-  let key ev (t : t) =
-    match Panel.classify ev with
-    | Panel.Printable text -> Stay (insert text t)
-    | Panel.Digit digit -> Stay (insert (string_of_int digit) t)
-    | Panel.Action Panel.Left ->
-        Stay { t with cursor = previous_boundary t.text t.cursor }
-    | Panel.Action Panel.Right ->
-        Stay { t with cursor = next_boundary t.text t.cursor }
-    | Panel.Action Panel.Backspace -> Stay (backspace t)
-    | Panel.Action Panel.Enter -> Submit (String.trim t.text)
-    | Panel.Action Panel.Escape -> Cancel
-    | Panel.Action
-        (Panel.Tab | Panel.Up | Panel.Down | Panel.Ctrl_d | Panel.Other) ->
-        Stay t
-
-  let paste text t = insert text t
-end
-
 type t = {
   header : string option;
   question : string;
@@ -208,25 +143,6 @@ let custom_row t =
         ^ ". " ^ Theme.own_answer ^ " type your own answer");
     ]
 
-let input_rows input =
-  let value = Inline_input.text input in
-  let cursor = Inline_input.cursor input in
-  let before = String.sub value 0 cursor in
-  let after = String.sub value cursor (String.length value - cursor) in
-  let rule =
-    box ~padding:indent ~flex_shrink:0.
-      [ text ~style:Theme.rule ~wrap:`None "───────────────────────────────" ]
-  in
-  [
-    rule;
-    box ~padding:indent ~flex_shrink:0.
-      [
-        text ~style:Theme.accent ~wrap:`None
-          (Theme.cursor ^ before ^ "▌" ^ after);
-      ];
-    rule;
-  ]
-
 let view ~width t =
   let header =
     match t.header with
@@ -249,7 +165,7 @@ let view ~width t =
     box ~flex_direction:Flex_direction.Column ~flex_shrink:0.
       (match t.input with
       | None -> option_rows @ [ custom_row t ]
-      | Some input -> option_rows @ input_rows input)
+      | Some input -> option_rows @ Inline_input.rows input)
   in
   let flash =
     match t.flash with

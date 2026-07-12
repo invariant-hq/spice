@@ -11,9 +11,7 @@ type form =
   | Plan of Plan_dialog.t
   | Question of Question_dialog.t
 
-(* The composer-borrow kind, so a resumed submit knows which reply it finishes. *)
-type feedback = Deny | Adjust
-type t = { pending : pending; form : form; feedback : feedback option }
+type t = { pending : pending; form : form }
 
 let of_pending ~owner boundary =
   let form =
@@ -30,11 +28,10 @@ let of_pending ~owner boundary =
         | None -> None)
   in
   Option.map
-    (fun form -> { pending = { owner; boundary }; form; feedback = None })
+    (fun form -> { pending = { owner; boundary }; form })
     form
 
 let pending t = t.pending
-let borrowed t = Option.is_some t.feedback
 
 type resolution =
   | Reply of {
@@ -47,11 +44,9 @@ type resolution =
 type event =
   | Stay
   | Resolve of { resolution : resolution; echo : string }
-  | Borrow of { placeholder : string }
   | Flash of string
 
-let deny_placeholder = "tell Spice what to do differently"
-let adjust_placeholder = "what should the plan do differently?"
+let quote text = "\"" ^ text ^ "\""
 
 (* --- Key folding, per form --- *)
 
@@ -83,9 +78,23 @@ let key ev t =
                     };
                 echo;
               } )
-      | Permission_dialog.Deny ->
-          ( { t with feedback = Some Deny },
-            Borrow { placeholder = deny_placeholder } ))
+      | Permission_dialog.Deny message ->
+          let echo =
+            match message with
+            | None -> "denied"
+            | Some message -> "denied · " ^ quote message
+          in
+          ( t,
+            Resolve
+              {
+                resolution =
+                  Reply
+                    {
+                      answer = Spice_session.Permission.Resolved.Deny;
+                      message;
+                    };
+                echo;
+              } ))
   | Plan d -> (
       let d, outcome = Plan_dialog.key ev d in
       let t = { t with form = Plan d } in
@@ -100,9 +109,21 @@ let key ev t =
                     { decision = Spice_protocol.Plan.Decision.approve };
                 echo = "plan approved · building";
               } )
-      | Plan_dialog.Adjust ->
-          ( { t with feedback = Some Adjust },
-            Borrow { placeholder = adjust_placeholder } )
+      | Plan_dialog.Adjust text ->
+          let decision =
+            match Spice_protocol.Plan.Decision.reject_with_reason text with
+            | Ok decision -> decision
+            | Error error ->
+                invalid_arg
+                  (Format.asprintf "%a" Spice_protocol.Plan.Decision.pp_error
+                     error)
+          in
+          ( t,
+            Resolve
+              {
+                resolution = Resolve_plan { decision };
+                echo = "plan rejected · " ^ quote text;
+              } )
       | Plan_dialog.Keep_planning ->
           ( t,
             Resolve
@@ -121,61 +142,19 @@ let key ev t =
           (t, Resolve { resolution = Answer { text }; echo = "answered" })
       | Question_dialog.Flash message -> (t, Flash message))
 
-(* --- Borrow lifecycle --- *)
-
-let borrow_summary t =
-  match (t.feedback, t.form) with
-  | Some Deny, Permission d -> "Denying: " ^ Permission_dialog.summary d
-  | Some Adjust, _ -> "Adjusting the plan"
-  | _ -> ""
-
-let quote text = "\"" ^ text ^ "\""
-
-let resolve_borrow ~text t =
-  let text = String.trim text in
-  match t.feedback with
-  | Some Deny ->
-      let message = if String.length text = 0 then None else Some text in
-      let echo =
-        match message with None -> "denied" | Some m -> "denied · " ^ quote m
-      in
-      Ok
-        (Reply { answer = Spice_session.Permission.Resolved.Deny; message }, echo)
-  | Some Adjust ->
-      if String.length text = 0 then
-        Ok
-          ( Resolve_plan
-              { decision = Spice_protocol.Plan.Decision.reject },
-            "kept planning" )
-      else
-        Ok
-          ( Resolve_plan
-              {
-                decision =
-                  (match
-                     Spice_protocol.Plan.Decision.reject_with_reason text
-                   with
-                  | Ok decision -> decision
-                  | Error error ->
-                      invalid_arg
-                        (Format.asprintf "%a"
-                           Spice_protocol.Plan.Decision.pp_error error))
-              },
-            "plan rejected · " ^ quote text )
-  | None -> Error "no answer is being collected"
-
-let cancel_borrow t = { t with feedback = None }
-
 let accepts_paste t =
   match t.form with
   | Question question -> Question_dialog.accepts_paste question
-  | Permission _ | Plan _ -> false
+  | Permission permission -> Permission_dialog.accepts_paste permission
+  | Plan plan -> Plan_dialog.accepts_paste plan
 
 let paste text t =
   match t.form with
   | Question question ->
       { t with form = Question (Question_dialog.paste text question) }
-  | Permission _ | Plan _ -> t
+  | Permission permission ->
+      { t with form = Permission (Permission_dialog.paste text permission) }
+  | Plan plan -> { t with form = Plan (Plan_dialog.paste text plan) }
 
 (* --- View --- *)
 
