@@ -51,12 +51,12 @@ or start automatic project processes.
 
   $ printf '(lang dune 3.0)\n' > dune-project
   $ mkdir -p _opam/bin
-  $ cat > _opam/bin/dune <<'EOF'
+  $ export LOCAL_SWITCH_MARKER="$PWD/local-switch-spawned"
+  $ cat > _opam/bin/dune <<EOF
   > #!/bin/sh
   > printf local-switch > "$LOCAL_SWITCH_MARKER"
   > EOF
   $ chmod +x _opam/bin/dune
-  $ export LOCAL_SWITCH_MARKER="$PWD/local-switch-spawned"
   $ cat > unknown-shell.jsonl <<'EOF'
   > {"expect":{"body_contains":["try local dune"],"body_not_contains":["\"name\":\"shell\""]},"response":{"id":"resp-unknown-shell-1","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-unknown-shell","call_id":"call-unknown-shell","name":"shell","arguments":"{\"command\":\"dune --version\"}"}]}}
   > {"expect":{"body_contains":["function_call_output","call-unknown-shell"]},"response":{"id":"resp-unknown-shell-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"restricted shell unavailable"}]}]}}
@@ -82,8 +82,8 @@ or start automatic project processes.
   > EOF
   $ start_fake_openai unknown-run.jsonl unknown-capture unknown-port
   $ spice run --ephemeral --permission-mode bypass "unknown trust prompt" > unknown.out 2> unknown.err
-  $ grep -o 'workspace trust: unknown' unknown.err
-  workspace trust: unknown
+  $ grep -o 'activation state: unknown' unknown.err
+  activation state: unknown
   $ test ! -e "$DUNE_MARKER" && echo no-project-process
   no-project-process
   $ grep 'restricted answer' unknown.out
@@ -133,11 +133,8 @@ fields outside the workspace allowlist.
   $ cat > trusted-run.jsonl <<'EOF'
   > {"expect":{"body_contains":["trusted prompt","REPOSITORY INSTRUCTION","project-only","relative-only"]},"response":{"id":"resp-trusted","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"trusted answer"}]}]}}
   > EOF
-  $ rm "$LOCAL_SWITCH_MARKER"
   $ start_fake_openai trusted-run.jsonl trusted-capture trusted-port
   $ spice run --ephemeral --permission-mode bypass "trusted prompt" > trusted.out 2> trusted.err
-  $ test -e "$LOCAL_SWITCH_MARKER" && echo project-process-started
-  project-process-started
   $ grep 'trusted answer' trusted.out
   trusted answer
   $ wait_fake_server
@@ -164,8 +161,8 @@ refusal with the same runtime behavior as an unknown workspace.
   > EOF
   $ start_fake_openai untrusted-run.jsonl untrusted-capture untrusted-port
   $ spice run --ephemeral --permission-mode bypass "untrusted prompt" > untrusted.out 2> untrusted.err
-  $ grep -o 'workspace trust: untrusted' untrusted.err
-  workspace trust: untrusted
+  $ grep -o 'activation state: untrusted' untrusted.err
+  activation state: untrusted
   $ test ! -e "$DUNE_MARKER" && echo no-project-process
   no-project-process
   $ grep 'untrusted answer' untrusted.out

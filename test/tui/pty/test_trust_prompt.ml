@@ -63,7 +63,11 @@ let%expect_test "numeric shortcut 1 remembers the restricted choice" =
 let%expect_test "arrow navigation can trust and continue" =
   Project.with_temp "trust-arrows" @@ fun project ->
   let marker, env = fake_dune_environment project in
-  Pty.run project ~trust:false ~env ~rows:24 ~cols:90 ~ready:prompt_ready
+  Provider_process.with_openai project ~answer:"Trusted turn complete."
+    ~expect:[ "start after trust" ]
+  @@ fun provider ->
+  Pty.run project ~trust:false ~provider ~env ~rows:24 ~cols:90
+    ~ready:prompt_ready
   @@ fun t ->
   print_fact "no project process before consent" (not (Sys.file_exists marker));
   Pty.send t "\027[B";

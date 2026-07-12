@@ -73,11 +73,17 @@
 
 (rule
  (alias runtest)
- (deps %{bin:spice} test_trust_prompt.exe)
+ (deps
+  %{bin:spice}
+  ../../blackbox/bin/spice_fake_provider_server.exe
+  test_trust_prompt.exe)
  (action
   (progn
    (setenv
     SPICE_BIN
     %{bin:spice}
-    (run ./test_trust_prompt.exe))
+    (setenv
+     SPICE_FAKE_PROVIDER_BIN
+     %{dep:../../blackbox/bin/spice_fake_provider_server.exe}
+     (run ./test_trust_prompt.exe)))
    (diff? test_trust_prompt.ml test_trust_prompt.ml.corrected))))
