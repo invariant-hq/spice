@@ -43,6 +43,42 @@ let plan_and_hold t =
   ignore (Tui.await_request t 2 : string);
   Tui.settle t
 
+let seed_crs project =
+  Project.write project "lib/code.ml" "let beta = 2\n";
+  Project.git_baseline project;
+  Project.write project "lib/code.ml"
+    "let beta = 20\n\
+     (* CR spice: check the beta path *)\n\
+     (* CR: keep the public behavior covered *)\n"
+
+let enter_held_chat t =
+  Tui.settle t;
+  Tui.keys t "say hello";
+  Tui.enter t;
+  ignore (Tui.await_request t 1 : string);
+  Tui.settle t
+
+let enter_idle_chat t =
+  enter_held_chat t;
+  Tui.release t "fin";
+  Tui.settle t
+
+let cr_summary = "CRs 2 open · 1 addressed · /review"
+
+let row_of fragment screen =
+  let rec loop index = function
+    | [] -> None
+    | row :: rows ->
+        if Screen.contains row fragment then Some index
+        else loop (index + 1) rows
+  in
+  loop 0 (String.split_on_char '\n' screen)
+
+let summary_above_composer screen =
+  match (row_of cr_summary screen, row_of "❯ message spice" screen) with
+  | Some summary, Some composer -> composer - summary = 2
+  | None, _ | _, None -> false
+
 (* {2 Board routing by width} *)
 
 (* At >= 110 cols the pane opens and the board routes to it: no [┈] strip rule, the
@@ -196,5 +232,70 @@ let%expect_test "narrow: no pane, the board renders in the strip" =
 22 | ❯ queue a message — sends after this turn
 23 | ────────────────────────────────────────────────────────────────────────────────────────────────────
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗                    ? for shortcuts|}]
+
+(* Narrow chat keeps the current CR facts next to the action that can open them.
+   Both the ordinary narrow width and a short/smaller frame mount the same compact
+   row immediately above the composer; neither surface exposes CR bodies. *)
+let%expect_test "narrow chat keeps CR counts above the composer across sizes" =
+  let script =
+    [
+      Provider_script.message ~expect:[ "say hello" ] ~gate:"fin" ~id:"r-cr-1"
+        "Hello there.";
+    ]
+  in
+  Tui.run ~name:"pane-narrow-crs" ~size:(100, 24) ~seed:seed_crs
+    ~provider:script
+  @@ fun t ->
+  enter_idle_chat t;
+  Printf.printf "narrow counts: %b\n"
+    (Screen.contains (Tui.screen t) cr_summary);
+  Printf.printf "narrow placement: %b\n" (summary_above_composer (Tui.screen t));
+  Tui.resize t ~width:72 ~height:12;
+  Tui.settle t;
+  Printf.printf "small counts: %b\n" (Screen.contains (Tui.screen t) cr_summary);
+  Printf.printf "small placement: %b\n" (summary_above_composer (Tui.screen t));
+  [%expect
+    {|
+    narrow counts: true
+    narrow placement: true
+    small counts: true
+    small placement: true |}]
+
+(* The row is data-driven rather than a permanent chrome slot: a CR-free chat
+   starts without it, a brief tick due while a turn streams discovers new CRs,
+   and the next refresh removes the row after they are resolved/removed. *)
+let%expect_test "narrow CR summary appears and disappears as CRs change" =
+  let script =
+    [
+      Provider_script.message ~expect:[ "say hello" ] ~gate:"fin" ~id:"r-cr-2"
+        "Hello there.";
+    ]
+  in
+  Tui.run ~name:"pane-narrow-cr-live" ~size:(80, 16)
+    ~seed:(fun project ->
+      Project.write project "lib/code.ml" "let beta = 2\n";
+      Project.git_baseline project)
+    ~provider:script
+  @@ fun t ->
+  enter_held_chat t;
+  Printf.printf "absent without CRs: %b\n" (Screen.lacks "CRs " (Tui.screen t));
+  Project.write (Tui.project t) "lib/code.ml"
+    "let beta = 20\n\
+     (* CR spice: check the beta path *)\n\
+     (* CR: keep the public behavior covered *)\n";
+  Tui.advance t 2.1;
+  Tui.release t "fin";
+  Tui.settle t;
+  Printf.printf "present after add: %b\n"
+    (Screen.contains (Tui.screen t) cr_summary);
+  Project.write (Tui.project t) "lib/code.ml" "let beta = 20\n";
+  Tui.advance t 2.1;
+  Printf.printf "absent after removal: %b\n"
+    (Screen.lacks "CRs " (Tui.screen t));
+  [%expect
+    {|
+    absent without CRs: true
+    present after add: true
+    absent after removal: true |}]
 
 [%%run_tests "spice.tui.side-pane"]

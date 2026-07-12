@@ -18,10 +18,10 @@
 
     A pure data record: the facts the runtime assembles from the host's watchers
     (dune health, the worktree glance, CR counts, the newest session) on a short
-    cadence while the home stage is showing, and stops refreshing at the drop.
-    It is the runtime↔shell wire type for the workspace facts, rendered by the
-    home stage and, after the drop, by the wide-terminal side panel's idle
-    glance (doc/plans/tui-next-side-panel.md). The shell holds [t option]:
+    cadence while a workspace-fact surface is mounted. It is the runtime↔shell
+    wire type for the workspace facts, rendered by the home stage and, after the
+    drop, by the wide-terminal side panel or the narrow chat's compact CR row
+    (doc/plans/tui-next-side-panel.md). The shell holds [t option]:
     [None] until the first load lands (the stage shows a loading spinner),
     [Some] thereafter — a transiently failing refresh keeps the last known facts
     rather than reverting to empties.

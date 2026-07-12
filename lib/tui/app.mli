@@ -58,14 +58,15 @@ type command =
   | Quit  (** Request terminal exit. *)
   | Reload_brief
       (** Ask the runtime to refresh the {!Home.Brief.t} from the host and
-          dispatch it back. Emitted at init and on each prelude tick, never
-          after submit. *)
+          dispatch it back. Emitted at init and on each tick while a workspace
+          brief consumer is mounted: the prelude workspace block, the wide chat
+          pane, or the narrow chat CR summary. *)
   | Reload_health
       (** Ask the runtime for a one-shot Dune build-health verdict and dispatch
-          it back with {!health_loaded}. Emitted on each chat tick, where the
-          prelude {!Reload_brief} that otherwise carries dune health has stopped
-          — it keeps the footer live and feeds the clean↔broken transition
-          notices (01-transcript.md §Data notices, dune). *)
+          it back with {!health_loaded}. Emitted on each chat tick independently
+          of {!Reload_brief}; it keeps the footer live and feeds the
+          clean↔broken transition notices (01-transcript.md §Data notices,
+          dune). *)
   | Start_turn of string
       (** Start a turn with the given prompt: the runtime attaches the session's
           {!Spice_host.Live} on the first one and submits the prompt. Emitted on
@@ -565,7 +566,7 @@ val terminal_title : t -> string
 
 val subscriptions : t -> msg Mosaic.Sub.t
 (** [subscriptions t] are [t]'s event interests: keys (Ctrl+C, esc, ctrl+o),
-    terminal resize, the 2s brief tick and the lockup frame timer while the
-    prelude is live and animating, the ~0.1s turn tick while a chat turn is in
-    flight, and the armed two-stage notice's expiry (quit, draft clear,
-    interrupt — each on its own interval). *)
+    terminal resize, the 2s brief tick while a workspace-fact surface is
+    mounted, the lockup frame timer while the prelude is live and animating, the
+    ~0.1s turn tick while a chat turn is in flight, and the armed two-stage
+    notice's expiry (quit, draft clear, interrupt — each on its own interval). *)

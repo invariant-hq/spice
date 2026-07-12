@@ -54,10 +54,11 @@ type chat = {
      reused reveal key. Sticky-bottom follow lives in the scrollport itself. *)
   scroll : int;
   reveal : (int * int) option;
-  (* Live Dune build health, watched during chat (the brief tick that feeds the
-     footer stops at the drop, so without this the footer would freeze and no
-     transition could be seen). [health] is the last poll's raw verdict, seeded
-     from the home brief at the drop so the footer never blanks across the jump;
+  (* Live Dune build health, watched independently during chat: the workspace
+     brief continues refreshing for mounted workspace/CR context, but only this
+     poll drives footer transitions and their notices. [health] is the last
+     poll's raw verdict, seeded from the home brief at the drop so the footer
+     never blanks across the jump;
      [build] is the definite clean/broken baseline the transition law compares
      against; [broken_since] is the wall-clock start of the current outage, for
      the heal notice's outage fact — stamped on the observed break, or lazily on
@@ -522,10 +523,9 @@ let frame_interval = 0.13
 let brief_interval = 2.0
 
 (* The chat-phase Dune health poll's own interval, distinct from every timer it
-   can run beside (the turn tick, the armed expiries, the flash) for the same
-   elapsed-keying reason. It never coexists with the prelude brief tick — health
-   is polled only in chat, the brief only in the prelude — but stays distinct
-   from [brief_interval] too so the two never share a clock across the drop. *)
+   can run beside (the brief tick, turn tick, armed expiries, and flash) for the
+   same elapsed-keying reason. The brief and health polls coexist in chat: the
+   former owns workspace/CR facts, the latter footer transitions. *)
 let health_interval = 2.15
 
 (* Each armed kind keeps its own expiry interval for the same reason: a
@@ -865,15 +865,15 @@ let init ~(startup : startup) ~snapshot ~reduced_motion ~show_reasoning =
     | None, Draft text -> (set_draft text model, [ Reload_brief ])
     | None, Submit prompt ->
         (* [-p]/[--prompt]: the first turn starts before the first frame — the
-           drop happens at once, so the process never shows the home stage and
-           the prelude [Reload_brief] goes with it. *)
+           drop happens at once, so the process never shows the home stage. The
+           mounted chat workspace context starts its own brief cadence. *)
         start_turn prompt model
     | Some id, (Empty | Submit _ | Draft _) ->
         (* [spice resume <id>]: launch straight into the session's chat through
            the very transition an in-app resume takes, so both are one path by
-           construction. The prelude brief tick is dropped (the drop stops it
-           anyway); the replayed events rebuild the transcript. A [Submit] into
-           a resumed session would race that replay — the CLI rejects the
+           construction. The replayed events rebuild the transcript and the
+           mounted chat workspace context starts the brief cadence. A [Submit]
+           into a resumed session would race that replay — the CLI rejects the
            combination, and this shell degrades it to the draft seat. *)
         let model, commands = enter_session (Resume_session id) model in
         let model =
@@ -3095,6 +3095,35 @@ let threads_strip_view ~now t =
     | [] -> []
     | rows -> blank_row :: rows
 
+(* Narrow chat's ambient CR context. The wide layout already renders the same
+   [Home.Brief.crs] in its workspace pane; below the pane threshold this single
+   row keeps only the actionable counts next to the composer. Full CR bodies stay
+   in [/review]. Absence is structural: no open CRs means no row and no reserved
+   height. *)
+let narrow_crs_summary t =
+  if t.pane_open then []
+  else
+    match t.brief with
+    | Some { Home.Brief.crs = Some counts; _ } ->
+        [
+          box ~key:"crs.summary" ~flex_direction:Flex_direction.Row
+            ~flex_shrink:0. ~padding:(padding_lrtb 2 0 0 0)
+            ~size:{ width = pct 100; height = px 1 }
+            [
+              text ~style:Theme.muted ~wrap:`None ~flex_shrink:0.
+                (Printf.sprintf "CRs %d open" counts.Spice_cr.Occurrence.open_);
+              text ~style:Theme.muted ~wrap:`None ~flex_shrink:0.
+                Theme.separator;
+              text ~style:Theme.muted ~wrap:`None ~flex_shrink:0.
+                (Printf.sprintf "%d addressed"
+                   counts.Spice_cr.Occurrence.addressed);
+              text ~style:Theme.muted ~wrap:`None ~flex_shrink:0.
+                Theme.separator;
+              text ~style:Theme.atom ~wrap:`None "/review";
+            ];
+        ]
+    | Some { Home.Brief.crs = None; _ } | None -> []
+
 (* The status strip sits between the transcript region and the composer frame
    (01-transcript.md §The status strip): the ctrl+o verbose lens announcement and
    one row per queued prompt, absent when neither holds. It is the composer's
@@ -3186,10 +3215,13 @@ let chat_view t chat =
     Strip.view ~width:t.cols ~verbose:chat.expanded ~queued:t.queued
   in
   let shell = shell_running_row t in
-  let top_margin = if board = [] && strip = [] && shell = [] then 1 else 0 in
+  let crs = narrow_crs_summary t in
+  let top_margin =
+    if board = [] && strip = [] && shell = [] && crs = [] then 1 else 0
+  in
   let now = now_of chat in
   chat_above t chat ~right:(pane_right ~now t chat)
-  @ board @ shell @ strip
+  @ board @ shell @ strip @ crs
   @ [ composer_region ~width:t.cols ~top_margin t ]
   @ help_sheet t
   @ [ footer t ]
@@ -3416,19 +3448,29 @@ let subscriptions t =
     | Chat chat -> Turn.in_flight chat.turn
     | Prelude -> false
   in
+  (* The brief cadence follows its rendered consumers. Prelude conversation
+     mounts the home workspace block. Chat conversation mounts either the wide
+     workspace pane or the narrow CR summary, even while a turn streams; a wide
+     chat panel keeps the pane mounted. Full screens and narrow modal panels own
+     the whole workspace region, so they pause the poll until it is visible
+     again. This also lets an initially absent narrow row discover newly added
+     CRs. *)
+  let brief_mounted =
+    match (t.phase, t.surface, t.drill) with
+    | Prelude, Conversing, _ -> true
+    | Chat _, Conversing, None -> true
+    | Chat _, Panel _, _ -> t.pane_open
+    | Prelude, Panel _, _
+    | (Prelude | Chat _), Screen _, _
+    | Chat _, Conversing, Some _ ->
+        false
+  in
   Mosaic.Sub.batch
     [
       Mosaic.Sub.on_key_all (key_msg t);
       Mosaic.Sub.on_resize (fun ~width ~height ->
           Resized { cols = width; rows = height });
-      (if prelude then Mosaic.Sub.every brief_interval (fun () -> Brief_tick)
-       else Mosaic.Sub.none);
-      (* IP6 (doc/plans/tui-next-side-panel.md): while the side panel shows the
-         idle workspace glance in chat — pane open and no turn streaming — keep the
-         brief refreshing so its facts stay live. It pauses while a turn streams (a
-         tenant replaces the glance then) and when the pane is closed (nothing
-         reads the brief); the prelude arm above owns the home stage's cadence. *)
-      (if (not prelude) && t.pane_open && not turn_running then
+      (if brief_mounted then
          Mosaic.Sub.every brief_interval (fun () -> Brief_tick)
        else Mosaic.Sub.none);
       (if prelude && Home.Motion.animating t.motion then
