@@ -219,24 +219,50 @@ confinement.
 
 | Mode | Command behavior |
 | --- | --- |
-| `read-only` | Reads are allowed across the host filesystem; writes are limited to a private run scratch directory and network is denied. Native mutation and auxiliary execution tools are omitted from the catalog; an activated repository retains confined `shell`. Shell escalation is unavailable. |
-| `workspace-write` | Reads are allowed across the host filesystem. Writes are allowed only under resolved writable roots, with protected carve-outs. Network is restricted by default. |
+| `read-only` | Reads follow `sandbox.read`; writes are limited to a private run scratch directory and network is denied. Native mutation and auxiliary execution tools are omitted from the catalog; an activated repository retains confined `shell`. Shell escalation is unavailable. |
+| `workspace-write` | Reads follow `sandbox.read`. Writes are allowed only under resolved writable roots, with protected carve-outs. Network is restricted by default. |
 | `danger-full-access` | Commands run without Spice filesystem or network confinement. They still receive the exact host-constructed child environment. |
 | `external-sandbox` | Spice records that an external boundary owns confinement. Commands are not wrapped, but still receive the exact host-constructed child environment. |
 
 The mode precedence is the `--sandbox` flag, then `sandbox.mode`, then the
 built-in `workspace-write` default.
 
-**The confined modes are not confidentiality boundaries.** They deliberately
-allow reads of the whole host filesystem so developer toolchains remain
-available. A confined shell command can read files outside the workspace if
-ordinary filesystem permissions allow it. Exact environment reconstruction
-withholds ambient credentials, and restricted network reduces command-side
-exfiltration, but neither prevents a command from returning readable file
-contents in its tool output. Use an external isolation boundary when host-file
-confidentiality is required. If read-anywhere is deliberate—for example with a
-local model—use the ordered opt-in in
-[Permission rules](permission-rules.md#prompt-free-confined-shell-for-a-local-model).
+### Filesystem read scope
+
+`sandbox.read` selects what confined commands may read:
+
+| Value | Read behavior |
+| --- | --- |
+| `all` | Default. Reads may reach the host filesystem wherever ordinary filesystem permissions allow. |
+| `project` | Reads are limited to the workspace, `sandbox.readable_roots`, executable search roots, OCaml toolchain roots, and the platform runtime files required to launch commands. |
+
+Configured readable roots must be absolute or `~`-relative. They must already
+exist, resolve physically, and may not name the filesystem root or the user's
+home directory. The resolver reports an invalid root before the run starts;
+there is no silent fallback to broader reads.
+
+Project scope resolves physical roots once and shows their origin in
+`spice sandbox explain`. The active OPAM switch is admitted as a whole because
+OCaml executables need its libraries, stublibs, findlib metadata, and sibling
+tools. A linked Git worktree's `gitdir` and `commondir` are parsed without
+executing Git and admitted read-only. Platform runtime roots expose some
+machine facts to commands; project scope is a bounded confidentiality boundary,
+not a claim that command output contains only repository text.
+
+Broad roots fail closed: `/`, the user's home directory, and an ancestor of the
+workspace cannot enter a project-scoped allowlist indirectly through config,
+`PATH`, or OCaml toolchain variables. Readable roots may be files or
+directories; writable roots must be directories. Requested roots must still
+exist when a command starts, or the sandbox reports a stale-policy refusal.
+
+With `sandbox.read=all`, the confined modes are not confidentiality boundaries.
+A confined command can read files outside the workspace and return their
+contents in tool output. Exact environment reconstruction withholds ambient
+credentials, and restricted network reduces command-side exfiltration, but
+neither prevents disclosure to the model. Use `sandbox.read=project` or an
+external isolation boundary when host-file confidentiality matters. If
+read-anywhere is deliberate—for example with a local model—use the ordered
+opt-in in [Permission rules](permission-rules.md#prompt-free-confined-shell-for-a-local-model).
 
 Native file tools have a narrower boundary: they accept workspace paths, check
 realpath containment when dereferencing them, refuse symlink escapes, and do
@@ -248,9 +274,7 @@ not expose arbitrary host-file reads.
 
 - every workspace root;
 - a private mode-`0700` home and temporary directory owned by the run;
-- absolute or `~`-relative paths in `sandbox.writable_roots`;
-- the Dune cache for a workspace containing `dune-project`, when
-  `sandbox.toolchain_caches=true`.
+- absolute or `~`-relative paths in `sandbox.writable_roots`.
 
 Existing paths are realpath-canonicalized before the policy is generated, so
 the described path and the backend-enforced path agree across symlinks such as
@@ -258,12 +282,11 @@ macOS `/tmp`.
 
 The following remain read-only even when nested under a writable root:
 
-- `.git` and `.spice` entries;
-- the user config, credential, and trust-store directory;
+- existing workspace `.git` and `.spice` entries;
+- linked-worktree Git metadata outside the workspace;
+- the user config, credential, and trust-store directories;
 - the project config directory;
-- the session store root;
-- the same protected metadata names beneath configured and toolchain-cache
-  writable roots.
+- the session store root.
 
 Native mutation tools share the `.git` and `.spice` protection. They also
 validate workspace containment independently of the command sandbox.

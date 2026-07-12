@@ -74,9 +74,10 @@ Keys supported by `get`, `set`, and `unset`:
 | `permission.unattended` | Headless review policy: `block` (default) or `deny`. |
 | `sandbox.mode` | Command sandbox: `read-only`, `workspace-write`, `danger-full-access`, or `external-sandbox`. |
 | `sandbox.require` | Enforcement gate: `enforced` (default), `enforced-or-external`, or `off`. |
+| `sandbox.read` | Confined filesystem read scope: `all` (default) or `project`. |
+| `sandbox.readable_roots` | Additional absolute or `~`-relative readable roots for `sandbox.read=project`. |
 | `sandbox.writable_roots` | Additional absolute or `~`-relative writable roots for `workspace-write`. |
 | `sandbox.network` | Confined shell-command network posture: `restricted` (default) or `enabled`. |
-| `sandbox.toolchain_caches` | Add curated toolchain caches to `workspace-write` roots. |
 | `shell` | Shell program used for shell commands. |
 | `workspace.tooling` | Whether the OCaml/Dune workspace tooling runs: `auto` (default), `on`, or `off`. |
 | `instructions.global` | Load the global `AGENTS.md` from the config home. |
@@ -166,9 +167,11 @@ Two surfaces show the resolution without starting a session: `spice doctor`
 carries an `ocaml toolchain` check, and `spice sandbox explain` a `toolchain=`
 line. Both print where `dune` resolves from—or, when it does not, every
 permitted rung that was checked. They skip the project-local `_opam` rung until
-workspace trust. The sandbox is never the cause of a missing system toolchain:
-the confined mount keeps the whole host filesystem readable (`readable=/` in
-`spice sandbox explain`); only writes are scoped.
+workspace trust. With `sandbox.read=project`, Spice admits resolved `PATH`
+directories and the active OCaml switch to the read policy. An unrecognized
+toolchain layout may need an explicit user-level `sandbox.readable_roots`
+entry; `spice sandbox explain` shows every admitted physical root and why it
+was selected.
 
 ## Filesystem Notices
 
