@@ -201,7 +201,7 @@ let%expect_test "an idle parent consumes a settled child in one wake turn" =
 13 | ⏺ Integrated the child result.
 14 |
 15 |   subagent explore finished (session ses_$ID-sub-wake-
-16 | child)
+16 | child) — Wake-path findings.
 17 |
 18 | ────────────────────────────────────────────────────────────────────────────────
 19 | ❯ message spice
