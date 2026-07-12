@@ -263,6 +263,20 @@ let%expect_test "a shell command settles as a transcript block" =
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   ! not logged in · /login · $PROJECT · gpt-5.5 medium · dune: ✗|}]
 
+(* The shell trigger selects the submission kind but is not part of the
+   command payload. Punctuation after it must cross the Composer/App boundary
+   byte-for-byte; the created file observes what the shell actually received,
+   independently of the rendered echo. *)
+let%expect_test "shell submission executes the exact command payload" =
+  Tui.run ~name:"cmd-shell-exact" @@ fun t ->
+  Tui.settle t;
+  Tui.keys t "!echo 'literal ! payload' > .shell-exact; touch .shell-exact-done";
+  Tui.enter t;
+  Tui.await_file t ".shell-exact-done";
+  Tui.settle t;
+  Printf.printf "payload: %s\n" (Project.read (Tui.project t) ".shell-exact");
+  [%expect {|payload: literal ! payload|}]
+
 (* A per-run sandbox flag wins over the environment-backed config. The banner
    and home fact both name the effective mode and its flag provenance, so the
    override is proved before any command executes. *)

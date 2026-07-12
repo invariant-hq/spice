@@ -1176,36 +1176,34 @@ let dispatch_command ?(argument = None) command t =
           | Prelude ->
               ({ t with flash = Some "no reasoning to expand yet" }, [])))
 
-(* A submitted draft routes by shape (03-composer.md, 10-commands.md): a known
-   slash command dispatches through its catalog fate; a [!] command runs on the
-   shell executor — refused while a turn streams (the spec's mid-turn rule) or
-   while another shell command runs; an unknown [/word] and all plain text
-   start a turn. The composer already consumed the draft, so a command submit
-   leaves the composer empty for esc to restore. *)
+(* A submitted prompt routes by shape (03-composer.md, 10-commands.md): a known
+   slash command dispatches through its catalog fate; an unknown [/word] and all
+   plain text start a turn. Shell intent arrives through [Shell_submitted], so
+   this path never reparses prompt text to rediscover an input mode. *)
 let submit_text value t =
   let trimmed = String.trim value in
-  if String.starts_with ~prefix:"!" trimmed then
-    let turn_in_flight =
-      match t.phase with
-      | Chat chat -> Turn.in_flight chat.turn
-      | Prelude -> false
-    in
-    if turn_in_flight then ({ t with flash = Some shell_wait_flash }, [])
-    else if t.shell <> None then ({ t with flash = Some shell_busy_flash }, [])
-    else
-      let command =
-        String.trim (String.sub trimmed 1 (String.length trimmed - 1))
-      in
-      match Spice_tools.Shell.Input.make command with
-      | Error error ->
-          ({ t with flash = Some (Spice_tools.Shell.Input.message error) }, [])
-      | Ok input -> start_shell input t
+  match Command.parse trimmed with
+  | Some (Command.Exact command) -> dispatch_command command t
+  | Some (Command.With_argument (command, argument)) ->
+      dispatch_command ~argument:(Some argument) command t
+  | None -> start_turn value t
+
+(* A shell submission is already classified by Composer and carries only the
+   command payload. App owns admission and validation, but never strips or
+   reparses a mode trigger. *)
+let submit_shell command t =
+  let turn_in_flight =
+    match t.phase with
+    | Chat chat -> Turn.in_flight chat.turn
+    | Prelude -> false
+  in
+  if turn_in_flight then ({ t with flash = Some shell_wait_flash }, [])
+  else if t.shell <> None then ({ t with flash = Some shell_busy_flash }, [])
   else
-    match Command.parse trimmed with
-    | Some (Command.Exact command) -> dispatch_command command t
-    | Some (Command.With_argument (command, argument)) ->
-        dispatch_command ~argument:(Some argument) command t
-    | None -> start_turn value t
+    match Spice_tools.Shell.Input.make command with
+    | Error error ->
+        ({ t with flash = Some (Spice_tools.Shell.Input.message error) }, [])
+    | Ok input -> start_shell input t
 
 (* Fold one composer event into the shell (the composer's outward seam). Every
    committed draft — submitted or discarded — is appended to the JSONL prompt
@@ -1286,6 +1284,12 @@ let composer_event event t =
       | Free ->
           let t, commands = submit_text text t in
           (t, commands @ [ Append_prompt_history entry ]))
+  | Composer.Shell_submitted { command; entry } -> (
+      match t.borrow with
+      | For_answer _ -> resolve_borrow_text ("!" ^ command) t
+      | Free ->
+          let t, commands = submit_shell command t in
+          (t, commands @ [ Append_prompt_history entry ]))
   | Composer.Blank_submitted -> (
       match t.borrow with
       | For_answer _ -> resolve_borrow_text "" t
@@ -1301,7 +1305,7 @@ let composer_event event t =
   | Composer.Draft_saved entry -> (
       (* A borrowed composer holds dialog feedback, not a prompt: a discard
          (esc/ctrl+c) must not persist it as prompt history, symmetric with the
-         [Submitted]/[Blank_submitted] borrow guards above. *)
+         [Submitted]/[Shell_submitted]/[Blank_submitted] borrow guards above. *)
       match t.borrow with
       | For_answer _ -> (t, [])
       | Free -> (t, [ Append_prompt_history entry ]))
@@ -2072,8 +2076,9 @@ let update msg t =
   | Escape -> (
       (* The esc ladder (03-composer.md §Keybindings), one rung per press:
          close the open completion while preserving the draft; close
-         the help sheet; exit shell mode; clear a non-empty draft (two-stage,
-         saved to history); interrupt the in-flight turn (two-stage). *)
+         the help sheet; exit an empty shell mode; clear a non-empty draft of
+         either mode (two-stage, saved to history); interrupt the in-flight
+         turn (two-stage). *)
       match t.completion with
       (* Rung 1: command and mention lists close and leave their literal token
          in the draft
@@ -2093,13 +2098,14 @@ let update msg t =
           if t.help then ({ t with help = false }, [])
           else
             match Composer.input_mode t.composer with
-            | Composer.Input_mode.Shell ->
+            | Composer.Input_mode.Shell when Composer.is_blank t.composer ->
                 let composer, _ =
                   Composer.update Composer.Exit_shell t.composer
                 in
                 ({ t with composer; armed = None }, [])
-            | Composer.Input_mode.History_search | Composer.Input_mode.Plain
-              -> (
+            | ( Composer.Input_mode.Shell
+              | Composer.Input_mode.History_search
+              | Composer.Input_mode.Plain ) -> (
                 if not (Composer.is_blank t.composer) then
                   match t.armed with
                   | Some Clear_armed ->
@@ -2590,7 +2596,7 @@ let update msg t =
          (03-ia-screens-overlays.md §Composer input modes). Before the load has
          attributed a session, nothing ranks as current and the row set
          refreshes when the load lands — the keypress is never dropped. *)
-      let saved = Draft.history_entry (Composer.draft t.composer) in
+      let saved = Composer.history_entry t.composer in
       let composer, _ =
         Composer.update Composer.Begin_history_search t.composer
       in

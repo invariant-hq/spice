@@ -30,11 +30,12 @@
 (** {1:modes Input mode} *)
 
 module Input_mode : sig
-  (** The composer input mode. [Shell] is derived from the draft text; whenever
-      history search is active it takes precedence over [Shell]. *)
+  (** The composer input mode. [Shell] is explicit state entered by a leading
+      ["!"] trigger; the trigger is consumed and is not part of the draft.
+      Whenever history search is active it takes precedence over [Shell]. *)
   type t =
     | Plain  (** Ordinary prompt: the [❯] marker in the frame color. *)
-    | Shell  (** The draft starts with ["!"]: the ["!"] marker in warning. *)
+    | Shell  (** A shell command: the ["!"] marker in warning. *)
     | History_search
         (** ctrl+r history search is active: the [⌕] marker in the history
             color. Set by {!Begin_history_search} / {!End_history_search}. *)
@@ -64,6 +65,11 @@ val draft_text : t -> string
 val is_blank : t -> bool
 (** [is_blank t] is [true] iff the draft would submit to nothing — the shell's
     test for whether a non-empty draft occupies the esc/ctrl+c ladder. *)
+
+val history_entry : t -> Draft.History_entry.t
+(** [history_entry t] is the editable state to persist or restore. Shell
+    commands include their leading ["!"] intent marker even though the live
+    shell buffer contains only the command. *)
 
 val input_mode : t -> Input_mode.t
 (** [input_mode t] is the current input mode (see {!Input_mode.t}). *)
@@ -100,6 +106,7 @@ type msg =
           mention pick). *)
   | Restore_history of Draft.History_entry.t
       (** Load this history entry into the draft (a ctrl+r pick), cursor at end.
+          A leading ["!"] restores shell mode and is consumed from the buffer.
       *)
   | History_previous  (** Walk to the previous (older) prompt. *)
   | History_next
@@ -110,7 +117,9 @@ type msg =
   | Clear_to_history
       (** Discard a non-empty draft, saving it to history so [History_previous]
           recalls it (the esc double-tap and ctrl+c). *)
-  | Exit_shell  (** Clear the ["!"] shell draft (the esc shell-exit rung). *)
+  | Exit_shell
+      (** Leave an empty shell mode. Non-empty shell commands use
+          {!Clear_to_history}, like ordinary drafts. *)
   | List_key of [ `Up | `Down | `Tab ]
       (** An arrow or tab the composer intercepted before the widget's default
           for the shell to route: completion-list navigation while a list is
@@ -123,6 +132,10 @@ type event =
   | Submitted of { text : string; entry : Draft.History_entry.t }
       (** A non-blank draft was submitted: [text] to send, [entry] to persist.
       *)
+  | Shell_submitted of { command : string; entry : Draft.History_entry.t }
+      (** A non-blank shell command was submitted. [command] is the exact
+          command payload without the mode trigger; [entry] includes the trigger
+          so history restores shell mode. *)
   | Blank_submitted
       (** [↵] on a blank draft — nothing to send, the draft is unchanged. The
           shell owns what a blank submit means (the home's ↵-resume, 12-home.md

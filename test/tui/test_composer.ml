@@ -27,6 +27,7 @@ let reach_transcript t =
   Tui.settle t
 
 let unknown_slash_draft = "/tmp/build.log has the error, can you look"
+let shell_draft = "printf shell-escape"
 
 (* A slash-prefixed line that matches no command is still an ordinary prompt.
    Enter closes the empty palette and submits through the same turn path as any
@@ -87,6 +88,37 @@ let%expect_test
     clear guarded: true
     discarded: true
     recalled: true|}]
+
+(* Shell mode changes how a draft is submitted, not the law for discarding it.
+   A non-empty command therefore takes the same guarded two presses as prose;
+   the second press saves the shell invocation, and Up restores both its mode
+   and its command. *)
+let%expect_test "shell escape is guarded and up recalls the command" =
+  Tui.run ~name:"composer-shell-escape" ~provider:script @@ fun t ->
+  reach_transcript t;
+  Tui.keys t ("!" ^ shell_draft);
+  Tui.keys t Key.escape;
+  Tui.settle t;
+  let guarded = Tui.screen t in
+  Printf.printf "clear guarded: %b\ncommand preserved: %b\n"
+    (Screen.has "Esc again to clear" guarded)
+    (Screen.has shell_draft guarded);
+  Tui.keys t Key.escape;
+  Tui.settle t;
+  Printf.printf "discarded: %b\n" (Screen.lacks shell_draft (Tui.screen t));
+  Tui.keys t Key.up;
+  Tui.settle t;
+  let recalled = Tui.screen t in
+  Printf.printf "shell recalled: %b\ncommand recalled: %b\n"
+    (Screen.has "! shell" recalled)
+    (Screen.has shell_draft recalled);
+  [%expect
+    {|
+    clear guarded: true
+    command preserved: true
+    discarded: true
+    shell recalled: true
+    command recalled: true|}]
 
 (* A hard newline (the linefeed the composer binds to Newline) grows the frame
    in place below the transcript; the "❯ " marker sits on the first visual row
@@ -400,7 +432,7 @@ let%expect_test
 22 | ❯ message spice
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}];
-  Tui.keys t "!ls";
+  Tui.keys t "!";
   Tui.settle t;
   Tui.print t;
   [%expect
@@ -425,7 +457,7 @@ let%expect_test
 19 |
 20 |
 21 | ────────────────────────────────────────────────────────────────────────────────
-22 | ! !ls
+22 | ! shell command
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   esc exit shell · ↵ run                                               ! shell|}];
   Tui.keys t Key.escape;

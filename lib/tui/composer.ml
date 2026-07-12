@@ -10,6 +10,7 @@ module Input_mode = struct
 end
 
 type mode = Build | Plan | Review
+type draft_mode = Prompt | Shell_command
 
 (* The history walk is a zipper: [older]/[newer] flank the visited entry and
    [initial_draft] is the draft in progress when the walk began, restored when
@@ -18,10 +19,12 @@ type history_cursor = {
   older : Draft.History_entry.t list;
   newer : Draft.History_entry.t list;
   initial_draft : Draft.t;
+  initial_mode : draft_mode;
 }
 
 type t = {
   draft : Draft.t;
+  mode : draft_mode;
   history : Draft.History_entry.t list;
   history_cursor : history_cursor option;
   searching : bool;
@@ -31,27 +34,56 @@ type t = {
          arriving before that push refers to the old buffer and is stale. A
          controlled value push does not invalidate an in-flight on_cursor report
          (upstream mosaic quirk), so the composer tracks the divergence itself. *)
+  shell_trigger_pending : bool;
+      (* Input callbacks may be batched before the controlled textarea renders
+         the consumed shell trigger away. While pending, callbacks that still
+         begin with [!] are adapted against the command-only buffer. *)
 }
 
+let shell_history_entry entry =
+  entry |> Draft.of_history_entry |> Draft.with_cursor 0
+  |> Draft.insert_text "!" |> Draft.history_entry
+
+let mode_and_draft_of_history_entry entry =
+  let draft = Draft.of_history_entry entry in
+  if String.starts_with ~prefix:"!" (Draft.text draft) then
+    let trigger = Draft.Span.make ~first:0 ~last:1 in
+    (Shell_command, Draft.replace_range trigger "" draft)
+  else (Prompt, draft)
+
 let init ?draft () =
+  let mode, draft =
+    match draft with
+    | None -> (Prompt, Draft.empty)
+    | Some text ->
+        mode_and_draft_of_history_entry (Draft.History_entry.of_text text)
+  in
   {
-    draft =
-      draft |> Option.map Draft.of_text |> Option.value ~default:Draft.empty;
+    draft;
+    mode;
     history = [];
     history_cursor = None;
     searching = false;
     widget_desync = false;
+    shell_trigger_pending = false;
   }
 
 let draft t = t.draft
 let draft_text t = Draft.text t.draft
 let is_blank t = Draft.is_blank t.draft
 
+let history_entry t =
+  let entry = Draft.history_entry t.draft in
+  match t.mode with
+  | Prompt -> entry
+  | Shell_command -> shell_history_entry entry
+
 let input_mode t =
   if t.searching then Input_mode.History_search
-  else if String.starts_with ~prefix:"!" (Draft.text t.draft) then
-    Input_mode.Shell
-  else Input_mode.Plain
+  else
+    match t.mode with
+    | Prompt -> Input_mode.Plain
+    | Shell_command -> Input_mode.Shell
 
 let active_file_ref_token t =
   Draft.active_file_ref_token_span t.draft
@@ -99,17 +131,46 @@ let desync_after draft t =
    differ from it. *)
 let with_reported reported t =
   let updated = Draft.replace_visible_text reported t.draft in
-  {
-    t with
-    draft = updated;
-    widget_desync = not (String.equal (Draft.text updated) reported);
-    history_cursor = None;
-  }
+  match t.mode with
+  | Prompt when String.starts_with ~prefix:"!" (Draft.text updated) ->
+      let trigger = Draft.Span.make ~first:0 ~last:1 in
+      let draft = Draft.replace_range trigger "" updated in
+      {
+        t with
+        draft;
+        mode = Shell_command;
+        widget_desync = true;
+        shell_trigger_pending = true;
+        history_cursor = None;
+      }
+  | Shell_command
+    when t.shell_trigger_pending
+         && String.starts_with ~prefix:"!" (Draft.text updated) ->
+      let trigger = Draft.Span.make ~first:0 ~last:1 in
+      let draft = Draft.replace_range trigger "" updated in
+      { t with draft; widget_desync = true; history_cursor = None }
+  | Prompt | Shell_command ->
+      {
+        t with
+        draft = updated;
+        widget_desync = not (String.equal (Draft.text updated) reported);
+        shell_trigger_pending = false;
+        history_cursor = None;
+      }
 
 (* An out-of-band draft change (paste, completion, history, clear): the widget
    still shows the old text until the next render pushes the new value. *)
 let with_draft draft t =
   { t with widget_desync = desync_after draft t; draft; history_cursor = None }
+
+let with_paste text t =
+  let draft = Draft.insert_paste text t.draft in
+  if t.mode = Prompt && String.starts_with ~prefix:"!" (Draft.text draft) then
+    let trigger = Draft.Span.make ~first:0 ~last:1 in
+    let draft = Draft.replace_range trigger "" draft in
+    with_draft draft
+      { t with mode = Shell_command; shell_trigger_pending = false }
+  else with_draft draft t
 
 let cursor_moved grapheme t =
   if t.widget_desync then
@@ -175,46 +236,51 @@ let previous_history t =
   match (t.history_cursor, t.history) with
   | None, [] -> t
   | None, prompt :: older ->
-      let draft = Draft.of_history_entry prompt in
+      let mode, draft = mode_and_draft_of_history_entry prompt in
       {
         t with
         widget_desync = desync_after draft t;
         draft;
-        history_cursor = Some { older; newer = []; initial_draft = t.draft };
-      }
-  | Some { older = []; _ }, _ -> t
-  | Some ({ older = prompt :: older; _ } as cursor), _ ->
-      let draft = Draft.of_history_entry prompt in
-      {
-        t with
-        widget_desync = desync_after draft t;
-        draft;
+        mode;
+        shell_trigger_pending = false;
         history_cursor =
           Some
             {
-              cursor with
               older;
-              newer = Draft.history_entry t.draft :: cursor.newer;
+              newer = [];
+              initial_draft = t.draft;
+              initial_mode = t.mode;
             };
+      }
+  | Some { older = []; _ }, _ -> t
+  | Some ({ older = prompt :: older; _ } as cursor), _ ->
+      let mode, draft = mode_and_draft_of_history_entry prompt in
+      {
+        t with
+        widget_desync = desync_after draft t;
+        draft;
+        mode;
+        shell_trigger_pending = false;
+        history_cursor =
+          Some { cursor with older; newer = history_entry t :: cursor.newer };
       }
 
 let next_history t =
   match t.history_cursor with
   | None -> t
-  | Some { newer = []; initial_draft; _ } -> with_draft initial_draft t
+  | Some { newer = []; initial_draft; initial_mode; _ } ->
+      with_draft initial_draft
+        { t with mode = initial_mode; shell_trigger_pending = false }
   | Some ({ newer = prompt :: newer; _ } as cursor) ->
-      let draft = Draft.of_history_entry prompt in
+      let mode, draft = mode_and_draft_of_history_entry prompt in
       {
         t with
         widget_desync = desync_after draft t;
         draft;
+        mode;
+        shell_trigger_pending = false;
         history_cursor =
-          Some
-            {
-              cursor with
-              older = Draft.history_entry t.draft :: cursor.older;
-              newer;
-            };
+          Some { cursor with older = history_entry t :: cursor.older; newer };
       }
 
 type msg =
@@ -235,6 +301,7 @@ type msg =
 
 type event =
   | Submitted of { text : string; entry : Draft.History_entry.t }
+  | Shell_submitted of { command : string; entry : Draft.History_entry.t }
   | Blank_submitted
   | Draft_saved of Draft.History_entry.t
   | Help_requested
@@ -243,9 +310,11 @@ let update ?(submit_enabled = true) msg t =
   match msg with
   | Edited reported -> (with_reported reported t, [])
   | Cursor_moved grapheme -> (cursor_moved grapheme t, [])
-  | Paste text -> (with_draft (Draft.insert_paste text t.draft) t, [])
+  | Paste text -> (with_paste text t, [])
   | Complete_file_ref path -> (with_draft (complete_file_ref path t.draft) t, [])
-  | Restore_history entry -> (with_draft (Draft.of_history_entry entry) t, [])
+  | Restore_history entry ->
+      let mode, draft = mode_and_draft_of_history_entry entry in
+      (with_draft draft { t with mode; shell_trigger_pending = false }, [])
   | History_previous -> (previous_history t, [])
   | History_next -> (next_history t, [])
   | Begin_history_search -> ({ t with searching = true }, [])
@@ -254,34 +323,66 @@ let update ?(submit_enabled = true) msg t =
   (* The shell routes [List_key] before it ever reaches this fold; arriving
      here it means nothing to the composer itself. *)
   | List_key _ -> (t, [])
-  | Exit_shell -> (with_draft Draft.empty { t with searching = false }, [])
+  | Exit_shell ->
+      ( with_draft Draft.empty
+          {
+            t with
+            mode = Prompt;
+            searching = false;
+            shell_trigger_pending = false;
+          },
+        [] )
   | Clear_to_history ->
       if Draft.is_blank t.draft then (t, [])
       else
-        let entry = Draft.history_entry t.draft in
+        let entry = history_entry t in
         let t = remember entry (with_draft Draft.empty t) in
-        ({ t with searching = false }, [ Draft_saved entry ])
+        ( {
+            t with
+            mode = Prompt;
+            searching = false;
+            shell_trigger_pending = false;
+          },
+          [ Draft_saved entry ] )
   | Submit value -> (
       if not submit_enabled then (t, [])
       else
         let draft = Draft.replace_visible_text value t.draft in
+        let draft =
+          if
+            t.mode = Shell_command && t.shell_trigger_pending
+            && String.starts_with ~prefix:"!" (Draft.text draft)
+          then Draft.replace_range (Draft.Span.make ~first:0 ~last:1) "" draft
+          else draft
+        in
         match Draft.submit draft with
-        | None -> (t, [ Blank_submitted ])
+        | None ->
+            if t.mode = Shell_command then (t, []) else (t, [ Blank_submitted ])
         | Some (submitted, cleared) ->
+            let entry =
+              match t.mode with
+              | Prompt -> submitted.Draft.submitted_history_entry
+              | Shell_command ->
+                  shell_history_entry submitted.Draft.submitted_history_entry
+            in
+            let event =
+              match t.mode with
+              | Prompt ->
+                  Submitted { text = submitted.Draft.submitted_text; entry }
+              | Shell_command ->
+                  Shell_submitted
+                    { command = submitted.Draft.submitted_text; entry }
+            in
             ( {
                 draft = cleared;
-                history = submitted.Draft.submitted_history_entry :: t.history;
+                mode = Prompt;
+                history = entry :: t.history;
                 history_cursor = None;
                 searching = false;
                 widget_desync = not (String.equal (Draft.text cleared) value);
+                shell_trigger_pending = false;
               },
-              [
-                Submitted
-                  {
-                    text = submitted.Draft.submitted_text;
-                    entry = submitted.Draft.submitted_history_entry;
-                  };
-              ] ))
+              [ event ] ))
 
 (* Styled runs for the textarea: plain text in the surface default, atomic
    ranges (file refs, paste chunks) in [Theme.atom]. The runs concatenate to
@@ -427,6 +528,11 @@ let render ?(submit_enabled = true) ?(list_open = false) ?(mode = Build) ?agent
     ?placeholder ?(turn_running = false) ?(top_margin = 1) ~width ~on_msg t =
   let stored_value = Draft.text t.draft in
   let input = input_mode t in
+  let textarea_key =
+    match input with
+    | Input_mode.Shell -> "composer.textarea.shell"
+    | Input_mode.Plain | Input_mode.History_search -> "composer.textarea"
+  in
   let marker_glyph, marker_style = marker_of ~mode input in
   let rule_color = frame_rule_color ~mode ~agent in
   let textarea_placeholder =
@@ -490,7 +596,7 @@ let render ?(submit_enabled = true) ?(list_open = false) ?(mode = Build) ?agent
         [
           text ~style:marker_style ~wrap:`None ~flex_shrink:0.
             ~align_self:Align.Flex_start marker_glyph;
-          textarea ~key:"composer.textarea" ~id:"spice-tui-composer"
+          textarea ~key:textarea_key ~id:"spice-tui-composer"
             ~autofocus:true ~value:stored_value ~on_key
             ~cursor:(grapheme_of_byte stored_value (Draft.cursor t.draft))
             ~spans:(spans_of_draft t.draft) ~placeholder:textarea_placeholder
