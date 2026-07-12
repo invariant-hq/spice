@@ -108,13 +108,9 @@ let request access = Request.of_accesses [ access ]
 
 type answer_scope = Allow_once | Allow_session | Deny
 
-let access_set_of_list accesses =
-  List.fold_left
-    (fun set access -> Access.Set.add access set)
-    Access.Set.empty accesses
-
 let restore_review request accesses =
-  match Policy.Review.restore request (access_set_of_list accesses) with
+  let reasons = List.map (fun access -> (access, Policy.Review.Unmatched)) accesses in
+  match Policy.Review.restore request reasons with
   | Ok review -> review
   | Error Policy.Review.Empty_accesses ->
       failf "review restore unexpectedly empty"
@@ -699,13 +695,13 @@ let review_of_accesses_uses_durable_request_subset () =
   | Policy.Review.Rejected -> ()
   | Policy.Review.Proceed _ ->
       failf "deny should reject the durable access subset");
-  (match Policy.Review.restore request Access.Set.empty with
+  (match Policy.Review.restore request [] with
   | Error Policy.Review.Empty_accesses -> ()
   | Ok _ | Error (Policy.Review.Access_not_in_request _) ->
       failf "durable access subset cannot be empty");
   match
     Policy.Review.restore request
-      (access_set_of_list [ workspace_modify "lib/a.ml" ])
+      [ (workspace_modify "lib/a.ml", Policy.Review.Unmatched) ]
   with
   | Error (Policy.Review.Access_not_in_request _) -> ()
   | Ok _ | Error Policy.Review.Empty_accesses ->
@@ -719,13 +715,13 @@ let ask_of_access_set_uses_request_subset () =
   equal (list access_value) ~msg:"access set preserves request access"
     [ command ]
     (Policy.Review.accesses review);
-  (match Policy.Review.restore request Access.Set.empty with
+  (match Policy.Review.restore request [] with
   | Error Policy.Review.Empty_accesses -> ()
   | Ok _ | Error (Policy.Review.Access_not_in_request _) ->
       failf "access set subset cannot be empty");
   match
     Policy.Review.restore request
-      (access_set_of_list [ workspace_modify "lib/a.ml" ])
+      [ (workspace_modify "lib/a.ml", Policy.Review.Unmatched) ]
   with
   | Error (Policy.Review.Access_not_in_request _) -> ()
   | Ok _ | Error Policy.Review.Empty_accesses ->
@@ -830,6 +826,27 @@ let policy_explain_reports_provenance () =
   check_rule "deny rule overrides grants in explanations" deny_command
     (Policy.explain ~grants deny_policy command)
 
+let reviews_capture_the_deciding_reason () =
+  let command = shell "dune build" in
+  let read = workspace_read "README.md" in
+  let rule = Policy.Rule.review (Policy.Match.exact command) in
+  let review =
+    expect_review "mixed request is reviewed"
+      (Policy.decide (Policy.make [ rule ])
+         (Request.of_accesses [ command; read ]))
+  in
+  match Policy.Review.reasons review with
+  | [ (reviewed_command, Policy.Review.By_rule reviewed_rule);
+      (reviewed_read, Policy.Review.Unmatched) ] ->
+      check "review-rule access is preserved"
+        (Access.equal command reviewed_command);
+      equal rule_value ~msg:"captured review rule is preserved" rule
+        reviewed_rule;
+      check "unmatched access is preserved" (Access.equal read reviewed_read)
+  | reasons ->
+      failf "unexpected captured review reasons: %d entries"
+        (List.length reasons)
+
 let json_roundtrips_core_values () =
   let accesses =
     [
@@ -854,7 +871,7 @@ let json_roundtrips_core_values () =
     (roundtrip "access JSON roundtrip" access_value Access.jsont)
     accesses;
   roundtrip "request JSON roundtrip" request_value Request.jsont
-    (Request.of_accesses ~source:"tool:shell" accesses);
+    (Request.of_accesses ~source:"tool:shell" ~display:"dune runtest" accesses);
   let rule =
     Policy.Rule.allow
       (Policy.Match.exact
@@ -1251,7 +1268,7 @@ let change_validation_and_lookup () =
     (Policy.Review.accesses review);
   check "review access set contains the reviewed access"
     (Access.Set.equal
-       (access_set_of_list [ target ])
+       (Access.Set.singleton target)
        (Policy.Review.access_set review));
   equal (list item_value) ~msg:"review items preserve duplicate occurrences"
     [ target_item; later_item ]
@@ -1516,6 +1533,8 @@ let () =
       test "rules override grants" rules_override_grants;
       test "deny decisions are inspectable" deny_decisions_are_inspectable;
       test "policy explain reports provenance" policy_explain_reports_provenance;
+      test "reviews capture the deciding reason"
+        reviews_capture_the_deciding_reason;
       test "json roundtrips core values" json_roundtrips_core_values;
       test "json rejects invalid state" json_rejects_invalid_state;
       test "access json normalizes outside paths"

@@ -225,32 +225,39 @@ let rule_label context rule =
       ^ ")"
   | None -> "workflow contract"
 
-let explanation context access =
-  Policy.explain ~grants:context.grants context.policy access
-
-let explanation_label context = function
-  | Policy.Needs_review -> "review: no rule or grant"
-  | Policy.Needs_review_by_rule rule -> "review: " ^ rule_label context rule
-  | Policy.Denied_by_rule rule -> "deny: " ^ rule_label context rule
-  | Policy.Allowed_by_rule rule -> "allow: " ^ rule_label context rule
-  | Policy.Allowed_by_grant -> "allow: session grant"
+let reason_label context = function
+  | Policy.Review.Unmatched -> "review: no rule or grant"
+  | Policy.Review.By_rule rule -> "review: " ^ rule_label context rule
 
 (* The one projection both the text and JSON renderers consume: same
    accesses, same explanations, same change metadata, by construction. *)
 type reviewed = {
   access : Access.t;
-  explanation : Policy.explanation;
+  reason : Policy.Review.reason;
   change : Spice_permission.Request.Change.t option;
 }
 
-let reviewed context request =
-  Session.Permission.Requested.review request
-  |> Spice_permission.Policy.Review.items
+let reviewed request =
+  let review = Session.Permission.Requested.review request in
+  let reasons = Spice_permission.Policy.Review.reasons review in
+  Spice_permission.Policy.Review.items review
   |> List.map (fun item ->
       let access = Spice_permission.Request.Item.access item in
+      let reason =
+        match
+          List.find_map
+            (fun (candidate, reason) ->
+              if Access.equal candidate access then Some reason else None)
+            reasons
+        with
+        | Some reason -> reason
+        | None ->
+            invalid_arg
+              "permission review item does not have a captured reason"
+      in
       {
         access;
-        explanation = explanation context access;
+        reason;
         change = Spice_permission.Request.Item.change item;
       })
 
@@ -267,17 +274,16 @@ let change_counts change =
   | parts -> " (" ^ String.concat " " parts ^ ")"
 
 let permission_lines context request =
-  let reviewed = reviewed context request in
+  let reviewed = reviewed request in
   let reviewed_accesses =
     Session.Permission.Requested.review request
-    |> Spice_permission.Policy.Review.accesses
+    |> Spice_permission.Policy.Review.reasons
   in
   let access_lines =
     List.map
-      (fun access ->
+      (fun (access, reason) ->
         "- " ^ access_text access ^ "  ["
-        ^ explanation_label context (explanation context access)
-        ^ "]")
+        ^ reason_label context reason ^ "]")
       reviewed_accesses
   in
   let change_lines =
@@ -302,20 +308,23 @@ let permission_lines context request =
                 List.map (fun line -> "    " ^ line) lines))
       reviewed
   in
+  let action_lines =
+    Session.Permission.Requested.request request
+    |> Spice_permission.Request.display
+    |> Option.fold ~none:[] ~some:(fun display ->
+        [ "action: " ^ shell_arg display ])
+  in
   ("mode: "
   ^ Spice_host.Permission.Preset.to_string
       (Permission_run.preset context.permission))
-  :: "accesses:" :: access_lines
+  :: action_lines @ ("accesses:" :: access_lines)
   @ match change_lines with [] -> [] | lines -> "change:" :: lines
 
-let explanation_json context explanation =
+let reason_json context reason =
   let kind, rule =
-    match explanation with
-    | Policy.Needs_review -> ("needs_review", None)
-    | Policy.Needs_review_by_rule rule -> ("needs_review_by_rule", Some rule)
-    | Policy.Denied_by_rule rule -> ("denied_by_rule", Some rule)
-    | Policy.Allowed_by_rule rule -> ("allowed_by_rule", Some rule)
-    | Policy.Allowed_by_grant -> ("allowed_by_grant", None)
+    match reason with
+    | Policy.Review.Unmatched -> ("needs_review", None)
+    | Policy.Review.By_rule rule -> ("needs_review_by_rule", Some rule)
   in
   json_obj
     (("kind", Jsont.Json.string kind)
@@ -352,19 +361,23 @@ let change_json change =
 let reviewed_json context request =
   Jsont.Json.list
     (List.map
-       (fun { access; explanation; change } ->
+       (fun { access; reason; change } ->
          json_obj
            ([
               ("access", json_encode Spice_permission.Access.jsont access);
-              ("explanation", explanation_json context explanation);
+              ("explanation", reason_json context reason);
             ]
            @
            match change with
            | None -> []
            | Some change -> [ ("change", change_json change) ]))
-       (reviewed context request))
+       (reviewed request))
 
 let permission_json_fields context request =
+  let display =
+    Session.Permission.Requested.request request
+    |> Spice_permission.Request.display
+  in
   [
     ( "mode",
       Jsont.Json.string
@@ -372,6 +385,8 @@ let permission_json_fields context request =
            (Permission_run.preset context.permission)) );
     ("reviewed", reviewed_json context request);
   ]
+  @ Option.fold ~none:[] ~some:(fun display ->
+      [ ("display", Jsont.Json.string display) ]) display
 
 let json ~permission block =
   let call = Session.Waiting.call block in

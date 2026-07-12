@@ -1121,7 +1121,8 @@ module Grants = struct
 end
 
 module Review = struct
-  type t = { request : Request.t; accesses : Access.t list }
+  type reason = Unmatched | By_rule of Rule.t
+  type t = { request : Request.t; reasons : (Access.t * reason) list }
   type restore_error = Empty_accesses | Access_not_in_request of Access.t
 
   let access_set_of_list accesses =
@@ -1129,57 +1130,42 @@ module Review = struct
       (fun set access -> Access.Set.add access set)
       Access.Set.empty accesses
 
-  let normalize_accesses accesses =
-    let rec loop seen acc = function
-      | [] -> List.rev acc
-      | access :: accesses ->
-          if Access.Set.mem access seen then loop seen acc accesses
-          else loop (Access.Set.add access seen) (access :: acc) accesses
-    in
-    loop Access.Set.empty [] accesses
+  let access_of_reason (access, _) = access
 
-  let of_accesses request accesses =
-    let fn = "Review.of_accesses" in
-    if List.is_empty accesses then invalid fn "accesses must not be empty";
-    let request_accesses = Request.accesses request in
-    let request_accesses_set = access_set_of_list request_accesses in
-    let reviewed_accesses = access_set_of_list accesses in
-    if
-      not
-        (Access.Set.for_all
-           (fun access -> Access.Set.mem access request_accesses_set)
-           reviewed_accesses)
-    then invalid fn "accesses must belong to request";
-    let accesses =
-      request_accesses
-      |> List.filter (fun access -> Access.Set.mem access reviewed_accesses)
-      |> normalize_accesses
-    in
-    { request; accesses }
+  let normalize_reasons request reasons =
+    Request.normalized_accesses request
+    |> List.filter_map (fun access ->
+        List.find_opt
+          (fun (candidate, _) -> Access.equal access candidate)
+          reasons)
 
-  let restore request accesses =
-    if Access.Set.is_empty accesses then Error Empty_accesses
+  let restore request reasons =
+    if List.is_empty reasons then Error Empty_accesses
     else
       let request_accesses = Request.accesses request in
       let request_accesses_set = access_set_of_list request_accesses in
       match
-        Access.Set.find_first_opt
-          (fun access -> not (Access.Set.mem access request_accesses_set))
-          accesses
+        List.find_map
+          (fun (access, _) ->
+            if Access.Set.mem access request_accesses_set then None
+            else Some access)
+          reasons
       with
       | Some access -> Error (Access_not_in_request access)
-      | None ->
-          let accesses =
-            List.filter
-              (fun access -> Access.Set.mem access accesses)
-              request_accesses
-            |> normalize_accesses
-          in
-          Ok { request; accesses }
+      | None -> Ok { request; reasons = normalize_reasons request reasons }
+
+  let of_reasons request reasons =
+    match restore request reasons with
+    | Ok review -> review
+    | Error Empty_accesses ->
+        invalid "Review.of_reasons" "reasons must not be empty"
+    | Error (Access_not_in_request _) ->
+        invalid "Review.of_reasons" "accesses must belong to request"
 
   let request t = t.request
-  let accesses t = t.accesses
-  let access_set t = access_set_of_list t.accesses
+  let reasons t = t.reasons
+  let accesses t = List.map access_of_reason t.reasons
+  let access_set t = access_set_of_list (accesses t)
 
   let items t =
     let accesses = access_set t in
@@ -1249,25 +1235,29 @@ let explain ?(grants = Grants.empty) policy access =
   loop policy
 
 let decide ?(grants = Grants.empty) policy request =
-  let rec loop denials review_accesses = function
+  let rec loop denials review_reasons = function
     | [] -> (
         match List.rev denials with
         | first :: rest -> Decision.Denied (first, rest)
         | [] -> (
-            match List.rev review_accesses with
+            match List.rev review_reasons with
             | [] -> Decision.Allowed
-            | accesses -> Decision.Review (Review.of_accesses request accesses))
+            | reasons -> Decision.Review (Review.of_reasons request reasons))
         )
     | access :: accesses -> (
         match explain ~grants policy access with
         | Denied_by_rule rule ->
             loop
               ({ Denial.request; Denial.access; Denial.rule } :: denials)
-              review_accesses accesses
+              review_reasons accesses
         | Allowed_by_rule _ | Allowed_by_grant ->
-            loop denials review_accesses accesses
-        | Needs_review | Needs_review_by_rule _ ->
-            loop denials (access :: review_accesses) accesses)
+            loop denials review_reasons accesses
+        | Needs_review ->
+            loop denials ((access, Review.Unmatched) :: review_reasons) accesses
+        | Needs_review_by_rule rule ->
+            loop denials
+              ((access, Review.By_rule rule) :: review_reasons)
+              accesses)
   in
   loop [] [] (Request.normalized_accesses request)
 

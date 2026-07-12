@@ -313,7 +313,8 @@ let permission_already_allows state call request review =
   in
   let same_reviewed_accesses requested =
     Spice_permission.Access.Set.equal
-      (Permission.Requested.asked requested)
+      (Permission.Requested.review requested
+      |> Spice_permission.Policy.Review.access_set)
       (Spice_permission.Policy.Review.access_set review)
   in
   let allows_reply resolved =

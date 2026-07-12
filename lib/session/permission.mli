@@ -7,12 +7,12 @@
 
     A session permission request records that an accepted turn reached an
     authority boundary. It stores the blocked model tool call, the original
-    permission request, and the stable asked accesses needed to reconstruct a
-    {!Spice_permission.Policy.Review.t} during replay.
+    permission request, and the stable access/reason pairs needed to reconstruct
+    a {!Spice_permission.Policy.Review.t} during replay.
 
     Permission values do not contain callbacks, waiters, UI prompts, live policy
     values, or grant caches. Runtime grants are reconstructed by applying stored
-    answers to stored asked accesses. A denied permission also stores the
+    answers to stored reviewed accesses. A denied permission also stores the
     model-visible tool result that answers the blocked call; without that result
     replay could not make the transcript ready again. State replay permits only
     one unresolved waiting boundary at a time. *)
@@ -59,7 +59,7 @@ module Requested : sig
   type t
   (** The type for a durable permission request.
 
-      Invariant: [asked] is non-empty and every access in [asked] belongs to
+      Invariant: [reasons] is non-empty and every reviewed access belongs to
       [request]. State replay additionally requires [turn] to be the active
       unfinished turn, [tool_call] to be pending in the transcript, and no
       other waiting boundary to be unresolved. *)
@@ -69,13 +69,14 @@ module Requested : sig
     turn:Turn.Id.t ->
     tool_call:Spice_llm.Tool.Call.t ->
     request:Spice_permission.Request.t ->
-    asked:Spice_permission.Access.Set.t ->
+    reasons:
+      (Spice_permission.Access.t * Spice_permission.Policy.Review.reason) list ->
     unit ->
     t
-  (** [make ~id ~turn ~tool_call ~request ~asked ()] is a durable permission
+  (** [make ~id ~turn ~tool_call ~request ~reasons ()] is a durable permission
       request.
 
-      Raises [Invalid_argument] if [asked] is empty or contains an access not
+      Raises [Invalid_argument] if [reasons] is empty or contains an access not
       present in [request]. *)
 
   val of_review :
@@ -99,13 +100,15 @@ module Requested : sig
   val request : t -> Spice_permission.Request.t
   (** [request r] is [r]'s original permission request. *)
 
-  val asked : t -> Spice_permission.Access.Set.t
-  (** [asked r] is the non-empty set of accesses covered by the reviewer answer.
-  *)
+  val reasons :
+    t ->
+    (Spice_permission.Access.t * Spice_permission.Policy.Review.reason) list
+  (** [reasons r] is the non-empty reviewed access and captured-reason list in
+      request order. *)
 
   val review : t -> Spice_permission.Policy.Review.t
   (** [review r] reconstructs the policy review represented by [r] from the
-      stored request and asked-access set. It does not re-run host policy. *)
+      stored request and captured reasons. It does not re-run host policy. *)
 
   val equal : t -> t -> bool
   (** [equal a b] is [true] iff [a] and [b] contain the same request data. *)
@@ -116,7 +119,7 @@ module Requested : sig
 
   val jsont : t Jsont.t
   (** [jsont] maps permission requests to JSON values. Decoding validates the
-      asked-access invariant and requires the blocked [tool_call] field. *)
+      reviewed-reason invariant and requires the blocked [tool_call] field. *)
 end
 
 (** {1:replies Replies} *)
@@ -141,7 +144,7 @@ module Resolved : sig
   val allow_session : id:Id.t -> t
   (** [allow_session ~id] is a durable session allow answer to permission prompt
       [id]. During state replay it updates reconstructed runtime grants for the
-      asked accesses on the matching request. *)
+      reviewed accesses on the matching request. *)
 
   val deny : id:Id.t -> ?via:via -> Spice_llm.Tool.Result.t -> t
   (** [deny ~id ?via result] is a durable deny answer to permission prompt [id].

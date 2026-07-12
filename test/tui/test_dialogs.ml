@@ -162,9 +162,9 @@ let%expect_test "the permission dialog renders and an approve runs the command"
     {|01 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 02 |    permission
 03 |
-04 |   Run a shell command?
+04 |   Run this command?
 05 |
-06 |   $ 'echo' 'recorded'
+06 |   $ echo recorded
 07 |   in $PROJECT/.
 08 |
 09 | ❯ 1. Yes, run it once
@@ -187,6 +187,83 @@ let%expect_test "the permission dialog renders and an approve runs the command"
      carries its output ("recorded"), asserted at the wire — proof the command
      actually ran (distinct from the deny path below). The dialog frame and wire
      assertion are the observable contract. *)
+  Tui.enter t;
+  ignore (Tui.await_request t 2 : string);
+  Tui.release t "fin";
+  Tui.settle t
+
+(* A compound shell expression may normalize to several access facts, but it is
+   still one model action and therefore one decision. The original expression
+   is primary; normalized facts are available behind the details toggle. *)
+let%expect_test "a compound command is presented as one atomic action" =
+  let command =
+    "git status --short && test ! -e .probe-one && test ! -e .probe-two"
+  in
+  let script =
+    [
+      Provider_script.tool_call ~expect:[ "inspect workspace" ] ~id:"resp-pa-1"
+        ~call_id:"call-pa" ~name:"shell"
+        ~arguments:(Printf.sprintf {|{"command":%S}|} command) ();
+      resume ~expect:[ "function_call_output" ] ~id:"resp-pa-2"
+        "Inspected the workspace.";
+    ]
+  in
+  Tui.run ~name:"dialog-perm-atomic" ~provider:script @@ fun t ->
+  open_dialog t "inspect workspace";
+  Tui.print t;
+  [%expect
+    {|01 | ⋯ Waiting for your answer
+02 |
+03 |
+04 |
+05 |
+06 |
+07 |
+08 |
+09 |
+10 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+11 |    permission
+12 |
+13 |   Run this command?
+14 |
+15 |   $ git status --short && test ! -e .probe-one && test ! -e .probe-two
+16 |   in $PROJECT/.
+17 |
+18 | ❯ 1. Yes, allow once
+19 |   2. Yes, don't ask again for these accesses this session
+20 |   3. No, and tell Spice what to do differently
+21 |   4. Yes, always allow git status, test
+22 |      saves for this session — press s to change
+23 |
+24 |   1-4 choose · enter confirm · s scope · ctrl+o details · esc deny with feedback|}];
+  Tui.keys t Key.ctrl_o;
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 | ⋯ Waiting for your answer
+02 |
+03 |
+04 |
+05 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+06 |    permission
+07 |
+08 |   Run this command?
+09 |
+10 |   $ git status --short && test ! -e .probe-one && test ! -e .probe-two
+11 |   in $PROJECT/.
+12 |
+13 |   Permission details
+14 |   exec 'git' 'status' '--short' in $PROJECT/.
+15 |   exec 'test' '!' '-e' '.probe-one' in $PROJECT
+16 |   exec 'test' '!' '-e' '.probe-two' in $PROJECT
+17 |
+18 | ❯ 1. Yes, allow once
+19 |   2. Yes, don't ask again for these accesses this session
+20 |   3. No, and tell Spice what to do differently
+21 |   4. Yes, always allow git status, test
+22 |      saves for this session — press s to change
+23 |
+24 |   1-4 choose · enter confirm · s scope · esc deny with feedback|}];
   Tui.enter t;
   ignore (Tui.await_request t 2 : string);
   Tui.release t "fin";
@@ -219,9 +296,9 @@ let%expect_test "the permission dialog denies and resumes without running" =
     {|01 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 02 |    permission
 03 |
-04 |   Run a shell command?
+04 |   Run this command?
 05 |
-06 |   $ 'echo' 'recorded'
+06 |   $ echo recorded
 07 |   in $PROJECT/.
 08 |
 09 |   1. Yes, run it once
@@ -266,7 +343,7 @@ let%expect_test "the permission dialog denies and resumes without running" =
 17 |
 18 |
 19 |
-20 |   Denying: Run a shell command?  $ 'echo' 'recorded'
+20 |   Denying: Run this command?  echo recorded
 21 |
 22 | ────────────────────────────────────────────────────────────────────────────────
 23 | ❯ tell Spice what to do differently
@@ -311,9 +388,9 @@ let%expect_test "always allow saves a family rule and silences the family" =
     {|01 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 02 |    permission
 03 |
-04 |   Run a shell command?
+04 |   Run this command?
 05 |
-06 |   $ 'git' 'commit' '-m' 'first'
+06 |   $ git commit -m first
 07 |   in $PROJECT/.
 08 |
 09 | ❯ 1. Yes, run it once

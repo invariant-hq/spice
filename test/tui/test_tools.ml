@@ -390,9 +390,9 @@ let%expect_test "a shell permission prompt gates the call and records it" =
     {|01 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 02 |    permission
 03 |
-04 |   Run a shell command?
+04 |   Run this command?
 05 |
-06 |   $ 'echo' 'recorded'
+06 |   $ echo recorded
 07 |   in $PROJECT/.
 08 |
 09 | ❯ 1. Yes, run it once

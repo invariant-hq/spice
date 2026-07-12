@@ -129,12 +129,12 @@ let access_headline = function
   | Access.Network { host; _ } -> "Connect to " ^ host ^ "?"
   | Access.Custom { name; _ } -> "Allow " ^ name ^ "?"
 
-let headline = function
+let access_headlines = function
   | [ access ] -> access_headline access
   | accesses ->
       if List.for_all is_path accesses then
         Printf.sprintf "Apply a patch to %d files?" (List.length accesses)
-      else Printf.sprintf "Approve %d operations?" (List.length accesses)
+      else "Allow this operation?"
 
 (* The exact-grant scope for option 2's honest label: it names only what an
    identical [Access.t] re-approves — the same edit target, command, or host,
@@ -179,6 +179,31 @@ let command_access = function
 
 let request_data t = Requested.request t.request
 let reviewed_accesses t = Review.accesses (Requested.review t.request)
+
+let command_cwd accesses =
+  List.find_map
+    (fun access -> Option.map snd (command_access access))
+    accesses
+  |> Option.join
+
+let has_code accesses =
+  List.exists
+    (function
+      | Access.Command (Access.Command.Code _) -> true
+      | Access.Command (Access.Command.Shell _ | Access.Command.Argv _)
+      | Access.Path _ | Access.Network _ | Access.Custom _ -> false)
+    accesses
+
+let is_command = function
+  | Access.Command _ -> true
+  | Access.Path _ | Access.Network _ | Access.Custom _ -> false
+
+let headline t accesses =
+  match Request.display (request_data t) with
+  | Some _ when has_code accesses -> "Evaluate OCaml code?"
+  | Some _ when List.exists is_command accesses -> "Run this command?"
+  | Some _ -> "Allow this operation?"
+  | None -> access_headlines accesses
 
 let change_for_access t access =
   match Request.changes_for_access (request_data t) access with
@@ -256,13 +281,16 @@ let key ev t =
 
 let summary t =
   let accesses = reviewed_accesses t in
-  let head = headline accesses in
-  match accesses with
-  | [ access ] -> (
-      match command_access access with
-      | Some (command, _) -> head ^ "  $ " ^ command
-      | None -> head)
-  | _ -> head
+  let head = headline t accesses in
+  match Request.display (request_data t) with
+  | Some display -> head ^ "  " ^ display
+  | None -> (
+      match accesses with
+      | [ access ] -> (
+          match command_access access with
+          | Some (command, _) -> head ^ "  $ " ^ command
+          | None -> head)
+      | _ -> head)
 
 let scope_label t = session_scope (reviewed_accesses t)
 
@@ -312,6 +340,12 @@ let command_view command cwd =
     (text ~style:Theme.warning ~wrap:`None ("$ " ^ command)
     :: (match cwd with None -> [] | Some cwd -> [ dim ("in " ^ cwd) ]))
 
+let code_view source cwd =
+  box ~flex_direction:Flex_direction.Column ~flex_shrink:0. ~padding:indent
+    (List.map (fun line -> text ~style:Theme.warning ~wrap:`None line)
+       (String.split_on_char '\n' source)
+    @ match cwd with None -> [] | Some cwd -> [ dim ("in " ^ cwd) ])
+
 let single_preview ~expanded t access =
   match (change_for_access t access, command_access access) with
   | Some change, _ when Option.is_some (Request.Change.diff change) ->
@@ -345,9 +379,24 @@ let list_preview t accesses =
        accesses)
 
 let preview_view ~expanded t accesses =
-  match accesses with
-  | [ access ] -> [ single_preview ~expanded t access ]
-  | accesses -> [ list_preview t accesses ]
+  match Request.display (request_data t) with
+  | Some display when List.exists is_command accesses ->
+      let action =
+        if has_code accesses then code_view display (command_cwd accesses)
+        else command_view display (command_cwd accesses)
+      in
+      if expanded && List.length accesses > 1 then
+        [
+          action;
+          blank;
+          box ~padding:indent ~flex_shrink:0. [ dim "Permission details" ];
+          list_preview t accesses;
+        ]
+      else [ action ]
+  | Some _ | None -> (
+      match accesses with
+      | [ access ] -> [ single_preview ~expanded t access ]
+      | accesses -> [ list_preview t accesses ])
 
 let counts_seg (additions, removals) =
   if additions = 0 && removals = 0 then []
@@ -410,7 +459,7 @@ let view ~width t =
   let allow_once = primary_allow_once accesses in
   let session_scope = session_scope accesses in
   let content =
-    headline_row ~counts (headline accesses)
+    headline_row ~counts (headline t accesses)
     :: blank
     :: preview_view ~expanded:t.expanded t accesses
     @ [ blank; options_view t ~allow_once ~session_scope ]
@@ -418,7 +467,14 @@ let view ~width t =
   let hint =
     [ (if has_always t then "1-4 choose" else "1/2/3 choose"); "enter confirm" ]
     @ (if has_always t then [ "s scope" ] else [])
-    @ (if has_diff t accesses && not t.expanded then [ "ctrl+o expand" ] else [])
+    @
+    (if
+       (has_diff t accesses
+       || (Option.is_some (Request.display (request_data t))
+          && List.length accesses > 1))
+       && not t.expanded
+     then [ "ctrl+o details" ]
+     else [])
     @ [ "esc deny with feedback" ]
   in
   (* The top rule is accent, not the plain [rule] gray: a decision dialog is

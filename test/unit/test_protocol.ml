@@ -1376,9 +1376,11 @@ module Event_tests = struct
 
   let permission_request ~turn ~tool_call access =
     let request = Permission.Request.of_accesses [ access ] in
-    let access_set = Permission.Access.Set.singleton access in
     let ask =
-      match Permission.Policy.Review.restore request access_set with
+      match
+        Permission.Policy.Review.restore request
+          [ (access, Permission.Policy.Review.Unmatched) ]
+      with
       | Ok ask -> ask
       | Error _ -> failf "permission review reconstruction failed"
     in

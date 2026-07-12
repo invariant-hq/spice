@@ -15,11 +15,11 @@
     waiters, reviewer replies, or UI rendering. Runtime prompt correlation
     belongs to the host value that represents a pending prompt.
 
-    Construct the trusted operation facts with {!Access}, attach display and
-    change metadata with {!Item.make} when needed, group them with {!make}, then
-    pass the request to {!Policy.decide}. Policy evaluation uses
-    {!normalized_accesses}; the original item list and order remain available
-    for host diagnostics and durable records.
+    Construct the trusted operation facts with {!Access}, attach per-access
+    metadata with {!Item.make} when needed, group them and the original action
+    display with {!make}, then pass the request to {!Policy.decide}. Policy
+    evaluation uses {!normalized_accesses}; the original item list and order
+    remain available for host diagnostics and durable records.
 
     Constructors raise [Invalid_argument] when their arguments cannot satisfy
     the documented invariants. The JSON codec reports the same invalid states as
@@ -30,8 +30,8 @@
 type t
 (** The type for permission requests.
 
-    Invariant: [accesses] is non-empty and [source] is non-empty when present.
-    Items are non-empty and item display is non-empty when present.
+    Invariant: [accesses] is non-empty; [source], request [display], and item
+    display are non-empty when present. Items are non-empty.
 
     [source] is the tool or subsystem that produced the request. It is
     provenance metadata for routing, display, and audit; it does not affect
@@ -133,8 +133,10 @@ end
 
 (** {1:constructing Constructing requests} *)
 
-val make : ?source:string -> ?grantable:bool -> Item.t list -> t
-(** [make ?source ?grantable items] is a permission request for [items].
+val make :
+  ?source:string -> ?display:string -> ?grantable:bool -> Item.t list -> t
+(** [make ?source ?display ?grantable items] is one atomic permission request
+    for [items].
 
     The item order is significant for policy diagnostics: when several accesses
     are denied, policy evaluation reports the first denied access in this order.
@@ -144,21 +146,30 @@ val make : ?source:string -> ?grantable:bool -> Item.t list -> t
     use, so a [Session] allow grants nothing and every later request reviews
     afresh. See {!grantable}.
 
-    Raises [Invalid_argument] if [items] is empty or if [source] is empty when
-    present. *)
+    [display] is trusted request-local text for the original decoded action. It
+    has no policy meaning; render it as the primary action and use item accesses
+    only as details.
 
-val of_accesses : ?source:string -> ?grantable:bool -> Access.t list -> t
-(** [of_accesses ?source ?grantable accesses] is a permission request for
-    [accesses].
+    Raises [Invalid_argument] if [items] is empty or if [source] or [display] is
+    empty when present. *)
+
+val of_accesses :
+  ?source:string ->
+  ?display:string ->
+  ?grantable:bool ->
+  Access.t list ->
+  t
+(** [of_accesses ?source ?display ?grantable accesses] is one atomic permission
+    request for [accesses].
 
     The access list order is significant for policy diagnostics: when several
     accesses are denied, policy evaluation reports the first denied access in
     this order.
 
-    [grantable] behaves as in {!make}.
+    [display] and [grantable] behave as in {!make}.
 
-    Raises [Invalid_argument] if [accesses] is empty, if [source] is empty when
-    present. *)
+    Raises [Invalid_argument] if [accesses] is empty, or if [source] or
+    [display] is empty when present. *)
 
 (** {1:inspecting Inspecting requests} *)
 
@@ -167,6 +178,10 @@ val source : t -> string option
 
     This is routing, display, and audit metadata. It does not affect permission
     matching. *)
+
+val display : t -> string option
+(** [display r] is the original decoded action text, if supplied. It is display
+    and audit metadata with no permission-matching meaning. *)
 
 val grantable : t -> bool
 (** [grantable r] is [false] when a session-scope approval of [r] must not
@@ -207,7 +222,7 @@ val unique_accesses : t -> Access.Set.t
 val equal : t -> t -> bool
 (** [equal a b] is [true] iff [a] and [b] contain the same request data.
 
-    Item metadata and [source] participate in equality. *)
+    Item metadata, [source], and [display] participate in equality. *)
 
 (** {1:fmt Formatting} *)
 

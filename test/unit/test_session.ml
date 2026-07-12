@@ -82,9 +82,11 @@ let extension_access name = Permission.Access.custom name
 let permission_request ?(id = "permission-1") ?(grantable = true) ~turn
     ~tool_call access =
   let request = Permission.Request.of_accesses ~grantable [ access ] in
-  let access_set = Permission.Access.Set.singleton access in
   let ask =
-    match Permission.Policy.Review.restore request access_set with
+    match
+      Permission.Policy.Review.restore request
+        [ (access, Permission.Policy.Review.Unmatched) ]
+    with
     | Ok ask -> ask
     | Error Permission.Policy.Review.Empty_accesses ->
         failf "permission review reconstruction failed: empty accesses"
@@ -964,12 +966,40 @@ let permission_request_json_requires_tool_call () =
   in
   is_true ~msg:"permission request round-trips"
     (Session.Permission.Requested.equal request decoded);
+  let review_rule =
+    Permission.Policy.Rule.review (Permission.Policy.Match.exact access)
+  in
+  let rule_review =
+    match
+      Permission.Policy.decide (Permission.Policy.make [ review_rule ])
+        (Permission.Request.of_accesses [ access ])
+    with
+    | Permission.Policy.Decision.Review review -> review
+    | Permission.Policy.Decision.Allowed
+    | Permission.Policy.Decision.Denied _ ->
+        failf "review rule did not produce a permission review"
+  in
+  let rule_request =
+    Session.Permission.Requested.of_review
+      ~id:(Session.Permission.Id.of_string "permission-rule")
+      ~turn:(Session.Turn.id turn) ~tool_call:call rule_review
+  in
+  let rule_decoded =
+    decode Session.Permission.Requested.jsont
+      (encode Session.Permission.Requested.jsont rule_request)
+  in
+  is_true ~msg:"captured review rule round-trips"
+    (Session.Permission.Requested.equal rule_request rule_decoded);
   let raw_request = Permission.Request.of_accesses [ access ] in
-  let asked =
-    Permission.Request.unique_accesses raw_request
-    |> Permission.Access.Set.elements
-    |> List.map (encode Permission.Access.jsont)
-    |> Json.list
+  let reasons =
+    Json.list
+      [
+        json_object
+          [
+            ("access", encode Permission.Access.jsont access);
+            ("reason", json_object [ ("kind", Json.string "unmatched") ]);
+          ];
+      ]
   in
   let missing_tool_call_json =
     json_object
@@ -979,7 +1009,7 @@ let permission_request_json_requires_tool_call () =
             (Session.Permission.Requested.id request) );
         ("turn", encode Session.Turn.Id.jsont (Session.Turn.id turn));
         ("request", encode Permission.Request.jsont raw_request);
-        ("asked", asked);
+        ("reasons", reasons);
       ]
   in
   expect_decode_error "permission request JSON requires tool_call"

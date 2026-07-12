@@ -229,7 +229,7 @@ let permissions ~sandbox ~workspace input =
   | Ok dir, Some execution ->
       let cwd = Permission.Access.Path_scope.workspace dir in
       [
-        Permission.Request.of_accesses ~source:name
+        Permission.Request.of_accesses ~source:name ~display:(Input.code input)
           [
             Permission.Access.path ~op:`Read dir;
             Permission.Access.code ~cwd ~execution ~language:"ocaml"

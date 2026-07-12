@@ -1248,9 +1248,13 @@ let permission_allow_requires_same_reviewed_accesses () =
   in
   let blocked = run_response (config [ tool ]) (response (call ())) in
   let first = permission_from_step blocked in
+  let reviewed_accesses requested =
+    Session.Permission.Requested.review requested
+    |> Permission.Policy.Review.access_set
+  in
   check "first review covers both accesses"
     (Permission.Access.Set.equal
-       (Session.Permission.Requested.asked first)
+       (reviewed_accesses first)
        (Permission.Access.Set.of_list [ first_access; second_access ]));
   let narrowed_policy =
     Permission.Policy.make
@@ -1273,7 +1277,7 @@ let permission_allow_requires_same_reviewed_accesses () =
       | Run.Step.Waiting (Session.Waiting.Permission second) ->
           check "narrowed review covers only the still-reviewed access"
             (Permission.Access.Set.equal
-               (Session.Permission.Requested.asked second)
+               (reviewed_accesses second)
                (Permission.Access.Set.of_list [ second_access ]))
       | next ->
           failf "expected narrowed permission review, got %a" Run.Step.pp_next

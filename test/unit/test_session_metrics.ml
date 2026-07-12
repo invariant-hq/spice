@@ -58,7 +58,7 @@ let permission_requested ?(id = "permission-1") ~turn call =
   let review =
     match
       Spice_permission.Policy.Review.restore request
-        (Spice_permission.Access.Set.singleton access)
+        [ (access, Spice_permission.Policy.Review.Unmatched) ]
     with
     | Ok review -> review
     | Error Spice_permission.Policy.Review.Empty_accesses ->

@@ -23,6 +23,7 @@ flow is deterministic on every platform via the seam.
   network: restricted
   spice: session esc-run waiting: permission perm:$ID tool=shell turn=turn_$ID call=call-esc-1
   mode: default
+  action: 'printf esc-one'
   accesses:
   - command exec 'printf' 'esc-one'  [review: no rule or grant]
   - custom shell.escalate 'printf esc-one'  [review: no rule or grant]
@@ -66,6 +67,7 @@ broadens.
   ✓ tool shell "printf esc-one" exited 0 in 0.0s
   spice: session esc-run waiting: permission perm:$ID tool=shell turn=turn_$ID call=call-esc-2
   mode: default
+  action: 'printf esc-two'
   accesses:
   - command exec 'printf' 'esc-two'  [review: no rule or grant]
   - custom shell.escalate 'printf esc-two'  [review: no rule or grant]

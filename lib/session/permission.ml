@@ -19,13 +19,36 @@ module Id =
     end)
     ()
 
-let access_set_jsont =
-  Jsont.map ~kind:"permission access set"
-    ~dec:(fun accesses ->
-      List.fold_left
-        (fun set access -> Access.Set.add access set)
-        Access.Set.empty accesses)
-    ~enc:Access.Set.elements (Jsont.list Access.jsont)
+let review_reason_jsont =
+  let make kind rule =
+    match (kind, rule) with
+    | "unmatched", None -> Review.Unmatched
+    | "rule", Some rule -> Review.By_rule rule
+    | "unmatched", Some _ ->
+        decode_error "unmatched permission review reason must not carry a rule"
+    | "rule", None ->
+        decode_error "rule permission review reason requires a rule"
+    | kind, _ -> decode_error ("unknown permission review reason: " ^ kind)
+  in
+  let kind = function
+    | Review.Unmatched -> "unmatched"
+    | Review.By_rule _ -> "rule"
+  in
+  let rule = function
+    | Review.Unmatched -> None
+    | Review.By_rule rule -> Some rule
+  in
+  Jsont.Object.map ~kind:"permission review reason" make
+  |> Jsont.Object.mem "kind" Jsont.string ~enc:kind
+  |> Jsont.Object.opt_mem "rule" Spice_permission.Policy.Rule.jsont ~enc:rule
+  |> Jsont.Object.error_unknown |> Jsont.Object.finish
+
+let reviewed_jsont =
+  Jsont.Object.map ~kind:"reviewed permission access" (fun access reason ->
+      (access, reason))
+  |> Jsont.Object.mem "access" Access.jsont ~enc:fst
+  |> Jsont.Object.mem "reason" review_reason_jsont ~enc:snd
+  |> Jsont.Object.error_unknown |> Jsont.Object.finish
 
 module Requested = struct
   type t = {
@@ -33,74 +56,88 @@ module Requested = struct
     turn : Turn.Id.t;
     tool_call : Spice_llm.Tool.Call.t;
     request : Request.t;
-    asked : Access.Set.t;
+    reasons : (Access.t * Review.reason) list;
   }
 
-  let check_asked request asked =
-    if Access.Set.is_empty asked then
-      invalid "Requested.make" "asked accesses must not be empty";
-    match Review.restore request asked with
+  let check_reasons request reasons =
+    match Review.restore request reasons with
     | Ok _ -> ()
     | Error Review.Empty_accesses ->
-        invalid "Requested.make" "asked accesses must not be empty"
+        invalid "Requested.make" "review reasons must not be empty"
     | Error (Review.Access_not_in_request _) ->
-        invalid "Requested.make" "asked accesses must belong to request"
+        invalid "Requested.make" "review accesses must belong to request"
 
-  let make ~id ~turn ~tool_call ~request ~asked () =
-    check_asked request asked;
-    { id; turn; tool_call; request; asked }
+  let make ~id ~turn ~tool_call ~request ~reasons () =
+    check_reasons request reasons;
+    { id; turn; tool_call; request; reasons }
 
   let of_review ~id ~turn ~tool_call review =
     let request = Review.request review in
-    let asked = Review.access_set review in
-    make ~id ~turn ~tool_call ~request ~asked ()
+    let reasons = Review.reasons review in
+    make ~id ~turn ~tool_call ~request ~reasons ()
 
   let id t = t.id
   let turn t = t.turn
   let tool_call t = t.tool_call
   let request t = t.request
-  let asked t = t.asked
+  let reasons t = t.reasons
 
   let review t =
-    match Review.restore t.request t.asked with
+    match Review.restore t.request t.reasons with
     | Ok review -> review
     | Error Review.Empty_accesses ->
-        invalid "Requested.review" "asked accesses must not be empty"
+        invalid "Requested.review" "review reasons must not be empty"
     | Error (Review.Access_not_in_request _) ->
-        invalid "Requested.review" "asked accesses must belong to request"
+        invalid "Requested.review" "review accesses must belong to request"
+
+  let equal_reason a b =
+    match (a, b) with
+    | Review.Unmatched, Review.Unmatched -> true
+    | Review.By_rule a, Review.By_rule b ->
+        Spice_permission.Policy.Rule.equal a b
+    | Review.Unmatched, Review.By_rule _ | Review.By_rule _, Review.Unmatched ->
+        false
 
   let equal a b =
     Id.equal a.id b.id
     && Turn.Id.equal a.turn b.turn
     && Spice_llm.Tool.Call.equal a.tool_call b.tool_call
     && Request.equal a.request b.request
-    && Access.Set.equal a.asked b.asked
+    && List.equal
+         (fun (a_access, a_reason) (b_access, b_reason) ->
+           Access.equal a_access b_access && equal_reason a_reason b_reason)
+         a.reasons b.reasons
 
-  let pp_accesses ppf accesses =
+  let pp_reasons ppf reasons =
     Format.pp_print_list
       ~pp_sep:(fun ppf () -> Format.pp_print_string ppf "; ")
-      Access.pp ppf
-      (Access.Set.elements accesses)
+      (fun ppf (access, reason) ->
+        match reason with
+        | Review.Unmatched -> Format.fprintf ppf "%a:unmatched" Access.pp access
+        | Review.By_rule rule ->
+            Format.fprintf ppf "%a:rule(%a)" Access.pp access
+              Spice_permission.Policy.Rule.pp rule)
+      ppf reasons
 
   let pp ppf t =
     Format.fprintf ppf
-      "@[<hov>{ id = %a; turn = %a; tool_call = %s; request = %a; asked = [%a] \
+      "@[<hov>{ id = %a; turn = %a; tool_call = %s; request = %a; reasons = [%a] \
        }@]"
       Id.pp t.id Turn.Id.pp t.turn
       (Spice_llm.Tool.Call.id t.tool_call)
-      Request.pp t.request pp_accesses t.asked
+      Request.pp t.request pp_reasons t.reasons
 
   let jsont =
-    let make id turn tool_call request asked =
+    let make id turn tool_call request reasons =
       decode_invalid_arg (fun () ->
-          make ~id ~turn ~tool_call ~request ~asked ())
+          make ~id ~turn ~tool_call ~request ~reasons ())
     in
     Jsont.Object.map ~kind:"session permission request" make
     |> Jsont.Object.mem "id" Id.jsont ~enc:id
     |> Jsont.Object.mem "turn" Turn.Id.jsont ~enc:turn
     |> Jsont.Object.mem "tool_call" Spice_llm.Tool.Call.jsont ~enc:tool_call
     |> Jsont.Object.mem "request" Request.jsont ~enc:request
-    |> Jsont.Object.mem "asked" access_set_jsont ~enc:asked
+    |> Jsont.Object.mem "reasons" Jsont.(list reviewed_jsont) ~enc:reasons
     |> Jsont.Object.error_unknown |> Jsont.Object.finish
 end
 

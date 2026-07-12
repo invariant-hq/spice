@@ -100,7 +100,12 @@ module Item = struct
     |> Jsont.Object.error_unknown |> Jsont.Object.finish
 end
 
-type t = { source : string option; grantable : bool; items : Item.t list }
+type t = {
+  source : string option;
+  display : string option;
+  grantable : bool;
+  items : Item.t list;
+}
 
 let invalid_make = invalid_arg' "Spice_permission.Request" "make"
 let invalid_of_accesses = invalid_arg' "Spice_permission.Request" "of_accesses"
@@ -110,20 +115,26 @@ let unique_accesses_of_accesses accesses =
     (fun accesses access -> Access.Set.add access accesses)
     Access.Set.empty accesses
 
-let make ?source ?(grantable = true) items =
+let make ?source ?display ?(grantable = true) items =
   if List.is_empty items then invalid_make "items must not be empty";
   Option.iter
     (fun source ->
       if String.is_empty source then invalid_make "source must not be empty")
     source;
-  { source; grantable; items }
+  Option.iter
+    (fun display ->
+      if String.is_empty display then invalid_make "display must not be empty")
+    display;
+  { source; display; grantable; items }
 
-let of_accesses ?source ?(grantable = true) accesses =
+let of_accesses ?source ?display ?(grantable = true) accesses =
   if List.is_empty accesses then
     invalid_of_accesses "accesses must not be empty";
-  make ?source ~grantable (List.map (fun access -> Item.make access) accesses)
+  make ?source ?display ~grantable
+    (List.map (fun access -> Item.make access) accesses)
 
 let source t = t.source
+let display t = t.display
 let grantable t = t.grantable
 let items t = t.items
 let accesses t = List.map Item.access t.items
@@ -147,6 +158,7 @@ let unique_accesses t = unique_accesses_of_accesses (accesses t)
 
 let equal a b =
   Option.equal String.equal a.source b.source
+  && Option.equal String.equal a.display b.display
   && Bool.equal a.grantable b.grantable
   && List.equal Item.equal a.items b.items
 
@@ -166,25 +178,37 @@ let pp ppf request =
     if count <> 0 then Format.fprintf ppf ", changes=%d" count
   in
   let accesses = accesses request in
-  match request.source with
-  | None ->
+  let metadata =
+    List.filter_map Fun.id
+      [
+        Option.map (fun source -> Printf.sprintf "source=%S" source)
+          request.source;
+        Option.map (fun display -> Printf.sprintf "display=%S" display)
+          request.display;
+      ]
+  in
+  match metadata with
+  | [] ->
       Format.fprintf ppf "request([%a]%a)" pp_accesses accesses changes
         change_count
-  | Some source ->
-      Format.fprintf ppf "request(source=%S, [%a]%a)" source pp_accesses
-        accesses changes change_count
+  | metadata ->
+      Format.fprintf ppf "request(%s, [%a]%a)" (String.concat ", " metadata)
+        pp_accesses accesses changes change_count
 
 let jsont =
-  let decode version source grantable items =
-    if version <> 2 then
+  let decode version source display grantable items =
+    if version <> 3 then
       decode_error
         ("unknown permission request version: " ^ string_of_int version);
     decode_invalid_arg (fun () ->
-        make ?source ~grantable:(Option.value ~default:true grantable) items)
+        make ?source ?display
+          ~grantable:(Option.value ~default:true grantable)
+          items)
   in
   Jsont.Object.map ~kind:"permission request" decode
-  |> Jsont.Object.mem "version" Jsont.int ~enc:(fun _ -> 2)
+  |> Jsont.Object.mem "version" Jsont.int ~enc:(fun _ -> 3)
   |> Jsont.Object.opt_mem "source" Jsont.string ~enc:source
+  |> Jsont.Object.opt_mem "display" Jsont.string ~enc:display
   (* Default-[true] and omitted when true, so pre-existing documents decode as
      grantable and current writers add the key only when capping at once-only. *)
   |> Jsont.Object.opt_mem "grantable" Jsont.bool ~enc:(fun t ->

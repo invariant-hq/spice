@@ -321,6 +321,11 @@ end
 module Review : sig
   (** Pending reviewer decisions produced by policy evaluation. *)
 
+  type reason = Unmatched | By_rule of Rule.t
+  (** The captured reason an access needs review. [Unmatched] means no rule or
+      exact grant decided it. [By_rule rule] retains the first matching review
+      rule; callers must not recompute this history against a later policy. *)
+
   type t
   (** The type for a non-empty subset of request accesses needing reviewer
       input. *)
@@ -330,12 +335,13 @@ module Review : sig
     | Access_not_in_request of Access.t
         (** Why a durable review could not be reconstructed. *)
 
-  val restore : Request.t -> Access.Set.t -> (t, restore_error) result
-  (** [restore request accesses] reconstructs a review from durable session
+  val restore :
+    Request.t -> (Access.t * reason) list -> (t, restore_error) result
+  (** [restore request reasons] reconstructs a review from durable session
       state. [Ok review] contains the subset of [request]'s normalized accesses
-      selected by [accesses], in request order. [Error Empty_accesses] means
-      [accesses] is empty; [Error (Access_not_in_request access)] means [access]
-      is not present in [request].
+      selected by [reasons], with their captured reasons, in request order.
+      [Error Empty_accesses] means [reasons] is empty; [Error
+      (Access_not_in_request access)] means [access] is not present in [request].
 
       Normal callers get reviews from {!decide}. *)
 
@@ -349,6 +355,10 @@ module Review : sig
   val access_set : t -> Access.Set.t
   (** [access_set review] is the exact set of access identities covered by
       [review]. *)
+
+  val reasons : t -> (Access.t * reason) list
+  (** [reasons review] is the non-empty normalized access and captured-reason
+      list covered by [review], in request order. *)
 
   val items : t -> Request.Item.t list
   (** [items review] is every request item whose access is covered by [review],

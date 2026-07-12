@@ -100,7 +100,7 @@ let permission_requested ?(id = "permission-1") ~turn call =
   let review =
     match
       Permission.Policy.Review.restore request
-        (Permission.Access.Set.singleton access)
+        [ (access, Permission.Policy.Review.Unmatched) ]
     with
     | Ok review -> review
     | Error _ -> failf "permission review reconstruction failed"

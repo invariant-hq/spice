@@ -542,6 +542,7 @@ let permissions ~workspace ~config input =
       let request execution =
         [
           Permission.Request.of_accesses ~source:name
+            ~display:(Input.command input)
             (command_accesses ~cwd ~execution (Input.command input)
             @ escalation_access input route);
         ]
