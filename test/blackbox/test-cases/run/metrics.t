@@ -32,7 +32,7 @@ counted in tool_failures either way.
   $ start_fake_openai tool-metrics.jsonl tool-metrics-capture tool-metrics-port
   $ spice run --cwd "$PWD" --json --permission-mode bypass --id tool-metrics "tool metrics prompt" | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/g; s/"tool_claim_id":"tool_exec:[0-9a-f]+"/"tool_claim_id":"tool_exec:$ID"/g; s/"duration_ms":[0-9]+/"duration_ms":$TIME/g'
   spice: session saved; resume with: spice resume 'tool-metrics'
-  {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"danger-full-access","origin":"config","require":"enforced","network":"enabled","backend":"none","enforcement":"not_requested"}}
+  {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"danger-full-access","read":"all","origin":"config","require":"enforced","network":"enabled","backend":"none","enforcement":"not_requested"}}
   {"schema_version":1,"type":"session.started","session_id":"tool-metrics","revision":"sha256:$HASH"}
   {"schema_version":1,"type":"turn.started","session_id":"tool-metrics","revision":"sha256:$HASH","turn_id":"turn_$ID","workflow_mode":"build","projection_digest":"sha256:$HASH","context_warnings":[]}
   {"schema_version":1,"type":"tool.started","session_id":"tool-metrics","turn_id":"turn_$ID","tool_call_id":"call-shell-metrics","tool_claim_id":"tool_exec:$ID","tool":"shell"}

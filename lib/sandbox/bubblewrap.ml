@@ -85,28 +85,24 @@ let path path = Spice_path.Abs.to_string path
    variant skips it, which is the right semantics: absent metadata needs no
    protection. The policy stays pure (it proves no existence); the backend
    tolerates absence at the platform boundary. *)
-let bind_read_only root = [ "--ro-bind-try"; path root; path root ]
+let bind_readable root = [ "--ro-bind"; path root; path root ]
+let bind_protected root = [ "--ro-bind"; path root; path root ]
 let bind_writable root = [ "--bind"; path root; path root ]
-let existing root = Sys.file_exists (path root)
 
-(* The whole host root is bound read-only, so every [PATH] directory — including
-   a [$HOME]-based toolchain such as [~/.opam/<switch>/bin] — is readable and its
-   binaries are executable inside the sandbox. This full-read policy is what keeps
-   a user's [dune]/[ocamlmerlin] reachable under confinement. A future restricted
-   read mode must preserve the principle it rests on: any [PATH] directory holding
-   a required toolchain binary has to be a readable root, or confined commands
-   lose the toolchain. *)
 let filesystem_args policy =
-  let scratch =
-    Policy.environment policy |> Environment.scratch
+  let read_args =
+    match Policy.reads policy with
+    | Some Policy.All -> [ "--ro-bind"; "/"; "/"; "--dev"; "/dev" ]
+    | Some (Policy.Only roots) ->
+        [ "--tmpfs"; "/"; "--dev"; "/dev" ]
+        @ List.concat_map bind_readable roots
+    | None -> assert false
   in
-  let roots =
-    List.filter existing (scratch :: Policy.writable_roots policy)
-  in
-  let carveouts = Policy.write_carveouts policy in
-  [ "--ro-bind"; "/"; "/"; "--dev"; "/dev" ]
-  @ List.concat_map bind_writable roots
-  @ List.concat_map bind_read_only carveouts
+  let scratch = Policy.environment policy |> Environment.scratch in
+  let roots = scratch :: Policy.writable_roots policy in
+  let carveouts = Policy.protected_paths policy in
+  read_args @ List.concat_map bind_writable roots
+  @ List.concat_map bind_protected carveouts
 
 let prefix policy =
   let namespace =
@@ -122,6 +118,8 @@ let prefix policy =
   @ [ "--proc"; "/proc" ]
 
 let prepare policy =
+  let ( let* ) = Result.bind in
+  let* () = Backend.validate_policy_paths policy in
   let prefix = prefix policy in
   Log.debug (fun m ->
       m "bubblewrap prefix built writable_roots=%d network=%s args=%d"

@@ -576,6 +576,7 @@ let run_started ~json ~preset effective =
   let status = Effective.status effective in
   let mode = status.Status.mode in
   let mode_string = Spice_host.Sandbox.Mode.to_string mode in
+  let read = Spice_host.Sandbox.Read.to_string status.Status.read in
   let origin = Status.origin_string status.Status.origin in
   let backend = status.Status.backend in
   let require = Spice_host.Sandbox.Require.to_string status.Status.require in
@@ -591,6 +592,7 @@ let run_started ~json ~preset effective =
              Cli_common.json_obj
                [
                  ("mode", Jsont.Json.string mode_string);
+                 ("read", Jsont.Json.string read);
                  ("origin", Jsont.Json.string origin);
                  ("require", Jsont.Json.string require);
                  ("network", Jsont.Json.string network);
@@ -599,9 +601,17 @@ let run_started ~json ~preset effective =
                ] );
          ])
   else begin
-    Cli_common.stderr_printf
-      "permission: %s\nsandbox: %s (%s)\nbackend: %s %s\nnetwork: %s\n"
-      permission mode_string origin backend enforcement network;
+    Cli_common.stderr_printf "permission: %s\n" permission;
+    (match mode with
+    | Spice_host.Sandbox.Mode.Read_only
+    | Spice_host.Sandbox.Mode.Workspace_write ->
+        Cli_common.stderr_printf "sandbox: %s · %s reads (%s)\n" mode_string
+          read origin
+    | Spice_host.Sandbox.Mode.Danger_full_access
+    | Spice_host.Sandbox.Mode.External_sandbox ->
+        Cli_common.stderr_printf "sandbox: %s (%s)\n" mode_string origin);
+    Cli_common.stderr_printf "backend: %s %s\nnetwork: %s\n" backend enforcement
+      network;
     match mode with
     | Spice_host.Sandbox.Mode.Danger_full_access ->
         Cli_common.stderr_printf

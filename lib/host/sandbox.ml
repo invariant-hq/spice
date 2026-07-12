@@ -35,6 +35,25 @@ module Mode = struct
   let pp ppf t = Format.pp_print_string ppf (to_string t)
 end
 
+module Read = struct
+  type t = Project | All
+
+  let all = [ Project; All ]
+  let to_string = function Project -> "project" | All -> "all"
+
+  let of_string = function
+    | "project" -> Some Project
+    | "all" -> Some All
+    | _ -> None
+
+  let equal a b =
+    match a, b with
+    | Project, Project | All, All -> true
+    | (Project | All), _ -> false
+
+  let pp ppf t = Format.pp_print_string ppf (to_string t)
+end
+
 module Require = struct
   type t = Off | Enforced_or_external | Enforced
 
@@ -63,6 +82,24 @@ end
 
 module Network = Spice_sandbox.Policy.Network
 
+type root_origin =
+  | Workspace
+  | Platform
+  | Toolchain of string
+  | Executable of string
+  | Git_worktree
+  | Scratch
+  | User_configured
+
+let root_origin_to_string = function
+  | Workspace -> "workspace"
+  | Platform -> "platform"
+  | Toolchain name -> "toolchain:" ^ name
+  | Executable name -> "executable:" ^ name
+  | Git_worktree -> "git-worktree"
+  | Scratch -> "scratch"
+  | User_configured -> "user-configured"
+
 module Gate_error = struct
   type t =
     | Backend_unavailable of { mode : Mode.t; reason : Spice_sandbox.Error.t }
@@ -90,6 +127,14 @@ module Resolve_error = struct
     | Invalid_scratch_base of Spice_path.Error.t
     | Scratch_creation_failed of string
     | Invalid_environment of Spice_sandbox.Environment.Error.t
+    | Invalid_root of {
+        field : string;
+        index : int option;
+        spelling : string;
+        reason : string;
+      }
+    | Broad_root of { field : string; path : Spice_path.Abs.t }
+    | Redundant_readable_roots
 
   let message = function
     | Invalid_scratch_base error ->
@@ -98,6 +143,23 @@ module Resolve_error = struct
         "could not create sandbox scratch directory: " ^ message
     | Invalid_environment error ->
         Spice_sandbox.Environment.Error.message error
+    | Invalid_root { field; index; spelling; reason } ->
+        let index =
+          match index with
+          | None -> ""
+          | Some index -> Printf.sprintf "[%d]" index
+        in
+        Printf.sprintf "invalid %s%s root %S: %s" field index spelling reason
+    | Broad_root { field; path } ->
+        if String.equal field "sandbox.writable_roots" then
+          Printf.sprintf "%s root %s is too broad; choose a narrower directory"
+            field (Spice_path.Abs.to_string path)
+        else
+          Printf.sprintf
+            "%s root %s is too broad; choose sandbox.read=all explicitly"
+            field (Spice_path.Abs.to_string path)
+    | Redundant_readable_roots ->
+        "sandbox.readable_roots is redundant when sandbox.read=all; remove it"
 
   let pp ppf t = Format.pp_print_string ppf (message t)
 end
@@ -108,6 +170,7 @@ module Status = struct
 
   type t = {
     mode : Mode.t;
+    read : Read.t;
     origin : origin;
     require : Require.t;
     enforcement : Spice_sandbox.Evidence.t;
@@ -139,24 +202,21 @@ module Status = struct
     | External -> "external"
 end
 
-(* Workspace-write protects the version-control and Spice metadata dirs even
-   inside otherwise writable roots, so a run cannot rewrite its own history or
-   authority state. The names are shared with the edit-tool write guard
-   ([Spice_workspace_fs.protected_meta_component]) so the confined shell and the
-   native edit tools protect exactly the same metadata. *)
-let protected_meta_names = Spice_workspace_fs.protected_meta_names
-
 (* Network applies to both confined modes: read-only and workspace-write can
    each opt into outbound access without becoming unconfined. Unconfined and
    declared-external already own network by construction. *)
-let sandbox_of_mode ~environment ~writable ~protect ~network = function
+let sandbox_of_mode ~read ~readable ~environment ~writable ~protect ~network =
+  let reads =
+    match read with
+    | Read.All -> Spice_sandbox.Policy.All
+    | Read.Project -> Spice_sandbox.Policy.Only readable
+  in
+  function
   | Mode.Read_only ->
-      Spice_sandbox.Policy.confined ~reads:Spice_sandbox.Policy.All
-        ~writable_roots:[] ~protected_meta:[] ~protected_paths:[] ~network
-        ~environment
+      Spice_sandbox.Policy.confined ~reads ~writable_roots:[]
+        ~protected_paths:[] ~network ~environment
   | Mode.Workspace_write ->
-      Spice_sandbox.Policy.confined ~reads:Spice_sandbox.Policy.All
-        ~writable_roots:writable ~protected_meta:protected_meta_names
+      Spice_sandbox.Policy.confined ~reads ~writable_roots:writable
         ~protected_paths:protect ~network ~environment
   | Mode.Danger_full_access -> Spice_sandbox.Policy.direct ~environment
   | Mode.External_sandbox -> Spice_sandbox.Policy.external_ ~environment
@@ -164,6 +224,8 @@ let sandbox_of_mode ~environment ~writable ~protect ~network = function
 module Effective = struct
   type t = {
     mode : Mode.t;
+    read : Read.t;
+    roots : (root_origin * Spice_path.Abs.t) list;
     origin : Status.origin;
     require : Require.t;
     policy : Spice_sandbox.Policy.t;
@@ -172,7 +234,18 @@ module Effective = struct
   }
 
   let policy t = t.policy
+  let read t = t.read
+  let roots t = t.roots
+  let readable_roots t =
+    match Spice_sandbox.Policy.reads t.policy with
+    | Some (Spice_sandbox.Policy.Only roots) -> roots
+    | Some Spice_sandbox.Policy.All | None -> []
   let backend t = t.backend
+  let writable_roots t = Spice_sandbox.Policy.writable_roots t.policy
+  let protected_paths t = Spice_sandbox.Policy.protected_paths t.policy
+  let environment_names t =
+    Spice_sandbox.Policy.environment t.policy
+    |> Spice_sandbox.Environment.names
   let sandbox t = t.sandbox
 
   (* The gate needs the refusal reason; Status.available only needs the bool.
@@ -204,6 +277,7 @@ module Effective = struct
   let status t =
     {
       Status.mode = t.mode;
+      read = t.read;
       origin = t.origin;
       require = t.require;
       enforcement = Spice_sandbox.evidence t.sandbox;
@@ -223,11 +297,12 @@ let canonical path =
       | Error _ -> path)
   | exception Unix.Unix_error _ -> path
 
-(* Expand a leading [~] against [$HOME] and parse to an absolute path. A bare
-   relative spelling has no unambiguous meaning for a writable root, so only
-   [~]-prefixed and already-absolute spellings resolve; anything else is
-   dropped by the [Abs.of_string] parse. *)
-let abs_of_config_path ~env spelling =
+let root_error ?index ~field ~spelling reason =
+  Resolve_error.Invalid_root { field; index; spelling; reason }
+
+(* Expand a leading [~] only against [$HOME]. User-name expansion and relative
+   roots are intentionally not ambient shell behavior. *)
+let abs_of_config_path ~field ?index ~env spelling =
   let expanded =
     if String.equal spelling "~" then env "HOME"
     else if String.length spelling >= 2 && String.sub spelling 0 2 = "~/" then
@@ -238,41 +313,69 @@ let abs_of_config_path ~env spelling =
     else Some spelling
   in
   match expanded with
-  | None -> None
-  | Some path -> Result.to_option (Spice_path.Abs.of_string path)
+  | None ->
+      Error (root_error ?index ~field ~spelling "HOME is not available")
+  | Some path ->
+      Spice_path.Abs.of_string path
+      |> Result.map_error (fun error ->
+          root_error ?index ~field ~spelling (Spice_path.Error.message error))
 
-let config_writable_roots ~env spellings =
-  List.filter_map (abs_of_config_path ~env) spellings
+let physical_root ~field ?index ~spelling ~directory path =
+  let path_string = Spice_path.Abs.to_string path in
+  match Unix.stat path_string with
+  | stats
+    when stats.Unix.st_kind = Unix.S_DIR
+         || ((not directory) && stats.Unix.st_kind = Unix.S_REG) -> (
+      match Unix.realpath path_string |> Spice_path.Abs.of_string with
+      | Ok path -> Ok path
+      | Error error ->
+          Error
+            (root_error ?index ~field ~spelling
+               (Spice_path.Error.message error)))
+  | _ ->
+      let expected =
+        if directory then "a directory" else "a file or directory"
+      in
+      Error (root_error ?index ~field ~spelling ("expected " ^ expected))
+  | exception Unix.Unix_error (error, _, _) ->
+      Error
+        (root_error ?index ~field ~spelling (Unix.error_message error))
 
-(* The dune cache root, in dune's own precedence: an explicit [$DUNE_CACHE_ROOT],
-   else [$XDG_CACHE_HOME/dune], else [~/.cache/dune] (XDG on macOS too — dune
-   does not use [~/Library/Caches]). Directory existence is not required here;
-   the seal step and backends tolerate an absent root. *)
-let dune_cache_root ~env =
-  let of_string s = Result.to_option (Spice_path.Abs.of_string s) in
-  match env "DUNE_CACHE_ROOT" with
-  | Some value when value <> "" -> of_string value
-  | _ -> (
-      match env "XDG_CACHE_HOME" with
-      | Some value when value <> "" -> of_string (value ^ "/dune")
-      | _ -> (
-          match env "HOME" with
-          | Some home when home <> "" -> of_string (home ^ "/.cache/dune")
-          | _ -> None))
+let proper_ancestor ~ancestor path =
+  (not (Spice_path.Abs.equal ancestor path))
+  && Option.is_some (Spice_path.Abs.relativize ~root:ancestor path)
 
-let is_dune_project workspace =
-  List.exists
-    (fun root ->
-      let dir = Spice_path.Abs.to_string (Spice_workspace.Root.dir root) in
-      Sys.file_exists (Filename.concat dir "dune-project"))
-    (Spice_workspace.roots workspace)
+let broad_root ~env ~workspace_roots path =
+  let root = Spice_path.Abs.of_string_exn "/" in
+  Spice_path.Abs.equal path root
+  || List.exists (proper_ancestor ~ancestor:path) workspace_roots
+  ||
+  match env "HOME" with
+  | None -> false
+  | Some home -> (
+      match Spice_path.Abs.of_string home with
+      | Error _ -> false
+      | Ok home -> Spice_path.Abs.equal path (canonical home))
 
-(* Curated per-toolchain cache roots: today just dune's, when the workspace is a
-   dune project. Kept small and explicit; new ecosystems are added by decision,
-   not by pattern. *)
-let toolchain_cache_roots ~env ~workspace =
-  if is_dune_project workspace then Option.to_list (dune_cache_root ~env)
-  else []
+let user_root ~field ?index ~directory ~env ~workspace_roots spelling =
+  let ( let* ) = Result.bind in
+  let* path = abs_of_config_path ~field ?index ~env spelling in
+  let* path = physical_root ~field ?index ~spelling ~directory path in
+  if broad_root ~env ~workspace_roots path then
+    Error (Resolve_error.Broad_root { field; path })
+  else Ok path
+
+let user_roots ~field ~directory ~env ~workspace_roots spellings =
+  let rec loop index roots = function
+    | [] -> Ok (List.rev roots)
+    | spelling :: rest ->
+        let ( let* ) = Result.bind in
+        let* root =
+          user_root ~field ~index ~directory ~env ~workspace_roots spelling
+        in
+        loop (index + 1) (root :: roots) rest
+  in
+  loop 0 [] spellings
 
 let is_linux () =
   String.equal Sys.os_type "Unix" && Sys.file_exists "/proc/sys/kernel/ostype"
@@ -413,48 +516,434 @@ let trusted_workspace_executable_roots workspace =
       | _ -> None
       | exception Unix.Unix_error _ -> None)
 
-let environment_path ~workspace_trusted ~env ~workspace =
-  let inherited = Option.value (env "PATH") ~default:"" in
-  let admitted =
+let canonical_paths paths = List.sort_uniq Spice_path.Abs.compare paths
+
+let root_paths paths =
+  let paths = canonical_paths paths in
+  List.filter
+    (fun path ->
+      not
+        (List.exists
+           (fun candidate -> proper_ancestor ~ancestor:candidate path)
+           paths))
+    paths
+
+let unique_paths paths =
+  List.fold_left
+    (fun unique path ->
+      if List.exists (Spice_path.Abs.equal path) unique then unique
+      else unique @ [ path ])
+    [] paths
+
+let existing_auto_root path =
+  match Spice_path.Abs.of_string path with
+  | Error _ -> None
+  | Ok path -> (
+      match Unix.stat (Spice_path.Abs.to_string path) with
+      | { Unix.st_kind = (Unix.S_DIR | Unix.S_REG); _ } -> Some (canonical path)
+      | _ -> None
+      | exception Unix.Unix_error _ -> None)
+
+let platform_roots ~env ~workspace_roots =
+  let candidates =
+    if is_linux () then
+      [
+        "/bin";
+        "/sbin";
+        "/usr";
+        "/etc";
+        "/lib";
+        "/lib64";
+        "/nix/store";
+        "/run/current-system/sw";
+      ]
+    else
+      [
+        "/bin";
+        "/sbin";
+        "/usr/bin";
+        "/usr/sbin";
+        "/usr/lib";
+        "/usr/libexec";
+        "/usr/share";
+        "/System/Library";
+        "/System/iOSSupport/System/Library";
+        "/Library/Apple/System/Library";
+        "/Library/Apple/usr/lib";
+        "/Library/Filesystems/NetFSPlugins";
+        "/Library/Preferences";
+        "/opt/homebrew";
+        "/usr/local/Cellar";
+        "/usr/local/opt";
+        "/usr/local/lib";
+        "/usr/local/share";
+        "/private/etc";
+        "/private/var/db";
+      ]
+  in
+  let roots =
+    List.concat_map
+      (fun spelling ->
+        match Spice_path.Abs.of_string spelling with
+        | Error _ -> []
+        | Ok lexical -> (
+            match Unix.stat spelling with
+            | { Unix.st_kind = (Unix.S_DIR | Unix.S_REG); _ } ->
+                let physical = canonical lexical in
+                if Spice_path.Abs.equal lexical physical then [ lexical ]
+                else [ lexical; physical ]
+            | _ -> []
+            | exception Unix.Unix_error _ -> []))
+      candidates
+  in
+  match
+    List.find_opt (broad_root ~env ~workspace_roots) roots
+  with
+  | None -> Ok roots
+  | Some path -> Error (Resolve_error.Broad_root { field = "platform"; path })
+
+let path_roots ~scoped ~env ~workspace_roots =
+  let value = Option.value (env "PATH") ~default:"" in
+  let segments = String.split_on_char ':' value in
+  let rec loop index roots = function
+    | [] -> Ok (List.rev roots)
+    | segment :: rest -> (
+        match Spice_path.Abs.of_string segment with
+        | Error error ->
+            Error
+              (root_error ~index ~field:"PATH" ~spelling:segment
+                 (Spice_path.Error.message error))
+        | Ok path -> (
+            let spelling = Spice_path.Abs.to_string path in
+            match Unix.stat spelling with
+            | { Unix.st_kind = Unix.S_DIR; _ } ->
+                let path = canonical path in
+                if scoped && broad_root ~env ~workspace_roots path then
+                  Error (Resolve_error.Broad_root { field = "PATH"; path })
+                else loop (index + 1) (path :: roots) rest
+            | _ ->
+                Error
+                  (root_error ~index ~field:"PATH" ~spelling
+                     "expected a directory")
+            | exception Unix.Unix_error (Unix.ENOENT, _, _) ->
+                loop (index + 1) roots rest
+            | exception Unix.Unix_error (error, _, _) ->
+                Error
+                  (root_error ~index ~field:"PATH" ~spelling
+                     (Unix.error_message error))))
+  in
+  loop 0 [] segments
+
+let toolchain_roots ~env ~workspace_roots =
+  let variables =
+    [
+      ("CAML_LD_LIBRARY_PATH", true);
+      ("OCAMLPATH", true);
+      ("OCAML_TOPLEVEL_PATH", false);
+      ("OPAM_SWITCH_PREFIX", false);
+      ("OCAMLLIB", false);
+      ("DUNE_OCAML_STDLIB", false);
+    ]
+  in
+  let rec add_values name index roots = function
+    | [] -> Ok roots
+    | spelling :: rest -> (
+        match Spice_path.Abs.of_string spelling with
+        | Error error ->
+            Error
+              (root_error ~index ~field:name ~spelling
+                 (Spice_path.Error.message error))
+        | Ok path -> (
+            match Unix.stat spelling with
+            | { Unix.st_kind = Unix.S_DIR; _ } ->
+                let path = canonical path in
+                if broad_root ~env ~workspace_roots path then
+                  Error (Resolve_error.Broad_root { field = name; path })
+                else add_values name (index + 1) ((name, path) :: roots) rest
+            | _ ->
+                Error
+                  (root_error ~index ~field:name ~spelling
+                     "expected a directory")
+            | exception Unix.Unix_error (Unix.ENOENT, _, _) ->
+                add_values name (index + 1) roots rest
+            | exception Unix.Unix_error (error, _, _) ->
+                Error
+                  (root_error ~index ~field:name ~spelling
+                     (Unix.error_message error))))
+  in
+  let rec loop roots = function
+    | [] -> Ok roots
+    | (name, list) :: rest ->
+        let values =
+          match env name with
+          | None -> []
+          | Some value when list -> String.split_on_char ':' value
+          | Some value -> [ value ]
+        in
+        let* roots = add_values name 0 roots values in
+        loop roots rest
+  in
+  loop [] variables
+
+let opam_bin_root ~env toolchain_roots =
+  match
+    List.find_opt
+      (fun (name, _) -> String.equal name "OPAM_SWITCH_PREFIX")
+      toolchain_roots
+  with
+  | Some (_, prefix) -> (
+      match Spice_path.Abs.add_component prefix "bin" with
+      | Error _ -> None
+      | Ok path -> existing_auto_root (Spice_path.Abs.to_string path))
+  | None -> (
+      match env "OPAM_SWITCH_PREFIX" with
+      | None -> None
+      | Some prefix -> existing_auto_root (Filename.concat prefix "bin"))
+
+let environment_path ~scoped ~workspace_trusted ~path_roots ~toolchain_roots
+    ~env ~workspace =
+  let trusted =
     if workspace_trusted then trusted_workspace_executable_roots workspace
     else []
   in
-  List.map Spice_path.Abs.to_string admitted @ [ inherited ]
-  |> List.filter (fun path -> not (String.equal path ""))
-  |> String.concat ":"
+  let admitted = trusted @ Option.to_list (opam_bin_root ~env toolchain_roots) in
+  let paths =
+    if scoped then
+      admitted @ path_roots |> unique_paths
+      |> List.map Spice_path.Abs.to_string
+    else
+      List.map Spice_path.Abs.to_string admitted
+      @ Option.to_list (env "PATH")
+  in
+  String.concat ":" paths
+
+let existing_entry root name =
+  match Spice_path.Abs.add_component root name with
+  | Error _ -> None
+  | Ok path -> (
+      match Unix.lstat (Spice_path.Abs.to_string path) with
+      | _ -> Some path
+      | exception Unix.Unix_error (Unix.ENOENT, _, _) -> None
+      | exception Unix.Unix_error _ -> None)
+
+let workspace_protected_paths workspace =
+  Spice_workspace.roots workspace
+  |> List.concat_map (fun root ->
+      let root = Spice_workspace.Root.dir root in
+      List.filter_map (existing_entry root) [ ".git"; ".spice" ])
+
+let read_metadata_path ~field path =
+  let spelling = Spice_path.Abs.to_string path in
+  match open_in_bin spelling with
+  | input ->
+      Fun.protect
+        ~finally:(fun () -> close_in input)
+        (fun () ->
+          let length = in_channel_length input in
+          if length > 4096 then
+            Error (root_error ~field ~spelling "metadata file is too large")
+          else
+            let value = really_input_string input length |> String.trim in
+            if String.equal value "" || String.contains value '\n'
+               || String.contains value '\r'
+            then Error (root_error ~field ~spelling "expected exactly one line")
+            else Ok value)
+  | exception Sys_error reason -> Error (root_error ~field ~spelling reason)
+
+let resolve_metadata_dir ~field ~env ~workspace_roots ~base spelling =
+  let ( let* ) = Result.bind in
+  let* path =
+    Spice_path.Abs.resolve_any ~base spelling
+    |> Result.map_error (fun error ->
+        root_error ~field ~spelling (Spice_path.Error.message error))
+  in
+  let* path = physical_root ~field ~spelling ~directory:true path in
+  if broad_root ~env ~workspace_roots path then
+    Error (Resolve_error.Broad_root { field; path })
+  else Ok path
+
+let linked_git_roots ~env ~workspace_roots =
+  let rec loop roots = function
+    | [] -> Ok (List.rev roots)
+    | workspace_root :: rest -> (
+        match Spice_path.Abs.add_component workspace_root ".git" with
+        | Error _ -> loop roots rest
+        | Ok git -> (
+            let spelling = Spice_path.Abs.to_string git in
+            match Unix.lstat spelling with
+            | { Unix.st_kind = Unix.S_DIR; _ } -> loop roots rest
+            | { Unix.st_kind = Unix.S_REG; _ } ->
+                let* line = read_metadata_path ~field:"workspace .git" git in
+                let prefix = "gitdir: " in
+                if not (String.starts_with ~prefix line) then
+                  Error
+                    (root_error ~field:"workspace .git" ~spelling
+                       "expected a gitdir line")
+                else
+                  let target =
+                    String.sub line (String.length prefix)
+                      (String.length line - String.length prefix)
+                  in
+                  let* gitdir =
+                    resolve_metadata_dir ~field:"workspace gitdir" ~env
+                      ~workspace_roots ~base:workspace_root target
+                  in
+                  let* roots =
+                    match Spice_path.Abs.add_component gitdir "commondir" with
+                    | Error _ -> Ok (gitdir :: roots)
+                    | Ok commondir -> (
+                        match Unix.lstat (Spice_path.Abs.to_string commondir) with
+                        | { Unix.st_kind = Unix.S_REG; _ } ->
+                            let* target =
+                              read_metadata_path ~field:"workspace commondir"
+                                commondir
+                            in
+                            let* common =
+                              resolve_metadata_dir
+                                ~field:"workspace common git directory" ~env
+                                ~workspace_roots ~base:gitdir target
+                            in
+                            Ok (common :: gitdir :: roots)
+                        | _ -> Ok (gitdir :: roots)
+                        | exception Unix.Unix_error (Unix.ENOENT, _, _) ->
+                            Ok (gitdir :: roots)
+                        | exception Unix.Unix_error (error, _, _) ->
+                            Error
+                              (root_error ~field:"workspace commondir"
+                                 ~spelling:(Spice_path.Abs.to_string commondir)
+                                 (Unix.error_message error)))
+                  in
+                  loop roots rest
+            | _ ->
+                Error
+                  (root_error ~field:"workspace .git" ~spelling
+                     "expected a directory or gitfile")
+            | exception Unix.Unix_error (Unix.ENOENT, _, _) -> loop roots rest
+            | exception Unix.Unix_error (error, _, _) ->
+                Error
+                  (root_error ~field:"workspace .git" ~spelling
+                     (Unix.error_message error))))
+  in
+  loop [] workspace_roots
+
+let resolve_workspace_roots ~read ~env workspace =
+  let rec loop index roots = function
+    | [] -> Ok (List.rev roots)
+    | root :: rest ->
+        let spelling =
+          Spice_workspace.Root.dir root |> Spice_path.Abs.to_string
+        in
+        let path = Spice_workspace.Root.dir root in
+        let ( let* ) = Result.bind in
+        let* path =
+          physical_root ~field:"workspace" ~index ~spelling ~directory:true path
+        in
+        if Read.equal read Read.Project
+           && broad_root ~env ~workspace_roots:[] path
+        then
+          Error (Resolve_error.Broad_root { field = "workspace"; path })
+        else loop (index + 1) (path :: roots) rest
+  in
+  loop 0 [] (Spice_workspace.roots workspace)
 
 let resolve ~sw ?flag ?config_mode ?(require = Require.Enforced) ?(protect = [])
-    ?(writable_roots = []) ?(network = Network.Restricted)
-    ?(toolchain_caches = true) ?(workspace_trusted = false) ~stdenv ~env
+    ?(read = Read.All) ?(readable_roots = []) ?(writable_roots = [])
+    ?(network = Network.Restricted) ?(workspace_trusted = false) ~stdenv ~env
     ~workspace () =
   let* scratch = create_scratch ~sw ~stdenv ~env in
-  let* environment =
-    Spice_sandbox.Environment.make
-      ~path:(environment_path ~workspace_trusted ~env ~workspace)
-      ~scratch ~user_names:[] ~launch:env
-    |> Result.map_error (fun error -> Resolve_error.Invalid_environment error)
-  in
   let mode, origin =
     match (flag, config_mode) with
     | Some mode, _ -> (mode, Status.Flag)
     | None, Some mode -> (mode, Status.Config)
     | None, None -> (Mode.Workspace_write, Status.Default)
   in
-  let preset_roots =
-    if toolchain_caches then toolchain_cache_roots ~env ~workspace else []
+  let* () =
+    if Read.equal read Read.All && readable_roots <> [] then
+      Error Resolve_error.Redundant_readable_roots
+    else Ok ()
   in
-  let writable =
-    List.map
-      (fun root -> canonical (Spice_workspace.Root.dir root))
-      (Spice_workspace.roots workspace)
-    @ List.map canonical (config_writable_roots ~env writable_roots)
-    @ List.map canonical preset_roots
+  let* workspace_roots = resolve_workspace_roots ~read ~env workspace in
+  let* configured_reads =
+    user_roots ~field:"sandbox.readable_roots" ~directory:false ~env
+      ~workspace_roots
+      readable_roots
   in
-  let protect = List.map canonical protect in
-  let policy = sandbox_of_mode ~environment ~writable ~protect ~network mode in
+  let* configured_writes =
+    user_roots ~field:"sandbox.writable_roots" ~directory:true ~env
+      ~workspace_roots
+      writable_roots
+  in
+  let scoped = Read.equal read Read.Project in
+  let* executable_roots = path_roots ~scoped ~env ~workspace_roots in
+  let* toolchain_roots =
+    if scoped then toolchain_roots ~env ~workspace_roots else Ok []
+  in
+  let* platform_roots =
+    if scoped then platform_roots ~env ~workspace_roots else Ok []
+  in
+  let* git_roots =
+    if scoped then linked_git_roots ~env ~workspace_roots else Ok []
+  in
+  let toolchain_paths = List.map snd toolchain_roots in
+  let environment_path =
+    environment_path ~scoped ~workspace_trusted ~path_roots:executable_roots
+      ~toolchain_roots ~env ~workspace
+  in
+  let* environment =
+    Spice_sandbox.Environment.make ~path:environment_path ~scratch
+      ~user_names:[] ~launch:env
+    |> Result.map_error (fun error -> Resolve_error.Invalid_environment error)
+  in
+  let readable =
+    if scoped then
+      root_paths
+        (workspace_roots @ configured_reads @ platform_roots @ executable_roots
+       @ toolchain_paths @ git_roots)
+    else []
+  in
+  let writable = workspace_roots @ configured_writes |> root_paths in
+  let protect =
+    List.filter_map
+      (fun path ->
+        existing_auto_root (Spice_path.Abs.to_string path))
+      protect
+    @ workspace_protected_paths workspace
+    @ git_roots
+    |> canonical_paths
+  in
+  let policy =
+    sandbox_of_mode ~read ~readable ~environment ~writable ~protect ~network
+      mode
+  in
   let backend = host_backend ~stdenv ~env in
   let sandbox = Spice_sandbox.seal ~backend policy in
-  Ok { Effective.mode; origin; require; policy; backend; sandbox }
+  let roots =
+    if scoped then
+      List.map (fun path -> Workspace, path) workspace_roots
+      @ List.map (fun path -> User_configured, path) configured_reads
+      @ List.map (fun path -> Platform, path) platform_roots
+      @ List.map (fun path -> Executable "PATH", path) executable_roots
+      @ List.map (fun (name, path) -> Toolchain name, path) toolchain_roots
+      @ List.map (fun path -> Git_worktree, path) git_roots
+      @ [ Scratch, scratch ]
+    else [ Scratch, scratch ]
+  in
+  let effective_roots =
+    match Spice_sandbox.Policy.reads policy with
+    | Some (Spice_sandbox.Policy.Only roots) -> roots
+    | Some Spice_sandbox.Policy.All | None -> [ scratch ]
+  in
+  let roots =
+    List.fold_left
+      (fun facts ((_, path) as fact) ->
+        if
+          (not (List.exists (Spice_path.Abs.equal path) effective_roots))
+          || List.exists (fun (_, seen) -> Spice_path.Abs.equal path seen) facts
+        then facts
+        else facts @ [ fact ])
+      [] roots
+  in
+  Ok { Effective.mode; read; roots; origin; require; policy; backend; sandbox }
 
 let gate effective =
   match

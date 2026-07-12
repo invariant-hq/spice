@@ -54,16 +54,16 @@ Legacy names are not addressable keys and gain no compatibility alias.
          tui.thinking, run.max_steps, run.subagent_max_concurrent,
          run.subagent_max_depth, run.subagent_wake, run.subagent_max_exchanges,
          permission.mode, permission.unattended, sandbox.mode, sandbox.require,
-         sandbox.writable_roots, sandbox.network, sandbox.toolchain_caches,
-         shell, compaction.auto, notices.fswatch, notices.cr_comments,
-         notices.dune_diagnostics, notices.dune_build, workspace.tooling,
-         instructions.global, instructions.project, instructions.claude_md,
-         instructions.project_max_bytes, skills.enabled, skills.builtin,
-         skills.project, skills.compat, skills.disabled, skills.paths,
-         skills.catalog_max_bytes, tools.anchored_edits, tools.editor,
-         ocaml.merlin_program, web.enabled, web.allow_private_network,
-         web.search_backend, web.fetch_max_bytes, web.output_max_chars,
-         web.timeout_ms, web.max_timeout_ms
+         sandbox.read, sandbox.readable_roots, sandbox.writable_roots,
+         sandbox.network, shell, compaction.auto, notices.fswatch,
+         notices.cr_comments, notices.dune_diagnostics, notices.dune_build,
+         workspace.tooling, instructions.global, instructions.project,
+         instructions.claude_md, instructions.project_max_bytes,
+         skills.enabled, skills.builtin, skills.project, skills.compat,
+         skills.disabled, skills.paths, skills.catalog_max_bytes,
+         tools.anchored_edits, tools.editor, ocaml.merlin_program, web.enabled,
+         web.allow_private_network, web.search_backend, web.fetch_max_bytes,
+         web.output_max_chars, web.timeout_ms, web.max_timeout_ms
   [124]
 
 A typed edit rewrites the file canonically but preserves every unknown field

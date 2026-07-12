@@ -43,7 +43,7 @@ tool result, resumes at the model boundary, and finishes the same turn.
   $ start_fake_openai recovery-finish.jsonl recovery-capture recovery-port
   $ spice run reply crashed-tool --cwd "$PWD" --json --tool-interrupted tool_exec-crashed --reason "interrupted after restart" | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"duration_ms":[0-9]+/"duration_ms":$TIME/'
   spice: session saved; resume with: spice resume 'crashed-tool'
-  {"schema_version":1,"type":"run.started","permission":{"mode":"default"},"sandbox":{"mode":"danger-full-access","origin":"config","require":"enforced","network":"enabled","backend":"none","enforcement":"not_requested"}}
+  {"schema_version":1,"type":"run.started","permission":{"mode":"default"},"sandbox":{"mode":"danger-full-access","read":"all","origin":"config","require":"enforced","network":"enabled","backend":"none","enforcement":"not_requested"}}
   {"schema_version":1,"type":"turn.finished","session_id":"crashed-tool","revision":"sha256:$HASH","turn_id":"turn-1","outcome":"completed","final_text":"recovered final","metrics":{"usage":{"input":0,"output":0,"reasoning":0,"cache_read":0,"cache_write":0},"responses":2,"turns":1,"tool_calls":1,"tool_failures":1,"tool_rejections":0,"tool_calls_by_name":[{"name":"write_file","count":1}],"permission_denials":0},"duration_ms":$TIME}
   $ wait_fake_server
 

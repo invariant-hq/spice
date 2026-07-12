@@ -10,7 +10,7 @@ tool result, so it must not block unattended exec runs.
   $ start_fake_openai todo.jsonl todo-capture todo-port
 
   $ spice run --json --cwd "$PWD" --permission-mode bypass --id todo-run "track the work" 2>&1 | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/; s/"duration_ms":[0-9]+/"duration_ms":$TIME/'
-  {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"danger-full-access","origin":"config","require":"enforced","network":"enabled","backend":"none","enforcement":"not_requested"}}
+  {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"danger-full-access","read":"all","origin":"config","require":"enforced","network":"enabled","backend":"none","enforcement":"not_requested"}}
   {"schema_version":1,"type":"session.started","session_id":"todo-run","revision":"sha256:$HASH"}
   {"schema_version":1,"type":"turn.started","session_id":"todo-run","revision":"sha256:$HASH","turn_id":"turn_$ID","workflow_mode":"build","projection_digest":"sha256:$HASH","context_warnings":[]}
   {"schema_version":1,"type":"turn.finished","session_id":"todo-run","revision":"sha256:$HASH","turn_id":"turn_$ID","outcome":"completed","final_text":"Todo recorded.","metrics":{"usage":{"input":0,"output":0,"reasoning":0,"cache_read":0,"cache_write":0},"responses":2,"turns":1,"tool_calls":0,"tool_failures":0,"tool_rejections":0,"tool_calls_by_name":[],"permission_denials":0},"duration_ms":$TIME}
@@ -40,7 +40,7 @@ arrives with the plan continuation flags in a later step.
   $ start_fake_openai plan.jsonl plan-capture plan-port
 
   $ spice run --json --cwd "$PWD" --permission-mode bypass --mode plan --id plan-run "plan the work" 2>&1 | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/; s/"turn":"turn_[^"]+"/"turn":"turn_$ID"/; s/"duration_ms":[0-9]+/"duration_ms":$TIME/'
-  {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"danger-full-access","origin":"config","require":"enforced","network":"enabled","backend":"none","enforcement":"not_requested"}}
+  {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"danger-full-access","read":"all","origin":"config","require":"enforced","network":"enabled","backend":"none","enforcement":"not_requested"}}
   {"schema_version":1,"type":"session.started","session_id":"plan-run","revision":"sha256:$HASH"}
   {"schema_version":1,"type":"turn.started","session_id":"plan-run","revision":"sha256:$HASH","turn_id":"turn_$ID","workflow_mode":"plan","projection_digest":"sha256:$HASH","context_warnings":[]}
   {"schema_version":1,"type":"session.waiting","session_id":"plan-run","revision":"sha256:$HASH","waiting":{"kind":"host_tool","turn":"turn_$ID","tool_call_id":"plan-1","tool":"propose_plan"},"metrics":{"usage":{"input":0,"output":0,"reasoning":0,"cache_read":0,"cache_write":0},"responses":1,"turns":0,"tool_calls":0,"tool_failures":0,"tool_rejections":0,"tool_calls_by_name":[],"permission_denials":0},"duration_ms":$TIME}
@@ -111,7 +111,7 @@ first request, so the fake server matches script items by content.
   $ SPICE_FAKE_PROVIDER_UNORDERED=1 start_fake_openai subagent.jsonl subagent-capture subagent-port
 
   $ spice run --json --cwd "$PWD" --permission-mode bypass --id subagent-run "delegate exploration" 2>&1 | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/; s/"duration_ms":[0-9]+/"duration_ms":$TIME/'
-  {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"danger-full-access","origin":"config","require":"enforced","network":"enabled","backend":"none","enforcement":"not_requested"}}
+  {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"danger-full-access","read":"all","origin":"config","require":"enforced","network":"enabled","backend":"none","enforcement":"not_requested"}}
   {"schema_version":1,"type":"session.started","session_id":"subagent-run","revision":"sha256:$HASH"}
   {"schema_version":1,"type":"turn.started","session_id":"subagent-run","revision":"sha256:$HASH","turn_id":"turn_$ID","workflow_mode":"build","projection_digest":"sha256:$HASH","context_warnings":[]}
   {"schema_version":1,"type":"turn.finished","session_id":"subagent-run","revision":"sha256:$HASH","turn_id":"turn_$ID","outcome":"completed","final_text":"Delegated.","metrics":{"usage":{"input":0,"output":0,"reasoning":0,"cache_read":0,"cache_write":0},"responses":2,"turns":1,"tool_calls":0,"tool_failures":0,"tool_rejections":0,"tool_calls_by_name":[],"permission_denials":0},"duration_ms":$TIME}

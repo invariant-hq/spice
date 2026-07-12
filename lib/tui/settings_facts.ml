@@ -11,7 +11,7 @@ let version () =
 (* The curated config inventory: the spec's seven family groups and 24 rows
    (03-ia-screens-overlays.md §Settings), each label bound to its real
    {!Spice_host.Config.Field} and how it edits. Fields outside these families —
-   the [run.*], [shell], [sandbox.writable_roots]/[network]/[toolchain_caches],
+   the [run.*], [shell], sandbox root/network lists,
    the byte-budget and path-list fields, [tools.editor], and
    [ocaml.merlin_program] — are not surfaced here; [skills.disabled] is edited
    through the skills tab's toggle instead. *)
@@ -33,6 +33,7 @@ let config_groups_spec =
         ("Unattended permission", Any permission_unattended, Enum_kind);
         ("Sandbox mode", Any sandbox_mode, Enum_kind);
         ("Sandbox required", Any sandbox_require, Enum_kind);
+        ("Sandbox reads", Any sandbox_read, Enum_kind);
       ] );
     ("Context", [ ("Auto compact", Any compaction_auto, Bool_kind) ]);
     ( "Instructions",

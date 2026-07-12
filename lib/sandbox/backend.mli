@@ -78,6 +78,11 @@ val prepare : t -> Policy.t -> (prepared, Error.t) result
 (** [prepare t policy] lowers the confined [policy] with [t], generating the
     enforcement profile once. *)
 
+val validate_policy_paths : Policy.t -> (unit, Error.t) result
+(** [validate_policy_paths policy] checks that every resolved path still exists
+    with the kind required by [policy]. It reports {!Error.stale_policy} rather
+    than silently weakening a prepared profile. *)
+
 val wrap : prepared -> cwd:Spice_path.Abs.t -> argv:Argv.t -> Argv.t
 (** [wrap prepared ~cwd ~argv] is the enforcing argv around [argv]: the prepared
     prefix followed by [argv]'s tokens. Pure prefix application. *)

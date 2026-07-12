@@ -220,14 +220,17 @@ module Field : sig
   val sandbox_require : Sandbox.Require.t t
   (** [sandbox_require] is the [sandbox.require] field. *)
 
+  val sandbox_read : Sandbox.Read.t t
+  (** [sandbox_read] is the [sandbox.read] field. *)
+
+  val sandbox_readable_roots : string list t
+  (** [sandbox_readable_roots] is the [sandbox.readable_roots] field. *)
+
   val sandbox_writable_roots : string list t
   (** [sandbox_writable_roots] is the [sandbox.writable_roots] field. *)
 
   val sandbox_network : Sandbox.Network.t t
   (** [sandbox_network] is the [sandbox.network] field. *)
-
-  val sandbox_toolchain_caches : bool t
-  (** [sandbox_toolchain_caches] is the [sandbox.toolchain_caches] field. *)
 
   val shell : string t
   (** [shell] is the [shell] field. *)
@@ -766,6 +769,16 @@ module Sandbox : sig
   val require : t -> Sandbox.Require.t
   (** [require t] is the configured sandbox enforcement requirement. *)
 
+  val read : t -> Sandbox.Read.t
+  (** [read t] is the confined filesystem read scope. Defaults to
+      {!Sandbox.Read.All}. *)
+
+  val readable_roots : t -> string list
+  (** [readable_roots t] are additional read roots used by
+      {!Sandbox.Read.Project}, as raw path spellings: absolute, [~], or
+      [~/...]. The host sandbox resolver expands and physically resolves them.
+  *)
+
   val writable_roots : t -> string list
   (** [writable_roots t] are the configured extra writable roots for
       workspace-write, as raw path spellings: absolute, [~], or [~/...]. The
@@ -775,10 +788,6 @@ module Sandbox : sig
   (** [network t] is the configured outbound-network capability for confined
       runs. Defaults to {!Sandbox.Network.Restricted}. *)
 
-  val toolchain_caches : t -> bool
-  (** [toolchain_caches t] is whether curated per-toolchain cache roots (for
-      example dune's) are added to workspace-write writable roots. Defaults to
-      [true]. *)
 end
 
 module Instructions : sig

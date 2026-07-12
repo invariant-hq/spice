@@ -5,6 +5,8 @@ and streams are propagated, and restricted network is isolated. Evidence on
 every command names the backend.
 
   $ unset SPICE_SANDBOX_MODE
+  $ export SPICE_SANDBOX_READ=project
+  $ unset CAML_LD_LIBRARY_PATH OCAMLLIB OCAMLPATH OCAML_TOPLEVEL_PATH OPAM_SWITCH_PREFIX DUNE_OCAML_STDLIB
   $ git init -q . 2>/dev/null
   $ mkdir -p .spice xdg-config/spice
 
@@ -20,9 +22,9 @@ every command names the backend.
   > JSONL
 
   $ start_fake_openai enforce.jsonl bubblewrap-capture bubblewrap-port
-  $ spice run --cwd "$PWD" --json --permission-mode bypass --id bubblewrap-run "enforce prompt" | grep -oE '"outcome":"completed"|"sandbox":\{"mode":"workspace-write","origin":"default","require":"enforced","network":"restricted","backend":"linux-bubblewrap","enforcement":"enforceable"\}|"sandbox":\{"kind":"enforced","backend":"linux-bubblewrap"'
+  $ spice run --cwd "$PWD" --json --permission-mode bypass --id bubblewrap-run "enforce prompt" | grep -oE '"outcome":"completed"|"sandbox":\{"mode":"workspace-write","read":"project","origin":"default","require":"enforced","network":"restricted","backend":"linux-bubblewrap","enforcement":"enforceable"\}|"sandbox":\{"kind":"enforced","backend":"linux-bubblewrap"'
   spice: session saved; resume with: spice resume 'bubblewrap-run'
-  "sandbox":{"mode":"workspace-write","origin":"default","require":"enforced","network":"restricted","backend":"linux-bubblewrap","enforcement":"enforceable"}
+  "sandbox":{"mode":"workspace-write","read":"project","origin":"default","require":"enforced","network":"restricted","backend":"linux-bubblewrap","enforcement":"enforceable"}
   "sandbox":{"kind":"enforced","backend":"linux-bubblewrap"
   "sandbox":{"kind":"enforced","backend":"linux-bubblewrap"
   "sandbox":{"kind":"enforced","backend":"linux-bubblewrap"

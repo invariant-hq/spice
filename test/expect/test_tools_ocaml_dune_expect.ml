@@ -23,7 +23,7 @@ let sandbox =
 
 let confined () =
   Spice_sandbox.Policy.confined ~reads:Spice_sandbox.Policy.All
-    ~writable_roots:[] ~protected_meta:[] ~protected_paths:[]
+    ~writable_roots:[] ~protected_paths:[]
     ~network:Spice_sandbox.Policy.Network.Restricted ~environment
 
 let fake_backend =

@@ -244,8 +244,9 @@ let sandbox_check ~sw ~stdenv host =
       let module Status = Spice_host.Sandbox.Status in
       let status = Effective.status effective in
       let posture =
-        Printf.sprintf "mode=%s origin=%s backend=%s %s network=%s"
+        Printf.sprintf "mode=%s read=%s origin=%s backend=%s %s network=%s"
           (Spice_host.Sandbox.Mode.to_string status.Status.mode)
+          (Spice_host.Sandbox.Read.to_string status.Status.read)
           (Status.origin_string status.Status.origin)
           status.Status.backend
           (Status.enforcement_string status.Status.enforcement)

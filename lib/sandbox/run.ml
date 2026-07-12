@@ -153,6 +153,7 @@ let spawn t ~cwd ~argv:command_argv =
         }
   | Refuse error -> Error error
   | Confine { prepared; evidence = command_evidence } ->
+      let* () = Backend.validate_policy_paths t.policy in
       let wrapped_argv = Backend.wrap prepared ~cwd ~argv:command_argv in
       Log.debug (fun m ->
           m "confined spawn program=%s environment_names=%d"

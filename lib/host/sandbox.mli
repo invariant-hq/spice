@@ -50,6 +50,18 @@ module Mode : sig
   (** [pp ppf t] formats [t]'s spelling. *)
 end
 
+module Read : sig
+  (** Filesystem read scope for confined commands. *)
+
+  type t = Project | All
+
+  val all : t list
+  val to_string : t -> string
+  val of_string : string -> t option
+  val equal : t -> t -> bool
+  val pp : Format.formatter -> t -> unit
+end
+
 module Require : sig
   (** Product enforceability requirements. *)
 
@@ -76,6 +88,19 @@ end
 
 module Network = Spice_sandbox.Policy.Network
 (** Requested command network access. *)
+
+type root_origin =
+  | Workspace
+  | Platform
+  | Toolchain of string
+  | Executable of string
+  | Git_worktree
+  | Scratch
+  | User_configured
+(** Why a physical root was admitted to a project-scoped policy. *)
+
+val root_origin_to_string : root_origin -> string
+(** [root_origin_to_string origin] is [origin]'s stable diagnostic spelling. *)
 
 (** {1:gate Gate rejection} *)
 
@@ -105,6 +130,14 @@ module Resolve_error : sig
     | Invalid_scratch_base of Spice_path.Error.t
     | Scratch_creation_failed of string
     | Invalid_environment of Spice_sandbox.Environment.Error.t
+    | Invalid_root of {
+        field : string;
+        index : int option;
+        spelling : string;
+        reason : string;
+      }
+    | Broad_root of { field : string; path : Spice_path.Abs.t }
+    | Redundant_readable_roots
 
   val message : t -> string
   val pp : Format.formatter -> t -> unit
@@ -134,13 +167,15 @@ module Status : sig
 
   type t = {
     mode : Mode.t;
+    read : Read.t;
     origin : origin;
     require : Require.t;
     enforcement : Spice_sandbox.Evidence.t;
     network : network;
     backend : string;
   }
-  (** Derived posture facts. [enforcement] is the sealed pre-spawn expectation:
+  (** Derived posture facts. [read] is the confined filesystem read scope.
+      [enforcement] is the sealed pre-spawn expectation:
       the {!Spice_sandbox.evidence} every command from the sealed sandbox
       reports. [backend] is the product display name: ["none"] for unconfined
       runs, ["external"] for declared boundaries, and the backend id for
@@ -185,11 +220,32 @@ module Effective : sig
       writable and protected paths. This is status metadata, not spawn
       authority. *)
 
+  val read : t -> Read.t
+  (** [read t] is the selected confined read scope. *)
+
+  val roots : t -> (root_origin * Spice_path.Abs.t) list
+  (** [roots t] are project-scoped physical roots paired with their admission
+      reason. Scratch is present for every route. *)
+
+  val readable_roots : t -> Spice_path.Abs.t list
+  (** [readable_roots t] is the resolved root allowlist for project-scoped
+      reads, including runtime and toolchain roots. It is [[]] for all-host,
+      direct, and external routes. *)
+
   val backend : t -> Spice_sandbox.Backend.t
   (** [backend t] is the selected host backend. This is the platform candidate:
       its id names what the platform could enforce, independent of whether [t]'s
       mode requests confinement. See {!Status.backend} for the mode-dependent
       display name. *)
+
+  val writable_roots : t -> Spice_path.Abs.t list
+  (** [writable_roots t] are the effective confined writable roots. *)
+
+  val protected_paths : t -> Spice_path.Abs.t list
+  (** [protected_paths t] are concrete write-protected paths. *)
+
+  val environment_names : t -> string list
+  (** [environment_names t] are the exact child binding names. *)
 
   val sandbox : t -> Spice_sandbox.t
   (** [sandbox t] is {!policy} sealed against {!backend}: the value the shell tool
@@ -209,9 +265,10 @@ val resolve :
   ?config_mode:Mode.t ->
   ?require:Require.t ->
   ?protect:Spice_path.Abs.t list ->
+  ?read:Read.t ->
+  ?readable_roots:string list ->
   ?writable_roots:string list ->
   ?network:Network.t ->
-  ?toolchain_caches:bool ->
   ?workspace_trusted:bool ->
   stdenv:Eio_unix.Stdenv.base ->
   env:(string -> string option) ->
@@ -238,19 +295,18 @@ val resolve :
     [_SPICE_TEST_BUBBLEWRAP_PROBE] substitutes only the availability probe
     executable. Neither seam changes a production enforcement prefix.
 
-    [writable_roots] are configured extra writable subtrees for workspace-write,
-    given as raw path spellings (absolute, or [~]-prefixed for the home
-    directory); each is tilde-expanded and canonicalized like the built-in
-    roots, and protected-meta names still apply under them. It defaults to none.
+    [read] defaults to {!Read.All}. Under {!Read.Project}, workspace roots,
+    [readable_roots], executable search roots, OCaml toolchain roots, and the
+    platform runtime profile form the complete read allowlist. User roots must
+    exist, resolve physically, and may not name filesystem root or [$HOME].
+
+    [writable_roots] are configured extra writable directories for
+    workspace-write. They obey the same spelling and validation rules as
+    [readable_roots]. Both lists accept absolute or [~]-prefixed spellings and
+    default to none.
 
     [network] is the requested outbound-network capability for the confined
-    modes; it defaults to {!Network.Restricted}. [toolchain_caches] (default
-    [true]) adds a curated per-toolchain cache directory to the workspace-write
-    writable roots when the workspace is a recognized project — currently the
-    dune cache ([$DUNE_CACHE_ROOT], else [$XDG_CACHE_HOME/dune], else
-    [~/.cache/dune]) when a workspace root holds a [dune-project].
-    Protected-meta names are applied beneath these roots like every other
-    writable root.
+    modes; it defaults to {!Network.Restricted}.
 
     Resolution does not gate: a resolved posture may still be rejected by
     {!gate}. *)

@@ -109,7 +109,7 @@ terminal turn result are emitted as separate product events.
   $ start_fake_openai json-success.jsonl capture-json port-json
   $ spice run --cwd "$PWD" --json --id json-live "json prompt" | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/g; s/"duration_ms":[0-9]+/"duration_ms":$MS/g'
   spice: session saved; resume with: spice resume 'json-live'
-  {"schema_version":1,"type":"run.started","permission":{"mode":"default"},"sandbox":{"mode":"danger-full-access","origin":"config","require":"enforced","network":"enabled","backend":"none","enforcement":"not_requested"}}
+  {"schema_version":1,"type":"run.started","permission":{"mode":"default"},"sandbox":{"mode":"danger-full-access","read":"all","origin":"config","require":"enforced","network":"enabled","backend":"none","enforcement":"not_requested"}}
   {"schema_version":1,"type":"session.started","session_id":"json-live","revision":"sha256:$HASH"}
   {"schema_version":1,"type":"turn.started","session_id":"json-live","revision":"sha256:$HASH","turn_id":"turn_$ID","workflow_mode":"build","projection_digest":"sha256:$HASH","context_warnings":[]}
   {"schema_version":1,"type":"turn.finished","session_id":"json-live","revision":"sha256:$HASH","turn_id":"turn_$ID","outcome":"completed","final_text":"json final answer","metrics":{"usage":{"input":0,"output":0,"reasoning":0,"cache_read":0,"cache_write":0},"responses":1,"turns":1,"tool_calls":0,"tool_failures":0,"tool_rejections":0,"tool_calls_by_name":[],"permission_denials":0},"duration_ms":$MS}

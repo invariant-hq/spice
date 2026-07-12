@@ -99,7 +99,19 @@ let sandbox_string (mode, origin) =
   Spice_host.Sandbox.Mode.to_string mode ^ " (" ^ origin ^ ")"
 
 let sandbox_label ?flag config =
-  Option.map sandbox_string (sandbox_mode ?flag config)
+  let read =
+    Spice_host.Config.Sandbox.read (Spice_host.Config.sandbox config)
+    |> Spice_host.Sandbox.Read.to_string
+  in
+  Option.map
+    (fun ((mode, _) as sandbox) ->
+      match mode with
+      | Spice_host.Sandbox.Mode.Read_only
+      | Spice_host.Sandbox.Mode.Workspace_write ->
+          sandbox_string sandbox ^ " · " ^ read ^ " reads"
+      | Spice_host.Sandbox.Mode.Danger_full_access
+      | Spice_host.Sandbox.Mode.External_sandbox -> sandbox_string sandbox)
+    (sandbox_mode ?flag config)
 
 let config_warning ?flag config =
   let trust = Spice_host.Config.workspace_trust config in
@@ -707,10 +719,10 @@ let resolve_sandbox ?flag ~sw ~stdenv host ~workspace =
     ?config_mode:(Spice_host.Config.Sandbox.mode sandbox_config)
     ~require:(Spice_host.Config.Sandbox.require sandbox_config)
     ~protect:(Spice_host.Config.sandbox_protected_roots config)
+    ~read:(Spice_host.Config.Sandbox.read sandbox_config)
+    ~readable_roots:(Spice_host.Config.Sandbox.readable_roots sandbox_config)
     ~writable_roots:(Spice_host.Config.Sandbox.writable_roots sandbox_config)
     ~network:(Spice_host.Config.Sandbox.network sandbox_config)
-    ~toolchain_caches:
-      (Spice_host.Config.Sandbox.toolchain_caches sandbox_config)
     ~workspace_trusted
     ~stdenv
     ~env:(Spice_host.Env.get process_env)

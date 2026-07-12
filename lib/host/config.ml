@@ -82,6 +82,10 @@ let sandbox_require_of_string =
   decode_enum ~what:"sandbox requirement" ~all:Sandbox.Require.all
     ~to_string:Sandbox.Require.to_string Sandbox.Require.of_string
 
+let sandbox_read_of_string =
+  decode_enum ~what:"sandbox read scope" ~all:Sandbox.Read.all
+    ~to_string:Sandbox.Read.to_string Sandbox.Read.of_string
+
 let sandbox_network_of_string =
   decode_enum ~what:"sandbox network" ~all:Sandbox.Network.all
     ~to_string:Sandbox.Network.to_string Sandbox.Network.of_string
@@ -421,6 +425,7 @@ let preset_id : Permission.Preset.t Type.Id.t = Type.Id.make ()
 let unattended_id : Permission.Unattended.t Type.Id.t = Type.Id.make ()
 let mode_id : Sandbox.Mode.t Type.Id.t = Type.Id.make ()
 let require_id : Sandbox.Require.t Type.Id.t = Type.Id.make ()
+let read_id : Sandbox.Read.t Type.Id.t = Type.Id.make ()
 let network_id : Sandbox.Network.t Type.Id.t = Type.Id.make ()
 let string_list_id : string list Type.Id.t = Type.Id.make ()
 
@@ -499,7 +504,7 @@ let string_list_codec =
     values = None;
   }
 
-let validate_sandbox_writable_roots label values =
+let validate_sandbox_roots label values =
   let valid spelling =
     String.equal spelling "~"
     || (String.length spelling >= 2 && String.sub spelling 0 2 = "~/")
@@ -517,17 +522,17 @@ let validate_sandbox_writable_roots label values =
   in
   loop 0 values
 
-let sandbox_writable_roots_codec =
+let sandbox_roots_codec =
   {
     string_list_codec with
     parse_text =
       (fun ~label raw ->
         let* values = parse_string_list label raw in
-        validate_sandbox_writable_roots label values);
+        validate_sandbox_roots label values);
     decode_json =
       (fun ~label leaf ->
         let* values = decode_string_list_leaf label leaf in
-        validate_sandbox_writable_roots label values);
+        validate_sandbox_roots label values);
   }
 
 let merlin_codec =
@@ -579,6 +584,11 @@ let sandbox_require_codec =
   vocab_codec ~type_id:require_id ~equal:Sandbox.Require.equal
     ~to_text:Sandbox.Require.to_string ~all:Sandbox.Require.all
     ~of_text:sandbox_require_of_string
+
+let sandbox_read_codec =
+  vocab_codec ~type_id:read_id ~equal:Sandbox.Read.equal
+    ~to_text:Sandbox.Read.to_string ~all:Sandbox.Read.all
+    ~of_text:sandbox_read_of_string
 
 let sandbox_network_codec =
   vocab_codec ~type_id:network_id ~equal:Sandbox.Network.equal
@@ -655,9 +665,10 @@ module Field = struct
     | Permission_unattended : Permission.Unattended.t t
     | Sandbox_mode : Sandbox.Mode.t t
     | Sandbox_require : Sandbox.Require.t t
+    | Sandbox_read : Sandbox.Read.t t
+    | Sandbox_readable_roots : string list t
     | Sandbox_writable_roots : string list t
     | Sandbox_network : Sandbox.Network.t t
-    | Sandbox_toolchain_caches : bool t
     | Shell : string t
     | Compaction_auto : bool t
     | Notices_fswatch : bool t
@@ -703,9 +714,10 @@ module Field = struct
   let permission_unattended = Permission_unattended
   let sandbox_mode = Sandbox_mode
   let sandbox_require = Sandbox_require
+  let sandbox_read = Sandbox_read
+  let sandbox_readable_roots = Sandbox_readable_roots
   let sandbox_writable_roots = Sandbox_writable_roots
   let sandbox_network = Sandbox_network
-  let sandbox_toolchain_caches = Sandbox_toolchain_caches
   let shell = Shell
   let compaction_auto = Compaction_auto
   let notices_fswatch = Notices_fswatch
@@ -751,9 +763,10 @@ module Field = struct
     | Permission_unattended -> "permission.unattended"
     | Sandbox_mode -> "sandbox.mode"
     | Sandbox_require -> "sandbox.require"
+    | Sandbox_read -> "sandbox.read"
+    | Sandbox_readable_roots -> "sandbox.readable_roots"
     | Sandbox_writable_roots -> "sandbox.writable_roots"
     | Sandbox_network -> "sandbox.network"
-    | Sandbox_toolchain_caches -> "sandbox.toolchain_caches"
     | Shell -> "shell"
     | Compaction_auto -> "compaction.auto"
     | Notices_fswatch -> "notices.fswatch"
@@ -803,9 +816,10 @@ module Field = struct
       Any Permission_unattended;
       Any Sandbox_mode;
       Any Sandbox_require;
+      Any Sandbox_read;
+      Any Sandbox_readable_roots;
       Any Sandbox_writable_roots;
       Any Sandbox_network;
-      Any Sandbox_toolchain_caches;
       Any Shell;
       Any Compaction_auto;
       Any Notices_fswatch;
@@ -851,21 +865,22 @@ module Field = struct
     | Notices_cr_comments | Notices_dune_diagnostics | Notices_dune_build
     | Instructions_global | Instructions_project | Instructions_claude_md
     | Skills_enabled | Skills_builtin | Skills_project | Skills_compat
-    | Sandbox_toolchain_caches | Tools_anchored_edits | Web_enabled
-    | Web_allow_private_network ->
+    | Tools_anchored_edits | Web_enabled | Web_allow_private_network ->
         bool_codec.values
     | Run_max_steps | Run_subagent_max_concurrent | Run_subagent_max_depth
     | Run_subagent_max_exchanges | Instructions_project_max_bytes
     | Skills_catalog_max_bytes | Web_fetch_max_bytes | Web_output_max_chars
     | Web_timeout_ms | Web_max_timeout_ms ->
         int_codec.values
-    | Sandbox_writable_roots | Skills_disabled | Skills_paths ->
+    | Sandbox_readable_roots | Sandbox_writable_roots | Skills_disabled
+    | Skills_paths ->
         string_list_codec.values
     | Ocaml_merlin_program -> merlin_codec.values
     | Permission_mode -> permission_mode_codec.values
     | Permission_unattended -> unattended_codec.values
     | Sandbox_mode -> sandbox_mode_codec.values
     | Sandbox_require -> sandbox_require_codec.values
+    | Sandbox_read -> sandbox_read_codec.values
     | Sandbox_network -> sandbox_network_codec.values
     | Tools_editor -> tools_editor_codec.values
     | Web_search_backend -> web_search_backend_codec.values
@@ -908,9 +923,10 @@ module Field = struct
           "config key permission.rules is not a scalar value"
     | "sandbox.mode" -> Ok (Any Sandbox_mode)
     | "sandbox.require" -> Ok (Any Sandbox_require)
+    | "sandbox.read" -> Ok (Any Sandbox_read)
+    | "sandbox.readable_roots" -> Ok (Any Sandbox_readable_roots)
     | "sandbox.writable_roots" -> Ok (Any Sandbox_writable_roots)
     | "sandbox.network" -> Ok (Any Sandbox_network)
-    | "sandbox.toolchain_caches" -> Ok (Any Sandbox_toolchain_caches)
     | "shell" -> Ok (Any Shell)
     | "compaction.auto" -> Ok (Any Compaction_auto)
     | "notices.fswatch" -> Ok (Any Notices_fswatch)
@@ -1042,14 +1058,17 @@ let field_spec : type a. a Field.t -> a spec =
       make_spec sandbox_require_codec
         ~default:(builtin field Sandbox.Require.Enforced)
         ~env:("SPICE_SANDBOX_REQUIRE", sandbox_require_of_string)
+  | Field.Sandbox_read ->
+      make_spec sandbox_read_codec ~default:(builtin field Sandbox.Read.All)
+        ~env:("SPICE_SANDBOX_READ", sandbox_read_of_string)
+  | Field.Sandbox_readable_roots ->
+      make_spec sandbox_roots_codec ~default:(builtin field [])
   | Field.Sandbox_writable_roots ->
-      make_spec sandbox_writable_roots_codec ~default:(builtin field [])
+      make_spec sandbox_roots_codec ~default:(builtin field [])
   | Field.Sandbox_network ->
       make_spec sandbox_network_codec
         ~default:(builtin field Sandbox.Network.Restricted)
         ~env:("SPICE_SANDBOX_NETWORK", sandbox_network_of_string)
-  | Field.Sandbox_toolchain_caches ->
-      make_spec bool_codec ~default:(builtin field true)
   | Field.Shell ->
       make_spec string_codec
         ~env:("SPICE_SHELL", parse_string "shell")
@@ -2260,9 +2279,10 @@ module Sandbox = struct
      host sandbox adapter, or fails fast. *)
   let mode t = find Field.sandbox_mode t
   let require t = value Field.sandbox_require t
+  let read t = value Field.sandbox_read t
+  let readable_roots t = value Field.sandbox_readable_roots t
   let writable_roots t = value Field.sandbox_writable_roots t
   let network t = value Field.sandbox_network t
-  let toolchain_caches t = value Field.sandbox_toolchain_caches t
 end
 
 module Instructions = struct

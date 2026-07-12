@@ -11,10 +11,11 @@
     hashes; only the availability probe touches the host.
 
     The base profile is ported from the Codex reference agent's Seatbelt policy,
-    which is production-proven against real build tools. Reads are allowed
-    everywhere; writes are denied except under the policy's writable roots, with
-    protected metadata names and protected absolute paths carved out; network is
-    denied unless the policy enables it.
+    which is production-proven against real build tools. [Policy.All] permits
+    host-wide reads and executable mappings; [Policy.Only roots] admits both
+    operations only beneath the resolved roots. Writes are denied except under
+    writable roots, with concrete protected paths carved out; network is denied
+    unless the policy enables it.
 
     Policy paths are used as given. Hosts canonicalize writable and
     protected paths (for example [/tmp] to [/private/tmp]) before building the

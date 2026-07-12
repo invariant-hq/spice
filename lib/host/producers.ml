@@ -61,6 +61,11 @@ let start ~sw ~stdenv host ~inbox ~workspace ~sandbox ~cwd ~root () =
   let trusted = Trust.is_trusted (Config.workspace_trust config) in
   let mutating = Sandbox.mutating_tools sandbox in
   let process_sandbox = Sandbox.Effective.sandbox sandbox in
+  let process_env =
+    Sandbox.Effective.policy sandbox |> Spice_sandbox.Policy.environment
+    |> Spice_sandbox.Environment.bindings
+  in
+  let process_env name = List.assoc_opt name process_env in
   (* [workspace.tooling] gates the OCaml/Dune integration: when it does not
      engage — [off], or [auto] outside a Dune workspace — the [dune describe]
      capture, the Merlin resolution, and the [dune build --watch] instance are
@@ -90,6 +95,7 @@ let start ~sw ~stdenv host ~inbox ~workspace ~sandbox ~cwd ~root () =
     in
     Spice_ocaml_dune.Rpc.Instance.create ~fs:(Eio.Stdenv.fs stdenv)
       ~net:(Eio.Stdenv.net stdenv) ~workspace ?start
+      ~env:process_env
       ~sleep:(Eio.Time.sleep (Eio.Stdenv.clock stdenv))
       ()
   in

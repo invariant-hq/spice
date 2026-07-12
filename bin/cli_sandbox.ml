@@ -82,6 +82,7 @@ let print_status_text ~verbose host effective =
   let platform, supported = platform_facts () in
   let status = Effective.status effective in
   stdout_printf "mode=%s\n" (Host_sandbox.Mode.to_string status.Status.mode);
+  stdout_printf "read=%s\n" (Host_sandbox.Read.to_string status.Status.read);
   stdout_printf "origin=%s\n" (Status.origin_string status.Status.origin);
   stdout_printf "require=%s\n" (require_string host);
   stdout_printf "platform=%s supported=%b\n" platform supported;
@@ -119,6 +120,7 @@ let status_json host effective =
     [
       ( "mode",
         Jsont.Json.string (Host_sandbox.Mode.to_string status.Status.mode) );
+      ("read", Jsont.Json.string (Host_sandbox.Read.to_string status.Status.read));
       ("origin", Jsont.Json.string (Status.origin_string status.Status.origin));
       ("require", Jsont.Json.string (require_string host));
       ( "platform",
@@ -177,19 +179,16 @@ let display_path ~workspace path =
     | Some rel -> "./" ^ Spice_path.Rel.to_string rel
     | None -> Spice_path.Abs.to_string path
 
-let environment_names effective =
-  Effective.policy effective |> Sandbox.Policy.environment
-  |> Sandbox.Environment.names
+let environment_names = Effective.environment_names
 
 let policy_facts effective =
   match Effective.policy effective with
   | Sandbox.Policy.Confined _ as policy -> Some policy
   | Sandbox.Policy.Direct _ | Sandbox.Policy.External _ -> None
 
-(* The confined mount keeps the whole host readable (see [readable=] below), so
-   a missing toolchain is never the sandbox's doing; this line shows where
-   [dune] resolves from — or which rungs were checked — so the two failure
-   classes are told apart at a glance. *)
+(* This line shows where [dune] resolves from — or which rungs were checked —
+   so a missing executable and a missing project-read dependency remain
+   distinguishable. *)
 let toolchain_status host workspace =
   let trusted =
     Spice_host.Config.workspace_trust (Spice_host.Host.config host)
@@ -218,22 +217,33 @@ let explain_text host workspace effective =
   stdout_printf "backend=%s %s\n" status.Status.backend
     (Status.enforcement_string status.Status.enforcement);
   stdout_printf "network=%s\n" (Status.network_string status.Status.network);
+  stdout_printf "reads=%s\n"
+    (match status.Status.read with
+    | Host_sandbox.Read.All -> "all host files"
+    | Host_sandbox.Read.Project -> "project + system/runtime + toolchain");
   (match policy_facts effective with
   | None -> ()
   | Some policy ->
-      (* The confined mount is full read of the host root, not just the
-         workspace, so a command can still read system files and the developer
-         toolchain; only writes are scoped. *)
-      stdout_printf "readable=/ (read-only)\n";
+      List.iter
+        (fun (origin, path) ->
+          match origin with
+          | Host_sandbox.Scratch -> ()
+          | Host_sandbox.Workspace | Host_sandbox.Platform
+          | Host_sandbox.Toolchain _ | Host_sandbox.Executable _
+          | Host_sandbox.Git_worktree | Host_sandbox.User_configured ->
+              stdout_printf "readable=%s origin=%s\n"
+                (display_path ~workspace path)
+                (Host_sandbox.root_origin_to_string origin))
+        (Effective.roots effective);
+      stdout_printf "scratch=private\n";
       stdout_printf "writable=%s\n"
         (match Sandbox.Policy.writable_roots policy with
         | [] -> "(none)"
         | roots -> String.concat "," (List.map (display_path ~workspace) roots));
       stdout_printf "protected=%s\n"
         (String.concat ","
-           (Sandbox.Policy.protected_meta policy
-           @ List.map (display_path ~workspace)
-               (Sandbox.Policy.protected_paths policy))));
+           (List.map (display_path ~workspace)
+              (Sandbox.Policy.protected_paths policy))));
   stdout_printf "environment=%s\n"
     (String.concat "," (environment_names effective));
   stdout_printf "toolchain=%s\n" (toolchain_status host workspace);
@@ -256,6 +266,7 @@ let explain_json host workspace effective =
           ] );
       ( "mode",
         Jsont.Json.string (Host_sandbox.Mode.to_string status.Status.mode) );
+      ("read", Jsont.Json.string (Host_sandbox.Read.to_string status.Status.read));
       ("origin", Jsont.Json.string (Status.origin_string status.Status.origin));
       ("require", Jsont.Json.string (require_string host));
       ( "network",
@@ -276,14 +287,27 @@ let explain_json host workspace effective =
               List.map
                 (fun path -> Jsont.Json.string (Spice_path.Abs.to_string path))
                 (Sandbox.Policy.writable_roots policy)) );
-      ( "protected_meta",
+      ( "readable_roots",
         json_list
-          (match policy with
-          | None -> []
-          | Some policy ->
-              List.map
-                (fun value -> Jsont.Json.string value)
-                (Sandbox.Policy.protected_meta policy)) );
+          (List.map
+             (fun (origin, path) ->
+               json_obj
+                 [
+                   ( "origin",
+                     Jsont.Json.string
+                       (Host_sandbox.root_origin_to_string origin) );
+                   ("path", Jsont.Json.string (Spice_path.Abs.to_string path));
+                 ])
+             (List.filter
+                (fun (origin, _) ->
+                  match origin with
+                  | Host_sandbox.Scratch -> false
+                  | Host_sandbox.Workspace | Host_sandbox.Platform
+                  | Host_sandbox.Toolchain _ | Host_sandbox.Executable _
+                  | Host_sandbox.Git_worktree | Host_sandbox.User_configured ->
+                      true)
+                (Effective.roots effective))) );
+      ("scratch", Jsont.Json.string "private");
       ( "protected_paths",
         json_list
           (match policy with
@@ -350,9 +374,9 @@ let explain_command =
     (CCmd.info "explain"
        ~doc:
          "Report the sandbox policy Spice would apply to this workspace: mode, \
-          backend, network, writable roots, protected entries, and environment \
-          stripping. This reports operating-system authority, not permission \
-          approval for model-authored shell commands."
+          backend, read scope, network, effective roots, protected entries, \
+          and environment stripping. This reports operating-system authority, \
+          not permission approval for model-authored shell commands."
        ~exits)
     (exit_term
        CTerm.(const explain $ json_flag $ Cli_arg.run_overrides $ cwd_arg))
@@ -369,14 +393,14 @@ let group =
              "Reports the sandbox posture runs would use without loading \
               provider credentials or touching a session: $(b,status) for \
               platform and backend facts, $(b,explain) for the concrete policy \
-              — writable roots, protected metadata names and concrete paths, \
-              network, and environment stripping.";
+              — read and writable roots, concrete protected paths, network, \
+              and environment stripping.";
            `P
-             "For $(b,workspace-write), writable roots are shaped by the \
-              workspace, temp roots, $(b,sandbox.writable_roots), and the \
-              $(b,sandbox.toolchain_caches) preset. Network posture is shaped \
-              by $(b,sandbox.network). Confined commands retain read access \
-              across the host; permission review is a separate boundary.";
+             "$(b,sandbox.read=project) confines reads to resolved workspace, \
+              runtime, executable, toolchain, Git-worktree, and configured \
+              roots. $(b,sandbox.read=all) explicitly retains host-wide reads. \
+              $(b,sandbox.writable_roots) and $(b,sandbox.network) shape \
+              independent write and network authority.";
          ]
        ~exits)
     [ status_command; explain_command ]

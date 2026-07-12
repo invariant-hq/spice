@@ -27,7 +27,7 @@ says so; everything else is healthy in a fresh workspace.
   ocaml toolchain: ok
     dune: $DUNE
   sandbox: ok
-    mode=danger-full-access origin=config backend=none not_requested network=enabled
+    mode=danger-full-access read=all origin=config backend=none not_requested network=enabled
   sessions: ok
     0 documents
   project config: ok
@@ -60,7 +60,7 @@ With a credential present, doctor is clean and exits zero.
   ocaml toolchain: ok
     dune: $DUNE
   sandbox: ok
-    mode=danger-full-access origin=config backend=none not_requested network=enabled
+    mode=danger-full-access read=all origin=config backend=none not_requested network=enabled
   sessions: ok
     0 documents
   project config: ok

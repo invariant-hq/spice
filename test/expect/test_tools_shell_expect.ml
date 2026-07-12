@@ -430,7 +430,7 @@ let fake_backend =
 
 let confined ?(writable_roots = []) () =
   Spice_sandbox.Policy.confined ~reads:Spice_sandbox.Policy.All
-    ~writable_roots ~protected_meta:[] ~protected_paths:[]
+    ~writable_roots ~protected_paths:[]
     ~network:Spice_sandbox.Policy.Network.Restricted ~environment:(environment ())
 
 let%expect_test "confined command reports enforced evidence and strips env" =

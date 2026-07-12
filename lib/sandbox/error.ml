@@ -6,13 +6,14 @@
 let invalid_arg' fn message =
   invalid_arg ("Spice_sandbox.Error." ^ fn ^ ": " ^ message)
 
-type kind = Unavailable | Invalid_request | Invalid_cwd
+type kind = Unavailable | Invalid_request | Invalid_cwd | Stale_policy
 type t = { kind : kind; message : string }
 
 let kind_to_string = function
   | Unavailable -> "unavailable"
   | Invalid_request -> "invalid_request"
   | Invalid_cwd -> "invalid_cwd"
+  | Stale_policy -> "stale_policy"
 
 let make kind message =
   if String.equal message "" then invalid_arg' "make" "message is empty";
@@ -21,14 +22,15 @@ let make kind message =
 let unavailable message = make Unavailable message
 let invalid_request message = make Invalid_request message
 let invalid_cwd message = make Invalid_cwd message
+let stale_policy message = make Stale_policy message
 let message t = t.message
 
 let equal a b =
   match (a.kind, b.kind) with
   | Unavailable, Unavailable | Invalid_request, Invalid_request
-  | Invalid_cwd, Invalid_cwd ->
+  | Invalid_cwd, Invalid_cwd | Stale_policy, Stale_policy ->
       String.equal a.message b.message
-  | (Unavailable | Invalid_request | Invalid_cwd), _ -> false
+  | (Unavailable | Invalid_request | Invalid_cwd | Stale_policy), _ -> false
 
 let pp ppf t = Format.pp_print_string ppf t.message
 

@@ -52,3 +52,40 @@ let wrap { prefix; chdir; _ } ~cwd ~argv =
   | program :: args -> Argv.make ~program args
 
 let profile prepared = prepared.profile
+
+let validate_policy_paths policy =
+  match policy with
+  | Policy.Direct _ | Policy.External _ -> Ok ()
+  | Policy.Confined _ ->
+      let readable =
+        match Policy.reads policy with
+        | Some (Policy.Only roots) -> roots
+        | Some Policy.All | None -> []
+      in
+      let directories =
+        Environment.scratch (Policy.environment policy)
+        :: Policy.writable_roots policy
+      in
+      let entries = Policy.protected_paths policy in
+      let rec validate ~directory = function
+        | [] -> Ok ()
+        | path :: rest -> (
+            let spelling = Spice_path.Abs.to_string path in
+            let inspect = if directory then Unix.stat else Unix.lstat in
+            match inspect spelling with
+            | stats
+              when (not directory) || stats.Unix.st_kind = Unix.S_DIR ->
+                validate ~directory rest
+            | _ ->
+                Error
+                  (Error.stale_policy
+                     (Printf.sprintf "sandbox root changed kind: %s" spelling))
+            | exception Unix.Unix_error (error, _, _) ->
+                Error
+                  (Error.stale_policy
+                     (Printf.sprintf "sandbox root is stale: %s: %s" spelling
+                        (Unix.error_message error))))
+      in
+      match validate ~directory:false (readable @ entries) with
+      | Error _ as error -> error
+      | Ok () -> validate ~directory:true directories

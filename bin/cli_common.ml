@@ -478,10 +478,10 @@ let resolve_sandbox ~sw ~stdenv host ~workspace args =
     ?config_mode:(Spice_host.Config.Sandbox.mode sandbox_config)
     ~require
     ~protect:(Spice_host.Config.sandbox_protected_roots config)
+    ~read:(Spice_host.Config.Sandbox.read sandbox_config)
+    ~readable_roots:(Spice_host.Config.Sandbox.readable_roots sandbox_config)
     ~writable_roots:(Spice_host.Config.Sandbox.writable_roots sandbox_config)
     ~network:(Spice_host.Config.Sandbox.network sandbox_config)
-    ~toolchain_caches:
-      (Spice_host.Config.Sandbox.toolchain_caches sandbox_config)
     ~workspace_trusted
     ~stdenv
     ~env:(Spice_host.Env.get process_env)

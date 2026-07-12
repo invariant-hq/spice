@@ -44,7 +44,6 @@ type t = private
   | Confined of {
       reads : reads;
       writable_roots : Spice_path.Abs.t list;
-      protected_meta : string list;
       protected_paths : Spice_path.Abs.t list;
       network : Network.t;
       environment : Environment.t;
@@ -59,19 +58,16 @@ type t = private
 val confined :
   reads:reads ->
   writable_roots:Spice_path.Abs.t list ->
-  protected_meta:string list ->
   protected_paths:Spice_path.Abs.t list ->
   network:Network.t ->
   environment:Environment.t ->
   t
-(** [confined ~reads ~writable_roots ~protected_meta ~protected_paths ~network]
+(** [confined ~reads ~writable_roots ~protected_paths ~network]
     is a confined policy with normalized lists.
 
-    Writable roots are included in [Only] read roots. Duplicate paths and
-    metadata names collapse and order is canonical.
-
-    Raises [Invalid_argument] if an element of [protected_meta] is not a single
-    valid path component. *)
+    Writable roots and private scratch are included in [Only] read roots.
+    Duplicate and redundant descendant roots collapse, order is canonical, and
+    protected paths outside writable roots are discarded. *)
 
 val direct : environment:Environment.t -> t
 (** [direct ~environment] requests direct execution without Spice filesystem or network
@@ -93,21 +89,9 @@ val writable_roots : t -> Spice_path.Abs.t list
 (** [writable_roots t] is the confined policy's writable roots in canonical
     order, or [[]] when [t] is direct or external. *)
 
-val protected_meta : t -> string list
-(** [protected_meta t] is the confined policy's protected relative metadata
-    names in canonical order, or [[]] when [t] is direct or external. *)
-
 val protected_paths : t -> Spice_path.Abs.t list
 (** [protected_paths t] is the confined policy's protected absolute paths in
     canonical order, or [[]] when [t] is direct or external. *)
-
-val write_carveouts : t -> Spice_path.Abs.t list
-(** [write_carveouts t] is the concrete set of paths that remains read-only
-    beneath [t]'s writable roots.
-
-    For confined policies this expands {!protected_meta} under every writable
-    root and includes protected absolute paths beneath a writable root. It is
-    [[]] for direct and external policies. *)
 
 val network : t -> Network.t option
 (** [network t] is the confined policy's network access, or [None] when [t] is

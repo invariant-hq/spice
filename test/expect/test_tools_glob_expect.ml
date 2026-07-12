@@ -436,7 +436,7 @@ let%expect_test "sandbox refusal prevents ripgrep spawn" =
   let refusing =
     Spice_sandbox.seal
       (Spice_sandbox.Policy.confined ~reads:Spice_sandbox.Policy.All
-         ~writable_roots:[] ~protected_meta:[] ~protected_paths:[]
+         ~writable_roots:[] ~protected_paths:[]
          ~network:Spice_sandbox.Policy.Network.Restricted ~environment)
   in
   Glob.run ~sandbox:refusing ~fs ~workspace (Glob.Input.make "**/*.ml")

@@ -56,7 +56,7 @@ accepted and shell results carry declared_external evidence.
   $ start_fake_openai external-run.jsonl external-capture external-port
   $ SPICE_SANDBOX_REQUIRE=enforced-or-external spice run --cwd "$PWD" --json --permission-mode bypass --sandbox external-sandbox --id external-run "external prompt" | sed -n '/"type":"run.started"/p; s/.*\("sandbox":{"kind":"declared_external"}\).*/\1/p; s/.*\("final_text":"external final"\).*/\1/p'
   spice: session saved; resume with: spice resume 'external-run'
-  {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"external-sandbox","origin":"flag","require":"enforced-or-external","network":"external","backend":"external","enforcement":"declared"}}
+  {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"external-sandbox","read":"all","origin":"flag","require":"enforced-or-external","network":"external","backend":"external","enforcement":"declared"}}
   "sandbox":{"kind":"declared_external"}
   "final_text":"external final"
   $ wait_fake_server
@@ -97,7 +97,7 @@ when an unavailable backend is reported as refused data.
   $ start_fake_openai network-enabled-run.jsonl network-capture network-port
   $ _SPICE_TEST_SANDBOX_UNAVAILABLE=1 SPICE_SANDBOX_REQUIRE=off SPICE_SANDBOX_MODE=workspace-write SPICE_SANDBOX_NETWORK=enabled spice run --cwd "$PWD" --json --permission-mode bypass --id network-enabled-run "network prompt" | sed -n '/"type":"run.started"/p; s/.*\("final_text":"network final"\).*/\1/p'
   spice: session saved; resume with: spice resume 'network-enabled-run'
-  {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"workspace-write","origin":"config","require":"off","network":"enabled","backend":"none","enforcement":"refused"}}
+  {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"workspace-write","read":"all","origin":"config","require":"off","network":"enabled","backend":"none","enforcement":"refused"}}
   "final_text":"network final"
   $ wait_fake_server
 
@@ -112,7 +112,7 @@ unconfined.
   $ start_fake_openai read-only-run.jsonl read-only-capture read-only-port
   $ _SPICE_TEST_SANDBOX_UNAVAILABLE=1 SPICE_SANDBOX_REQUIRE=off spice run --cwd "$PWD" --json --permission-mode bypass --sandbox read-only --id read-only-run "read-only prompt" | sed -n '/"type":"run.started"/p; s/.*\("sandbox":{"kind":"refused"\).*/\1/p; s/.*\("final_text":"read-only final"\).*/\1/p'
   spice: session saved; resume with: spice resume 'read-only-run'
-  {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"read-only","origin":"flag","require":"off","network":"restricted","backend":"none","enforcement":"refused"}}
+  {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"read-only","read":"all","origin":"flag","require":"off","network":"restricted","backend":"none","enforcement":"refused"}}
   "sandbox":{"kind":"refused"
   "final_text":"read-only final"
   $ wait_fake_server
@@ -136,6 +136,7 @@ seam pins the backend; the platform line is host-dependent and normalized.
 
   $ _SPICE_TEST_SANDBOX_UNAVAILABLE=1 SPICE_SANDBOX_MODE=workspace-write spice sandbox status --cwd "$PWD" | sed -E 's/platform=[a-z]+ supported=(true|false)/platform=HOST/'
   mode=workspace-write
+  read=all
   origin=config
   require=enforced
   platform=HOST
@@ -143,7 +144,7 @@ seam pins the backend; the platform line is host-dependent and normalized.
   restricted=false
 
   $ _SPICE_TEST_SANDBOX_UNAVAILABLE=1 SPICE_SANDBOX_MODE=workspace-write spice sandbox status --json --cwd "$PWD" | sed -E 's/"platform":\{"id":"[a-z]+","supported":(true|false)\}/"platform":$PLATFORM/'
-  {"schema_version":1,"type":"sandbox_status","mode":"workspace-write","origin":"config","require":"enforced","platform":$PLATFORM,"backend":{"id":"none","available":false,"enforcement":"refused"},"restricted_modes_available":false,"diagnostics":["sandbox backend forced unavailable (_SPICE_TEST_SANDBOX_UNAVAILABLE=1)"]}
+  {"schema_version":1,"type":"sandbox_status","mode":"workspace-write","read":"all","origin":"config","require":"enforced","platform":$PLATFORM,"backend":{"id":"none","available":false,"enforcement":"refused"},"restricted_modes_available":false,"diagnostics":["sandbox backend forced unavailable (_SPICE_TEST_SANDBOX_UNAVAILABLE=1)"]}
 
 The Bubblewrap probe is an availability question, so a non-terminating probe
 must become refused data before the outer watchdog fires. The private seam
@@ -187,16 +188,17 @@ A completed nonzero probe is structured as ordinary unavailable data too.
 sandbox explain reports the policy a run would apply, including protected
 metadata and environment stripping facts, without secret values.
 
-  $ _SPICE_TEST_SANDBOX_UNAVAILABLE=1 SPICE_SANDBOX_MODE=workspace-write FAKE_PROVIDER_TOKEN=tok-value spice sandbox explain --cwd "$PWD" | sed -E 's/^writable=.*/writable=$ROOTS/; s/^backend=.*/backend=$BACKEND/; s/environment=inherited [0-9]+, stripped [0-9]+/environment=inherited $N, stripped $M/; s/^toolchain=.*/toolchain=$TOOLCHAIN/'
+  $ _SPICE_TEST_SANDBOX_UNAVAILABLE=1 SPICE_SANDBOX_MODE=workspace-write FAKE_PROVIDER_TOKEN=tok-value spice sandbox explain --cwd "$PWD" | sed -E 's/^writable=.*/writable=$ROOTS/; s/^backend=.*/backend=$BACKEND/; s/^environment=.*/environment=$NAMES/; s/^toolchain=.*/toolchain=$TOOLCHAIN/'
   workspace=.
   mode=workspace-write (config)
   require=enforced
   backend=$BACKEND
   network=restricted
-  readable=/ (read-only)
+  reads=all host files
+  scratch=private
   writable=$ROOTS
-  protected=.git,.spice,./.spice,./xdg-config/spice,./xdg-data/spice,./xdg-state/spice
-  environment=inherited $N, stripped $M
+  protected=./.git,./xdg-config/spice,./xdg-data/spice
+  environment=$NAMES
   toolchain=$TOOLCHAIN
   origin sandbox.mode=env SPICE_SANDBOX_MODE
 

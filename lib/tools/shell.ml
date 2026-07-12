@@ -185,7 +185,7 @@ module Config = struct
     in
     Spice_sandbox.seal
       (Spice_sandbox.Policy.confined ~reads:Spice_sandbox.Policy.All
-         ~writable_roots:[] ~protected_meta:[] ~protected_paths:[]
+         ~writable_roots:[] ~protected_paths:[]
          ~network:Spice_sandbox.Policy.Network.Restricted ~environment)
 
   let make ?(shell = default_shell) ?sandbox ?(network_restricted = false)

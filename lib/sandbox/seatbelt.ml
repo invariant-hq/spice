@@ -21,9 +21,6 @@ let base_policy =
 ; start with closed-by-default
 (deny default)
 
-; allow read-only file operations
-(allow file-read*)
-
 ; child processes inherit the policy of their parent
 (allow process-exec)
 (allow process-fork)
@@ -36,6 +33,44 @@ let base_policy =
   (require-all
     (path "/dev/null")
     (vnode-type CHARACTER-DEVICE)))
+
+; inherited stdio is the host-owned process channel, not host-file authority
+(allow file-read-data file-test-existence file-write-data
+  (subpath "/dev/fd"))
+(allow file-read* (regex #"^/dev/fd/(0|1|2)$"))
+(allow file-write* (regex #"^/dev/fd/(1|2)$"))
+(allow file-read-metadata
+  (literal "/dev")
+  (literal "/dev/stdin")
+  (literal "/dev/stdout")
+  (literal "/dev/stderr"))
+
+; guarded vnodes and the sandbox-container query used by macOS runtimes
+(allow system-mac-syscall (mac-policy-name "vnguard"))
+(allow system-mac-syscall
+  (require-all
+    (mac-policy-name "Sandbox")
+    (mac-syscall-number 67)))
+
+; resolve standard symlinks and firmlink ancestors without granting their data
+(allow file-read-metadata file-test-existence
+  (literal "/etc")
+  (literal "/tmp")
+  (literal "/var")
+  (literal "/private/etc/localtime"))
+(allow file-read-metadata file-test-existence
+  (path-ancestors "/System/Volumes/Data/private"))
+(allow file-read* file-test-existence (literal "/"))
+(allow system-fsctl (fsctl-command FSIOC_CAS_BSDFLAGS))
+
+; standard non-secret device handles required by libc and language runtimes
+(allow file-read* file-test-existence
+  (literal "/dev/autofs_nowait")
+  (literal "/dev/random")
+  (literal "/dev/urandom"))
+(allow file-read* file-test-existence file-write-data
+  (literal "/dev/null")
+  (literal "/dev/zero"))
 
 ; sysctls permitted.
 (allow sysctl-read
@@ -114,8 +149,28 @@ let base_policy =
   (ipc-posix-name-regex #"^/__KMP_REGISTERED_LIB_[0-9]+$"))
 
 (allow mach-lookup
+  (global-name "com.apple.analyticsd")
+  (global-name "com.apple.analyticsd.messagetracer")
+  (global-name "com.apple.appsleep")
+  (global-name "com.apple.bsd.dirhelper")
+  (global-name "com.apple.diagnosticd")
+  (global-name "com.apple.logd")
+  (global-name "com.apple.logd.events")
+  (global-name "com.apple.runningboard")
+  (global-name "com.apple.secinitd")
+  (global-name "com.apple.system.DirectoryService.libinfo_v1")
+  (global-name "com.apple.system.logger")
+  (global-name "com.apple.system.notification_center")
+  (global-name "com.apple.system.opendirectoryd.membership")
+  (global-name "com.apple.trustd")
+  (global-name "com.apple.trustd.agent")
+  (global-name "com.apple.xpc.activity.unmanaged")
   (global-name "com.apple.PowerManagement.control")
 )
+
+(allow network-outbound (literal "/private/var/run/syslog"))
+(allow ipc-posix-shm-read*
+  (ipc-posix-name "apple.shm.notification_center"))
 
 ; allow openpty()
 (allow pseudo-tty)
@@ -169,6 +224,33 @@ let network_policy =
 )|}
 
 let writable_param index = Printf.sprintf "WRITABLE_ROOT_%d" index
+let readable_param index = Printf.sprintf "READABLE_ROOT_%d" index
+
+let file_read_policy policy =
+  match Policy.reads policy with
+  | Some Policy.All ->
+      ("(allow file-read*)\n(allow file-map-executable)", [])
+  | Some (Policy.Only roots) ->
+      let params =
+        List.mapi
+          (fun index root ->
+            (readable_param index, Spice_path.Abs.to_string root))
+          roots
+      in
+      let predicates =
+        List.concat_map
+          (fun (param, _) ->
+            [
+              Printf.sprintf "(literal (param \"%s\"))" param;
+              Printf.sprintf "(subpath (param \"%s\"))" param;
+            ])
+          params
+      in
+      ( Printf.sprintf
+          "(allow file-read* file-test-existence file-map-executable\n%s\n)"
+          (String.concat " " predicates),
+        params )
+  | None -> assert false
 
 let excluded_param index excluded_index =
   Printf.sprintf "WRITABLE_ROOT_%d_EXCLUDED_%d" index excluded_index
@@ -181,7 +263,7 @@ let file_write_policy policy =
   match roots with
   | [] -> ("", [])
   | roots ->
-      let carveouts = Policy.write_carveouts policy in
+      let carveouts = Policy.protected_paths policy in
       let components, params =
         List.fold_left
           (fun (components, params) root ->
@@ -238,13 +320,14 @@ let network_section policy =
   | None -> assert false
 
 let profile policy =
-  let write_policy, params = file_write_policy policy in
+  let read_policy, read_params = file_read_policy policy in
+  let write_policy, write_params = file_write_policy policy in
   let sections =
     List.filter
       (fun section -> not (String.equal section ""))
-      [ base_policy; write_policy; network_section policy ]
+      [ base_policy; read_policy; write_policy; network_section policy ]
   in
-  (String.concat "\n" sections, params)
+  (String.concat "\n" sections, read_params @ write_params)
 
 let unavailable_reason () =
   if Sys.file_exists executable then None
@@ -263,6 +346,8 @@ let prepare policy =
   match unavailable_reason () with
   | Some reason -> Error (Error.unavailable reason)
   | None ->
+      let ( let* ) = Result.bind in
+      let* () = Backend.validate_policy_paths policy in
       let profile, params = profile policy in
       Log.debug (fun m ->
           m

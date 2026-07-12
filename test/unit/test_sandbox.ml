@@ -31,20 +31,20 @@ let json_obj fields =
 
 let policy_value = testable ~pp:Policy.pp ~equal:Policy.equal ()
 
-let environment ?(path = "/usr/bin:/bin") ?(user_names = [])
+let environment ?(path = "/usr/bin:/bin") ?(scratch = abs "/tmp")
+    ?(user_names = [])
     ?(launch = fun _ -> None) () =
   match
-    Sandbox.Environment.make ~path ~scratch:(abs "/scratch") ~user_names
-      ~launch
+    Sandbox.Environment.make ~path ~scratch ~user_names ~launch
   with
   | Ok environment -> environment
   | Error error -> fail (Sandbox.Environment.Error.message error)
 
 let confined ?(reads = Policy.All) ?(writable_roots = [])
-    ?(protected_meta = []) ?(protected_paths = [])
+    ?(protected_paths = [])
     ?(network = Policy.Network.Restricted) () =
-  Policy.confined ~reads ~writable_roots ~protected_meta ~protected_paths
-    ~network ~environment:(environment ())
+  Policy.confined ~reads ~writable_roots ~protected_paths ~network
+    ~environment:(environment ())
 
 let evidence_value =
   testable ~pp:Sandbox.Evidence.pp ~equal:Sandbox.Evidence.equal ()
@@ -64,17 +64,6 @@ let policy_normalizes () =
     [ abs "/tmp"; abs "/work" ]
     (Policy.writable_roots a)
 
-let policy_protect_meta_validates () =
-  raises_match
-    (function Invalid_argument _ -> true | _ -> false)
-    (fun () -> confined ~protected_meta:[ "a/b" ] ());
-  raises_match
-    (function Invalid_argument _ -> true | _ -> false)
-    (fun () -> confined ~protected_meta:[ ".." ] ());
-  raises_match
-    (function Invalid_argument _ -> true | _ -> false)
-    (fun () -> confined ~protected_meta:[ "" ] ())
-
 let policy_distinguishes_network () =
   let restricted = confined () in
   let enabled = confined ~network:Policy.Network.Enabled () in
@@ -85,22 +74,17 @@ let policy_distinguishes_network () =
     | Some Policy.Network.Restricted -> true
     | Some Policy.Network.Enabled | None -> false)
 
-let policy_write_carveouts_are_backend_independent () =
+let policy_protected_paths_are_scoped () =
   let policy =
     confined
       ~writable_roots:[ abs "/private/tmp"; abs "/private/tmp/ws" ]
-      ~protected_meta:[ ".git" ]
       ~protected_paths:
         [ abs "/outside/.spice"; abs "/private/tmp/ws/.spice" ]
       ()
   in
-  equal (list abs_value) ~msg:"write carveouts are canonical and scoped"
-    [
-      abs "/private/tmp/.git";
-      abs "/private/tmp/ws/.git";
-      abs "/private/tmp/ws/.spice";
-    ]
-    (Policy.write_carveouts policy)
+  equal (list abs_value) ~msg:"protected paths are canonical and scoped"
+    [ abs "/private/tmp/ws/.spice" ]
+    (Policy.protected_paths policy)
 
 (* Environment *)
 
@@ -137,17 +121,17 @@ let environment_is_exact () =
       ("CLICOLOR", "0");
       ("CLICOLOR_FORCE", "0");
       ("GIT_PAGER", "cat");
-      ("HOME", "/scratch");
+      ("HOME", "/tmp");
       ("LANG", "en_US.UTF-8");
       ("LESS", "-FRX");
       ("NO_COLOR", "1");
       ("PAGER", "cat");
       ("PATH", "/usr/bin:/bin");
       ("SPICE_TEST", "allowed");
-      ("TEMP", "/scratch");
+      ("TEMP", "/tmp");
       ("TERM", "dumb");
-      ("TMP", "/scratch");
-      ("TMPDIR", "/scratch");
+      ("TMP", "/tmp");
+      ("TMPDIR", "/tmp");
     ]
     (Sandbox.Environment.bindings environment)
 
@@ -264,8 +248,9 @@ let bubblewrap_wrap policy = function
 
 let bubblewrap_policy =
   confined ~writable_roots:[ abs "/usr"; abs "/tmp" ]
-    ~protected_meta:[ ".git"; ".spice" ]
-    ~protected_paths:[ abs "/usr/.spice/store" ] ()
+    ~protected_paths:
+      [ abs "/usr/bin"; abs "/usr/lib"; abs "/usr/share" ]
+    ()
 
 let has_sequence sequence values =
   let rec starts_with sequence values =
@@ -297,6 +282,9 @@ let bubblewrap_read_only_wrap_shape () =
       "/";
       "--dev";
       "/dev";
+      "--bind";
+      "/tmp";
+      "/tmp";
       "--unshare-net";
       "--proc";
       "/proc";
@@ -309,6 +297,56 @@ let bubblewrap_read_only_wrap_shape () =
     ]
     argv
 
+let bubblewrap_scoped_reads_wrap_shape () =
+  let policy =
+    Policy.confined
+      ~reads:(Policy.Only [ abs "/usr" ])
+      ~writable_roots:[ abs "/usr" ]
+      ~protected_paths:[ abs "/usr/bin" ]
+      ~network:Policy.Network.Restricted
+      ~environment:(environment ~scratch:(abs "/tmp") ())
+  in
+  let argv = bubblewrap_wrap policy [ "true" ] in
+  equal (list string) ~msg:"scoped-read bubblewrap argv"
+    [
+      "/usr/bin/bwrap";
+      "--new-session";
+      "--die-with-parent";
+      "--unshare-user";
+      "--unshare-pid";
+      "--tmpfs";
+      "/";
+      "--dev";
+      "/dev";
+      "--ro-bind";
+      "/tmp";
+      "/tmp";
+      "--ro-bind";
+      "/usr";
+      "/usr";
+      "--bind";
+      "/tmp";
+      "/tmp";
+      "--bind";
+      "/usr";
+      "/usr";
+      "--ro-bind";
+      "/usr/bin";
+      "/usr/bin";
+      "--unshare-net";
+      "--proc";
+      "/proc";
+      "--chdir";
+      "/tmp";
+      "--";
+      "true";
+    ]
+    argv;
+  is_false ~msg:"scoped reads never expose the host root"
+    (has_sequence [ "--ro-bind"; "/"; "/" ] argv);
+  is_false ~msg:"paths outside the read set are absent"
+    (List.exists (String.equal "/home") argv)
+
 let bubblewrap_workspace_write_wrap_shape () =
   let argv = bubblewrap_wrap bubblewrap_policy [ "true" ] in
   is_true ~msg:"workspace root is writable"
@@ -316,32 +354,32 @@ let bubblewrap_workspace_write_wrap_shape () =
   is_true ~msg:"temp root is writable"
     (has_sequence [ "--bind"; "/tmp"; "/tmp" ] argv);
   is_true ~msg:"protected metadata is restored read-only"
-    (has_sequence [ "--ro-bind-try"; "/usr/.git"; "/usr/.git" ] argv);
+    (has_sequence [ "--ro-bind"; "/usr/bin"; "/usr/bin" ] argv);
   is_true ~msg:"protected store path is restored read-only"
     (has_sequence
-       [ "--ro-bind-try"; "/usr/.spice/store"; "/usr/.spice/store" ]
+       [ "--ro-bind"; "/usr/share"; "/usr/share" ]
        argv)
 
-let bubblewrap_skips_missing_writable_roots () =
-  let missing = Filename.temp_file "spice-sandbox-missing-" "-root" in
-  Sys.remove missing;
-  let policy =
-    confined ~writable_roots:[ abs "/tmp"; abs missing ] ()
-  in
-  let argv = bubblewrap_wrap policy [ "true" ] in
-  is_true ~msg:"existing root is bound"
-    (has_sequence [ "--bind"; "/tmp"; "/tmp" ] argv);
-  is_false ~msg:"missing root is not passed to bubblewrap"
-    (has_sequence [ "--bind"; missing; missing ] argv)
+let bubblewrap_refuses_missing_writable_roots () =
+  let missing = Filename.concat (Sys.getcwd ()) ".spice-missing-sandbox-root" in
+  let policy = confined ~writable_roots:[ abs missing ] () in
+  match Sandbox.Backend.prepare bubblewrap_backend policy with
+  | Error error ->
+      is_true ~msg:"missing roots are a stale-policy refusal"
+        (String.includes ~affix:"sandbox root is stale"
+           (Sandbox.Error.message error))
+  | Ok _ -> fail "missing writable root unexpectedly prepared"
 
 let bubblewrap_nested_roots_share_carveouts () =
+  let root = Filename.temp_dir "spice-sandbox-nested-" "" in
+  let protected = Filename.concat root ".git" in
+  Unix.mkdir protected 0o700;
   let policy =
-    confined ~writable_roots:[ abs "/tmp"; abs "/tmp/ws" ]
-      ~protected_meta:[ ".git" ] ()
+    confined ~writable_roots:[ abs root ] ~protected_paths:[ abs protected ] ()
   in
   let argv = bubblewrap_wrap policy [ "true" ] in
   is_true ~msg:"enclosing root carves out nested metadata"
-    (has_sequence [ "--ro-bind-try"; "/tmp/ws/.git"; "/tmp/ws/.git" ] argv)
+    (has_sequence [ "--ro-bind"; protected; protected ] argv)
 
 let bubblewrap_ignores_protected_paths_outside_writable_roots () =
   let policy =
@@ -351,7 +389,7 @@ let bubblewrap_ignores_protected_paths_outside_writable_roots () =
   let argv = bubblewrap_wrap policy [ "true" ] in
   is_false ~msg:"outside protected path is not mounted"
     (has_sequence
-       [ "--ro-bind-try"; "/outside/.spice"; "/outside/.spice" ]
+       [ "--ro-bind"; "/outside/.spice"; "/outside/.spice" ]
        argv)
 
 let bubblewrap_carveouts_follow_writable_binds () =
@@ -361,7 +399,7 @@ let bubblewrap_carveouts_follow_writable_binds () =
     | value :: rest ->
         if String.equal value needle then Some i else index needle (i + 1) rest
   in
-  match (index "--bind" 0 argv, index "/usr/.git" 0 argv) with
+  match (index "--bind" 0 argv, index "/usr/bin" 0 argv) with
   | Some bind, Some carveout ->
       is_true ~msg:"protected overlays come after writable binds"
         (bind < carveout)
@@ -379,8 +417,13 @@ let bubblewrap_hash_is_stable () =
   let hash_b =
     profile_hash
       (bubblewrap_prepared
-         (confined ~protected_paths:[ abs "/usr/.spice/store" ]
-            ~protected_meta:[ ".spice"; ".git" ]
+         (confined
+            ~protected_paths:
+              [
+                abs "/usr/bin";
+                abs "/usr/lib";
+                abs "/usr/share";
+              ]
             ~writable_roots:[ abs "/tmp"; abs "/usr" ] ()))
   in
   equal string ~msg:"equal policies hash equally" hash_a hash_b;
@@ -400,7 +443,7 @@ let fake_backend =
     ()
 
 let workspace_policy =
-  confined ~writable_roots:[ abs "/work" ] ()
+  confined ~writable_roots:[ abs "/tmp" ] ()
 
 let exec_passes_unconfined () =
   let environment = environment () in
@@ -611,9 +654,10 @@ let evidence_cases_are_distinct () =
 (* Seatbelt lowering *)
 
 let seatbelt_policy =
-  confined ~writable_roots:[ abs "/work"; abs "/private/tmp" ]
-    ~protected_meta:[ ".git"; ".spice" ]
-    ~protected_paths:[ abs "/work/.spice/store" ] ()
+  confined ~writable_roots:[ abs "/usr"; abs "/tmp" ]
+    ~protected_paths:
+      [ abs "/usr/bin"; abs "/usr/lib"; abs "/usr/share" ]
+    ()
 
 let seatbelt_profile_shapes () =
   let profile, params = Seatbelt.profile seatbelt_policy in
@@ -634,14 +678,12 @@ let seatbelt_profile_shapes () =
     (list (pair string string))
     ~msg:"params bind roots and all carveouts beneath each root"
     [
-      ("WRITABLE_ROOT_0", "/scratch");
-      ("WRITABLE_ROOT_1", "/private/tmp");
-      ("WRITABLE_ROOT_1_EXCLUDED_0", "/private/tmp/.git");
-      ("WRITABLE_ROOT_1_EXCLUDED_1", "/private/tmp/.spice");
-      ("WRITABLE_ROOT_2", "/work");
-      ("WRITABLE_ROOT_2_EXCLUDED_0", "/work/.git");
-      ("WRITABLE_ROOT_2_EXCLUDED_1", "/work/.spice");
-      ("WRITABLE_ROOT_2_EXCLUDED_2", "/work/.spice/store");
+      ("WRITABLE_ROOT_0", "/tmp");
+      ("WRITABLE_ROOT_1", "/tmp");
+      ("WRITABLE_ROOT_2", "/usr");
+      ("WRITABLE_ROOT_2_EXCLUDED_0", "/usr/bin");
+      ("WRITABLE_ROOT_2_EXCLUDED_1", "/usr/lib");
+      ("WRITABLE_ROOT_2_EXCLUDED_2", "/usr/share");
     ]
     params;
   is_false ~msg:"restricted network adds no network section"
@@ -653,7 +695,7 @@ let seatbelt_nested_roots_share_carveouts () =
   let policy =
     confined
       ~writable_roots:[ abs "/private/tmp"; abs "/private/tmp/ws" ]
-      ~protected_meta:[ ".git" ] ()
+      ~protected_paths:[ abs "/private/tmp/ws/.git" ] ()
   in
   let _profile, params = Seatbelt.profile policy in
   is_true ~msg:"enclosing root carves out the nested root's .git"
@@ -669,7 +711,36 @@ let seatbelt_read_only_profile () =
   is_true ~msg:"read-only permits its private scratch"
     (String.includes ~affix:"(allow file-write*\n" profile);
   equal (list (pair string string)) ~msg:"read-only binds only scratch"
-    [ ("WRITABLE_ROOT_0", "/scratch") ] params
+    [ ("WRITABLE_ROOT_0", "/tmp") ] params
+
+let seatbelt_scopes_reads_to_parameters () =
+  let policy =
+    confined ~reads:(Policy.Only [ abs "/work"; abs "/opt/ocaml" ])
+      ~writable_roots:[ abs "/work" ] ()
+  in
+  let profile, params = Seatbelt.profile policy in
+  is_false ~msg:"scoped reads do not include the global read rule"
+    (String.includes ~affix:"(allow file-read*)" profile);
+  is_true ~msg:"scoped reads admit parameters literally and recursively"
+    (String.includes
+       ~affix:
+         "(literal (param \"READABLE_ROOT_0\")) (subpath (param \
+          \"READABLE_ROOT_0\"))"
+       profile);
+  let readable_params =
+    List.filter
+      (fun (key, _) -> String.starts_with ~prefix:"READABLE_ROOT_" key)
+      params
+  in
+  equal
+    (list (pair string string))
+    ~msg:"scoped reads bind every normalized policy root"
+    [
+      ("READABLE_ROOT_0", "/opt/ocaml");
+      ("READABLE_ROOT_1", "/tmp");
+      ("READABLE_ROOT_2", "/work");
+    ]
+    readable_params
 
 let seatbelt_network_enabled () =
   let policy = confined ~network:Policy.Network.Enabled () in
@@ -688,9 +759,14 @@ let seatbelt_hash_is_stable () =
   let hash_a = seatbelt_hash seatbelt_policy in
   let hash_b =
     seatbelt_hash
-      (confined ~protected_paths:[ abs "/work/.spice/store" ]
-         ~protected_meta:[ ".spice"; ".git" ]
-         ~writable_roots:[ abs "/private/tmp"; abs "/work" ] ())
+      (confined
+         ~protected_paths:
+           [
+             abs "/usr/bin";
+             abs "/usr/lib";
+             abs "/usr/share";
+           ]
+         ~writable_roots:[ abs "/tmp"; abs "/usr" ] ())
   in
   equal string ~msg:"equal policies hash equally" hash_a hash_b;
   is_false ~msg:"different policies hash differently"
@@ -728,11 +804,9 @@ let () =
   run "spice.sandbox"
     [
       test "policy combinators normalize" policy_normalizes;
-      test "policy validates protected metadata names"
-        policy_protect_meta_validates;
       test "policy distinguishes network state" policy_distinguishes_network;
-      test "policy computes write carveouts once"
-        policy_write_carveouts_are_backend_independent;
+      test "policy scopes concrete protected paths"
+        policy_protected_paths_are_scoped;
       test "environment admits an exact name set" environment_is_exact;
       test "environment rejects unsafe shapes" environment_rejects_unsafe_shapes;
       test "environment omits invalid optional inheritance"
@@ -746,10 +820,12 @@ let () =
         backend_prefix_preserves_command;
       test "bubblewrap backend has stable identity" bubblewrap_backend_identity;
       test "bubblewrap read-only argv shape" bubblewrap_read_only_wrap_shape;
+      test "bubblewrap scoped reads build a closed mount view"
+        bubblewrap_scoped_reads_wrap_shape;
       test "bubblewrap workspace-write argv shape"
         bubblewrap_workspace_write_wrap_shape;
-      test "bubblewrap skips missing writable roots"
-        bubblewrap_skips_missing_writable_roots;
+      test "bubblewrap refuses missing writable roots"
+        bubblewrap_refuses_missing_writable_roots;
       test "bubblewrap nested roots share carveouts"
         bubblewrap_nested_roots_share_carveouts;
       test "bubblewrap ignores protected paths outside writable roots"
@@ -776,6 +852,8 @@ let () =
         seatbelt_nested_roots_share_carveouts;
       test "seatbelt read-only writes only private scratch"
         seatbelt_read_only_profile;
+      test "seatbelt scopes reads to parameterized policy roots"
+        seatbelt_scopes_reads_to_parameters;
       test "seatbelt enabled network opens platform services"
         seatbelt_network_enabled;
       test "seatbelt profile hash is canonical" seatbelt_hash_is_stable;
