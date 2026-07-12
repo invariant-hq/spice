@@ -355,6 +355,13 @@ let frame_marker_color = function
 
 let top_rule ~width ~rule_color ~mode ~agent =
   let rule_style = Ansi.Style.make ~fg:rule_color () in
+  let key =
+    let mode =
+      match mode with Build -> "build" | Plan -> "plan" | Review -> "review"
+    in
+    "composer.top_rule." ^ mode
+    ^ if Option.is_some agent then ".agent" else ".root"
+  in
   let mode_label =
     match mode with
     | Plan -> Some (Theme.mode_plan ^ " plan")
@@ -378,7 +385,7 @@ let top_rule ~width ~rule_color ~mode ~agent =
      pass that measures the textarea at Min_content width — one grapheme per
      row — and the frame then reserves one blank row per typed character
      (bug-repro/README.md). *)
-  box ~key:"composer.top_rule" ~flex_direction:Flex_direction.Row
+  box ~key ~flex_direction:Flex_direction.Row
     ~size:{ width = pct 100; height = px 1 }
     (chip mode_label
     @ [ text ~style:rule_style ~wrap:`Word ~flex_shrink:0. fill ]
