@@ -16,7 +16,7 @@ family), and a scripted apply_patch edit applies for real.
   > JSONL
   $ start_fake_openai patch.jsonl capture-patch port-patch
   $ spice run --cwd "$PWD" --permission bypass --id patch-run "fix the greeting"
-  permission: bypass
+  permission review: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled

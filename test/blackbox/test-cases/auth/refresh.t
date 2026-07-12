@@ -26,7 +26,7 @@ fresh credential and skips the token endpoint entirely.
   $ export SPICE_OPENAI_BASE_URL="http://127.0.0.1:$(cat port-seq)/v1"
   $ export SPICE_OPENAI_AUTH_BASE_URL="http://127.0.0.1:$(cat port-seq)"
   $ spice run --cwd "$PWD" --id refresh-run-1 "first prompt"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -34,7 +34,7 @@ fresh credential and skips the token endpoint entirely.
   refreshed answer
   spice: session saved; resume with: spice resume 'refresh-run-1'
   $ spice run --cwd "$PWD" --id refresh-run-2 "second prompt"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -69,14 +69,14 @@ fresh credential instead of re-sending the rotated token.
   $ export SPICE_OPENAI_BASE_URL="http://127.0.0.1:$(cat port-par)/v1"
   $ export SPICE_OPENAI_AUTH_BASE_URL="http://127.0.0.1:$(cat port-par)"
   $ spice run --cwd "$PWD" --id par-run-1 "race prompt" > par-1.out & first=$!
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
   warning: command sandbox disabled by explicit user choice
   spice: session saved; resume with: spice resume 'par-run-1'
   $ spice run --cwd "$PWD" --id par-run-2 "race prompt" > par-2.out & second=$!
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -159,7 +159,7 @@ local expiry looked fine — the provider is the authority on token validity.
   $ export SPICE_OPENAI_BASE_URL="http://127.0.0.1:$(cat port-retry)/v1"
   $ export SPICE_OPENAI_AUTH_BASE_URL="http://127.0.0.1:$(cat port-retry)"
   $ spice run --cwd "$PWD" --id retry-run "retry prompt"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -183,7 +183,7 @@ that initiated recovery.
   $ export SPICE_OPENAI_BASE_URL="http://127.0.0.1:$(cat port-retry-fail)/v1"
   $ export SPICE_OPENAI_AUTH_BASE_URL="http://127.0.0.1:$(cat port-retry-fail)"
   $ spice run --cwd "$PWD" --id retry-fail-run "retry doomed prompt"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -207,7 +207,7 @@ document is not created, and a later run learns the same truth the same way.
   $ export SPICE_OPENAI_BASE_URL="http://127.0.0.1:$(cat port-fail)/v1"
   $ export SPICE_OPENAI_AUTH_BASE_URL="http://127.0.0.1:$(cat port-fail)"
   $ spice run --cwd "$PWD" --id fail-run-1 "doomed prompt"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -218,7 +218,7 @@ document is not created, and a later run learns the same truth the same way.
   $ test -e $SPICE_TEST_DATA_HOME/sessions/fail-run-1/session.log || echo not-created
   not-created
   $ spice run --cwd "$PWD" --id fail-run-2 "doomed prompt"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled

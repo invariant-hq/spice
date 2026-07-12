@@ -23,7 +23,7 @@ Pending permission requests are reported as waiting.
   > {"version":1,"id":"blocked","metadata":{"cwd":"/","title":"Blocked","status":"active","created_at":1,"updated_at":1},"events":[{"type":"turn_started","turn":{"id":"turn-1","input":{"type":"user","content":[{"type":"text","text":"Use the tool"}]},"model":{"provider":"openai","api":"responses","id":"gpt-5"},"options":{"tool_choice":{"type":"auto"},"response_format":{"type":"text"}},"declarations":[],"host_tools":[],"max_steps":100}},{"type":"response_appended","response":{"model":{"provider":"openai","api":"responses","id":"gpt-5"},"reasoning_summary":[],"assistant":{"parts":[{"type":"tool_call","tool_call":{"id":"call-1","name":"review_tool","input":{}}}]}}},{"type":"permission_requested","request":{"id":"permission-1","turn":"turn-1","tool_call":{"id":"call-1","name":"review_tool","input":{}},"request":{"version":4,"items":[{"access":{"type":"custom","name":"review_tool"}}]},"reasons":[{"access":{"type":"custom","name":"review_tool"},"reason":{"kind":"unmatched"}}]}}]}
   > JSON
   $ spice session show --json blocked | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"created_at":[0-9]+/"created_at":$TIME/g; s/"updated_at":[0-9]+/"updated_at":$TIME/g'
-  {"schema_version":1,"type":"session","session":{"id":"blocked","title":"Blocked","preview":"Use the tool","lifecycle":"active","phase":"waiting","forked_from":null,"event_count":3,"active_turn":"turn-1","cwd":"/","created_at":$TIME,"updated_at":$TIME,"revision":"sha256:$HASH","active_model":"openai/responses:gpt-5","last_outcome":null,"waiting":{"kind":"permission","permission_id":"permission-1","turn":"turn-1","tool_call_id":"call-1","tool":"review_tool","mode":"default","reviewed":[{"access":{"type":"custom","name":"review_tool"},"explanation":{"kind":"needs_review"}}]}},"latest_compaction":null,"context":{"projected_input_tokens_estimate":67,"basis":"estimate","context_window":null,"auto_compaction_limit":null}}
+  {"schema_version":1,"type":"session","session":{"id":"blocked","title":"Blocked","preview":"Use the tool","lifecycle":"active","phase":"waiting","forked_from":null,"event_count":3,"active_turn":"turn-1","cwd":"/","created_at":$TIME,"updated_at":$TIME,"revision":"sha256:$HASH","active_model":"openai/responses:gpt-5","last_outcome":null,"waiting":{"kind":"permission","permission_id":"permission-1","turn":"turn-1","tool_call_id":"call-1","tool":"review_tool","review":"default","reviewed":[{"access":{"type":"custom","name":"review_tool"},"explanation":{"kind":"needs_review"}}]}},"latest_compaction":null,"context":{"projected_input_tokens_estimate":67,"basis":"estimate","context_window":null,"auto_compaction_limit":null}}
 
 Human status prints the same facts and shell-quoted continuation commands as
 waiting exec output; active sessions get the resume command.
@@ -67,7 +67,7 @@ waiting exec output; active sessions get the resume command.
   updated_at: $TIME
   revision: sha256:$HASH
   waiting: permission permission-1 tool=review_tool turn=turn-1 call=call-1
-  mode: default
+  review: default
   accesses:
   - custom review_tool  [review: no rule or grant]
   allow once: spice run reply 'blocked' --allow 'permission-1'

@@ -88,7 +88,7 @@ differently.
   $ spice session archive parked
   parked
   $ OPENAI_API_KEY=test-key SPICE_OPENAI_BASE_URL=http://127.0.0.1:9/v1 spice run resume --cwd "$PWD" parked "more work"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -104,7 +104,7 @@ Deleted sessions are terminal.
   $ spice session delete --yes gone
   gone
   $ OPENAI_API_KEY=test-key SPICE_OPENAI_BASE_URL=http://127.0.0.1:9/v1 spice run resume --cwd "$PWD" gone "more work"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -120,7 +120,7 @@ saved hint names the interactive resume verb.
   > JSONL
   $ start_fake_openai resume-live.jsonl capture-resume port-resume
   $ spice run resume --cwd "$PWD" idle-session "resumed prompt"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled

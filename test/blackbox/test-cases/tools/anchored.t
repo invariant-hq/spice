@@ -23,7 +23,7 @@ Flag off: edit_lines is not in the catalog and reads have no anchors.
 
   $ start_fake_openai off.jsonl capture-off port-off
   $ spice run --cwd "$PWD" --permission bypass --id anchored-off "read the note"
-  permission: bypass
+  permission review: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -69,7 +69,7 @@ bottom-up batch (replace plus insert) applies in one call.
 
   $ start_fake_openai run.jsonl capture-run port-run
   $ spice run --cwd "$PWD" --permission bypass --id anchored-run "apply the anchored edits"
-  permission: bypass
+  permission review: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -144,7 +144,7 @@ edit_file inserts a line, a re-read keeps the anchors of unchanged lines
 
   $ start_fake_openai stable.jsonl capture-stable port-stable
   $ spice run --cwd "$PWD" --permission bypass --id anchored-stable "edit then re-read"
-  permission: bypass
+  permission review: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled

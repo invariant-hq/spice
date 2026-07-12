@@ -1,16 +1,15 @@
-Escalation drops the filesystem confinement, not the credential strip. An
-approved escalated command runs unconfined, but its environment is still
-filtered by the same policy the confined path uses: credential- and
-loader-shaped variables are removed, benign variables pass through. Only
-danger-full-access passes the environment verbatim.
+Escalation drops filesystem confinement, not environment confinement. An
+approved escalated command runs unconfined, but it receives the same exact safe
+environment as the confined path. Ambient variables are not inherited by name
+or by heuristic. Only danger-full-access preserves the ambient environment.
 
   $ export SPICE_SANDBOX_MODE=workspace-write
   $ export SPICE_SANDBOX_REQUIRE=off
   $ export _SPICE_TEST_SANDBOX_UNAVAILABLE=1
   $ export SPICE_TRUSTED_WORKSPACE="$PWD"
 
-A credential-shaped variable, credential-agent handles, and a benign one, all
-present in the parent environment the escalated command inherits from.
+Credential-shaped variables, credential-agent handles, and a benign canary are
+all present in the parent environment but absent from the child allowlist.
 
   $ export MYSERVICE_API_KEY=sk-leak-canary-42
   $ export SSH_AUTH_SOCK=/tmp/spice-fake-agent.sock
@@ -32,12 +31,11 @@ marker when a variable is absent from the child environment.
   $ permission_id=$(spice session show --json env-run | sed -n 's/.*"permission_id":"\([^"]*\)".*/\1/p')
 
 Approving executes the command unconfined. The output fed back to the
-provider must show the credential variable and agent handles stripped (the
-[STRIPPED] default) and the benign variable preserved, and must never carry
-the secret or socket path values.
+provider must show every ambient value stripped and must never carry the secret,
+socket, or benign canary value.
 
   $ cat > env-next.jsonl <<'JSONL'
-  > {"expect":{"body_contains":["akey[STRIPPED]","ssh[STRIPPED]","gpg[STRIPPED]","gnupg[STRIPPED]","krb[STRIPPED]","region[eu-west]"],"body_not_contains":["sk-leak-canary-42","spice-fake-agent.sock","spice-gpg-agent.sock","spice-gnupg-home","spice-krb5-cache"]},"response":{"id":"resp-env-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"env checked"}]}]}}
+  > {"expect":{"body_contains":["akey[STRIPPED]","ssh[STRIPPED]","gpg[STRIPPED]","gnupg[STRIPPED]","krb[STRIPPED]","region[NONE]"],"body_not_contains":["sk-leak-canary-42","spice-fake-agent.sock","spice-gpg-agent.sock","spice-gnupg-home","spice-krb5-cache","eu-west"]},"response":{"id":"resp-env-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"env checked"}]}]}}
   > JSONL
   $ start_fake_openai env-next.jsonl env-capture-next env-port-next
   $ spice run reply env-run --cwd "$PWD" --allow-conversation "$permission_id" >env-next.out 2>&1; echo exit:$?

@@ -20,7 +20,7 @@ A pending permission request.
   exit:3
   $ grep -o '"waiting":{[^}]*}' perm.out >perm.exec
   $ cat perm.status
-  "waiting":{"kind":"permission","permission_id":"permission-1","turn":"turn-1","tool_call_id":"call-1","tool":"write_file","mode":"default","reviewed":[{"access":{"type":"custom","name":"write_file"}
+  "waiting":{"kind":"permission","permission_id":"permission-1","turn":"turn-1","tool_call_id":"call-1","tool":"write_file","review":"default","reviewed":[{"access":{"type":"custom","name":"write_file"}
   $ [ "$(cat perm.status)" = "$(cat perm.exec)" ] && echo identical
   identical
 

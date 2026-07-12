@@ -10,7 +10,7 @@ the streamed reply is returned.
 
   $ start_fake_ollama "hello from the lab llama" capture-bare
   $ spice run --cwd "$PWD" --id ollama-bare "say hi"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -34,7 +34,7 @@ variable, sent as a bearer authorization header on every request.
 
   $ start_fake_ollama "keyed reply ok" capture-env
   $ OLLAMA_API_KEY=lab-secret spice run --cwd "$PWD" --id ollama-env "say hi"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -51,7 +51,7 @@ then runs carry it without the environment variable.
   $ printf 'stored-lab-key' | spice auth login ollama --api-key-stdin > /dev/null
   $ start_fake_ollama "stored reply ok" capture-store
   $ spice run --cwd "$PWD" --id ollama-store "say hi"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -68,7 +68,7 @@ catalog. An arbitrary model id under a custom openai base URL is rejected with a
 diagnostic that redirects to the ollama provider.
 
   $ OPENAI_API_KEY=sk-test SPICE_MODEL=openai/my-llama-model SPICE_OPENAI_BASE_URL=http://127.0.0.1:8080/v1 spice run --cwd "$PWD" "hi"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled

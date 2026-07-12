@@ -14,7 +14,7 @@ unconditionally, so a render test alone cannot catch a request that fails to ask
   $ start_fake_openai configured-reasoning.jsonl configured-reasoning-capture configured-reasoning-port
 
   $ OPENAI_API_KEY=test-key spice run --cwd "$PWD" --id configured-reasoning "reasoning prompt" >/dev/null
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -30,7 +30,7 @@ The per-run flag shadows configured reasoning.
   $ start_fake_openai flag-reasoning.jsonl flag-reasoning-capture flag-reasoning-port
 
   $ OPENAI_API_KEY=test-key spice run --cwd "$PWD" --reasoning low --id flag-reasoning "flag prompt" >/dev/null
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -44,7 +44,7 @@ and names the config repair command.
   $ spice config set model anthropic/claude-haiku-4-5
   $ spice config set reasoning low
   $ SPICE_MODEL=anthropic/claude-haiku-4-5 spice run hello
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled

@@ -56,7 +56,7 @@ accepted and shell results carry declared_external evidence.
   $ start_fake_openai external-run.jsonl external-capture external-port
   $ SPICE_SANDBOX_REQUIRE=enforced-or-external spice run --cwd "$PWD" --json --permission bypass --sandbox external-sandbox --id external-run "external prompt" | sed -n '/"type":"run.started"/p; s/.*\("sandbox":{"kind":"declared_external"}\).*/\1/p; s/.*\("final_text":"external final"\).*/\1/p'
   spice: session saved; resume with: spice resume 'external-run'
-  {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"external-sandbox","read":"all","origin":"flag","require":"enforced-or-external","network":"external","backend":"external","enforcement":"declared"}}
+  {"schema_version":1,"type":"run.started","permission":{"review":"bypass"},"sandbox":{"mode":"external-sandbox","read":"all","origin":"flag","require":"enforced-or-external","network":"external","backend":"external","enforcement":"declared"}}
   "sandbox":{"kind":"declared_external"}
   "final_text":"external final"
   $ wait_fake_server
@@ -97,7 +97,7 @@ when an unavailable backend is reported as refused data.
   $ start_fake_openai network-enabled-run.jsonl network-capture network-port
   $ _SPICE_TEST_SANDBOX_UNAVAILABLE=1 SPICE_SANDBOX_REQUIRE=off SPICE_SANDBOX_MODE=workspace-write SPICE_SANDBOX_NETWORK=enabled spice run --cwd "$PWD" --json --permission bypass --id network-enabled-run "network prompt" | sed -n '/"type":"run.started"/p; s/.*\("final_text":"network final"\).*/\1/p'
   spice: session saved; resume with: spice resume 'network-enabled-run'
-  {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"workspace-write","read":"all","origin":"config","require":"off","network":"enabled","backend":"none","enforcement":"refused"}}
+  {"schema_version":1,"type":"run.started","permission":{"review":"bypass"},"sandbox":{"mode":"workspace-write","read":"all","origin":"config","require":"off","network":"enabled","backend":"none","enforcement":"refused"}}
   "final_text":"network final"
   $ wait_fake_server
 
@@ -112,7 +112,7 @@ unconfined.
   $ start_fake_openai read-only-run.jsonl read-only-capture read-only-port
   $ _SPICE_TEST_SANDBOX_UNAVAILABLE=1 SPICE_SANDBOX_REQUIRE=off spice run --cwd "$PWD" --json --permission bypass --sandbox read-only --id read-only-run "read-only prompt" | sed -n '/"type":"run.started"/p; s/.*\("sandbox":{"kind":"refused"\).*/\1/p; s/.*\("final_text":"read-only final"\).*/\1/p'
   spice: session saved; resume with: spice resume 'read-only-run'
-  {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"read-only","read":"all","origin":"flag","require":"off","network":"restricted","backend":"none","enforcement":"refused"}}
+  {"schema_version":1,"type":"run.started","permission":{"review":"bypass"},"sandbox":{"mode":"read-only","read":"all","origin":"flag","require":"off","network":"restricted","backend":"none","enforcement":"refused"}}
   "sandbox":{"kind":"refused"
   "final_text":"read-only final"
   $ wait_fake_server

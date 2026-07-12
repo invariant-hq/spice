@@ -34,7 +34,7 @@ is requested.
   > JSONL
   $ start_fake_openai resources.jsonl capture-res port-res
   $ spice run --cwd "$PWD" --permission bypass --id res-run "read the resources"
-  permission: bypass
+  permission review: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled

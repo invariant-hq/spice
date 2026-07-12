@@ -10,6 +10,12 @@ depending on platform shell behavior.
 The GPT family ships apply_patch rather than write_file, so pin the
 string-replace editor family to keep write_file in the catalog for these flows.
 
+  $ mkdir -p "$XDG_CONFIG_HOME/spice"
+  $ cat > "$XDG_CONFIG_HOME/spice/config.json" <<'JSON'
+  > { "permission": { "rules": [
+  >   { "action": "review",
+  >     "matcher": { "type": "path-workspace", "op": "create" } } ] } }
+  > JSON
   $ spice config set tools.editor string-replace
 
   $ cat > allow-start.jsonl <<'JSONL'
@@ -20,15 +26,15 @@ string-replace editor family to keep write_file in the catalog for these flows.
   $ spice run --cwd "$PWD" --id permission-allow "write approved.txt" >allow-block.out 2>&1; echo exit:$?
   exit:3
   $ sed -E "s/perm:[^ ']+/perm:\$ID/g; s/turn=turn_[^ ]+/turn=turn_\$ID/g" allow-block.out
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
   warning: command sandbox disabled by explicit user choice
   spice: session permission-allow waiting: permission perm:$ID tool=write_file turn=turn_$ID call=call-write-allow
-  mode: default
+  review: default
   accesses:
-  - write create $TESTCASE_ROOT/approved.txt  [review: no rule or grant]
+  - write create $TESTCASE_ROOT/approved.txt  [review: rule a893d6c9785e (user)]
   change:
   - write create $TESTCASE_ROOT/approved.txt (+1 -0)
       --- /dev/null
@@ -69,7 +75,7 @@ and sends the model-visible tool result to the provider.
   > JSONL
   $ start_fake_openai allow-finish.jsonl allow-capture-finish allow-port-finish
   $ spice run reply permission-allow --cwd "$PWD" --allow "$permission_id"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -111,15 +117,15 @@ model receives an ordinary tool result explaining the denial.
   $ spice run --cwd "$PWD" --id permission-deny "write denied.txt" >deny-block.out 2>&1; echo exit:$?
   exit:3
   $ sed -E "s/perm:[^ ']+/perm:\$ID/g; s/turn=turn_[^ ]+/turn=turn_\$ID/g" deny-block.out
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
   warning: command sandbox disabled by explicit user choice
   spice: session permission-deny waiting: permission perm:$ID tool=write_file turn=turn_$ID call=call-write-deny
-  mode: default
+  review: default
   accesses:
-  - write create $TESTCASE_ROOT/denied.txt  [review: no rule or grant]
+  - write create $TESTCASE_ROOT/denied.txt  [review: rule a893d6c9785e (user)]
   change:
   - write create $TESTCASE_ROOT/denied.txt (+1 -0)
       --- /dev/null
@@ -139,7 +145,7 @@ model receives an ordinary tool result explaining the denial.
   > JSONL
   $ start_fake_openai deny-finish.jsonl deny-capture-finish deny-port-finish
   $ spice run reply permission-deny --cwd "$PWD" --deny "$deny_permission_id" --message "not this time"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -185,7 +191,7 @@ text.
   > JSONL
   $ start_fake_openai deny-default-finish.jsonl deny-default-capture-finish deny-default-port-finish
   $ spice run reply permission-deny-default --cwd "$PWD" --deny "$default_permission_id"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled

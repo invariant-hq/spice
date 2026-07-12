@@ -56,7 +56,7 @@ Disabled project instructions do not appear in provider input.
 
   $ start_fake_openai ctx-off.jsonl capture-ctx-off port-ctx-off
   $ spice run --cwd "$PWD" --no-project-instructions --id ctx-off "ctx off prompt"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled

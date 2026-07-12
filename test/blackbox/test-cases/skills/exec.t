@@ -12,7 +12,7 @@ a builtin skill; the tool result carries the skill text into the transcript.
   > JSONL
   $ start_fake_openai load.jsonl capture-load port-load
   $ spice run --cwd "$PWD" --permission bypass --id skill-run "tidy this code"
-  permission: bypass
+  permission review: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -33,7 +33,7 @@ loads the skill body instead of trying to read a non-existent resource.
   > JSONL
   $ start_fake_openai empty-resource.jsonl capture-empty-resource port-empty-resource
   $ spice run --cwd "$PWD" --permission bypass --id empty-resource-run "tidy this code with empty resource"
-  permission: bypass
+  permission review: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -52,7 +52,7 @@ An unknown skill name in the tool call is a failed tool result, not a crash.
   > JSONL
   $ start_fake_openai unknown.jsonl capture-unknown port-unknown
   $ spice run --cwd "$PWD" --permission bypass --id unknown-run "use a missing skill"
-  permission: bypass
+  permission review: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -71,7 +71,7 @@ user message, durably.
   > JSONL
   $ start_fake_openai forced.jsonl capture-forced port-forced
   $ spice run --cwd "$PWD" --permission bypass --id forced-run --skill ocaml-tidy "tidy my file"
-  permission: bypass
+  permission review: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -99,7 +99,7 @@ session.
   > JSONL
   $ start_fake_openai noskills.jsonl capture-ns port-ns
   $ spice run --cwd "$PWD" --permission bypass --no-skills --id ns-run "plain run"
-  permission: bypass
+  permission review: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled

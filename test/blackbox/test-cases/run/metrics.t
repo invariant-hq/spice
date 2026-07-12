@@ -9,7 +9,7 @@ Text mode is unchanged even when the provider reports usage.
 
   $ start_fake_openai text-usage.jsonl text-usage-capture text-usage-port
   $ spice run --cwd "$PWD" --id text-metrics "text metrics prompt"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -32,7 +32,7 @@ counted in tool_failures either way.
   $ start_fake_openai tool-metrics.jsonl tool-metrics-capture tool-metrics-port
   $ spice run --cwd "$PWD" --json --permission bypass --id tool-metrics "tool metrics prompt" | sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/g; s/"tool_claim_id":"tool_exec:[0-9a-f]+"/"tool_claim_id":"tool_exec:$ID"/g; s/"duration_ms":[0-9]+/"duration_ms":$TIME/g'
   spice: session saved; resume with: spice resume 'tool-metrics'
-  {"schema_version":1,"type":"run.started","permission":{"mode":"bypass"},"sandbox":{"mode":"danger-full-access","read":"all","origin":"config","require":"enforced","network":"enabled","backend":"none","enforcement":"not_requested"}}
+  {"schema_version":1,"type":"run.started","permission":{"review":"bypass"},"sandbox":{"mode":"danger-full-access","read":"all","origin":"config","require":"enforced","network":"enabled","backend":"none","enforcement":"not_requested"}}
   {"schema_version":1,"type":"session.started","session_id":"tool-metrics","revision":"sha256:$HASH"}
   {"schema_version":1,"type":"turn.started","session_id":"tool-metrics","revision":"sha256:$HASH","turn_id":"turn_$ID","workflow_mode":"build","projection_digest":"sha256:$HASH","context_warnings":[]}
   {"schema_version":1,"type":"tool.started","session_id":"tool-metrics","turn_id":"turn_$ID","tool_call_id":"call-shell-metrics","tool_claim_id":"tool_exec:$ID","tool":"shell"}
@@ -44,6 +44,12 @@ Blocked runs report spend so far. The GPT family ships apply_patch rather than
 write_file, so pin the string-replace editor family to keep write_file in the
 catalog for the mutating-tool cases below.
 
+  $ mkdir -p "$XDG_CONFIG_HOME/spice"
+  $ cat > "$XDG_CONFIG_HOME/spice/config.json" <<'JSON'
+  > { "permission": { "rules": [
+  >   { "action": "review",
+  >     "matcher": { "type": "path-workspace", "op": "create" } } ] } }
+  > JSON
   $ spice config set tools.editor string-replace
 
   $ cat > blocked-metrics.jsonl <<'JSONL'
@@ -55,7 +61,7 @@ catalog for the mutating-tool cases below.
   exit:3
   $ wait_fake_server
   $ sed -E 's/"revision":"sha256:[0-9a-f]+(:[0-9]+)?"/"revision":"sha256:$HASH"/; s/"projection_digest":"sha256:[0-9a-f]+(:[0-9]+)?"/"projection_digest":"sha256:$HASH"/; s/"permission_id":"perm:[^"]+"/"permission_id":"perm:$ID"/g; s/"turn_id":"turn_[^"]+"/"turn_id":"turn_$ID"/g; s/"turn":"turn_[^"]+"/"turn":"turn_$ID"/g; s/"duration_ms":[0-9]+/"duration_ms":$TIME/g' blocked-metrics.out | grep '"type":"session.waiting"'
-  {"schema_version":1,"type":"session.waiting","session_id":"blocked-metrics","revision":"sha256:$HASH","waiting":{"kind":"permission","permission_id":"perm:$ID","turn":"turn_$ID","tool_call_id":"call-blocked-metrics","tool":"write_file","mode":"default","reviewed":[{"access":{"type":"path","op":"create","scope":"workspace","root_key":"$TESTCASE_ROOT","relative":"blocked-metrics.txt"},"explanation":{"kind":"needs_review"},"change":{"diff":"--- /dev/null\n+++ $TESTCASE_ROOT/blocked-metrics.txt\n@@ -0,0 +1,1 @@\n+blocked\n\\ No newline at end of file\n","additions":1,"removals":0}}]},"metrics":{"usage":{"input":8,"output":3,"reasoning":0,"cache_read":1,"cache_write":0},"responses":1,"turns":0,"tool_calls":0,"tool_failures":0,"tool_rejections":0,"tool_calls_by_name":[],"permission_denials":0},"duration_ms":$TIME}
+  {"schema_version":1,"type":"session.waiting","session_id":"blocked-metrics","revision":"sha256:$HASH","waiting":{"kind":"permission","permission_id":"perm:$ID","turn":"turn_$ID","tool_call_id":"call-blocked-metrics","tool":"write_file","review":"default","reviewed":[{"access":{"type":"path","op":"create","scope":"workspace","root_key":"$TESTCASE_ROOT","relative":"blocked-metrics.txt"},"explanation":{"kind":"needs_review_by_rule","rule_id":"a893d6c9785e","rule_source":"user"},"change":{"diff":"--- /dev/null\n+++ $TESTCASE_ROOT/blocked-metrics.txt\n@@ -0,0 +1,1 @@\n+blocked\n\\ No newline at end of file\n","additions":1,"removals":0}}]},"metrics":{"usage":{"input":8,"output":3,"reasoning":0,"cache_read":1,"cache_write":0},"responses":1,"turns":0,"tool_calls":0,"tool_failures":0,"tool_rejections":0,"tool_calls_by_name":[],"permission_denials":0},"duration_ms":$TIME}
   $ cat blocked-metrics.err
   spice: session blocked
 

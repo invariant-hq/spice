@@ -8,7 +8,7 @@ session store stays empty.
 
   $ start_fake_openai ephemeral.jsonl ephemeral-capture ephemeral-port
   $ spice run --cwd "$PWD" --ephemeral "ephemeral prompt"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled

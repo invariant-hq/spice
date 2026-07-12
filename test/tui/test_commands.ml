@@ -277,7 +277,7 @@ let%expect_test "the sandbox flag overrides the configured mode" =
     {|01 |
 02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
-04 |        sandbox: read-only (flag)
+04 |        sandbox: read-only (flag) · all reads
 05 |
 06 | ❯ !printf sandbox-flag-ok
 07 |

@@ -17,12 +17,12 @@ flow is deterministic on every platform via the seam.
   $ spice run --cwd "$PWD" --id esc-run "escalate prompt" >esc-block.out 2>&1; echo exit:$?
   exit:3
   $ sed -E "s/perm:[^ ']+/perm:\$ID/g; s/turn=turn_[^ ]+/turn=turn_\$ID/g" esc-block.out
-  permission: default
-  sandbox: workspace-write (config)
+  permission review: default
+  sandbox: workspace-write · all reads (config)
   backend: none refused
   network: restricted
   spice: session esc-run waiting: permission perm:$ID tool=shell turn=turn_$ID call=call-esc-1
-  mode: default
+  review: default
   action: 'printf esc-one'
   accesses:
   - command exec 'printf' 'esc-one'  [review: no rule or grant]
@@ -59,14 +59,14 @@ broadens.
   $ spice run reply esc-run --cwd "$PWD" --allow-conversation "$permission_id" >esc-next.out 2>&1; echo exit:$?
   exit:3
   $ sed -E "s/perm:[^ ']+/perm:\$ID/g; s/turn=turn_[^ ]+/turn=turn_\$ID/g" esc-next.out
-  permission: default
-  sandbox: workspace-write (config)
+  permission review: default
+  sandbox: workspace-write · all reads (config)
   backend: none refused
   network: restricted
   • tool shell running
   ✓ tool shell "printf esc-one" exited 0 in 0.0s
   spice: session esc-run waiting: permission perm:$ID tool=shell turn=turn_$ID call=call-esc-2
-  mode: default
+  review: default
   action: 'printf esc-two'
   accesses:
   - command exec 'printf' 'esc-two'  [review: no rule or grant]
@@ -95,8 +95,8 @@ Denying the second escalation leaves the command unrun.
   > JSONL
   $ start_fake_openai escalate-deny.jsonl esc-capture-deny esc-port-deny
   $ spice run reply esc-run --cwd "$PWD" --deny "$next_id" | tail -1
-  permission: default
-  sandbox: workspace-write (config)
+  permission review: default
+  sandbox: workspace-write · all reads (config)
   backend: none refused
   network: restricted
   spice: session saved; resume with: spice resume 'esc-run'

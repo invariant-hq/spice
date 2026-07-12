@@ -85,7 +85,7 @@ OAuth secret must not ride as a bearer token that nothing refreshes.
   $ mkdir -p "$XDG_CONFIG_HOME/spice"
   $ printf '{"version":1,"credentials":{"anthropic":{"default":{"kind":"oauth","access_token":"oauth-anthropic-1"}}}}' > "$XDG_CONFIG_HOME/spice/auth.json"
   $ spice run --cwd "$PWD" --model anthropic/claude-sonnet-5 "hi"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled

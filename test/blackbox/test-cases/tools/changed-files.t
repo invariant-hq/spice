@@ -22,7 +22,7 @@ OpenAI-Responses backend.
 
   $ start_fake_openai edit.jsonl capture-edit port-edit
   $ spice run --cwd "$PWD" --permission bypass --id edit-run "change the greeting"
-  permission: bypass
+  permission review: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -145,7 +145,7 @@ A stale workspace refuses the revert loudly and changes nothing.
 
   $ start_fake_openai create.jsonl capture-create port-create
   $ spice run --cwd "$PWD" --permission bypass --id create-run "create the target file"
-  permission: bypass
+  permission review: bypass
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled

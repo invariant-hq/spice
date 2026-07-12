@@ -38,7 +38,7 @@ standard Responses API body.
   $ start_fake_server script-exec.jsonl capture-exec port-exec
   $ export SPICE_OPENAI_BASE_URL="http://127.0.0.1:$(cat port-exec)/v1"
   $ spice run --cwd "$PWD" --id oauth-run "oauth prompt"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled

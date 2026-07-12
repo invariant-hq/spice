@@ -9,6 +9,12 @@ apply_patch family, without write_file). This case is about tool-event
 lifecycle, not editor selection, so it pins the string-replace family
 explicitly; the model stays gpt-5.5 for the fake OpenAI-Responses backend.
 
+  $ mkdir -p "$XDG_CONFIG_HOME/spice"
+  $ cat > "$XDG_CONFIG_HOME/spice/config.json" <<'JSON'
+  > { "permission": { "rules": [
+  >   { "action": "review",
+  >     "matcher": { "type": "path-workspace", "op": "create" } } ] } }
+  > JSON
   $ spice config set tools.editor string-replace
 
   $ cat > blocked.jsonl <<'JSONL'

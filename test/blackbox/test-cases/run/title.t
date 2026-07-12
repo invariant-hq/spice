@@ -14,7 +14,7 @@ reply; the title request is tool-free and derived from the first user prompt.
   > JSONL
   $ start_fake_openai titled.jsonl capture-titled port-titled
   $ spice run --cwd "$PWD" --id titled "fix the auth tests"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -41,7 +41,7 @@ proves by accepting exactly one request.
   > JSONL
   $ start_fake_openai explicit.jsonl capture-explicit port-explicit
   $ spice run --cwd "$PWD" --id explicit --title Chosen "explicit prompt"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -60,7 +60,7 @@ runs.
   > JSONL
   $ start_fake_openai already-titled.jsonl capture-already port-already
   $ spice run resume --cwd "$PWD" titled "second prompt"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -76,6 +76,12 @@ user must find again in the list. The GPT family ships apply_patch rather than
 write_file, so pin the string-replace editor family to keep write_file in the
 catalog for this blocked write.
 
+  $ mkdir -p "$XDG_CONFIG_HOME/spice"
+  $ cat > "$XDG_CONFIG_HOME/spice/config.json" <<'JSON'
+  > { "permission": { "rules": [
+  >   { "action": "review",
+  >     "matcher": { "type": "path-workspace", "op": "create" } } ] } }
+  > JSON
   $ spice config set tools.editor string-replace
 
   $ cat > blocked-title.jsonl <<'JSONL'
@@ -99,7 +105,7 @@ the run's outcome; rows fall back to the preview.
   > JSONL
   $ start_fake_openai empty-title.jsonl capture-empty port-empty
   $ spice run --cwd "$PWD" --id untitled-run "untitled prompt"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -121,7 +127,7 @@ A long model reply is normalized to one length-capped line.
   > JSONL
   $ start_fake_openai long-title.jsonl capture-long port-long
   $ spice run --cwd "$PWD" --id long-titled "long title prompt"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
@@ -142,7 +148,7 @@ backs up to the previous UTF-8 boundary.
   > JSONL
   $ start_fake_openai boundary-title.jsonl capture-boundary port-boundary
   $ spice run --cwd "$PWD" --id boundary-titled "boundary prompt"
-  permission: default
+  permission review: default
   sandbox: danger-full-access (config)
   backend: none not_requested
   network: enabled
