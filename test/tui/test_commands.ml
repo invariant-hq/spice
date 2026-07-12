@@ -227,9 +227,10 @@ let%expect_test "build mode restores the wordless frame" =
 24 |   ! not logged in · /login · $PROJECT · gpt-5.5 medium · dune: ✗|}]
 
 (* A shell command runs on the executor and settles as one transcript block: the
-   [!command] echo, then [⏺ Shell(command)] with its first output line as the
-   [⎿] summary (03-composer.md §Shell mode). From the home this is the drop
-   without a turn. *)
+   user marker beside the consumed command, then [⏺ Shell(command)] with its
+   first output line as the [⎿] summary (03-composer.md §Shell mode). The exact
+   frame pins one transcript marker: the trigger must not survive in the text.
+   From the home this is the drop without a turn. *)
 let%expect_test "a shell command settles as a transcript block" =
   Tui.run ~name:"cmd-shell" @@ fun t ->
   Tui.settle t;
@@ -243,7 +244,7 @@ let%expect_test "a shell command settles as a transcript block" =
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: danger-full-access (config)
 05 |
-06 | ❯ !echo spice-shell-ok
+06 | ❯ echo spice-shell-ok
 07 |
 08 | ⏺ Shell(echo spice-shell-ok)
 09 |   ⎿  spice-shell-ok
@@ -293,7 +294,7 @@ let%expect_test "the sandbox flag overrides the configured mode" =
 03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
 04 |        sandbox: read-only (flag) · all reads
 05 |
-06 | ❯ !printf sandbox-flag-ok
+06 | ❯ printf sandbox-flag-ok
 07 |
 08 | ⏺ Shell(printf sandbox-flag-ok)
 09 |   ⎿  sandbox-flag-ok

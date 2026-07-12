@@ -776,15 +776,14 @@ let start_subagent_wake t =
         [ Start_subagent_wake ] )
   | Chat _ | Prelude -> (t, [])
 
-(* Start a user shell command (03-composer.md §Shell mode): echo the [!command]
-   as a durable user block, pin the running header above the composer, and hand
-   the command to the executor. From the prelude this is the drop's layout jump
-   without a turn — the banner heads the document and the shell block follows. *)
+(* Start a user shell command (03-composer.md §Shell mode): echo the consumed
+   command as a durable user block, pin the running header above the composer,
+   and hand the same command to the executor. From the prelude this is the
+   drop's layout jump without a turn — the banner heads the document and the
+   shell block follows. *)
 let start_shell input t =
   let command = Spice_tools.Shell.Input.command input in
-  let echo transcript =
-    Transcript.append transcript (Transcript.User ("!" ^ command))
-  in
+  let echo transcript = Transcript.append transcript (Transcript.User command) in
   let t = { t with shell = Some input } in
   match t.phase with
   | Prelude ->

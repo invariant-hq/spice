@@ -488,3 +488,38 @@ let%expect_test
 22 | ❯ message spice
 23 | ────────────────────────────────────────────────────────────────────────────────
 24 |   $PROJECT · gpt-5.5 medium · dune: ✗  ? for shortcuts|}]
+
+(* The leading trigger selects shell mode and is consumed before the controlled
+   textarea renders. The warning-colored [!] is therefore the only shell marker
+   beside the command; the command buffer must not contribute a second one. *)
+let%expect_test "shell mode renders one marker beside the command" =
+  Tui.run ~name:"composer-shell-marker" ~provider:script @@ fun t ->
+  reach_transcript t;
+  Tui.keys t "!echo composer-marker";
+  Tui.settle t;
+  Tui.print t;
+  [%expect
+    {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
+05 |
+06 | ❯ say hello
+07 |
+08 | ⏺ Hello from the fake provider.
+09 |
+10 |
+11 |
+12 |
+13 |
+14 |
+15 |
+16 |
+17 |
+18 |
+19 |
+20 |
+21 | ────────────────────────────────────────────────────────────────────────────────
+22 | ! echo composer-marker
+23 | ────────────────────────────────────────────────────────────────────────────────
+24 |   esc exit shell · ↵ run                                               ! shell|}]
