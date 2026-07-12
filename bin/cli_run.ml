@@ -777,6 +777,9 @@ let execution_error_kind = function
   | Spice_protocol.Error.Active_turn_exists _ -> "active_turn_exists"
   | Spice_protocol.Error.No_active_turn -> "no_active_turn"
   | Spice_protocol.Error.Permission_not_pending _ -> "permission_not_pending"
+  | Spice_protocol.Error.Permission_rule_save_failed _ ->
+      "permission_rule_save_failed"
+  | Spice_protocol.Error.Permission_rule_saved _ -> "permission_rule_saved"
   | Spice_protocol.Error.Tool_claim_not_pending _ -> "tool_claim_not_pending"
   | Spice_protocol.Error.Tool_call_not_pending _ -> "tool_call_not_pending"
   | Spice_protocol.Error.Transcript_not_ready _ -> "transcript_not_ready"

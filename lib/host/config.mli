@@ -493,6 +493,18 @@ module Config_file : sig
   (** [set_permission_rules rules doc] replaces [doc]'s durable permission
       rules. An empty list removes the field. *)
 
+  val add_user_permission_rules :
+    stdenv:Eio_unix.Stdenv.base ->
+    paths ->
+    Spice_permission.Policy.Rule.t list ->
+    (unit, Error.t) result
+  (** [add_user_permission_rules ~stdenv paths rules] appends each rule not
+      already present to the user config, preserving existing and input order.
+
+      The read, merge, and atomic replacement are one locked transaction across
+      processes and fibers. An empty [rules] list performs no filesystem
+      operation. *)
+
   val edit :
     stdenv:Eio_unix.Stdenv.base ->
     paths ->
@@ -504,14 +516,17 @@ module Config_file : sig
 
       Unknown fields are preserved with their values and nesting, supported
       empty containers are removed, and parent directories are created as
-      needed. Editing writes nothing when [f] leaves the supported fields
-      unchanged. Updating {!Project_local} also records the local config
-      filename in the adjacent [.gitignore] when possible. *)
+      needed. The complete read, transformation, and atomic replacement are
+      serialized across processes and fibers. Editing writes nothing when [f]
+      leaves the supported fields unchanged. Updating {!Project_local} also
+      records the local config filename in the adjacent [.gitignore] when
+      possible. *)
 
   val ensure :
     stdenv:Eio_unix.Stdenv.base -> paths -> kind -> (unit, Error.t) result
   (** [ensure ~stdenv paths kind] creates [kind] as an empty config file if it
-      is missing. Existing files are left unchanged. *)
+      is missing. Existing files are left unchanged. Creation uses the same
+      transaction lock as {!edit}. *)
 
 end
 

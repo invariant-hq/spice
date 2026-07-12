@@ -234,6 +234,24 @@
  (libraries windtrap spice_host spice_permission))
 
 (test
+ (name test_permission_transaction)
+ (modules test_permission_transaction)
+ (libraries
+  windtrap
+  jsont
+  spice_host
+  spice_protocol
+  spice_session
+  spice_session_run
+  spice_session_store
+  spice_llm
+  spice_tool
+  spice_path
+  spice_permission
+  eio
+  eio_main))
+
+(test
  (name test_host_artifacts)
  (modules test_host_artifacts)
  (libraries windtrap spice_host spice_protocol spice_session eio eio_main))

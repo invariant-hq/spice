@@ -1858,17 +1858,17 @@ let layer_to_fields layer fields =
   | [] -> unset_member "permission.rules" fields
   | rules -> set_member "permission.rules" (permission_rules_json rules) fields
 
-let tmp_counter = ref 0
+let tmp_counter = Atomic.make 0
 
 let tmp_path env path =
-  incr tmp_counter;
+  let counter = Atomic.fetch_and_add tmp_counter 1 in
   let stamp =
     Eio.Time.now (Eio.Stdenv.clock env)
     |> Int64.bits_of_float |> Int64.to_string
   in
   path ^ ".tmp."
   ^ string_of_int (Unix.getpid ())
-  ^ "." ^ stamp ^ "." ^ string_of_int !tmp_counter
+  ^ "." ^ stamp ^ "." ^ string_of_int counter
 
 let write_json env path fields =
   let json = json_object (List.rev fields) in
@@ -1936,6 +1936,70 @@ let ensure_path ~stdenv ~path ?(before_write = fun () -> Ok ()) () =
     let* () = before_write () in
     write_json stdenv path []
 
+let edit_mutexes : (string, Eio.Mutex.t) Hashtbl.t = Hashtbl.create 8
+let edit_mutexes_guard = Mutex.create ()
+
+(* POSIX record locks are process-scoped, so same-process editors also share a
+   mutex keyed by the canonical config path. *)
+let edit_mutex_for key =
+  Mutex.protect edit_mutexes_guard (fun () ->
+      match Hashtbl.find_opt edit_mutexes key with
+      | Some mutex -> mutex
+      | None ->
+          let mutex = Eio.Mutex.create () in
+          Hashtbl.add edit_mutexes key mutex;
+          mutex)
+
+let with_edit_lock stdenv path f =
+  let exception Callback_raised of exn * Printexc.raw_backtrace in
+  let rec lockf fd command =
+    match Unix.lockf fd command 0 with
+    | () -> ()
+    | exception Unix.Unix_error (Unix.EINTR, _, _) -> lockf fd command
+  in
+  let* () = mkdir_p stdenv (Filename.dirname path) in
+  let lock_path = path ^ ".lock" in
+  let key =
+    try Unix.realpath (Filename.dirname path) ^ "/" ^ Filename.basename path
+    with Unix.Unix_error _ -> path
+  in
+  let mutex = edit_mutex_for key in
+  match
+    Eio.Mutex.use_ro mutex (fun () ->
+        let fd =
+          Unix.openfile lock_path
+            [ Unix.O_CREAT; Unix.O_RDWR; Unix.O_CLOEXEC ]
+            0o600
+        in
+        Fun.protect
+          ~finally:(fun () -> Unix.close fd)
+          (fun () ->
+            let rec acquire backoff =
+              match Unix.lockf fd Unix.F_TLOCK 0 with
+              | () -> ()
+              | exception Unix.Unix_error (Unix.EINTR, _, _) -> acquire backoff
+              | exception
+                  Unix.Unix_error ((Unix.EACCES | Unix.EAGAIN), _, _) ->
+                  Eio.Time.sleep (Eio.Stdenv.clock stdenv) backoff;
+                  acquire (Float.min (backoff *. 2.) 0.1)
+            in
+            acquire 0.001;
+            Fun.protect
+              ~finally:(fun () -> lockf fd Unix.F_ULOCK)
+              (fun () ->
+                match f () with
+                | result -> result
+                | exception exn ->
+                    raise
+                      (Callback_raised
+                         (exn, Printexc.get_raw_backtrace ())))))
+  with
+  | result -> result
+  | exception Callback_raised (exn, backtrace) ->
+      Printexc.raise_with_backtrace exn backtrace
+  | exception (Eio.Cancel.Cancelled _ as exn) -> raise exn
+  | exception exn -> error (lock_path ^ ": " ^ Printexc.to_string exn)
+
 module Files = struct
   type kind = User | Project | Project_local
 
@@ -1993,25 +2057,27 @@ module Files = struct
 
   let edit ~stdenv t kind ~f =
     let path = path_string t kind in
-    match kind with
-    | User ->
-        edit_path ~stdenv ~path ~before_write:(fun () -> Ok ()) ~f
-    | Project | Project_local ->
-        edit_path ~stdenv ~path ~before_write:(before_project_write stdenv t) ~f
+    with_edit_lock stdenv path (fun () ->
+        match kind with
+        | User ->
+            edit_path ~stdenv ~path ~before_write:(fun () -> Ok ()) ~f
+        | Project | Project_local ->
+            edit_path ~stdenv ~path
+              ~before_write:(before_project_write stdenv t) ~f)
 
   let ensure ~stdenv t kind =
     let path = path_string t kind in
-    match kind with
-    | User -> ensure_path ~stdenv ~path ()
-    | Project ->
-        ensure_path ~stdenv ~path ~before_write:(before_project_write stdenv t)
-          ()
-    | Project_local when file_exists stdenv path ->
-      ensure_project_local_gitignore stdenv path
-    | Project_local ->
-        ensure_path ~stdenv ~path
-          ~before_write:(before_project_write stdenv t)
-          ()
+    with_edit_lock stdenv path (fun () ->
+        match kind with
+        | User -> ensure_path ~stdenv ~path ()
+        | Project ->
+            ensure_path ~stdenv ~path
+              ~before_write:(before_project_write stdenv t) ()
+        | Project_local when file_exists stdenv path ->
+            ensure_project_local_gitignore stdenv path
+        | Project_local ->
+            ensure_path ~stdenv ~path
+              ~before_write:(before_project_write stdenv t) ())
 end
 
 module Config_file = struct
@@ -2049,6 +2115,32 @@ module Config_file = struct
   let permission_rules = Layer.permission_rules
   let set_permission_rules = Layer.set_permission_rules
   let edit = Files.edit
+
+  let add_user_permission_rules ~stdenv paths rules =
+    match rules with
+    | [] -> Ok ()
+    | _ :: _ ->
+        let add rules doc =
+          let existing = permission_rules doc in
+          let added =
+            List.fold_left
+              (fun added rule ->
+                if
+                  List.exists
+                    (Spice_permission.Policy.Rule.equal rule)
+                    existing
+                  || List.exists
+                       (Spice_permission.Policy.Rule.equal rule)
+                       added
+                then added
+                else rule :: added)
+              [] rules
+            |> List.rev
+          in
+          Ok (set_permission_rules (existing @ added) doc)
+        in
+        edit ~stdenv paths User ~f:(add rules)
+
   let ensure = Files.ensure
 end
 

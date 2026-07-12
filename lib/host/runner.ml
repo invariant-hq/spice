@@ -9,6 +9,9 @@ type t = {
   model : Spice_llm.Model.t;
   mode : Spice_protocol.Mode.t option;
   run : Spice_session_run.Config.t;
+  save_user_permission_rules :
+    Spice_permission.Policy.Rule.t list ->
+    (string, Spice_protocol.Error.t) result;
   host_tool : Handler.t;
   resolve_plan : Session_loop.plan_resolver;
   compaction : Compactor.Policy.t option;
@@ -25,13 +28,27 @@ let no_handler ~cancelled:_ _document _call = Ok None
 let no_resolver ~decision:_ _proposal =
   Error (Spice_protocol.Error.Internal "plan resolution is not configured")
 
-let make ~store ~client ~model ~mode ~run ?(host_tool = no_handler)
-    ?(resolve_plan = no_resolver) ?compaction ?(hooks = Session.no_hooks) () =
-  { store; client; model; mode; run; host_tool; resolve_plan; compaction; hooks }
+let make ~store ~client ~model ~mode ~run ~save_user_permission_rules
+    ?(host_tool = no_handler) ?(resolve_plan = no_resolver) ?compaction
+    ?(hooks = Session.no_hooks) () =
+  {
+    store;
+    client;
+    model;
+    mode;
+    run;
+    save_user_permission_rules;
+    host_tool;
+    resolve_plan;
+    compaction;
+    hooks;
+  }
 
 let with_hooks f t = { t with hooks = f t.hooks }
 
 let execute t document command =
   Session_loop.execute ~store:t.store ~client:t.client ~host_tool:t.host_tool
-    ~resolve_plan:t.resolve_plan ~turn_model:t.model ~turn_mode:t.mode ~run:t.run
-    ?compaction:t.compaction ~hooks:t.hooks document command
+    ~resolve_plan:t.resolve_plan
+    ~save_user_permission_rules:t.save_user_permission_rules
+    ~turn_model:t.model ~turn_mode:t.mode ~run:t.run ?compaction:t.compaction
+    ~hooks:t.hooks document command

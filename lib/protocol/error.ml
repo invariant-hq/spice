@@ -18,6 +18,12 @@ type t =
   | Active_turn_exists of Spice_session.Turn.Id.t
   | No_active_turn
   | Permission_not_pending of Spice_session.Permission.Id.t
+  | Permission_rule_save_failed of {
+      path : string;
+      message : string;
+      hints : string list;
+    }
+  | Permission_rule_saved of { path : string; resolution_error : t }
   | Tool_claim_not_pending of Spice_session.Tool_claim.Id.t
   | Tool_call_not_pending of { call_id : string; name : string }
   | Transcript_not_ready of Spice_llm.Transcript.Error.t
@@ -26,7 +32,7 @@ type t =
   | Empty_compaction_summary
   | Internal of string
 
-let message = function
+let rec message = function
   | Conflict { id; expected; actual } ->
       Format.asprintf
         "session conflict for %a: expected revision %s but found %s"
@@ -49,6 +55,16 @@ let message = function
   | Permission_not_pending id ->
       Format.asprintf "permission is not pending: %a"
         Spice_session.Permission.Id.pp id
+  | Permission_rule_save_failed { path; message; _ } ->
+      Printf.sprintf
+        "could not save user permission rules to %s: %s; the operation did not \
+         start"
+        path message
+  | Permission_rule_saved { path; resolution_error } ->
+      Printf.sprintf
+        "user permission rules were saved to %s, but the session resolution \
+         could not be saved: %s; the operation did not start"
+        path (message resolution_error)
   | Tool_claim_not_pending id ->
       Format.asprintf "tool claim is not pending: %a"
         Spice_session.Tool_claim.Id.pp id
@@ -64,7 +80,7 @@ let message = function
   | Empty_compaction_summary -> "compaction summary must not be empty"
   | Internal message -> message
 
-let hints = function
+let rec hints = function
   | Conflict _ -> [ "reload the session and retry the operation" ]
   | Provider error -> (
       match Spice_llm.Error.kind error with
@@ -90,6 +106,20 @@ let hints = function
       ]
   | Tool_claim_not_pending _ ->
       [ "run `spice session show` to find the pending tool claim id" ]
+  | Permission_rule_save_failed { hints; _ } ->
+      hints
+      @ [
+          "fix the config error and retry the same permission reply";
+          "or resolve the pending permission without saving a user rule";
+        ]
+  | Permission_rule_saved { resolution_error; _ } ->
+      [
+        "retry the same permission reply; saving the same rules again is a \
+         no-op";
+        "to roll back instead, inspect `spice permission list` and remove the \
+         saved rules with `spice permission remove`";
+      ]
+      @ hints resolution_error
   | Not_found _ | Storage _ | Invalid_answer _ | Deleted _
   | Active_turn_exists _ | No_active_turn | Permission_not_pending _
   | Tool_call_not_pending _ | Nothing_to_summarize | Empty_compaction_summary

@@ -18,6 +18,7 @@ let model =
   Llm.Model.make ~provider ~api:(Llm.Model.Api.make "responses") ~id:"gpt-test"
 
 let cwd = Spice_path.Abs.of_string_exn "/workspace"
+let save_user_permission_rules _ = Ok "/test/config.json"
 
 let notice id key =
   Notice.make ~source:"test" ~severity:Notice.Severity.Info ~title:id
@@ -130,7 +131,10 @@ let notice_injection_uses_final_observer () =
     Spice_session_run.Config.make ~tools:[]
       ~policy:(fun _ -> Spice_permission.Policy.default) ()
   in
-  let runner = Runner.make ~store ~client ~model ~mode:None ~run ~hooks () in
+  let runner =
+    Runner.make ~store ~client ~model ~mode:None ~run
+      ~save_user_permission_rules ~hooks ()
+  in
   let start =
     Spice_protocol.Command.Start.make
       ~id:(Session.Turn.Id.of_string "turn-observer")
@@ -176,7 +180,10 @@ let raised_model_call_rolls_notices_back () =
   let hooks =
     Host_session.with_notices queue Host_session.no_hooks
   in
-  let runner = Runner.make ~store ~client ~model ~mode:None ~run ~hooks () in
+  let runner =
+    Runner.make ~store ~client ~model ~mode:None ~run
+      ~save_user_permission_rules ~hooks ()
+  in
   let start =
     Spice_protocol.Command.Start.make
       ~id:(Session.Turn.Id.of_string "turn-1")

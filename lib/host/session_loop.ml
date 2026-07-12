@@ -409,6 +409,11 @@ let run_tool_result hooks execution runnable =
 let rec handle_step ~store ~projector ~pressure_compacted ~overflow_compacted
     ~model ~host_tool hooks ?compaction run document step =
   let* document = save_step ~store projector hooks document step in
+  handle_saved_step ~store ~projector ~pressure_compacted ~overflow_compacted
+    ~model ~host_tool hooks ?compaction run document step
+
+and handle_saved_step ~store ~projector ~pressure_compacted ~overflow_compacted
+    ~model ~host_tool hooks ?compaction run document step =
   match Spice_session_run.Step.next step with
   | Spice_session_run.Step.Waiting
       (Spice_session.Waiting.Host_tool waiting as block) -> (
@@ -625,8 +630,9 @@ type plan_resolver =
   Spice_protocol.Plan.Proposal.t ->
   (string, Spice_protocol.Error.t) result
 
-let execute ~store ~client ~host_tool ~resolve_plan ~turn_model ~turn_mode ~run
-    ?compaction ~hooks document (command : Spice_protocol.Command.t) =
+let execute ~store ~client ~host_tool ~resolve_plan ~save_user_permission_rules
+    ~turn_model ~turn_mode ~run ?compaction ~hooks document
+    (command : Spice_protocol.Command.t) =
   let session = Spice_session_store.Document.session document in
   let projector = new_projector session in
   let model ~on_event ~cancelled request =
@@ -759,7 +765,33 @@ let execute ~store ~client ~host_tool ~resolve_plan ~turn_model ~turn_mode ~run
             answer session
           |> map_run session
         in
-        continue_step document step
+        (match answer with
+        | Spice_session.Permission.Resolved.Allow
+            (Spice_session.Permission.Resolved.Family
+              {
+                lifetime = Spice_session.Permission.Resolved.User;
+                rules;
+              }) ->
+            let* path = save_user_permission_rules rules in
+            (match save_step ~store projector hooks document step with
+            | Error resolution_error ->
+                Error
+                  (Spice_protocol.Error.Permission_rule_saved
+                     { path; resolution_error })
+            | Ok document ->
+                drive (fun () ->
+                    handle_saved_step ~store ~projector
+                      ~pressure_compacted:false ~overflow_compacted:false ~model
+                      ~host_tool hooks ?compaction run document step))
+        | Spice_session.Permission.Resolved.Allow
+            (Spice_session.Permission.Resolved.Once
+            | Spice_session.Permission.Resolved.Exact_for_conversation
+            | Spice_session.Permission.Resolved.Family
+                {
+                  lifetime = Spice_session.Permission.Resolved.Conversation;
+                  _;
+                })
+        | Spice_session.Permission.Resolved.Deny -> continue_step document step)
     | Spice_protocol.Command.Answer { turn; call_id; answer } ->
         let* () = check_active_document session in
         let* waiting = pending_host_tool session ~turn ~call_id in

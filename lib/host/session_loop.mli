@@ -228,6 +228,9 @@ val execute :
   client:Spice_llm.Client.t ->
   host_tool:Handler.t ->
   resolve_plan:plan_resolver ->
+  save_user_permission_rules:(
+    Spice_permission.Policy.Rule.t list ->
+    (string, Spice_protocol.Error.t) result) ->
   turn_model:Spice_llm.Model.t ->
   turn_mode:Spice_protocol.Mode.t option ->
   run:Spice_session_run.Config.t ->
@@ -238,11 +241,13 @@ val execute :
   ( Spice_session_store.Document.t * Spice_protocol.Outcome.t,
     Spice_protocol.Error.t )
   result
-(** [execute ~store ~client ~host_tool ~turn_model ~turn_mode ~run ?compaction
-    ~hooks document command] interprets [command] against [document] until the
-    session blocks or finishes, returning the latest saved document beside its
-    {!Spice_protocol.Outcome.t}. [turn_model], [turn_mode], and [run]'s host-tool
-    catalog form the accepted turn contract for {!Spice_protocol.Command.Start}.
+(** [execute ~store ~client ~host_tool ~resolve_plan
+    ~save_user_permission_rules ~turn_model ~turn_mode ~run ?compaction ~hooks
+    document command] interprets [command] against [document] until the session
+    blocks or finishes, returning the latest saved document beside its
+    {!Spice_protocol.Outcome.t}. [turn_model], [turn_mode], and [run]'s
+    host-tool catalog form the accepted turn contract for
+    {!Spice_protocol.Command.Start}.
 
     Save-before-effect: each planned event suffix is appended before the model
     request or executable tool it precedes is interpreted. An executable tool
@@ -251,7 +256,11 @@ val execute :
     {!Spice_protocol.Outcome.Waiting} with the classified call. A
     {!Spice_protocol.Command.Answer} re-derives the pending host-tool boundary
     from the session and matches [(turn, call id)], reporting a mismatch as
-    {!Spice_protocol.Error.Tool_call_not_pending}.
+    {!Spice_protocol.Error.Tool_call_not_pending}. A user-family permission
+    reply is validated, passed to [save_user_permission_rules], and only then
+    appended to the session. If the session append fails after the config
+    commit, the result is {!Spice_protocol.Error.Permission_rule_saved}; the
+    blocked effect is never interpreted.
 
     When [compaction] is present, an over-limit ordinary request triggers one
     pressure compaction per over-limit episode (the guard latches until a

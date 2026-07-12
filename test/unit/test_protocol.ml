@@ -1123,6 +1123,18 @@ module Boundary_tests = struct
       Error.Active_turn_exists turn_id;
       Error.No_active_turn;
       Error.Permission_not_pending permission_id;
+      Error.Permission_rule_save_failed
+        {
+          path = "/config.json";
+          message = "read-only filesystem";
+          hints = [ "make the file writable" ];
+        };
+      Error.Permission_rule_saved
+        {
+          path = "/config.json";
+          resolution_error =
+            Error.Storage { path = "/sessions/x"; message = "disk full" };
+        };
       Error.Tool_claim_not_pending tool_claim_id;
       Error.Tool_call_not_pending { call_id = "call-1"; name = "ask_user" };
       Error.Transcript_not_ready

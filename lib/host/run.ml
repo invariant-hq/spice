@@ -232,6 +232,24 @@ type t = {
 let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
     ?skills:preloaded_skills ?cwd_override () =
   let config = Host.config host in
+  let config_files = Config.files config in
+  let user_permission_path =
+    Config.Config_file.user config_files |> Spice_path.Abs.to_string
+  in
+  let save_user_permission_rules rules =
+    match
+      Config.Config_file.add_user_permission_rules ~stdenv config_files rules
+    with
+    | Ok () -> Ok user_permission_path
+    | Error error ->
+        Error
+          (Spice_protocol.Error.Permission_rule_save_failed
+             {
+               path = user_permission_path;
+               message = Config.Error.message error;
+               hints = Config.Error.hints error;
+             })
+  in
   let workspace = Plan.workspace plan in
   let sandbox = Plan.sandbox plan in
   let permission = Plan.permission plan in
@@ -568,7 +586,8 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
       in
       Ok
         (Runner.make ~store ~client ~model:(Spice_provider.Model.llm model)
-           ~mode:None ~run:child_config ~host_tool:handler
+           ~mode:None ~run:child_config ~save_user_permission_rules
+           ~host_tool:handler
            ~hooks:
              (Session.with_notices ~before_request:(fun () -> ()) notices
                 Session.no_hooks)
@@ -625,8 +644,8 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
     Ok
       (Runner.make ~store ~client
          ~model:(Spice_provider.Model.llm model)
-         ~mode:(Some mode) ~run:run_config ~host_tool:handler ~resolve_plan
-         ?compaction ~hooks ())
+         ~mode:(Some mode) ~run:run_config ~save_user_permission_rules
+         ~host_tool:handler ~resolve_plan ?compaction ~hooks ())
   in
   Ok
     {

@@ -27,28 +27,34 @@ val make :
   model:Spice_llm.Model.t ->
   mode:Spice_protocol.Mode.t option ->
   run:Spice_session_run.Config.t ->
+  save_user_permission_rules:(
+    Spice_permission.Policy.Rule.t list ->
+    (string, Spice_protocol.Error.t) result) ->
   ?host_tool:Handler.t ->
   ?resolve_plan:Session_loop.plan_resolver ->
   ?compaction:Compactor.Policy.t ->
   ?hooks:Session.hooks ->
   unit ->
   t
-(** [make ~store ~client ~model ~mode ~run ?host_tool ?resolve_plan ?compaction
-    ?hooks ()] is an interpreter over [store] and [client] with effective turn
-    [model], optional root [mode], and run configuration [run]. These bound
-    values, plus [run]'s host-tool catalog, are the only source of persisted
-    turn contract facts; {!Spice_protocol.Command.Start} supplies request data
-    only.
+(** [make ~store ~client ~model ~mode ~run ~save_user_permission_rules
+    ?host_tool ?resolve_plan ?compaction ?hooks ()] is an interpreter over
+    [store] and [client] with effective turn [model], optional root [mode], and
+    run configuration [run]. These bound values, plus [run]'s host-tool catalog,
+    are the only source of persisted turn contract facts;
+    {!Spice_protocol.Command.Start} supplies request data only.
 
     [host_tool] answers caller-owned host-tool calls; calls it does not answer
     remain blocked for the caller to resolve. [resolve_plan] applies a
     {!Spice_protocol.Command.Resolve_plan} decision host-side (the durable plan
     transition and the answer wording); it defaults to a resolver that reports
     {!Spice_protocol.Error.Internal}, so a runner that never hosts plan-mode
-    turns need not supply one. [compaction], when present, enables pressure
-    compaction before large ordinary requests and one overflow-recovery
-    compaction after a context overflow. [hooks] defaults to
-    {!Session.no_hooks}. *)
+    turns need not supply one. [save_user_permission_rules] atomically appends
+    user-family rules and returns the committed config path; its error must
+    explain that the permission remains pending. It is mandatory so every
+    command ingress preserves config-before-resolution ordering. [compaction],
+    when present, enables pressure compaction before large ordinary requests
+    and one overflow-recovery compaction after a context overflow. [hooks]
+    defaults to {!Session.no_hooks}. *)
 
 val with_hooks : (Session.hooks -> Session.hooks) -> t -> t
 (** [with_hooks f t] is [t] with its hooks replaced by [f]'s result, composing

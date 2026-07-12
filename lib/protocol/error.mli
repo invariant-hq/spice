@@ -40,6 +40,17 @@ type t =
   | No_active_turn  (** The operation requires an active turn. *)
   | Permission_not_pending of Spice_session.Permission.Id.t
       (** A permission reply referenced no pending request. *)
+  | Permission_rule_save_failed of {
+      path : string;
+      message : string;
+      hints : string list;
+    }
+      (** User-scoped permission rules could not be saved. The permission
+          remains pending and the blocked operation did not start. *)
+  | Permission_rule_saved of { path : string; resolution_error : t }
+      (** User-scoped permission rules were saved at [path], but the session
+          resolution was not appended by this command and the blocked operation
+          did not start. Retrying the reply is safe. *)
   | Tool_claim_not_pending of Spice_session.Tool_claim.Id.t
       (** A tool-claim recovery referenced no pending unfinished claim. *)
   | Tool_call_not_pending of { call_id : string; name : string }
@@ -61,7 +72,8 @@ val message : t -> string
 
 val diagnostic : t -> Spice_diagnostic.t
 (** [diagnostic e] renders [e] as a diagnostic, with actionable hints on
-    recovery-bearing constructors. *)
+    recovery-bearing constructors. A {!Permission_rule_saved} diagnostic
+    offers both an idempotent retry and explicit removal of the saved rule. *)
 
 val pp : Format.formatter -> t -> unit
 (** [pp ppf e] formats [e] for diagnostics. *)
