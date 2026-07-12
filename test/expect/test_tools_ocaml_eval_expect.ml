@@ -19,6 +19,15 @@ let environment =
 let sandbox =
   Spice_sandbox.seal (Spice_sandbox.Policy.direct ~environment)
 
+let sandbox_with_path path =
+  let environment =
+    Spice_sandbox.Environment.make ~path
+      ~scratch:(Spice_path.Abs.of_string_exn "/tmp")
+      ~user_names:[] ~launch:Sys.getenv_opt
+    |> Result.get_ok
+  in
+  Spice_sandbox.seal (Spice_sandbox.Policy.direct ~environment)
+
 let confined ?(writable_roots = []) () =
   Spice_sandbox.Policy.confined ~reads:Spice_sandbox.Policy.All
     ~writable_roots ~protected_paths:[]
@@ -110,6 +119,19 @@ let with_project f =
 let write_executable file contents =
   write_disk file contents;
   Unix.chmod file 0o755
+
+let write_dune_proxy file =
+  write_executable file
+    {|#!/bin/sh
+case "$1 $2" in
+  "ocaml top") exit 0 ;;
+  "exec --")
+    shift 2
+    exec "$@"
+    ;;
+  *) exit 64 ;;
+esac
+|}
 
 let decode_call tool input =
   match Tool.Call.decode [ tool ] ~name:Eval.name ~input () with
@@ -209,6 +231,57 @@ let%expect_test "ocaml_eval evaluates code in a Dune library context" =
     stdout has answer: true
     truncated: false |}]
 
+let%expect_test "ocaml_eval uses Dune's package-managed toplevel" =
+  with_project @@ fun ~root ~fs ~workspace ->
+  let bin = path root "bin" in
+  let dune = path bin "dune" in
+  write_executable dune
+    {|#!/bin/sh
+case "$1 $2" in
+  "ocaml top")
+    [ "$#" -eq 3 ] && [ "$3" = . ] || exit 64
+    ;;
+  "exec --")
+    [ "$#" -eq 5 ] && [ "$3" = ocaml ] && [ "$4" = -stdin ] && [ "$5" = -noinit ] || exit 64
+    while IFS= read -r line; do :; done
+    printf 'package-managed toplevel\n'
+    ;;
+  *) exit 64 ;;
+esac
+|};
+  let config =
+    Eval.Config.make ~dune
+      ~environment:
+        [
+          ("PATH", Some bin); ("OPAM_SWITCH_PREFIX", None); ("SPICE_OCAML", None);
+        ]
+      ()
+  in
+  let tool =
+    Eval.tool ~sandbox:(sandbox_with_path bin) ~fs ~workspace ~config ()
+  in
+  let call = decode_call tool (json_obj [ ("code", Json.string "1 + 1") ]) in
+  let result = Tool.Call.run call () in
+  print_eval_result result;
+  begin match Tool.Result.output result with
+  | Some output -> (
+      match Eval.Output.of_tool_output output with
+      | Some evidence ->
+          Printf.printf "package-managed output: %b\n"
+            (String.equal "package-managed toplevel\n"
+               (stream_text (Eval.Output.stdout evidence)))
+      | None -> print_endline "package-managed output: false")
+  | None -> print_endline "package-managed output: false"
+  end;
+  [%expect
+    {|
+    status: completed
+    stage: eval
+    dir: .
+    stdout has answer: false
+    truncated: false
+    package-managed output: true |}]
+
 let%expect_test "eval source carries the exact sandbox route" =
   with_project @@ fun ~root:_ ~fs ~workspace ->
   let config = Eval.Config.make () in
@@ -253,7 +326,7 @@ let%expect_test "ocaml_eval timeout applies while writing large stdin" =
   with_project @@ fun ~root ~fs ~workspace ->
   let dune = path root "fake-dune" in
   let ocaml = path root "fake-ocaml" in
-  write_executable dune "#!/bin/sh\nexit 0\n";
+  write_dune_proxy dune;
   write_executable ocaml "#!/bin/sh\nsleep 5\n";
   let config =
     Eval.Config.make ~dune ~ocaml ~default_timeout_ms:50 ~max_timeout_ms:50 ()
@@ -273,7 +346,7 @@ let%expect_test "ocaml_eval refuses to run under a live dune watch" =
   print_endline "-- no watch proceeds --";
   let dune = path root "fake-dune" in
   let ocaml = path root "fake-ocaml" in
-  write_executable dune "#!/bin/sh\nexit 0\n";
+  write_dune_proxy dune;
   write_executable ocaml "#!/bin/sh\ncat >/dev/null\n";
   let config = Eval.Config.make ~dune ~ocaml () in
   Eval.run ~sandbox ~fs ~workspace ~config

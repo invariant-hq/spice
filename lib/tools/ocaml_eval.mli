@@ -80,15 +80,11 @@ module Config : sig
     t
   (** [make ()] is an evaluation policy.
 
-      [dune] defaults to ["dune"]. [ocaml] defaults to ["ocaml"].
+      [dune] defaults to ["dune"]. [ocaml] defaults to ["ocaml"] and names the
+      toplevel program Dune resolves in the selected workspace.
       [default_timeout_ms] defaults to [10_000]. [max_timeout_ms] defaults to
       [120_000]. [max_output_bytes] defaults to [65_536] per stream.
       [environment] is applied after deterministic non-interactive defaults.
-
-      When Dune package management exposes [DUNE_OCAML_STDLIB], the evaluator
-      prepends the corresponding compiler [bin] directory to [PATH] for child
-      processes. This lets nested Dune projects find [ocamlc] in package-managed
-      test and development sessions without requiring opam.
 
       Raises [Invalid_argument] if executable names or environment names are
       empty, if any string contains NUL, if an environment name contains ["="],
@@ -99,7 +95,7 @@ module Config : sig
   (** [dune t] is the Dune executable used for setup. *)
 
   val ocaml : t -> string
-  (** [ocaml t] is the OCaml toplevel executable used for evaluation. *)
+  (** [ocaml t] is the OCaml toplevel program Dune resolves for evaluation. *)
 
   val default_timeout_ms : t -> int
   (** [default_timeout_ms t] is used when input omits [timeout_ms]. *)
@@ -208,9 +204,11 @@ val run :
     [dir] is resolved through [workspace] and checked as an existing directory
     through [fs]. The implementation executes [dune ocaml top .] in that
     directory, writes Dune's directives plus [code] to the OCaml toplevel's
-    standard input, and runs [ocaml -stdin -noinit] in the same directory.
-    Standard output and standard error are drained concurrently and retained
-    with head/tail bounds.
+    standard input, and runs [dune exec -- ocaml -stdin -noinit] in the same
+    directory. Both stages use the resolved Dune executable, so a compiler owned
+    by Dune package management does not need to be on the host [PATH]. Standard
+    output and standard error are drained concurrently and retained with
+    head/tail bounds.
 
     [watch], when supplied, is polled before Dune is spawned: if it returns
     [Some endpoint] a live Dune watch holds the build lock, and [dune ocaml top]

@@ -528,7 +528,10 @@ let run ~sandbox ~fs ~workspace ~config ?watch
                                      ~code:(Input.code input))
                                 ~cancelled
                                 [
-                                  program_path toolchain (Config.ocaml config);
+                                  program_path toolchain (Config.dune config);
+                                  "exec";
+                                  "--";
+                                  Config.ocaml config;
                                   "-stdin";
                                   "-noinit";
                                 ]
