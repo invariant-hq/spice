@@ -11,15 +11,14 @@ module Permission = Spice_host.Permission
 
 let request accesses = Spice_permission.Request.of_accesses accesses
 
-let decide ?(durable = []) ?(session = []) ~sandbox_backed preset accesses =
+let decide ?(durable = []) ?(conversation = []) ~sandbox_backed preset accesses =
   let run =
     Permission.Run.make ~preset:(`Preset, preset)
       ~durable:(List.map (fun rules -> (`Durable, rules)) durable)
       ()
     |> Permission.Run.with_sandbox_backing ~sandbox_backed
-    |> Permission.Run.with_session_rules session
   in
-  Policy.decide (Permission.Run.policy run) (request accesses)
+  Policy.decide (Permission.Run.policy ~conversation run) (request accesses)
 
 let expect_allowed message = function
   | Policy.Decision.Allowed -> ()
@@ -76,7 +75,7 @@ let explicit_read_anywhere_opt_in () =
   decide ~durable ~sandbox_backed:true Permission.Preset.Plan
     [ Access.shell ~cwd ~execution:enforced "cat ~/.config/raven/api.mli" ]
   |> expect_denied "Plan command guard precedes durable sandboxed allow";
-  decide ~session:[ allow_enforced ] ~sandbox_backed:true
+  decide ~conversation:[ allow_enforced ] ~sandbox_backed:true
     Permission.Preset.Plan
     [ Access.shell ~cwd ~execution:enforced "cat ~/.config/raven/api.mli" ]
   |> expect_denied "Plan command guard precedes session sandboxed allow"
@@ -113,6 +112,18 @@ let posture_and_rule_precedence_are_preserved () =
     [ command ~execution:enforced "dune" [ "build" ] ]
   |> expect_review "durable review"
 
+let conversation_rules_have_explicit_precedence () =
+  let commands = Policy.Match.kind `Command in
+  let allow = Policy.Rule.allow commands in
+  let review = Policy.Rule.review commands in
+  decide ~conversation:[ allow ] ~sandbox_backed:false
+    Permission.Preset.Default [ command "dune" [ "build" ] ]
+  |> expect_allowed "conversation allow precedes product fallback";
+  decide ~durable:[ [ review ] ] ~conversation:[ allow ]
+    ~sandbox_backed:false Permission.Preset.Default
+    [ command "dune" [ "build" ] ]
+  |> expect_review "durable review precedes conversation allow"
+
 let () =
   run "spice.host.permission"
     [
@@ -124,4 +135,6 @@ let () =
         unproven_and_sensitive_commands_still_review;
       test "posture and explicit rule precedence are preserved"
         posture_and_rule_precedence_are_preserved;
+      test "conversation rules have explicit precedence"
+        conversation_rules_have_explicit_precedence;
     ]

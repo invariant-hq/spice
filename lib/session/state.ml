@@ -208,6 +208,7 @@ type t = {
   tool_claim_order_rev : Tool_claim.Id.t list;
   tool_claims : tool_claim_record Tool_claim_map.t;
   grants : Policy.Grants.t;
+  permission_rules : Policy.Rule.t list;
 }
 
 let empty =
@@ -223,6 +224,7 @@ let empty =
     tool_claim_order_rev = [];
     tool_claims = Tool_claim_map.empty;
     grants = Policy.Grants.empty;
+    permission_rules = [];
   }
 
 let transcript t = t.transcript
@@ -269,6 +271,7 @@ let active_turn t =
   Option.map (fun id -> (Turn_map.find id t.turns).turn) t.active_turn
 
 let grants t = t.grants
+let permission_rules t = t.permission_rules
 
 let turns t =
   List.filter_map
@@ -654,15 +657,33 @@ let apply_permission_resolved resolution t =
               let grants =
                 match allowance with
                 | Permission.Resolved.Once -> t.grants
-                | Permission.Resolved.Session ->
+                | Permission.Resolved.Exact_for_conversation ->
                     Policy.Review.remember
                       (Permission.Requested.review record.request)
                       t.grants
+                | Permission.Resolved.Family _ -> t.grants
+              in
+              let permission_rules =
+                match allowance with
+                | Permission.Resolved.Family
+                    { lifetime = Permission.Resolved.Conversation; rules } ->
+                    List.fold_left
+                      (fun existing rule ->
+                        if List.exists (Policy.Rule.equal rule) existing then
+                          existing
+                        else existing @ [ rule ])
+                      t.permission_rules rules
+                | Permission.Resolved.Once
+                | Permission.Resolved.Exact_for_conversation
+                | Permission.Resolved.Family
+                    { lifetime = Permission.Resolved.User; _ } ->
+                    t.permission_rules
               in
               Ok
                 {
                   t with
                   grants;
+                  permission_rules;
                   permissions =
                     Permission_map.add id
                       { record with resolved = Some resolution }

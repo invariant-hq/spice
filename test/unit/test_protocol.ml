@@ -1422,7 +1422,7 @@ module Event_tests = struct
           (permission_request ~turn:(turn_id "turn-2") ~tool_call:read_call
              (extension_access "read_file"));
         Session.Event.permission_resolved
-          (Session.Permission.Resolved.allow_session
+          (Session.Permission.Resolved.allow_exact_for_conversation
              ~id:(Session.Permission.Id.of_string "perm-1"));
         Session.Event.message_appended (answer read_call "file contents");
         Session.Event.response_appended (response (assistant_call q2_call));

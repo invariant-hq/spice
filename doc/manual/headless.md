@@ -96,7 +96,7 @@ id:
 
 ```sh
 spice run reply ID --allow PERMISSION_ID          # allow once
-spice run reply ID --allow-session PERMISSION_ID  # allow for the session
+spice run reply ID --allow-conversation PERMISSION_ID  # exact, for the conversation
 spice run reply ID --deny PERMISSION_ID --message "use dune instead"
 
 spice run reply ID --approve-plan

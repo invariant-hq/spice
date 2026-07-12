@@ -346,5 +346,10 @@ val phase : t -> Phase.t
 
 val grants : t -> Spice_permission.Policy.Grants.t
 (** [grants t] is the runtime permission grants reconstructed from durable
-    permission replies. Only allow-session replies add grants; allow-once
-    permits the already-blocked operation and denial adds no grant. *)
+    permission replies. Only exact-conversation replies add grants; allow-once,
+    family replies, and denials add no hidden exact grant. *)
+
+val permission_rules : t -> Spice_permission.Policy.Rule.t list
+(** [permission_rules t] is the visible conversation-lifetime family rule list
+    reconstructed from durable permission replies, in installation order. User
+    family replies are audit facts and do not resurrect removed config rules. *)

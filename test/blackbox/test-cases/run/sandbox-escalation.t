@@ -28,7 +28,7 @@ flow is deterministic on every platform via the seam.
   - command exec 'printf' 'esc-one'  [review: no rule or grant]
   - custom shell.escalate 'printf esc-one'  [review: no rule or grant]
   allow once: spice run reply 'esc-run' --allow 'perm:$ID'
-  allow session: spice run reply 'esc-run' --allow-session 'perm:$ID'
+  allow conversation: spice run reply 'esc-run' --allow-conversation 'perm:$ID'
   deny: spice run reply 'esc-run' --deny 'perm:$ID'
   deny with message: spice run reply 'esc-run' --deny 'perm:$ID' --message TEXT|-
   $ wait_fake_server
@@ -45,7 +45,7 @@ command access, and nothing ran before approval.
   0
   [1]
 
-Approving with --allow-session executes that one command unconfined: the
+Approving with --allow-conversation executes that one command unconfined: the
 provider sees the output with not_requested evidence, and the next response
 escalates a different command — which must block again, because session
 grants cover only the identical command. Escalation approval never
@@ -56,7 +56,7 @@ broadens.
   > {"expect":{"body_contains":["function_call_output","call-esc-1","esc-one","not_requested"]},"response":{"id":"resp-esc-2","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-esc-2","call_id":"call-esc-2","name":"shell","arguments":"{\"command\":\"printf esc-two\",\"escalate\":true,\"description\":\"second escalation\"}"}]}}
   > JSONL
   $ start_fake_openai escalate-next.jsonl esc-capture-next esc-port-next
-  $ spice run reply esc-run --cwd "$PWD" --allow-session "$permission_id" >esc-next.out 2>&1; echo exit:$?
+  $ spice run reply esc-run --cwd "$PWD" --allow-conversation "$permission_id" >esc-next.out 2>&1; echo exit:$?
   exit:3
   $ sed -E "s/perm:[^ ']+/perm:\$ID/g; s/turn=turn_[^ ]+/turn=turn_\$ID/g" esc-next.out
   permission: default
@@ -72,7 +72,7 @@ broadens.
   - command exec 'printf' 'esc-two'  [review: no rule or grant]
   - custom shell.escalate 'printf esc-two'  [review: no rule or grant]
   allow once: spice run reply 'esc-run' --allow 'perm:$ID'
-  allow session: spice run reply 'esc-run' --allow-session 'perm:$ID'
+  allow conversation: spice run reply 'esc-run' --allow-conversation 'perm:$ID'
   deny: spice run reply 'esc-run' --deny 'perm:$ID'
   deny with message: spice run reply 'esc-run' --deny 'perm:$ID' --message TEXT|-
   $ wait_fake_server
@@ -80,8 +80,8 @@ broadens.
 The first escalation resolved and executed; the second is a fresh blocker
 with a different permission id.
 
-  $ spice session export esc-run | grep -o '"answer":"allow-session"'
-  "answer":"allow-session"
+  $ spice session export esc-run | grep -o '"answer":"allow-exact-for-conversation"'
+  "answer":"allow-exact-for-conversation"
   $ spice session export esc-run | grep -c '"type":"tool_claim_finished"'
   1
   $ next_id=$(spice session show --json esc-run | sed -n 's/.*"permission_id":"\([^"]*\)".*/\1/p')

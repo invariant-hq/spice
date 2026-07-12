@@ -37,7 +37,7 @@ string-replace editor family to keep write_file in the catalog for these flows.
       +approved contents
       \ No newline at end of file
   allow once: spice run reply 'permission-allow' --allow 'perm:$ID'
-  allow session: spice run reply 'permission-allow' --allow-session 'perm:$ID'
+  allow conversation: spice run reply 'permission-allow' --allow-conversation 'perm:$ID'
   deny: spice run reply 'permission-allow' --deny 'perm:$ID'
   deny with message: spice run reply 'permission-allow' --deny 'perm:$ID' --message TEXT|-
   $ wait_fake_server
@@ -128,7 +128,7 @@ model receives an ordinary tool result explaining the denial.
       +denied contents
       \ No newline at end of file
   allow once: spice run reply 'permission-deny' --allow 'perm:$ID'
-  allow session: spice run reply 'permission-deny' --allow-session 'perm:$ID'
+  allow conversation: spice run reply 'permission-deny' --allow-conversation 'perm:$ID'
   deny: spice run reply 'permission-deny' --deny 'perm:$ID'
   deny with message: spice run reply 'permission-deny' --deny 'perm:$ID' --message TEXT|-
   $ wait_fake_server

@@ -227,7 +227,6 @@ type t = {
     model:Spice_provider.Model.t ->
     client:Spice_llm.Client.t ->
     (Runner.t, Host.Error.t) result;
-  add_session_rule : Spice_permission.Policy.Rule.t -> unit;
 }
 
 let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
@@ -236,12 +235,6 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
   let workspace = Plan.workspace plan in
   let sandbox = Plan.sandbox plan in
   let permission = Plan.permission plan in
-  (* Reviewer "always allow" grants for this run. They live here, not in the
-     session document, so a session-scoped grant is deliberately per-run: a
-     later [resume] is a fresh process that re-reads only the durable config.
-     [runner_for] folds the current list into the posture on every turn
-     derivation, so a grant added mid-turn decides the next tool call. *)
-  let session_rules = ref [] in
   let* context = Context.load ~stdenv config in
   let skills =
     match preloaded_skills with
@@ -463,9 +456,6 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
      workspace, so a frontend re-binding at each turn pays only pure assembly
      and no producer restart. *)
   let runner_for ~mode ~model ~client =
-    let permission =
-      Permission.Run.with_session_rules !session_rules permission
-    in
     let* prelude =
       Context.extend_prelude context (Spice_protocol.Mode.prelude_messages mode)
       |> Result.map_error (fun error -> Host.Error.Instructions error)
@@ -480,10 +470,10 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
       |> Spice_protocol.Contract.filter_tools
            (Spice_protocol.Mode.contract mode)
     in
-    let policy =
+    let policy conversation =
       Spice_protocol.Contract.policy
         (Spice_protocol.Mode.contract mode)
-        ~configured:(Permission.Run.policy permission)
+        ~configured:(Permission.Run.policy ~conversation permission)
     in
     (* The mode offer is the ceiling; the goal kind is further conditioned on
        the session's stored goal, read at each derivation so a goal update is
@@ -528,10 +518,10 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
        contract's [client] for each live episode. *)
     let child_run_config role =
       let contract = Spice_protocol.Subagent.Role.contract role in
-      let parent_policy =
+      let parent_policy conversation =
         Spice_protocol.Contract.policy
           (Spice_protocol.Mode.contract mode)
-          ~configured:(Permission.Run.policy permission)
+          ~configured:(Permission.Run.policy ~conversation permission)
       in
       let* prelude =
         Context.extend_prelude context
@@ -539,8 +529,9 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
         |> Result.map_error (fun error -> Host.Error.Instructions error)
       in
       let child_tools = Spice_protocol.Contract.filter_tools contract tools in
-      let child_policy =
-        Spice_protocol.Contract.policy contract ~configured:parent_policy
+      let child_policy conversation =
+        Spice_protocol.Contract.policy contract
+          ~configured:(parent_policy conversation)
       in
       let child_max_steps = Config.Runtime.max_steps (Config.runtime config) in
       (* Workflow state stays root-only. Collaboration composes recursively:
@@ -646,8 +637,6 @@ let start ~sw ~stdenv host plan ~store ~session ~http ~fetch_https ?max_steps
       producers;
       jobs;
       runner_for;
-      add_session_rule =
-        (fun rule -> session_rules := !session_rules @ [ rule ]);
     }
 
 let close t =
@@ -658,7 +647,6 @@ let close t =
 
 let jobs t = t.jobs
 let runner t ~mode ~model ~client = t.runner_for ~mode ~model ~client
-let add_session_rule t rule = t.add_session_rule rule
 let workspace t = t.workspace
 let cwd t = t.cwd
 let context t = t.context

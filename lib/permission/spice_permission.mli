@@ -29,7 +29,3 @@ module Request = Request
 
 module Policy = Policy
 (** Permission policy: matchers, rules, evaluation, grants, and reviews. *)
-
-module Suggest = Suggest
-(** Durable allow-rule suggestions generalizing a reviewed access to its family.
-*)

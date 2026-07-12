@@ -269,8 +269,17 @@ let permission_reply_string resolved =
   match Session.Permission.Resolved.decision resolved with
   | Session.Permission.Resolved.Allowed Session.Permission.Resolved.Once ->
       "allow_once"
-  | Session.Permission.Resolved.Allowed Session.Permission.Resolved.Session ->
-      "allow_session"
+  | Session.Permission.Resolved.Allowed
+      Session.Permission.Resolved.Exact_for_conversation ->
+      "allow_conversation"
+  | Session.Permission.Resolved.Allowed
+      (Session.Permission.Resolved.Family
+        { lifetime = Session.Permission.Resolved.Conversation; _ }) ->
+      "allow_family_conversation"
+  | Session.Permission.Resolved.Allowed
+      (Session.Permission.Resolved.Family
+        { lifetime = Session.Permission.Resolved.User; _ }) ->
+      "allow_family_user"
   | Session.Permission.Resolved.Denied _ -> "deny"
 
 let permission_via_string resolved =
@@ -1677,7 +1686,7 @@ let goal_reply json model reasoning_effort workflow_mode permission_mode
 
 (* Dispatch *)
 
-let continuation approve_plan reject_plan allow allow_session deny deny_message
+let continuation approve_plan reject_plan allow allow_conversation deny deny_message
     question answer interrupt_tool tool_reason =
   let permission_replies =
     [
@@ -1699,10 +1708,10 @@ let continuation approve_plan reject_plan allow allow_session deny deny_message
               id;
               answer =
                 Session.Permission.Resolved.Allow
-                  Session.Permission.Resolved.Session;
+                  Session.Permission.Resolved.Exact_for_conversation;
               message = None;
             })
-        allow_session;
+        allow_conversation;
       Option.map
         (fun id ->
           Permission_reply
@@ -1755,7 +1764,7 @@ let continuation approve_plan reject_plan allow allow_session deny deny_message
       match (permission_replies, question, answer, tool_continuation) with
       | [], None, None, None ->
           usage
-            "reply requires a decision: --allow, --allow-session, --deny, \
+            "reply requires a decision: --allow, --allow-conversation, --deny, \
              --question with --answer, --approve-plan, --reject-plan, or \
              --tool-interrupted; to advance a blocked session without one, use \
              `spice run resume SESSION`"
@@ -1772,7 +1781,7 @@ let continuation approve_plan reject_plan allow allow_session deny deny_message
             "permission continuation cannot be combined with another \
              continuation"
       | _ :: _ :: _, _, _, _ ->
-          usage "choose only one of --allow, --allow-session, or --deny")
+          usage "choose only one of --allow, --allow-conversation, or --deny")
 
 (* Each verb owns its arguments, so the start/resume/reply exclusions that
    were once a flag-combination matrix are structural: [--id]/[--title]/
@@ -1803,7 +1812,7 @@ let goal_verb_of_flags ~pause_goal ~resume_goal ~edit_goal ~clear_goal =
 
 let reply_cli json model reasoning_effort workflow_mode permission_mode
     permission_unattended sandbox max_steps cwd overrides approve_plan
-    reject_plan allow allow_session deny deny_message question answer
+    reject_plan allow allow_conversation deny deny_message question answer
     interrupt_tool tool_reason pause_goal resume_goal edit_goal clear_goal
     goal_budget reply_last session_id =
   status
@@ -1812,7 +1821,7 @@ let reply_cli json model reasoning_effort workflow_mode permission_mode
      in
      let other_continuation =
        approve_plan || reject_plan || Option.is_some allow
-       || Option.is_some allow_session
+       || Option.is_some allow_conversation
        || Option.is_some deny || Option.is_some question
        || Option.is_some answer
        || Option.is_some interrupt_tool
@@ -1852,7 +1861,7 @@ let reply_cli json model reasoning_effort workflow_mode permission_mode
            | Some _, reason -> read_tool_interrupted_reason reason
          in
          let* continuation =
-           continuation approve_plan reject_plan allow allow_session deny
+           continuation approve_plan reject_plan allow allow_conversation deny
              deny_message question answer interrupt_tool tool_reason
          in
          Ok
@@ -1898,12 +1907,12 @@ let skill_names =
         ~doc:
           "Load the named skill into the turn ahead of the prompt. Repeatable.")
 
-let allow_session =
+let allow_conversation =
   Arg.(
     value
     & opt (some Cli_arg.session_permission_id) None
-    & info [ "allow-session" ] ~docv:"PERMISSION_ID"
-        ~doc:"Allow a pending permission for this session.")
+    & info [ "allow-conversation" ] ~docv:"PERMISSION_ID"
+        ~doc:"Allow this exact pending permission for the conversation.")
 
 let deny =
   Arg.(
@@ -2260,7 +2269,7 @@ let reply_term =
   Term.(
     const reply_cli $ json $ model $ reasoning $ workflow_mode $ permission_mode
     $ permission_unattended $ sandbox $ max_steps $ cwd $ Cli_arg.run_overrides
-    $ approve_plan $ reject_plan $ allow $ allow_session $ deny $ deny_message
+    $ approve_plan $ reject_plan $ allow $ allow_conversation $ deny $ deny_message
     $ question $ answer $ interrupt_tool $ tool_reason $ pause_goal
     $ resume_goal $ edit_goal $ clear_goal $ goal_budget $ reply_last
     $ reply_session)
@@ -2271,7 +2280,7 @@ let reply_command =
       `S Cmdliner.Manpage.s_description;
       `P
         "Feeds one decision into a blocked session and continues the turn: a \
-         permission review ($(b,--allow), $(b,--allow-session), $(b,--deny)), \
+         permission review ($(b,--allow), $(b,--allow-conversation), $(b,--deny)), \
          an answer to a model question ($(b,--question) with $(b,--answer)), a \
          plan decision ($(b,--approve-plan), $(b,--reject-plan)), or an \
          interrupted-tool recovery ($(b,--tool-interrupted)). A blocked \

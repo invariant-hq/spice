@@ -88,7 +88,7 @@ module Config : sig
   val make :
     tools:Spice_tool.t list ->
     ?host_tools:Spice_llm.Tool.t list ->
-    policy:Spice_permission.Policy.t ->
+    policy:(Spice_permission.Policy.Rule.t list -> Spice_permission.Policy.t) ->
     ?prelude:Spice_llm.Request.Prelude.t ->
     ?safety_step_cap:int ->
     ?denial_message:(Spice_permission.Policy.Denial.t -> string) ->
@@ -97,7 +97,9 @@ module Config : sig
   (** [make ~tools ?host_tools ~policy ?prelude ?safety_step_cap
       ?denial_message ()] is a checked run config.
 
-      [tools] are executable host capabilities. [host_tools] are model-visible
+      [tools] are executable host capabilities. [policy] builds the effective
+      policy from the conversation's durable family rules for every permission
+      decision. [host_tools] are model-visible
       tools whose calls block the run for product-owned host handling. A call
       is classified as host-handled by tool name before executable-tool
       dispatch. Their provider-facing declarations are cached and become the

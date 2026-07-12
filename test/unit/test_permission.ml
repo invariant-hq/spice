@@ -117,7 +117,7 @@ let restore_review request accesses =
   | Error (Policy.Review.Access_not_in_request access) ->
       failf "review restore rejected access: %a" Access.pp access
 
-let allow_session = Policy.Review.remember
+let remember_exact = Policy.Review.remember
 
 let expect_allow msg = function
   | Policy.Decision.Allowed -> ()
@@ -294,7 +294,7 @@ let all_access_rules_are_explicit () =
     expect_review "review-all policy reviews unmatched commands"
       (Policy.decide Policy.default (request command))
   in
-  let grants = allow_session review Policy.Grants.empty in
+  let grants = remember_exact review Policy.Grants.empty in
   expect_allow "review-all policy still respects grants"
     (Policy.decide ~grants Policy.default (request command));
   ignore
@@ -615,7 +615,7 @@ let grants_allow_reviewed_accesses () =
     expect_review "review-all policy reviews shell command"
       (Policy.decide Policy.default (request command))
   in
-  let grants = allow_session review Policy.Grants.empty in
+  let grants = remember_exact review Policy.Grants.empty in
   is_true ~msg:"grants remember reviewed access"
     (Policy.Grants.allows grants command);
   expect_allow "granted access is allowed without another review"
@@ -688,7 +688,7 @@ let grants_are_exact_key_matches () =
     expect_review "review-all policy reviews shell command"
       (Policy.decide Policy.default (request command))
   in
-  let grants = allow_session review Policy.Grants.empty in
+  let grants = remember_exact review Policy.Grants.empty in
   ignore
     (expect_review "grant does not allow same shell text in another cwd"
        (Policy.decide ~grants Policy.default (request other_cwd)));
@@ -702,7 +702,7 @@ let rules_override_grants () =
     expect_review "review-all policy reviews shell command"
       (Policy.decide Policy.default (request command))
   in
-  let grants = allow_session review Policy.Grants.empty in
+  let grants = remember_exact review Policy.Grants.empty in
   let deny_commands =
     Policy.make [ Policy.Rule.deny (Policy.Match.kind `Command) ]
   in
@@ -767,7 +767,7 @@ let policy_explain_reports_provenance () =
     expect_review "review-all policy reviews shell command"
       (Policy.decide Policy.default (request command))
   in
-  let grants = allow_session review Policy.Grants.empty in
+  let grants = remember_exact review Policy.Grants.empty in
   (match Policy.explain ~grants Policy.default command with
   | Policy.Allowed_by_grant -> ()
   | Policy.Allowed_by_rule _ | Policy.Needs_review
@@ -1352,105 +1352,11 @@ let command_prefixes_preserve_execution_and_cwd () =
           (argv ~cwd:other_cwd ~execution:Access.Command.Enforced
              ~program:"dune" [ "build"; "@all" ])))
 
-let suggest_generalizes_reviewed_accesses () =
-  let matches rule access =
-    Policy.Match.matches (Policy.Rule.matcher rule) access
-  in
-  let suggest_exn msg access =
-    match Suggest.of_access access with
-    | Some suggestion -> suggestion
-    | None -> failf "%s: expected a suggestion" msg
-  in
-  let none msg access =
-    equal bool ~msg true (Option.is_none (Suggest.of_access access))
-  in
-  (* A direct command generalizes to its program-and-subcommand family, not the
-     exact argv: the same subcommand with different flags is now covered, a
-     different subcommand is not. *)
-  let git = suggest_exn "git commit" (exec "git" [ "commit"; "-m"; "wip" ]) in
-  equal string ~msg:"git commit summary" "git commit" (Suggest.summary git);
-  equal bool ~msg:"git commit family matches another message" true
-    (matches (Suggest.rule git) (exec "git" [ "commit"; "-m"; "other" ]));
-  equal bool ~msg:"git commit family does not widen to git push" false
-    (matches (Suggest.rule git) (exec "git" [ "push" ]));
-  equal bool ~msg:"git commit family does not cross execution routes" false
-    (matches (Suggest.rule git)
-       (argv ~execution:Access.Command.Enforced ~program:"git"
-          [ "commit"; "-m"; "other" ]));
-  equal bool ~msg:"git commit family does not cross workspaces" false
-    (matches (Suggest.rule git)
-       (argv
-          ~cwd:
-            (Access.Path_scope.workspace
-               (workspace_path ~root_key:"/other" ~root:"/other" ""))
-          ~program:"git" [ "commit"; "-m"; "other" ]));
-  (* [dune build @runtest] generalizes to all [dune build], the argv-prefix form
-     hand-authored in the rules cram test. *)
-  let dune = suggest_exn "dune build" (exec "dune" [ "build"; "@runtest" ]) in
-  equal string ~msg:"dune build summary" "dune build" (Suggest.summary dune);
-  equal bool ~msg:"dune build family matches a different target" true
-    (matches (Suggest.rule dune) (exec "dune" [ "build"; "lib/x" ]));
-  (* An unlisted program falls back to the program alone. *)
-  let py = suggest_exn "python" (exec "python" [ "script.py" ]) in
-  equal string ~msg:"python summary" "python" (Suggest.summary py);
-  equal bool ~msg:"python family matches another script" true
-    (matches (Suggest.rule py) (exec "python" [ "other.py" ]));
-  (* Shell text and custom accesses (sandbox escalation) have no safe
-     generalization. *)
-  none "shell text is not generalized" (shell "grep foo $(cat list)");
-  none "a custom access is not generalized" (extension "shell.escalate");
-  (* A workspace path in a subdirectory generalizes to that subtree. *)
-  let sub = suggest_exn "subtree edit" (workspace_modify "lib/x.ml") in
-  equal string ~msg:"subtree summary" "edits under lib/" (Suggest.summary sub);
-  equal bool ~msg:"subtree matches a sibling" true
-    (matches (Suggest.rule sub) (workspace_modify "lib/y.ml"));
-  equal bool ~msg:"subtree does not cover a different directory" false
-    (matches (Suggest.rule sub) (workspace_modify "bin/z.ml"));
-  (* A workspace path at the root generalizes to the exact file only. *)
-  let root = suggest_exn "root edit" (workspace_modify "README.md") in
-  equal string ~msg:"root file summary" "edits to README.md"
-    (Suggest.summary root);
-  equal bool ~msg:"root file matches itself" true
-    (matches (Suggest.rule root) (workspace_modify "README.md"));
-  equal bool ~msg:"root file does not cover a sibling" false
-    (matches (Suggest.rule root) (workspace_modify "LICENSE.md"));
-  (* Out-of-workspace paths carry no relative family to save. *)
-  none "an out-of-workspace path is not generalized"
-    (outside_path `Read "/etc/hosts");
-  (* A network access generalizes to its host across every protocol. *)
-  let net =
-    suggest_exn "network host"
-      (Access.network ~protocol:`Https ~host:"docs.example.com" ())
-  in
-  equal string ~msg:"network summary" "requests to docs.example.com"
-    (Suggest.summary net);
-  equal bool ~msg:"network family covers another protocol to the host" true
-    (matches (Suggest.rule net)
-       (Access.network ~protocol:`Http ~host:"docs.example.com" ()));
-  equal bool ~msg:"network family does not cover another host" false
-    (matches (Suggest.rule net)
-       (Access.network ~protocol:`Https ~host:"evil.example.com" ()));
-  (* [of_accesses] collapses accesses that share a family and keeps distinct
-     families in order. *)
-  equal int ~msg:"same family collapses to one rule" 1
-    (List.length
-       (Suggest.of_accesses
-          [
-            exec "git" [ "commit"; "-m"; "a" ];
-            exec "git" [ "commit"; "-m"; "b" ];
-          ]));
-  equal int ~msg:"distinct families are all kept" 2
-    (List.length
-       (Suggest.of_accesses
-          [ exec "git" [ "commit" ]; exec "dune" [ "build" ] ]))
-
 let () =
   run "spice.permission"
     [
       test "access constructors validate trusted claims"
         access_constructor_validation;
-      test "suggestions generalize reviewed accesses to families"
-        suggest_generalizes_reviewed_accesses;
       test "validation errors name the function and constraint"
         validation_errors_name_the_function_and_constraint;
       test "shell and exec have distinct keys" shell_and_exec_have_distinct_keys;

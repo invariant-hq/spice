@@ -128,7 +128,7 @@ let notice_injection_uses_final_observer () =
   in
   let run =
     Spice_session_run.Config.make ~tools:[]
-      ~policy:Spice_permission.Policy.default ()
+      ~policy:(fun _ -> Spice_permission.Policy.default) ()
   in
   let runner = Runner.make ~store ~client ~model ~mode:None ~run ~hooks () in
   let start =
@@ -171,7 +171,7 @@ let raised_model_call_rolls_notices_back () =
   in
   let run =
     Spice_session_run.Config.make ~tools:[]
-      ~policy:Spice_permission.Policy.default ()
+      ~policy:(fun _ -> Spice_permission.Policy.default) ()
   in
   let hooks =
     Host_session.with_notices queue Host_session.no_hooks

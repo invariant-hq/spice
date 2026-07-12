@@ -114,17 +114,18 @@ let raising_permissions_tool () =
 
 let config ?(policy = Permission.Policy.default) ?host_tools ?prelude ?max_steps
     tools =
-  Run.Config.make ~tools ?host_tools ~policy ?prelude
+  Run.Config.make ~tools ?host_tools ~policy:(fun _ -> policy) ?prelude
     ?safety_step_cap:max_steps ()
 
 let config_construction_is_programmer_local () =
   expect_invalid_arg "non-positive safety cap raises" (fun () ->
-      Run.Config.make ~tools:[] ~policy:Permission.Policy.default
+      Run.Config.make ~tools:[]
+        ~policy:(fun _ -> Permission.Policy.default)
         ~safety_step_cap:0 ());
   expect_invalid_arg "duplicate tool names raise" (fun () ->
       Run.Config.make
         ~tools:[ executable_tool (); executable_tool () ]
-        ~policy:Permission.Policy.default ());
+        ~policy:(fun _ -> Permission.Policy.default) ());
   let bad_name_tool =
     Tool.make ~name:"bad name" ~description:"Bad tool name."
       ~input:Tool.Input.empty ~output
@@ -132,18 +133,18 @@ let config_construction_is_programmer_local () =
       ()
   in
   expect_invalid_arg "invalid executable tool names raise" (fun () ->
-      Run.Config.make ~tools:[ bad_name_tool ] ~policy:Permission.Policy.default
-        ());
+      Run.Config.make ~tools:[ bad_name_tool ]
+        ~policy:(fun _ -> Permission.Policy.default) ());
   let host_tool name = Llm.Tool.make ~name ~input_schema:(Json.object' []) () in
   expect_invalid_arg "executable and host tool name collisions raise" (fun () ->
       Run.Config.make
         ~tools:[ executable_tool () ]
         ~host_tools:[ host_tool "review_tool" ]
-        ~policy:Permission.Policy.default ());
+        ~policy:(fun _ -> Permission.Policy.default) ());
   expect_invalid_arg "duplicate host tool names raise" (fun () ->
       Run.Config.make ~tools:[]
         ~host_tools:[ host_tool "ask_user"; host_tool "ask_user" ]
-        ~policy:Permission.Policy.default ())
+        ~policy:(fun _ -> Permission.Policy.default) ())
 
 let permission_from_step step =
   match Run.Step.next step with
@@ -435,6 +436,52 @@ let finish_tool_uses_saved_claim_id () =
           is_true ~msg:"finish resolves the saved claim"
             (Session.Tool_claim.Started.equal saved started)
       | _ -> failf "expected one finished saved claim")
+
+let conversation_family_affects_later_call_in_same_turn () =
+  let tool = executable_tool () in
+  let config =
+    Run.Config.make ~tools:[ tool ]
+      ~policy:(fun rules -> Permission.Policy.make rules) ()
+  in
+  let calls = [ call ~id:"call-1" (); call ~id:"call-2" () ] in
+  let response =
+    Llm.Response.make ~model
+      (Llm.Message.Assistant.make
+         (List.map Llm.Message.Assistant.tool_call calls))
+  in
+  let blocked = run_response config response in
+  let requested = permission_from_step blocked in
+  let rule =
+    Permission.Policy.Rule.allow
+      (Permission.Policy.Match.custom ~subject:"alpha" "review_tool")
+  in
+  let first =
+    match
+      Run.resolve_permission config
+        (Session.Permission.Requested.id requested)
+        (Session.Permission.Resolved.Allow
+           (Session.Permission.Resolved.Family
+              {
+                lifetime = Session.Permission.Resolved.Conversation;
+                rules = [ rule ];
+              }))
+        (Run.Step.session blocked)
+    with
+    | Ok step -> step
+    | Error error -> failf "family allow failed: %a" Run.Error.pp error
+  in
+  let first_claim = tool_claim_from_step first in
+  match
+    Run.finish_tool config (Session.Tool_claim.Started.id first_claim)
+      (Tool.Result.completed ~output:(output ()) ())
+      (Run.Step.session first)
+  with
+  | Error error -> failf "first tool finish failed: %a" Run.Error.pp error
+  | Ok second ->
+      let second_claim = tool_claim_from_step second in
+      equal string ~msg:"conversation rule allows the later matching call"
+        "call-2"
+        (Llm.Tool.Call.id (Session.Tool_claim.Started.call second_claim))
 
 let accepted_step_limit_cannot_be_widened () =
   let policy =
@@ -1261,7 +1308,8 @@ let policy_denial_uses_configured_message () =
     "Custom denial steering."
   in
   let config =
-    Run.Config.make ~tools:[ executable_tool () ] ~policy ~denial_message ()
+    Run.Config.make ~tools:[ executable_tool () ] ~policy:(fun _ -> policy)
+      ~denial_message ()
   in
   let step = run_response config (response (call ())) in
   (match Run.Step.next step with
@@ -1297,7 +1345,7 @@ let current_policy_is_checked_after_permission_allow () =
   in
   let deny_policy = Permission.Policy.make [ deny_rule ] in
   let deny_config =
-    Run.Config.make ~tools:[ tool ] ~policy:deny_policy
+    Run.Config.make ~tools:[ tool ] ~policy:(fun _ -> deny_policy)
       ~denial_message:(fun denial ->
         is_true ~msg:"current denial rule is applied"
           (Permission.Policy.Rule.equal deny_rule
@@ -1490,6 +1538,8 @@ let () =
         staged_preflight_checks_final_facts_before_claiming;
       test "deterministic tool claim ids" deterministic_tool_claim_ids;
       test "finish tool uses saved claim id" finish_tool_uses_saved_claim_id;
+      test "conversation family affects a later call in the same turn"
+        conversation_family_affects_later_call_in_same_turn;
       test "accepted step limit cannot be widened"
         accepted_step_limit_cannot_be_widened;
       test "accepted step limit is resolved and clamped"

@@ -43,10 +43,6 @@ type resolution =
       answer : Spice_session.Permission.Resolved.answer;
       message : string option;
     }
-  | Reply_always of {
-      rules : Spice_permission.Policy.Rule.t list;
-      scope : Permission_dialog.scope;
-    }
   | Answer of { text : string }
   | Resolve_plan of {
       decision : Spice_protocol.Plan.Decision.t;
@@ -76,8 +72,11 @@ let key ev t =
           let echo =
             match scope with
             | Spice_session.Permission.Resolved.Once -> "allowed once"
-            | Spice_session.Permission.Resolved.Session ->
-                "allowed this session · " ^ Permission_dialog.scope_label d
+            | Spice_session.Permission.Resolved.Exact_for_conversation ->
+                "allowed for this conversation · "
+                ^ Permission_dialog.scope_label d
+            | Spice_session.Permission.Resolved.Family _ ->
+                assert false
           in
           ( t,
             Resolve
@@ -89,18 +88,6 @@ let key ev t =
                       message = None;
                     };
                 echo;
-              } )
-      | Permission_dialog.Always { rules; scope } ->
-          let where =
-            match (scope : Permission_dialog.scope) with
-            | Permission_dialog.Session -> "this session"
-            | Permission_dialog.User -> "all projects"
-          in
-          ( t,
-            Resolve
-              {
-                resolution = Reply_always { rules; scope };
-                echo = "always allowed · saved for " ^ where;
               } )
       | Permission_dialog.Deny ->
           ( { t with feedback = Some Deny },

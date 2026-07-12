@@ -34,7 +34,7 @@ OpenAI-Responses backend.
       +first line
       +second line
   allow once: spice run reply 'blocked-detail' --allow 'perm:$ID'
-  allow session: spice run reply 'blocked-detail' --allow-session 'perm:$ID'
+  allow conversation: spice run reply 'blocked-detail' --allow-conversation 'perm:$ID'
   deny: spice run reply 'blocked-detail' --deny 'perm:$ID'
   deny with message: spice run reply 'blocked-detail' --deny 'perm:$ID' --message TEXT|-
   $ wait_fake_server
@@ -157,9 +157,9 @@ A reviewer denial keeps reviewer provenance; the two are never conflated.
   0
   [1]
 
-Provenance is computed at render time against the current effective policy:
-adding a durable rule after a block changes what status reports, honestly
-reflecting that resume rechecks policy.
+The prompt keeps the reasons captured when it blocked. Adding a durable rule
+does not rewrite the audit surface, while resume still rechecks current policy
+before it starts the operation.
 
   $ cat > render.jsonl <<'JSONL'
   > {"expect":{"body_contains":["\"name\":\"write_file\""]},"response":{"id":"resp-9","status":"completed","model":"gpt-5.5","output":[{"type":"function_call","id":"item-9","call_id":"call-render","name":"write_file","arguments":"{\"path\":\"render.txt\",\"contents\":\"x\"}"}]}}
@@ -178,6 +178,6 @@ reflecting that resume rechecks policy.
   >     "matcher": { "type": "path-exact-relative", "relative": "render.txt" } } ] } }
   > JSON
   $ spice session show render-time | grep '^- '
-  - write create $TESTCASE_ROOT/render.txt  [allow: rule 1cfc42dd0417 (user)]
+  - write create $TESTCASE_ROOT/render.txt  [review: no rule or grant]
   - write create $TESTCASE_ROOT/render.txt (+1 -0)
   $ rm -f "$XDG_CONFIG_HOME/spice/config.json"

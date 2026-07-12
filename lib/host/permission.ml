@@ -123,7 +123,8 @@ module Run = struct
   type 'src t = {
     preset : Preset.t;
     preset_source : 'src;
-    rows : 'src row list;
+    before_conversation : 'src row list;
+    after_conversation : 'src row list;
   }
 
   let annotate source rule = { id = rule_id rule; source; rule }
@@ -156,7 +157,12 @@ module Run = struct
     let durable = List.concat_map layer_rows durable in
     let preset_rows = List.map (annotate preset_source) (Preset.rules preset) in
     let guards, preset_rows = plan_guards preset preset_rows in
-    { preset; preset_source; rows = guards @ durable @ preset_rows }
+    {
+      preset;
+      preset_source;
+      before_conversation = guards @ durable;
+      after_conversation = preset_rows;
+    }
 
   (* Sandbox-backed rows evaluate after every existing row: durable config and
      the preset's own rules decide first, and the sandbox credit is the last
@@ -169,27 +175,7 @@ module Run = struct
         List.map (annotate t.preset_source)
           (Preset.sandbox_backed_rules t.preset)
       in
-      { t with rows = t.rows @ extra }
-
-  (* Session rows prepend at the highest configurable precedence — the reverse
-     of sandbox-backed rows, which append as the last word — because an "always
-     allow" the reviewer just gave should win over the durable and ordinary
-     preset rules that raised the prompt. Plan's command guard stays first:
-     execution authority cannot carry into Plan. Duplicates (against existing
-     rows or within the added list) are skipped so re-installing a rule is
-     idempotent. *)
-  let with_session_rules rules t =
-    let rec add seen acc = function
-      | [] -> List.rev acc
-      | rule :: rest ->
-          let row = annotate t.preset_source rule in
-          if List.mem row.id seen then add seen acc rest
-          else add (row.id :: seen) (row :: acc) rest
-    in
-    let existing = List.map (fun row -> row.id) t.rows in
-    let session_rows = add existing [] rules in
-    let guards, rows = plan_guards t.preset t.rows in
-    { t with rows = guards @ session_rows @ rows }
+      { t with after_conversation = t.after_conversation @ extra }
 
   (* The docs allowlist rows append after every existing row, so a durable
      [deny] of a listed host decides first; they are network-host allows, which
@@ -203,18 +189,20 @@ module Run = struct
                (Spice_permission.Policy.Match.network_host ~host ())))
         web_docs_allowlist
     in
-    { t with rows = t.rows @ rows }
+    { t with after_conversation = t.after_conversation @ rows }
 
   let preset t = t.preset
-  let rows t = t.rows
+  let rows t = t.before_conversation @ t.after_conversation
 
-  let policy t =
-    Spice_permission.Policy.make (List.map (fun row -> row.rule) t.rows)
+  let policy ~conversation t =
+    let before = List.map (fun row -> row.rule) t.before_conversation in
+    let after = List.map (fun row -> row.rule) t.after_conversation in
+    Spice_permission.Policy.make (before @ conversation @ after)
 
   let find t rule =
     List.find_opt
       (fun row -> Spice_permission.Policy.Rule.equal row.rule rule)
-      t.rows
+      (rows t)
 
   let denial_message ~source t denial =
     let rule = Spice_permission.Policy.Denial.rule denial in

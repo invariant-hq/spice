@@ -71,7 +71,7 @@ let model =
     ~id:"benchmark"
 
 let config =
-  Run.Config.make ~tools:[] ~policy:Permission.Policy.default ()
+  Run.Config.make ~tools:[] ~policy:(fun _ -> Permission.Policy.default) ()
 
 let base_session =
   let cwd = Spice_path.Abs.of_string_exn "/benchmark" in

@@ -278,7 +278,7 @@ Reply requires exactly one decision, and its option pairings are validated
 before any runtime assembly.
 
   $ SPICE_MODEL=openai/gpt-5.5 spice run reply inactive
-  spice: reply requires a decision: --allow, --allow-session, --deny, --question with --answer, --approve-plan, --reject-plan, or --tool-interrupted; to advance a blocked session without one, use `spice run resume SESSION`
+  spice: reply requires a decision: --allow, --allow-conversation, --deny, --question with --answer, --approve-plan, --reject-plan, or --tool-interrupted; to advance a blocked session without one, use `spice run resume SESSION`
   [2]
   $ SPICE_MODEL=openai/gpt-5.5 spice run reply inactive --message no
   spice: --message requires --deny or --reject-plan
@@ -293,7 +293,7 @@ before any runtime assembly.
   spice: choose only one of --approve-plan or --reject-plan
   [2]
   $ SPICE_MODEL=openai/gpt-5.5 spice run reply inactive --allow permission-1 --deny permission-1
-  spice: choose only one of --allow, --allow-session, or --deny
+  spice: choose only one of --allow, --allow-conversation, or --deny
   [2]
   $ SPICE_MODEL=openai/gpt-5.5 spice run reply inactive --approve-plan --allow permission-1
   spice: plan decision cannot be combined with another continuation
@@ -331,8 +331,8 @@ credentials exist.
   $ spice session export allow-once | grep -o '"type":"permission_resolved"' || echo no-resolution
   no-resolution
 
-  $ make_permission_session allow-session
-  $ SPICE_MODEL=openai/gpt-5.5 spice run reply allow-session --allow-session permission-1
+  $ make_permission_session allow-exact-for-conversation
+  $ SPICE_MODEL=openai/gpt-5.5 spice run reply allow-exact-for-conversation --allow-conversation permission-1
   permission: default
   sandbox: danger-full-access (config)
   backend: none not_requested
@@ -341,7 +341,7 @@ credentials exist.
   spice: missing credential for provider: openai
   Hint: run `spice auth login openai` to add a credential
   [1]
-  $ spice session export allow-session | grep -o '"type":"permission_resolved"' || echo no-resolution
+  $ spice session export allow-exact-for-conversation | grep -o '"type":"permission_resolved"' || echo no-resolution
   no-resolution
 
   $ make_permission_session deny

@@ -144,7 +144,10 @@ let permission_context (permission : Cli_common.permission_args) ~workflow_mode
     policy =
       Spice_protocol.Contract.policy
         (Spice_protocol.Mode.contract workflow_mode)
-        ~configured:(Permission_run.policy permission);
+        ~configured:
+          (Permission_run.policy
+             ~conversation:(Session.State.permission_rules state)
+             permission);
     grants = Session.State.grants state;
   }
 
@@ -454,7 +457,8 @@ let commands ~session block =
       in
       [
         "allow once: " ^ reply ^ " " ^ opt_arg "--allow" permission;
-        "allow session: " ^ reply ^ " " ^ opt_arg "--allow-session" permission;
+        "allow conversation: " ^ reply ^ " "
+        ^ opt_arg "--allow-conversation" permission;
         "deny: " ^ reply ^ " " ^ opt_arg "--deny" permission;
         "deny with message: " ^ reply ^ " "
         ^ opt_arg "--deny" permission

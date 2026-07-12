@@ -513,25 +513,6 @@ module Config_file : sig
   (** [ensure ~stdenv paths kind] creates [kind] as an empty config file if it
       is missing. Existing files are left unchanged. *)
 
-  val add_permission_rule :
-    stdenv:Eio_unix.Stdenv.base ->
-    paths ->
-    kind ->
-    Spice_permission.Policy.Rule.t ->
-    (unit, Error.t) result
-  (** [add_permission_rule ~stdenv paths kind rule] appends [rule] to [kind]'s
-      durable [permission.rules], preserving unknown fields and creating the
-      file and (for {!Project_local}) its [.gitignore] entry as needed.
-      Appending a rule already present by content is a no-op that writes
-      nothing.
-
-      Writing is not the same as loading. A rule appended to {!Project} or
-      {!Project_local} lands in the file but is still stripped when resolved
-      configuration loads (the {!Warning} carrying [Ignored_project_rules]),
-      because durable rules are authority a repository must not inject; only
-      {!User} rules become effective policy. This is the persistence half of a
-      reviewer's "always allow" answer, whose in-session effect is carried by
-      the run posture, not the file. *)
 end
 
 module Warning : sig

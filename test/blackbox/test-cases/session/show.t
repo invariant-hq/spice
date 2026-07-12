@@ -71,7 +71,7 @@ waiting exec output; active sessions get the resume command.
   accesses:
   - custom review_tool  [review: no rule or grant]
   allow once: spice run reply 'blocked' --allow 'permission-1'
-  allow session: spice run reply 'blocked' --allow-session 'permission-1'
+  allow conversation: spice run reply 'blocked' --allow-conversation 'permission-1'
   deny: spice run reply 'blocked' --deny 'permission-1'
   deny with message: spice run reply 'blocked' --deny 'permission-1' --message TEXT|-
 

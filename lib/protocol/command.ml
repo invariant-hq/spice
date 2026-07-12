@@ -63,8 +63,16 @@ let pp_answer ppf (answer : Spice_session.Permission.Resolved.answer) =
       Spice_session.Permission.Resolved.Once ->
       Format.pp_print_string ppf "allow-once"
   | Spice_session.Permission.Resolved.Allow
-      Spice_session.Permission.Resolved.Session ->
-      Format.pp_print_string ppf "allow-session"
+      Spice_session.Permission.Resolved.Exact_for_conversation ->
+      Format.pp_print_string ppf "allow-exact-for-conversation"
+  | Spice_session.Permission.Resolved.Allow
+      (Spice_session.Permission.Resolved.Family
+        { lifetime = Spice_session.Permission.Resolved.Conversation; _ }) ->
+      Format.pp_print_string ppf "allow-family-for-conversation"
+  | Spice_session.Permission.Resolved.Allow
+      (Spice_session.Permission.Resolved.Family
+        { lifetime = Spice_session.Permission.Resolved.User; _ }) ->
+      Format.pp_print_string ppf "allow-family-for-user"
   | Spice_session.Permission.Resolved.Deny ->
       Format.pp_print_string ppf "deny"
 

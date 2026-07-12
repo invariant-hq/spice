@@ -332,10 +332,10 @@ let declarations ~sw ~stdenv host ~model mode =
     |> Spice_protocol.Contract.filter_tools (Spice_protocol.Mode.contract mode)
   in
   let permission = permission_args host None in
-  let policy =
+  let policy conversation =
     Spice_protocol.Contract.policy
       (Spice_protocol.Mode.contract mode)
-      ~configured:(Spice_host.Permission.Run.policy permission)
+      ~configured:(Spice_host.Permission.Run.policy ~conversation permission)
   in
   let run =
     Spice_session_run.Config.make ~tools

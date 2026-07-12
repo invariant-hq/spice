@@ -73,7 +73,7 @@ module Config = struct
   type t = {
     tools : Tool.Catalog.t;
     host_tool_names : string list;
-    policy : Spice_permission.Policy.t;
+    policy : Spice_permission.Policy.Rule.t list -> Spice_permission.Policy.t;
     prelude : Llm.Request.Prelude.t;
     safety_step_cap : int;
     denial_message : Spice_permission.Policy.Denial.t -> string;
@@ -411,7 +411,7 @@ let review_permissions config session turn_id call requests =
     | request :: requests -> (
         match
           Spice_permission.Policy.decide ~grants:(State.grants state)
-            config.Config.policy request
+            (config.Config.policy (State.permission_rules state)) request
         with
         | Spice_permission.Policy.Decision.Allowed ->
             loop (request_index + 1) requests
@@ -622,8 +622,11 @@ let resolve_permission config ?(message = "Permission denied.") ?via id answer
         match answer with
         | Permission.Resolved.Allow Permission.Resolved.Once ->
             Permission.Resolved.allow_once ~id
-        | Permission.Resolved.Allow Permission.Resolved.Session ->
-            Permission.Resolved.allow_session ~id
+        | Permission.Resolved.Allow Permission.Resolved.Exact_for_conversation ->
+            Permission.Resolved.allow_exact_for_conversation ~id
+        | Permission.Resolved.Allow
+            (Permission.Resolved.Family { lifetime; rules }) ->
+            Permission.Resolved.allow_family ~id ~lifetime ~rules
         | Permission.Resolved.Deny ->
             let call = Permission.Requested.tool_call requested in
             Permission.Resolved.deny ~id ?via

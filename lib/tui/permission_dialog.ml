@@ -7,41 +7,27 @@ open Mosaic
 module Access = Spice_permission.Access
 module Request = Spice_permission.Request
 module Review = Spice_permission.Policy.Review
-module Suggest = Spice_permission.Suggest
 module Requested = Spice_session.Permission.Requested
 module Resolved = Spice_session.Permission.Resolved
-
-type scope = Session | User
 
 type t = {
   request : Requested.t;
   nav : Option_list.t;
   expanded : bool;
-  suggestions : Suggest.t list;
-  scope : scope;
 }
 
-(* The always-allow option is present only when at least one reviewed access has
-   a family generalization; otherwise the dialog keeps its three options. *)
-let has_always t = t.suggestions <> []
-let option_count t = if has_always t then 4 else 3
+let option_count = 3
 
 let make request =
-  let suggestions =
-    Suggest.of_accesses (Review.accesses (Requested.review request))
-  in
   {
     request;
-    nav = Option_list.make ~count:(if suggestions = [] then 3 else 4);
+    nav = Option_list.make ~count:option_count;
     expanded = false;
-    suggestions;
-    scope = Session;
   }
 
 type outcome =
   | Stay
   | Allow of Resolved.allowance
-  | Always of { rules : Spice_permission.Policy.Rule.t list; scope : scope }
   | Deny
 
 (* --- Access facts, ported from the old TUI permission prompt --- *)
@@ -250,34 +236,24 @@ let ctrl_o (ev : Matrix.Input.Key.event) =
   | Matrix.Input.Key.Char u -> Uchar.equal u (Uchar.of_char 'o')
   | _ -> false
 
-let next_scope = function Session -> User | User -> Session
-
-let always_outcome t =
-  Always { rules = List.map Suggest.rule t.suggestions; scope = t.scope }
-
-(* Deny keeps its [3] so existing muscle memory and tests hold; always-allow is
-   appended as [4] and is inert when no family rule can be derived. *)
-let resolve t = function
+let resolve = function
   | 0 -> Allow Resolved.Once
-  | 1 -> Allow Resolved.Session
+  | 1 -> Allow Resolved.Exact_for_conversation
   | 2 -> Deny
-  | 3 when has_always t -> always_outcome t
   | _ -> Deny
 
 let key ev t =
   if ctrl_o ev then ({ t with expanded = not t.expanded }, Stay)
   else if letter ev 'y' then (t, Allow Resolved.Once)
-  else if letter ev 'a' then (t, Allow Resolved.Session)
+  else if letter ev 'a' then (t, Allow Resolved.Exact_for_conversation)
   else if letter ev 'd' || letter ev 'n' then (t, Deny)
-  else if letter ev 's' && has_always t then
-    ({ t with scope = next_scope t.scope }, Stay)
   else
     match Panel.classify ev with
-    | Panel.Digit d when d >= 1 && d <= option_count t -> (t, resolve t (d - 1))
+    | Panel.Digit d when d >= 1 && d <= option_count -> (t, resolve (d - 1))
     | Panel.Digit _ -> (t, Stay)
     | Panel.Action Panel.Up -> ({ t with nav = Option_list.up t.nav }, Stay)
     | Panel.Action Panel.Down -> ({ t with nav = Option_list.down t.nav }, Stay)
-    | Panel.Action Panel.Enter -> (t, resolve t (Option_list.selected t.nav))
+    | Panel.Action Panel.Enter -> (t, resolve (Option_list.selected t.nav))
     | Panel.Action Panel.Escape -> (t, Deny)
     | Panel.Printable _ | Panel.Action _ -> (t, Stay)
 
@@ -428,13 +404,6 @@ let headline_row ~counts head =
     ~size:{ width = pct 100; height = auto }
     (text ~style:Theme.accent ~wrap:`None head :: counts_seg counts)
 
-let scope_word = function
-  | Session -> "this session"
-  | User -> "all your projects"
-
-let always_summary t =
-  String.concat ", " (List.map Suggest.summary t.suggestions)
-
 let options_view t ~allow_once ~session_scope =
   let line ~selected s =
     text ~style:(if selected then Theme.accent else Theme.muted) ~wrap:`Word s
@@ -442,28 +411,15 @@ let options_view t ~allow_once ~session_scope =
   let simple =
     [|
       "Yes, " ^ allow_once;
-      "Yes, don't ask again for " ^ session_scope ^ " this session";
+      "Yes, allow " ^ session_scope ^ " for this conversation";
       "No, and tell Spice what to do differently";
     |]
   in
-  (* The always row carries a second dim line naming where the rule saves and
-     that [s] cycles the scope, so the derived rule and its destination are
-     visible before the reviewer confirms it. *)
-  let always ~selected =
-    box ~flex_direction:Flex_direction.Column ~flex_shrink:0.
-      [
-        line ~selected ("Yes, always allow " ^ always_summary t);
-        text ~style:Theme.faint ~wrap:`Word
-          ("saves for " ^ scope_word t.scope ^ " — press s to change");
-      ]
-  in
-  let label i ~selected =
-    if i < 3 then line ~selected simple.(i) else always ~selected
-  in
   box ~flex_direction:Flex_direction.Column ~flex_shrink:0.
-    (List.init (option_count t) (fun i ->
+    (List.init option_count (fun i ->
          let selected = Option_list.selected t.nav = i in
-         Option_list.row ~selected ~number:(i + 1) ~label:(label i ~selected) ()))
+         Option_list.row ~selected ~number:(i + 1)
+           ~label:(line ~selected simple.(i)) ()))
 
 let view ~width t =
   let accesses = reviewed_accesses t in
@@ -477,8 +433,7 @@ let view ~width t =
     @ [ blank; options_view t ~allow_once ~session_scope ]
   in
   let hint =
-    [ (if has_always t then "1-4 choose" else "1/2/3 choose"); "enter confirm" ]
-    @ (if has_always t then [ "s scope" ] else [])
+    [ "1/2/3 choose"; "enter confirm" ]
     @
     (if
        (has_diff t accesses

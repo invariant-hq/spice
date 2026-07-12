@@ -865,7 +865,7 @@ let permission_replies_update_grants () =
   let resolved =
     apply
       (Session.Event.permission_resolved
-         (Session.Permission.Resolved.allow_session
+         (Session.Permission.Resolved.allow_exact_for_conversation
             ~id:(Session.Permission.Requested.id request)))
       blocked
   in
@@ -876,8 +876,51 @@ let permission_replies_update_grants () =
        (List.filter
           (fun (_, resolved) -> Option.is_some resolved)
           (State.permissions resolved)));
-  is_true ~msg:"allow-session reply updates grants"
+  is_true ~msg:"exact conversation reply updates grants"
     (Permission.Policy.Grants.allows (State.grants resolved) access)
+
+let family_replies_replay_visible_authority_only () =
+  let replay lifetime =
+    let turn = turn () in
+    let call = tool_call ~name:"tool_family" () in
+    let access = extension_access "tool.family" in
+    let request =
+      permission_request ~turn:(Session.Turn.id turn) ~tool_call:call access
+    in
+    let rule =
+      Permission.Policy.Rule.allow
+        (Permission.Policy.Match.custom "tool.family")
+    in
+    let resolved =
+      Session.Permission.Resolved.allow_family
+        ~id:(Session.Permission.Requested.id request)
+        ~lifetime ~rules:[ rule ]
+    in
+    ( state
+        [
+          Session.Event.turn_started turn;
+          Session.Event.response_appended (response (assistant_tool_call call));
+          Session.Event.permission_requested request;
+          Session.Event.permission_resolved resolved;
+        ],
+      access,
+      rule )
+  in
+  let conversation, access, rule =
+    replay Session.Permission.Resolved.Conversation
+  in
+  equal int ~msg:"conversation family replays one visible rule" 1
+    (List.length (State.permission_rules conversation));
+  is_true ~msg:"conversation family preserves the selected rule"
+    (Permission.Policy.Rule.equal rule
+       (List.hd (State.permission_rules conversation)));
+  is_false ~msg:"conversation family installs no hidden exact grant"
+    (Permission.Policy.Grants.allows (State.grants conversation) access);
+  let user, access, _ = replay Session.Permission.Resolved.User in
+  equal int ~msg:"user family does not resurrect a removed config rule" 0
+    (List.length (State.permission_rules user));
+  is_false ~msg:"user family installs no hidden exact grant"
+    (Permission.Policy.Grants.allows (State.grants user) access)
 
 let permission_request_requires_pending_tool_call () =
   let turn = turn () in
@@ -1205,11 +1248,14 @@ let permission_decision_eliminator () =
   | _ -> failf "allow_once decides to Allow Once");
   (match
      Session.Permission.Resolved.decision
-       (Session.Permission.Resolved.allow_session ~id)
+       (Session.Permission.Resolved.allow_exact_for_conversation ~id)
    with
-  | Session.Permission.Resolved.Allowed Session.Permission.Resolved.Session ->
+  | Session.Permission.Resolved.Allowed
+      Session.Permission.Resolved.Exact_for_conversation ->
       ()
-  | _ -> failf "allow_session decides to Allow Session");
+  | _ ->
+      failf
+        "allow_exact_for_conversation decides to Allow Exact_for_conversation");
   (match
      Session.Permission.Resolved.decision
        (Session.Permission.Resolved.deny ~id result)
@@ -1233,11 +1279,48 @@ let permission_decision_eliminator () =
   equal string ~msg:"unattended deny records its provenance" "unattended"
     (via_of (Session.Permission.Resolved.deny ~id ~via:`Unattended result))
 
+let permission_family_validation_and_json () =
+  let id = Session.Permission.Id.of_string "permission-family" in
+  let allow =
+    Permission.Policy.Rule.allow
+      (Permission.Policy.Match.custom "tool.family")
+  in
+  let deny =
+    Permission.Policy.Rule.deny
+      (Permission.Policy.Match.custom "tool.family")
+  in
+  expect_invalid_arg "empty permission family" (fun () ->
+      Session.Permission.Resolved.allow_family ~id
+        ~lifetime:Session.Permission.Resolved.Conversation ~rules:[]);
+  expect_invalid_arg "non-allow permission family" (fun () ->
+      Session.Permission.Resolved.allow_family ~id
+        ~lifetime:Session.Permission.Resolved.Conversation ~rules:[ deny ]);
+  expect_invalid_arg "duplicate permission family rule" (fun () ->
+      Session.Permission.Resolved.allow_family ~id
+        ~lifetime:Session.Permission.Resolved.Conversation
+        ~rules:[ allow; allow ]);
+  let family =
+    Session.Permission.Resolved.allow_family ~id
+      ~lifetime:Session.Permission.Resolved.Conversation ~rules:[ allow ]
+  in
+  let decoded =
+    decode Session.Permission.Resolved.jsont
+      (encode Session.Permission.Resolved.jsont family)
+  in
+  is_true ~msg:"family permission round trips"
+    (Session.Permission.Resolved.equal family decoded);
+  expect_decode_error "obsolete allow-session spelling is rejected"
+    Session.Permission.Resolved.jsont
+    (json_object
+       [
+         ("id", Json.string (Session.Permission.Id.to_string id));
+         ("answer", Json.string "allow-session");
+       ])
+
 let allow_once_leaves_session_grants_untouched () =
-  (* Reducer contract for the [Allow Once] scope: unlike [Allow Session] (see
-     [permission_replies_update_grants]), a one-shot allow adds no grant, so the
-     next call to the same tool still requires review. This pins that grants are
-     computed directly from the allow scope. *)
+  (* Reducer contract for [Allow Once]: unlike an exact conversation answer, a
+     one-shot allow adds no grant, so the next call to the same tool still
+     requires review. *)
   let turn = turn () in
   let call = tool_call ~name:"tool_once" () in
   let access = extension_access "tool.once" in
@@ -1835,6 +1918,8 @@ let () =
       test "tool results require active turn" tool_results_require_active_turn;
       test "response model must match turn" response_model_must_match_turn;
       test "permission replies update grants" permission_replies_update_grants;
+      test "family replies replay visible authority only"
+        family_replies_replay_visible_authority_only;
       test "permission request requires pending tool call"
         permission_request_requires_pending_tool_call;
       test "permission requests are serial" permission_requests_are_serial;
@@ -1853,6 +1938,8 @@ let () =
       test "permission denial result must match blocked call"
         permission_denial_result_must_match_blocked_call;
       test "permission decision eliminator" permission_decision_eliminator;
+      test "permission family validation and JSON"
+        permission_family_validation_and_json;
       test "allow-once leaves session grants untouched"
         allow_once_leaves_session_grants_untouched;
       test "tool claim blocks until finished" tool_claim_blocks_until_finished;

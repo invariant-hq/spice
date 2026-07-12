@@ -187,22 +187,6 @@ module Run : sig
       only for an enforcing workspace-write sandbox. Direct command accesses
       remain reviewable unless another explicit rule decides them. *)
 
-  val with_session_rules :
-    Spice_permission.Policy.Rule.t list -> 'src t -> 'src t
-  (** [with_session_rules rules t] is [t] with [rules] prepended as its
-      highest configurable-precedence rows, deciding before every durable,
-      ordinary preset, and sandbox-backed row, but after [Plan]'s command-deny
-      guard.
-
-      These are a reviewer's in-session "always allow" grants: a session-scoped
-      family rule takes effect for the rest of the run — including within the
-      turn that installed it, because {!Run.make}'s policy is rebuilt from the
-      posture each turn — without waiting for a durable config write to load.
-      The rows borrow the preset's provenance, so {!find} and {!denial_message}
-      read them as preset rows; since "always allow" only installs allow rules,
-      they never decide a denial. Rules already present by content (equal
-      {!rule_id}) are skipped, so re-installing the same rule is idempotent. *)
-
   val with_web_docs_allowlist : 'src t -> 'src t
   (** [with_web_docs_allowlist t] is [t] extended with an allow row per
       {!web_docs_allowlist} host, appended after every existing row so a durable
@@ -227,9 +211,13 @@ module Run : sig
       that decided [rule]; use it to label {!Spice_permission.Policy.explain}
       results with identity and provenance. *)
 
-  val policy : 'src t -> Spice_permission.Policy.t
-  (** [policy t] is the pure permission policy that decides protected operations
-      under [t]. *)
+  val policy :
+    conversation:Spice_permission.Policy.Rule.t list ->
+    'src t ->
+    Spice_permission.Policy.t
+  (** [policy ~conversation t] is the pure permission policy that decides
+      protected operations under [t]. Durable rules precede [conversation],
+      which precedes product preset, sandbox, and documentation rules. *)
 
   val denial_message :
     source:('src -> string) ->

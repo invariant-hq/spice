@@ -93,20 +93,23 @@ spice run --permission-mode bypass "PROMPT"
 Config files and `SPICE_PERMISSION_MODE` reject `bypass`. Explicit durable
 deny or review rules still precede the bypass preset and still apply.
 
-### Reviews and session grants
+### Reviews and conversation grants
 
 The interactive permission dialog offers:
 
 - allow once;
-- allow this exact access for the session;
+- allow this exact access for the conversation;
 - deny, optionally with model-visible feedback.
 
-An allow-once answer authorizes only the blocked operation. An allow-session
-answer reconstructs an exact grant from the durable permission request when the
-session is replayed. It does not broaden a file to its directory, a command to
-its prefix, or a host to all network traffic. A tool may mark a sensitive
-request non-grantable, in which case the session choice is intentionally capped
-at one use.
+An allow-once answer authorizes only the blocked operation. An exact-conversation
+answer reconstructs an exact grant from the durable permission request whenever
+the conversation is replayed. It does not broaden a file to its directory, a
+command to its prefix, or a host to all network traffic. Explicit review and
+deny rules still take precedence over exact grants.
+
+Family approvals are durable protocol values, but the interactive dialog does
+not guess or offer them. A future family editor must show the complete matcher
+before saving it; until then, configure family rules explicitly.
 
 Headless runs use the same durable permission facts. With the default
 `permission.unattended=block`, a required review saves the session, exits with
@@ -114,7 +117,7 @@ code 3, and prints commands such as:
 
 ```sh
 spice run reply SESSION --allow PERMISSION_ID
-spice run reply SESSION --allow-session PERMISSION_ID
+spice run reply SESSION --allow-conversation PERMISSION_ID
 spice run reply SESSION --deny PERMISSION_ID
 spice run reply SESSION --deny PERMISSION_ID --message TEXT
 ```
@@ -319,7 +322,7 @@ An approved escalation:
 - runs that one command without filesystem or network confinement;
 - retains the credential and loader-variable environment filter;
 - records `not_requested` sandbox evidence;
-- does not broaden to another command, even after an allow-session answer.
+- does not broaden to another command, even after an exact-conversation answer.
 
 Read-only mode refuses escalation without opening a permission review. In
 `danger-full-access` and `external-sandbox`, escalation is ignored because the

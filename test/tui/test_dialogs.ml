@@ -168,12 +168,12 @@ let%expect_test "the permission dialog renders and an approve runs the command"
 07 |   in $PROJECT/.
 08 |
 09 | ❯ 1. Yes, run it once
-10 |   2. Yes, don't ask again for this command this session
+10 |   2. Yes, allow this command for this conversation
 11 |   3. No, and tell Spice what to do differently
-12 |   4. Yes, always allow echo
-13 |      saves for this session — press s to change
+12 |
+13 |   1/2/3 choose · enter confirm · esc deny with feedback
 14 |
-15 |   1-4 choose · enter confirm · s scope · esc deny with feedback
+15 |
 16 |
 17 |
 18 |
@@ -212,30 +212,30 @@ let%expect_test "a compound command is presented as one atomic action" =
   open_dialog t "inspect workspace";
   Tui.print t;
   [%expect
-    {|01 | ⋯ Waiting for your answer
-02 |
+    {|01 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+02 |    permission
 03 |
-04 |
+04 |   Run this command?
 05 |
-06 |
-07 |
+06 |   $ git status --short && test ! -e .probe-one && test ! -e .probe-two
+07 |   in $PROJECT/.
 08 |
-09 |
-10 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
-11 |    permission
+09 | ❯ 1. Yes, allow once
+10 |   2. Yes, allow these accesses for this conversation
+11 |   3. No, and tell Spice what to do differently
 12 |
-13 |   Run this command?
+13 |   1/2/3 choose · enter confirm · ctrl+o details · esc deny with feedback
 14 |
-15 |   $ git status --short && test ! -e .probe-one && test ! -e .probe-two
-16 |   in $PROJECT/.
+15 |
+16 |
 17 |
-18 | ❯ 1. Yes, allow once
-19 |   2. Yes, don't ask again for these accesses this session
-20 |   3. No, and tell Spice what to do differently
-21 |   4. Yes, always allow git status, test
-22 |      saves for this session — press s to change
+18 |
+19 |
+20 |
+21 |
+22 |
 23 |
-24 |   1-4 choose · enter confirm · s scope · ctrl+o details · esc deny with feedback|}];
+24 ||}];
   Tui.keys t Key.ctrl_o;
   Tui.settle t;
   Tui.print t;
@@ -244,26 +244,26 @@ let%expect_test "a compound command is presented as one atomic action" =
 02 |
 03 |
 04 |
-05 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
-06 |    permission
-07 |
-08 |   Run this command?
+05 |
+06 |
+07 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+08 |    permission
 09 |
-10 |   $ git status --short && test ! -e .probe-one && test ! -e .probe-two
-11 |   in $PROJECT/.
-12 |
-13 |   Permission details
-14 |   exec 'git' 'status' '--short' in $PROJECT/.
-15 |   exec 'test' '!' '-e' '.probe-one' in $PROJECT
-16 |   exec 'test' '!' '-e' '.probe-two' in $PROJECT
-17 |
-18 | ❯ 1. Yes, allow once
-19 |   2. Yes, don't ask again for these accesses this session
-20 |   3. No, and tell Spice what to do differently
-21 |   4. Yes, always allow git status, test
-22 |      saves for this session — press s to change
+10 |   Run this command?
+11 |
+12 |   $ git status --short && test ! -e .probe-one && test ! -e .probe-two
+13 |   in $PROJECT/.
+14 |
+15 |   Permission details
+16 |   exec 'git' 'status' '--short' in $PROJECT/.
+17 |   exec 'test' '!' '-e' '.probe-one' in $PROJECT
+18 |   exec 'test' '!' '-e' '.probe-two' in $PROJECT
+19 |
+20 | ❯ 1. Yes, allow once
+21 |   2. Yes, allow these accesses for this conversation
+22 |   3. No, and tell Spice what to do differently
 23 |
-24 |   1-4 choose · enter confirm · s scope · esc deny with feedback|}];
+24 |   1/2/3 choose · enter confirm · esc deny with feedback|}];
   Tui.enter t;
   ignore (Tui.await_request t 2 : string);
   Tui.release t "fin";
@@ -302,12 +302,12 @@ let%expect_test "the permission dialog denies and resumes without running" =
 07 |   in $PROJECT/.
 08 |
 09 |   1. Yes, run it once
-10 |   2. Yes, don't ask again for this command this session
+10 |   2. Yes, allow this command for this conversation
 11 | ❯ 3. No, and tell Spice what to do differently
-12 |   4. Yes, always allow echo
-13 |      saves for this session — press s to change
+12 |
+13 |   1/2/3 choose · enter confirm · esc deny with feedback
 14 |
-15 |   1-4 choose · enter confirm · s scope · esc deny with feedback
+15 |
 16 |
 17 |
 18 |
@@ -357,81 +357,6 @@ let%expect_test "the permission dialog denies and resumes without running" =
   ignore (Tui.await_request t 2 : string);
   Tui.release t "fin";
   Tui.settle t
-
-(* Always allow: a shell call whose argv has a command family ("git commit")
-   offers a fourth option that saves a durable rule over that family. The scope
-   line defaults to this session and [s] cycles it to user (the only two scopes:
-   a workspace file never originates permission authority). Picking it at user
-   scope grants the blocked call for the session AND installs the family rule, so
-   a later DISTINCT [git commit] runs with no prompt (the turn reaches its resume
-   without a second dialog), and the rule text lands in the outside-workspace
-   user config. *)
-let%expect_test "always allow saves a family rule and silences the family" =
-  let script =
-    [
-      Provider_script.tool_call ~expect:[ "always test" ] ~id:"resp-aa-1"
-        ~call_id:"call-aa1" ~name:"shell"
-        ~arguments:{|{"command":"git commit -m first"}|} ();
-      Provider_script.tool_call
-        ~expect:[ "function_call_output"; "call-aa1" ]
-        ~id:"resp-aa-2" ~call_id:"call-aa2" ~name:"shell"
-        ~arguments:{|{"command":"git commit -m second"}|} ();
-      resume
-        ~expect:[ "function_call_output"; "call-aa2" ]
-        ~id:"resp-aa-3" "Both commits attempted.";
-    ]
-  in
-  Tui.run ~name:"dialog-perm-always" ~provider:script @@ fun t ->
-  open_dialog t "always test";
-  Tui.print t;
-  [%expect
-    {|01 | ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
-02 |    permission
-03 |
-04 |   Run this command?
-05 |
-06 |   $ git commit -m first
-07 |   in $PROJECT/.
-08 |
-09 | ❯ 1. Yes, run it once
-10 |   2. Yes, don't ask again for this command this session
-11 |   3. No, and tell Spice what to do differently
-12 |   4. Yes, always allow git commit
-13 |      saves for this session — press s to change
-14 |
-15 |   1-4 choose · enter confirm · s scope · esc deny with feedback
-16 |
-17 |
-18 |
-19 |
-20 |
-21 |
-22 |
-23 |
-24 ||}];
-  (* Cycle the always-allow scope from this session to user, then always-allow
-     with [4]. The grant proceeds the first commit; the SECOND distinct commit is
-     decided under the installed family rule with no prompt, so the turn reaches
-     its resume request without a second dialog opening. *)
-  Tui.keys t "s";
-  Tui.settle t;
-  Tui.keys t "4";
-  ignore (Tui.await_request t 3 : string);
-  Tui.release t "fin";
-  Tui.settle t;
-  let user_config =
-    Project.scratch (Tui.project t) "config/spice/config.json"
-  in
-  let contents =
-    if Sys.file_exists user_config then Project.read_path user_config else ""
-  in
-  print_string
-    (if
-       Screen.contains contents "argv-prefix"
-       && Screen.contains contents "commit"
-     then "rule saved to user config"
-     else "MISSING RULE >>>" ^ contents ^ "<<<");
-  [%expect {| rule saved to user config |}]
 
 (* A proposed plan is a real host-tool boundary in plan mode. The first option
    approves it, and the next provider request must carry the tool result before

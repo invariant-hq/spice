@@ -137,9 +137,17 @@ module Resolved : sig
       denial recorded by an unattended host policy; it never applies to allow
       replies. Provenance is audit data and does not affect state replay. *)
 
-  type allowance = Once | Session
-  (** The lifetime of an allowed permission. [Once] authorizes only the blocked
-      operation. [Session] remembers its exact reviewed accesses. *)
+  type family_lifetime = Conversation | User
+  (** Where a visible family rule is stored. *)
+
+  type allowance =
+    | Once
+    | Exact_for_conversation
+    | Family of {
+        lifetime : family_lifetime;
+        rules : Spice_permission.Policy.Rule.t list;
+      }
+  (** The authority selected by an allowed permission. *)
 
   type answer = Allow of allowance | Deny
   (** A reviewer answer before denial feedback is attached. *)
@@ -148,10 +156,20 @@ module Resolved : sig
   (** [allow_once ~id] is a durable one-shot allow answer to permission prompt
       [id]. *)
 
-  val allow_session : id:Id.t -> t
-  (** [allow_session ~id] is a durable session allow answer to permission prompt
-      [id]. During state replay it updates reconstructed runtime grants for the
-      reviewed accesses on the matching request. *)
+  val allow_exact_for_conversation : id:Id.t -> t
+  (** [allow_exact_for_conversation ~id] remembers the request's exact reviewed
+      accesses for the durable conversation. *)
+
+  val allow_family :
+    id:Id.t ->
+    lifetime:family_lifetime ->
+    rules:Spice_permission.Policy.Rule.t list ->
+    t
+  (** [allow_family ~id ~lifetime ~rules] authorizes the blocked operation once
+      and records the visible allow rules with [lifetime].
+
+      Raises [Invalid_argument] if [rules] is empty, contains duplicates, or
+      contains a non-allow rule. *)
 
   val deny : id:Id.t -> ?via:via -> Spice_llm.Tool.Result.t -> t
   (** [deny ~id ?via result] is a durable deny answer to permission prompt [id].

@@ -44,13 +44,6 @@ type resolution =
       answer : Spice_session.Permission.Resolved.answer;
       message : string option;
     }  (** A permission reply — {!Spice_protocol.Command.Reply}. *)
-  | Reply_always of {
-      rules : Spice_permission.Policy.Rule.t list;
-      scope : Permission_dialog.scope;
-    }
-      (** An always-allow permission reply: grant the request for the session
-          and install [rules] durably at [scope] — the shell's
-          {!App.Always_allow}. *)
   | Answer of { text : string }
       (** A question answer — {!Spice_protocol.Command.Answer}. *)
   | Resolve_plan of {

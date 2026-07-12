@@ -40,7 +40,7 @@ the secret or socket path values.
   > {"expect":{"body_contains":["akey[STRIPPED]","ssh[STRIPPED]","gpg[STRIPPED]","gnupg[STRIPPED]","krb[STRIPPED]","region[eu-west]"],"body_not_contains":["sk-leak-canary-42","spice-fake-agent.sock","spice-gpg-agent.sock","spice-gnupg-home","spice-krb5-cache"]},"response":{"id":"resp-env-2","status":"completed","model":"gpt-5.5","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"env checked"}]}]}}
   > JSONL
   $ start_fake_openai env-next.jsonl env-capture-next env-port-next
-  $ spice run reply env-run --cwd "$PWD" --allow-session "$permission_id" >env-next.out 2>&1; echo exit:$?
+  $ spice run reply env-run --cwd "$PWD" --allow-conversation "$permission_id" >env-next.out 2>&1; echo exit:$?
   exit:0
   $ wait_fake_server
 
