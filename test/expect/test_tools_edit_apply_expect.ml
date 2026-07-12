@@ -315,6 +315,12 @@ let print_apply_output output =
     (List.length (Apply_patch.Output.entries output))
     (not (String.is_empty (Apply_patch.Output.diff output)))
 
+let print_apply_receipt output =
+  let receipt = Apply_patch.Output.receipt output in
+  Printf.printf "receipt changes=%d concrete=%d\n"
+    (List.length (Spice_tools.Receipt.changes receipt))
+    (List.length (Spice_tools.Receipt.paths receipt))
+
 let run_apply ~fs ~workspace ?max_bytes ?cancelled ?outside input =
   Apply_patch.run ~fs ~workspace ?max_file_bytes:max_bytes ?cancelled input
   |> print_result ?outside print_apply_output
@@ -632,18 +638,160 @@ let%expect_test "apply_patch preserves BOM and CRLF line endings" =
     entries=1 diff=true
     disk bom-crlf.txt: "\239\187\191ALPHA\r\nbravo\r\n" |}]
 
+let%expect_test "apply_patch plans delete then add as one replacement" =
+  with_fixture @@ fun ~root ~outside:_ ~fs ~workspace ->
+  let input =
+    apply_input
+      (patch
+         [
+           "*** Delete File: delete.txt";
+           "*** Add File: delete.txt";
+           "+replacement";
+         ])
+  in
+  let result = Apply_patch.run ~fs ~workspace input in
+  print_result
+    (fun output ->
+      print_apply_output output;
+      print_apply_receipt output)
+    result;
+  print_disk root "delete.txt";
+  [%expect
+    {|
+    entries: delete.txt:modify
+    entries=1 diff=true
+    receipt changes=1 concrete=1
+    disk delete.txt: "replacement\n" |}]
+
+let%expect_test "apply_patch plans repeated updates against virtual contents" =
+  with_fixture @@ fun ~root ~outside:_ ~fs ~workspace ->
+  let input =
+    apply_input
+      (patch
+         [
+           "*** Update File: source.txt";
+           "@@";
+           "-line2";
+           "+LINE2";
+           "*** Update File: source.txt";
+           "@@";
+           "-LINE2";
+           "+final";
+         ])
+  in
+  let result = Apply_patch.run ~fs ~workspace input in
+  print_result
+    (fun output ->
+      print_apply_output output;
+      print_apply_receipt output)
+    result;
+  print_disk root "source.txt";
+  [%expect
+    {|
+    entries: source.txt:modify
+    entries=1 diff=true
+    receipt changes=1 concrete=1
+    disk source.txt: "line1\nfinal\nline3\n" |}]
+
+let%expect_test "apply_patch collapses move chains to the original source" =
+  with_fixture @@ fun ~root ~outside:_ ~fs ~workspace ->
+  let input =
+    apply_input
+      (patch
+         [
+           "*** Update File: move.txt";
+           "*** Move to: intermediate.txt";
+           "@@";
+           "-old";
+           "+new";
+           "*** Update File: intermediate.txt";
+           "*** Move to: chained/path.txt";
+           "@@";
+           "-keep";
+           "+kept";
+         ])
+  in
+  let result = Apply_patch.run ~fs ~workspace input in
+  print_result
+    (fun output ->
+      print_apply_output output;
+      print_apply_receipt output)
+    result;
+  print_disk root "move.txt";
+  print_disk root "intermediate.txt";
+  print_disk root "chained/path.txt";
+  [%expect
+    {|
+    entries: chained/path.txt:move from move.txt
+    entries=1 diff=true
+    receipt changes=1 concrete=2
+    disk move.txt: <missing>
+    disk intermediate.txt: <missing>
+    disk chained/path.txt: "new\nkept\n" |}]
+
+let%expect_test "apply_patch diagnoses contradictory sequential operations" =
+  with_fixture @@ fun ~root ~outside:_ ~fs ~workspace ->
+  let cases =
+    [
+      ( "add then add",
+        patch
+          [ "*** Add File: dup.txt"; "+one"; "*** Add File: dup.txt"; "+two" ]
+      );
+      ( "add then move output",
+        patch
+          [
+            "*** Add File: staged.txt";
+            "+occupied";
+            "*** Update File: move.txt";
+            "*** Move to: staged.txt";
+            "@@";
+            "-old";
+            "+new";
+          ] );
+      ( "move then update source",
+        patch
+          [
+            "*** Update File: move.txt";
+            "*** Move to: moved.txt";
+            "@@";
+            "-old";
+            "+new";
+            "*** Update File: move.txt";
+            "@@";
+            "-keep";
+            "+kept";
+          ] );
+    ]
+  in
+  List.iter
+    (fun (label, patch) ->
+      print_case label;
+      run_apply ~fs ~workspace (apply_input patch))
+    cases;
+  print_case "unchanged";
+  print_disk root "move.txt";
+  print_disk root "dup.txt";
+  print_disk root "staged.txt";
+  print_disk root "moved.txt";
+  [%expect
+    {|
+    -- add then add --
+    failed invalid_input: dup.txt: operation 2 (Add) conflicts with operation 1 (Add): expected missing, found text
+    -- add then move output --
+    failed invalid_input: staged.txt: operation 2 (Move) conflicts with operation 1 (Add): expected missing, found text
+    -- move then update source --
+    failed invalid_input: move.txt: operation 2 (Update) conflicts with operation 1 (Move): expected text, found missing
+    -- unchanged --
+    disk move.txt: "old\nkeep\n"
+    disk dup.txt: <missing>
+    disk staged.txt: <missing>
+    disk moved.txt: <missing> |}]
+
 let%expect_test
     "apply_patch rejects duplicate outputs missing context and unsafe reads" =
   with_fixture @@ fun ~root ~outside:_ ~fs ~workspace ->
   let cases =
     [
-      ( "duplicate output",
-        apply_input
-          (patch
-             [
-               "*** Add File: dup.txt"; "+one"; "*** Add File: dup.txt"; "+two";
-             ]),
-        None );
       ( "missing context",
         apply_input
           (patch [ "*** Update File: source.txt"; "@@"; "-absent"; "+present" ]),
@@ -690,8 +838,6 @@ let%expect_test
   print_disk root "dup.txt";
   [%expect
     {|
-    -- duplicate output --
-    failed invalid_input: dup.txt: duplicate edit target
     -- missing context --
     failed invalid_input: source.txt: patch chunk 0 failed: missing lines: "absent"
     -- existing add destination --

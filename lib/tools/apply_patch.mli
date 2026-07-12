@@ -101,12 +101,14 @@ module Output : sig
             entry path is the move destination. *)
 
   type entry
-  (** Typed evidence for one semantic patch effect.
+  (** Typed evidence for one final semantic patch effect.
 
-      Entries are ordered by the patch document and use resolved workspace
-      paths. A moved update is represented by one [Move] entry, while the
-      underlying {!Spice_edit.Result.t} still records the concrete create/delete
-      mutations used to perform it. *)
+      Entries use resolved workspace paths and are ordered by the first use of
+      each path in the patch document. Sequential operations on one path are
+      collapsed to its net effect. A move, including a move chain, is
+      represented by one [Move] entry when the original source is absent in the
+      final state; the underlying {!Spice_edit.Result.t} still records the
+      concrete create/delete mutations used to perform it. *)
 
   val path : entry -> Spice_workspace.Path.t
   (** [path e] is the changed output path.
@@ -130,7 +132,7 @@ module Output : sig
   (** Typed output and applied edit evidence. *)
 
   val entries : t -> entry list
-  (** [entries t] are the semantic patch effects in patch order. *)
+  (** [entries t] are the final semantic patch effects in first-use order. *)
 
   val paths : t -> Spice_workspace.Path.t list
   (** [paths t] are the changed output paths in {!entries} order. *)
@@ -180,17 +182,22 @@ val run :
 (** [run ~fs ~workspace input] plans and applies [input].
 
     [run] uses the already-decoded operations, resolves every source and
-    destination through [workspace], reads every existing target completely
-    through [fs], applies updates with {!Spice_patch.Update.apply}, lowers the
-    result to one {!Spice_edit.t}, creates missing parent directories for add
-    and move destinations, and applies the plan with {!Spice_edit.apply}.
+    destination through [workspace], and evaluates them in document order.
+    Existing targets are read completely through [fs], and each operation
+    observes the results of preceding operations. The final result is normalized
+    to at most one transition per path in one {!Spice_edit.t}; missing parent
+    directories for final add and move destinations are then created before
+    applying the plan with {!Spice_edit.apply}.
 
-    Successful runs are fully planned before mutation starts. Add destinations
-    and move destinations must be missing. Update and delete sources must be
-    existing regular UTF-8 text files. Directories, symlinks, binary files,
-    invalid UTF-8 files, duplicate output targets, ambiguous source/output path
-    conflicts, missing update context, paths outside [workspace], and files
-    above [max_file_bytes] return failed tool results.
+    Successful runs are fully planned before mutation starts. At each operation,
+    add and move destinations must be missing, while update and delete sources
+    must be regular UTF-8 text files. A delete followed by an add at the same
+    path is therefore a replacement, and repeated updates apply sequentially.
+    Contradictory state requirements report the conflicting operation indices
+    and kinds. Directories, symlinks, binary files, invalid UTF-8 files,
+    ambiguous source/output path conflicts, missing update context, paths
+    outside [workspace], and files above [max_file_bytes] return failed tool
+    results.
 
     [max_file_bytes] defaults to {!default_max_file_bytes}. [cancelled] defaults
     to a function returning [false] and is checked before planning, before
