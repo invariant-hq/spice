@@ -186,13 +186,13 @@ let%expect_test "a logged-out submit opens the login flow" =
   Tui.settle t;
   Tui.print t;
   [%expect
-    {|01 |   Tell spice how to proceed.
-02 |
-03 |
-04 |
+    {|01 |
+02 |  ▄▀▀ █▀▄ · ▄▀▀ ██▀   ·    dev · openai/gpt-5.5 medium
+03 |  ▄██ █▀  █ ▀▄▄ █▄▄ ▂▄▆▄▂  $PROJECT
+04 |        sandbox: danger-full-access (config)
 05 |
-06 |
-07 |
+06 | ✗ not logged in — run /login to connect a provider
+07 |   Tell spice how to proceed.
 08 |
 09 |
 10 |
