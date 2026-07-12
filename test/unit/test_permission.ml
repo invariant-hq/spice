@@ -106,10 +106,10 @@ let argv_exact ?(cwd = default_cwd) ?(execution = Access.Command.Direct)
 let extension name = Access.custom name
 let request access = Request.of_accesses [ access ]
 
-type answer_scope = Allow_once | Allow_session | Deny
-
 let restore_review request accesses =
-  let reasons = List.map (fun access -> (access, Policy.Review.Unmatched)) accesses in
+  let reasons =
+    List.map (fun access -> (access, Policy.Review.Unmatched)) accesses
+  in
   match Policy.Review.restore request reasons with
   | Ok review -> review
   | Error Policy.Review.Empty_accesses ->
@@ -117,18 +117,7 @@ let restore_review request accesses =
   | Error (Policy.Review.Access_not_in_request access) ->
       failf "review restore rejected access: %a" Access.pp access
 
-let answer_reply ~grants ask = function
-  | Allow_once ->
-      Policy.Review.resolve ~grants ask (Policy.Review.Allow Policy.Review.Once)
-  | Allow_session ->
-      Policy.Review.resolve ~grants ask
-        (Policy.Review.Allow Policy.Review.Session)
-  | Deny -> Policy.Review.resolve ~grants ask Policy.Review.Deny
-
-let allow_session ask grants =
-  match answer_reply ~grants ask Allow_session with
-  | Policy.Review.Proceed grants -> grants
-  | Policy.Review.Rejected -> failf "allow session unexpectedly denied"
+let allow_session = Policy.Review.remember
 
 let expect_allow msg = function
   | Policy.Decision.Allowed -> ()
@@ -632,39 +621,15 @@ let grants_allow_reviewed_accesses () =
   expect_allow "granted access is allowed without another review"
     (Policy.decide ~grants Policy.default (request command))
 
-let apply_reply_updates_grants_only_for_allow_session () =
+let remember_adds_exact_reviewed_grants () =
   let command = shell "make test" in
   let review =
     expect_review "review-all policy reviews shell command"
       (Policy.decide Policy.default (request command))
   in
-  let grants = Policy.Grants.empty in
-  (match answer_reply ~grants review Allow_once with
-  | Policy.Review.Proceed grants ->
-      check "allow once does not add a session grant"
-        (not (Policy.Grants.allows grants command))
-  | Policy.Review.Rejected ->
-      failf "allow once should allow the reviewed access");
-  (match answer_reply ~grants review Allow_session with
-  | Policy.Review.Proceed grants ->
-      check "allow session adds exact grants for reviewed accesses"
-        (Policy.Grants.allows grants command)
-  | Policy.Review.Rejected ->
-      failf "allow session should allow the reviewed access");
-  match answer_reply ~grants review Deny with
-  | Policy.Review.Rejected -> ()
-  | Policy.Review.Proceed _ -> failf "deny should reject the reviewed access"
-
-let non_grantable_requests_do_not_persist_session_grants () =
-  let command = shell "make test" in
-  let request = Request.of_accesses ~grantable:false [ command ] in
-  let review =
-    expect_review "review-all policy reviews shell command"
-      (Policy.decide Policy.default request)
-  in
-  let grants = allow_session review Policy.Grants.empty in
-  is_true ~msg:"allow-session adds no grant for non-grantable requests"
-    (not (Policy.Grants.allows grants command))
+  let grants = Policy.Review.remember review Policy.Grants.empty in
+  check "remember adds exact grants for reviewed accesses"
+    (Policy.Grants.allows grants command)
 
 let review_of_accesses_uses_durable_request_subset () =
   let read = workspace_read "README.md" in
@@ -677,24 +642,10 @@ let review_of_accesses_uses_durable_request_subset () =
   equal (list access_value) ~msg:"durable access subset is normalized"
     [ command ]
     (Policy.Review.accesses (restore_review request [ command; command ]));
-  let grants = Policy.Grants.empty in
-  (match answer_reply ~grants review Allow_once with
-  | Policy.Review.Proceed grants ->
-      check "allow once does not add a durable-subset grant"
-        (not (Policy.Grants.allows grants command))
-  | Policy.Review.Rejected ->
-      failf "allow once should allow the durable access subset");
-  (match answer_reply ~grants review Allow_session with
-  | Policy.Review.Proceed grants ->
-      check "allow session grants only the durable subset"
-        (Policy.Grants.allows grants command
-        && not (Policy.Grants.allows grants read))
-  | Policy.Review.Rejected ->
-      failf "allow session should allow the durable access subset");
-  (match answer_reply ~grants review Deny with
-  | Policy.Review.Rejected -> ()
-  | Policy.Review.Proceed _ ->
-      failf "deny should reject the durable access subset");
+  let grants = Policy.Review.remember review Policy.Grants.empty in
+  check "remember grants only the durable subset"
+    (Policy.Grants.allows grants command
+    && not (Policy.Grants.allows grants read));
   (match Policy.Review.restore request [] with
   | Error Policy.Review.Empty_accesses -> ()
   | Ok _ | Error (Policy.Review.Access_not_in_request _) ->
@@ -1521,10 +1472,8 @@ let () =
       test "rule matchers cover common policy patterns"
         rule_matchers_cover_common_policy_patterns;
       test "grants allow reviewed accesses" grants_allow_reviewed_accesses;
-      test "apply reply updates grants only for allow session"
-        apply_reply_updates_grants_only_for_allow_session;
-      test "non-grantable requests do not persist session grants"
-        non_grantable_requests_do_not_persist_session_grants;
+      test "remember adds exact reviewed grants"
+        remember_adds_exact_reviewed_grants;
       test "review of accesses uses durable request subset"
         review_of_accesses_uses_durable_request_subset;
       test "review restore uses request subset"

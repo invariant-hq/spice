@@ -39,7 +39,7 @@ type t =
   | Resume
   | Reply of {
       permission : Spice_session.Permission.Id.t;
-      answer : Spice_permission.Policy.Review.answer;
+      answer : Spice_session.Permission.Resolved.answer;
       via : Spice_session.Permission.Resolved.via option;
       message : string option;
     }
@@ -57,14 +57,16 @@ type t =
       Spice_session.Tool_claim.Id.t * Spice_tool.Output.t Spice_tool.Result.t
   | Interrupt of { reason : string option }
 
-let pp_answer ppf (answer : Spice_permission.Policy.Review.answer) =
+let pp_answer ppf (answer : Spice_session.Permission.Resolved.answer) =
   match answer with
-  | Spice_permission.Policy.Review.Allow Spice_permission.Policy.Review.Once ->
+  | Spice_session.Permission.Resolved.Allow
+      Spice_session.Permission.Resolved.Once ->
       Format.pp_print_string ppf "allow-once"
-  | Spice_permission.Policy.Review.Allow Spice_permission.Policy.Review.Session
-    ->
+  | Spice_session.Permission.Resolved.Allow
+      Spice_session.Permission.Resolved.Session ->
       Format.pp_print_string ppf "allow-session"
-  | Spice_permission.Policy.Review.Deny -> Format.pp_print_string ppf "deny"
+  | Spice_session.Permission.Resolved.Deny ->
+      Format.pp_print_string ppf "deny"
 
 let pp_via ppf = function
   | `Reviewer -> Format.pp_print_string ppf "reviewer"

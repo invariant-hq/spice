@@ -475,7 +475,7 @@ let apply ~now ~show_reasoning event t =
         match
           (matched, Spice_session.Permission.Resolved.decision resolved)
         with
-        | Some p, Spice_session.Permission.Resolved.Deny _ ->
+        | Some p, Spice_session.Permission.Resolved.Denied _ ->
             [ Transcript.Tool (Tool_distill.denied p.call) ]
         | _ -> []
       in

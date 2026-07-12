@@ -367,8 +367,8 @@ let should_compact_request policy state request =
 (* [Spice_protocol.Event.Tool_started] is emitted by the projector from the saved
    [Tool_claim_started] event; this only runs the tool and reports its terminal
    result, so the started fact is not re-emitted here. *)
-let run_tool_result hooks execution call =
-  let name = Spice_tool.Call.tool call in
+let run_tool_result hooks execution runnable =
+  let name = Spice_tool.Execution.tool runnable in
   Log.info (fun m -> m "tool started name=%s" name);
   let started = Unix.gettimeofday () in
   let result =
@@ -376,7 +376,7 @@ let run_tool_result hooks execution call =
       Spice_tool.Result.interrupted ~reason:"cancelled" ~cancelled:true ()
     else
       match
-        Spice_tool.Call.run call ~cancelled:hooks.cancelled
+        Spice_tool.Execution.run runnable ~cancelled:hooks.cancelled
           ~emit:(fun update ->
             hooks.observe
               (Spice_protocol.Event.Tool_updated { claim = execution; update }))
@@ -552,13 +552,24 @@ let rec handle_step ~store ~projector ~pressure_compacted ~overflow_compacted
               result.Compactor.document
         end
       else call_model ()
-  | Spice_session_run.Step.Run_tool { claim; call } ->
+  | Spice_session_run.Step.Prepare_tool preflight ->
+      let preparation =
+        Spice_session_run.Preflight.prepare ~cancelled:hooks.cancelled preflight
+      in
+      let session = Spice_session_store.Document.session document in
+      let* step =
+        Spice_session_run.finish_tool_preflight run preflight preparation session
+        |> map_run session
+      in
+      handle_step ~store ~projector ~pressure_compacted ~overflow_compacted
+        ~model ~host_tool hooks ?compaction run document step
+  | Spice_session_run.Step.Run_tool { claim; execution } ->
       projector.steps <- projector.steps + 1;
       Log.debug (fun m -> m "tool step=%d" projector.steps);
       let finish_tool_effect =
         hooks.around_tool ~observe:hooks.observe document claim
       in
-      let result = run_tool_result hooks claim call in
+      let result = run_tool_result hooks claim execution in
       finish_tool_effect result;
       let session = Spice_session_store.Document.session document in
       let* step =

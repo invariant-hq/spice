@@ -398,13 +398,13 @@ module Metrics = struct
         }
     | Event.Permission_resolved reply -> (
         match Permission.Resolved.decision reply with
-        | Permission.Resolved.Deny _ ->
+        | Permission.Resolved.Denied _ ->
             {
               acc with
               acc_permission_denials =
                 incr_checked "metrics" acc.acc_permission_denials;
             }
-        | Permission.Resolved.Allow _ -> acc)
+        | Permission.Resolved.Allowed _ -> acc)
     | Event.Turn_started _ | Event.Message_appended _
     | Event.Compaction_installed _ | Event.Permission_requested _
     | Event.Tool_claim_started _ ->

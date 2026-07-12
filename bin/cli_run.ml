@@ -267,11 +267,11 @@ let permission_requested_json ~permission session revision request =
 
 let permission_reply_string resolved =
   match Session.Permission.Resolved.decision resolved with
-  | Session.Permission.Resolved.Allow Spice_permission.Policy.Review.Once ->
+  | Session.Permission.Resolved.Allowed Session.Permission.Resolved.Once ->
       "allow_once"
-  | Session.Permission.Resolved.Allow Spice_permission.Policy.Review.Session ->
+  | Session.Permission.Resolved.Allowed Session.Permission.Resolved.Session ->
       "allow_session"
-  | Session.Permission.Resolved.Deny _ -> "deny"
+  | Session.Permission.Resolved.Denied _ -> "deny"
 
 let permission_via_string resolved =
   match Session.Permission.Resolved.via resolved with
@@ -954,7 +954,7 @@ let rec resolve_unattended ~unattended runtime result =
         (session_reply runtime document
            (Session.Permission.Requested.id request)
            ~message:unattended_denial_message ~via:`Unattended
-           Spice_permission.Policy.Review.Deny)
+           Session.Permission.Resolved.Deny)
   | result -> result
 
 let effective_unattended host override =
@@ -1445,7 +1445,7 @@ let resume json model reasoning_effort workflow_mode permission_mode
 type continuation =
   | Permission_reply of {
       id : Session.Permission.Id.t;
-      answer : Spice_permission.Policy.Review.answer;
+      answer : Session.Permission.Resolved.answer;
       message : string option;
     }
   | Question_answer of { call_id : string; answer : string }
@@ -1455,7 +1455,7 @@ type continuation =
 type action =
   | Reply of {
       id : Session.Permission.Id.t;
-      answer : Spice_permission.Policy.Review.answer;
+      answer : Session.Permission.Resolved.answer;
       message : string option;
     }
   | Answer_question of { pending : Session.Waiting.host_tool; answer : string }
@@ -1687,8 +1687,8 @@ let continuation approve_plan reject_plan allow allow_session deny deny_message
             {
               id;
               answer =
-                Spice_permission.Policy.Review.Allow
-                  Spice_permission.Policy.Review.Once;
+                Session.Permission.Resolved.Allow
+                  Session.Permission.Resolved.Once;
               message = None;
             })
         allow;
@@ -1698,8 +1698,8 @@ let continuation approve_plan reject_plan allow allow_session deny deny_message
             {
               id;
               answer =
-                Spice_permission.Policy.Review.Allow
-                  Spice_permission.Policy.Review.Session;
+                Session.Permission.Resolved.Allow
+                  Session.Permission.Resolved.Session;
               message = None;
             })
         allow_session;
@@ -1708,7 +1708,7 @@ let continuation approve_plan reject_plan allow allow_session deny deny_message
           Permission_reply
             {
               id;
-              answer = Spice_permission.Policy.Review.Deny;
+              answer = Session.Permission.Resolved.Deny;
               message = deny_message;
             })
         deny;

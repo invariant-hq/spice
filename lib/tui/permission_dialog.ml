@@ -9,6 +9,7 @@ module Request = Spice_permission.Request
 module Review = Spice_permission.Policy.Review
 module Suggest = Spice_permission.Suggest
 module Requested = Spice_session.Permission.Requested
+module Resolved = Spice_session.Permission.Resolved
 
 type scope = Session | User
 
@@ -39,7 +40,7 @@ let make request =
 
 type outcome =
   | Stay
-  | Allow of Review.scope
+  | Allow of Resolved.allowance
   | Always of { rules : Spice_permission.Policy.Rule.t list; scope : scope }
   | Deny
 
@@ -202,6 +203,7 @@ let headline t accesses =
   match Request.display (request_data t) with
   | Some _ when has_code accesses -> "Evaluate OCaml code?"
   | Some _ when List.exists is_command accesses -> "Run this command?"
+  | Some _ when List.for_all is_path accesses -> "Apply this change?"
   | Some _ -> "Allow this operation?"
   | None -> access_headlines accesses
 
@@ -256,16 +258,16 @@ let always_outcome t =
 (* Deny keeps its [3] so existing muscle memory and tests hold; always-allow is
    appended as [4] and is inert when no family rule can be derived. *)
 let resolve t = function
-  | 0 -> Allow Review.Once
-  | 1 -> Allow Review.Session
+  | 0 -> Allow Resolved.Once
+  | 1 -> Allow Resolved.Session
   | 2 -> Deny
   | 3 when has_always t -> always_outcome t
   | _ -> Deny
 
 let key ev t =
   if ctrl_o ev then ({ t with expanded = not t.expanded }, Stay)
-  else if letter ev 'y' then (t, Allow Review.Once)
-  else if letter ev 'a' then (t, Allow Review.Session)
+  else if letter ev 'y' then (t, Allow Resolved.Once)
+  else if letter ev 'a' then (t, Allow Resolved.Session)
   else if letter ev 'd' || letter ev 'n' then (t, Deny)
   else if letter ev 's' && has_always t then
     ({ t with scope = next_scope t.scope }, Stay)
@@ -393,7 +395,17 @@ let preview_view ~expanded t accesses =
           list_preview t accesses;
         ]
       else [ action ]
-  | Some _ | None -> (
+  | Some display ->
+      let action = box ~padding:indent ~flex_shrink:0. [ dim display ] in
+      if expanded && List.length accesses > 1 then
+        [
+          action;
+          blank;
+          box ~padding:indent ~flex_shrink:0. [ dim "Permission details" ];
+          list_preview t accesses;
+        ]
+      else [ action ]
+  | None -> (
       match accesses with
       | [ access ] -> [ single_preview ~expanded t access ]
       | accesses -> [ list_preview t accesses ])

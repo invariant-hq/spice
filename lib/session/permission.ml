@@ -143,15 +143,18 @@ end
 
 module Resolved = struct
   type via = [ `Reviewer | `Unattended ]
-  type decision = Allow of Review.scope | Deny of Spice_llm.Tool.Result.t
+  type allowance = Once | Session
+  type answer = Allow of allowance | Deny
+  type decision = Allowed of allowance | Denied of Spice_llm.Tool.Result.t
   type t = { id : Id.t; decision : decision; via : via }
 
-  let allow_once ~id = { id; decision = Allow Review.Once; via = `Reviewer }
+  let allow_once ~id = { id; decision = Allowed Once; via = `Reviewer }
 
   let allow_session ~id =
-    { id; decision = Allow Review.Session; via = `Reviewer }
+    { id; decision = Allowed Session; via = `Reviewer }
 
-  let deny ~id ?(via = `Reviewer) result = { id; decision = Deny result; via }
+  let deny ~id ?(via = `Reviewer) result =
+    { id; decision = Denied result; via }
   let id t = t.id
   let decision t = t.decision
   let via t = t.via
@@ -162,18 +165,18 @@ module Resolved = struct
      onto that shape. *)
   let answer t =
     match t.decision with
-    | Allow scope -> Review.Allow scope
-    | Deny _ -> Review.Deny
+    | Allowed allowance -> Allow allowance
+    | Denied _ -> Deny
 
   let denial_result t =
-    match t.decision with Deny result -> Some result | Allow _ -> None
+    match t.decision with Denied result -> Some result | Allowed _ -> None
 
   let pp ppf t =
     let answer_string =
       match t.decision with
-      | Allow Review.Once -> "allow-once"
-      | Allow Review.Session -> "allow-session"
-      | Deny _ -> "deny"
+      | Allowed Once -> "allow-once"
+      | Allowed Session -> "allow-session"
+      | Denied _ -> "deny"
     in
     Format.fprintf ppf "@[<hov>{ id = %a; answer = %s%s }@]" Id.pp t.id
       answer_string
@@ -185,9 +188,9 @@ module Resolved = struct
 
   let answer_jsont =
     let dec = function
-      | "allow-once" -> Ok (Review.Allow Review.Once)
-      | "allow-session" -> Ok (Review.Allow Review.Session)
-      | "deny" -> Ok Review.Deny
+      | "allow-once" -> Ok (Allow Once)
+      | "allow-session" -> Ok (Allow Session)
+      | "deny" -> Ok Deny
       | other ->
           Error
             (Printf.sprintf
@@ -196,9 +199,9 @@ module Resolved = struct
                other)
     in
     let enc = function
-      | Review.Allow Review.Once -> Ok "allow-once"
-      | Review.Allow Review.Session -> Ok "allow-session"
-      | Review.Deny -> Ok "deny"
+      | Allow Once -> Ok "allow-once"
+      | Allow Session -> Ok "allow-session"
+      | Deny -> Ok "deny"
     in
     Jsont.Base.string
       (Jsont.Base.map ~kind:"permission answer"
@@ -209,20 +212,19 @@ module Resolved = struct
   let of_json id answer result via =
     decode_invalid_arg (fun () ->
         match (answer, result) with
-        | Review.Allow Review.Once, None | Review.Allow Review.Session, None
-          -> (
+        | Allow Once, None | Allow Session, None -> (
             if via = Some `Unattended then
               invalid "Resolved.jsont"
                 "unattended provenance applies only to denials";
             match answer with
-            | Review.Allow Review.Once -> allow_once ~id
-            | Review.Allow Review.Session -> allow_session ~id
-            | Review.Deny -> assert false)
-        | Review.Deny, Some result -> deny ~id ?via result
-        | Review.Deny, None ->
+            | Allow Once -> allow_once ~id
+            | Allow Session -> allow_session ~id
+            | Deny -> assert false)
+        | Deny, Some result -> deny ~id ?via result
+        | Deny, None ->
             invalid "Resolved.jsont"
               "denied permission answer must include tool_result"
-        | (Review.Allow Review.Once | Review.Allow Review.Session), Some _ ->
+        | (Allow Once | Allow Session), Some _ ->
             invalid "Resolved.jsont"
               "allowed permission answer must not include tool_result")
 

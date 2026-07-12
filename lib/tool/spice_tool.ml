@@ -37,6 +37,21 @@ type t =
       run : Context.t -> 'input -> 'output Result.t;
     }
       -> t
+  | Staged_tool : {
+      name : string;
+      description : string;
+      input : 'input Input.t;
+      output : 'output Output.encoder;
+      preliminary_permissions :
+        'input -> Spice_permission.Request.t list;
+      prepare :
+        Context.t ->
+        'input ->
+        [ `Prepared of 'prepared | `Finished of 'output Result.t ];
+      permissions : 'prepared -> Spice_permission.Request.t list;
+      run : Context.t -> 'prepared -> 'output Result.t;
+    }
+      -> t
 
 let no_permissions input =
   ignore input;
@@ -51,9 +66,31 @@ let make ~name ~description ~input ~output ?(permissions = no_permissions) ~run
   reject_empty "make" "description" description;
   Tool { name; description; input; output; permissions; run }
 
-let name (Tool t) = t.name
-let description (Tool t) = t.description
-let input_schema (Tool t) = Input.schema t.input
+let make_staged ~name ~description ~input ~output
+    ?(preliminary_permissions = no_permissions) ~prepare ~permissions ~run () =
+  reject_empty "make_staged" "name" name;
+  reject_empty "make_staged" "description" description;
+  Staged_tool
+    {
+      name;
+      description;
+      input;
+      output;
+      preliminary_permissions;
+      prepare;
+      permissions;
+      run;
+    }
+
+let name = function Tool t -> t.name | Staged_tool t -> t.name
+
+let description = function
+  | Tool t -> t.description
+  | Staged_tool t -> t.description
+
+let input_schema = function
+  | Tool t -> Input.schema t.input
+  | Staged_tool t -> Input.schema t.input
 
 let rec mem_name searched = function
   | [] -> false
@@ -87,14 +124,62 @@ let map_output f (result : _ Result.t) : _ Result.t =
   | Result.Interrupted { reason; cancelled }, output ->
       Result.interrupted ?output:(Option.map f output) ~reason ~cancelled ()
 
+module Execution = struct
+  type t =
+    | Execution : {
+        tool : string;
+        input : 'input;
+        output : 'output Output.encoder;
+        run : Context.t -> 'input -> 'output Result.t;
+      }
+        -> t
+
+  let make ~tool ~input ~output ~run = Execution { tool; input; output; run }
+  let tool (Execution t) = t.tool
+
+  let run (Execution t) ?(cancelled = not_cancelled) ?(emit = ignore_update) () =
+    let context = Context.make ~cancelled ~emit () in
+    map_output t.output (t.run context t.input)
+end
+
+module Preparation = struct
+  type outcome =
+    | Finished of Output.t Result.t
+    | Prepared of {
+        permissions : Spice_permission.Request.t list;
+        execution : Execution.t;
+      }
+
+  type t = { witness : unit ref; outcome : outcome }
+
+  let make ~witness outcome = { witness; outcome }
+  let witness t = t.witness
+  let outcome t = t.outcome
+end
+
 module Call = struct
   type t =
-    | Call : {
+    | Immediate : {
         tool : string;
         input : 'input;
         output : 'output Output.encoder;
         permissions : 'input -> Spice_permission.Request.t list;
         run : Context.t -> 'input -> 'output Result.t;
+      }
+        -> t
+    | Staged_call : {
+        tool : string;
+        witness : unit ref;
+        input : 'input;
+        output : 'output Output.encoder;
+        preliminary_permissions :
+          'input -> Spice_permission.Request.t list;
+        prepare :
+          Context.t ->
+          'input ->
+          [ `Prepared of 'prepared | `Finished of 'output Result.t ];
+        permissions : 'prepared -> Spice_permission.Request.t list;
+        run : Context.t -> 'prepared -> 'output Result.t;
       }
         -> t
 
@@ -110,11 +195,28 @@ module Call = struct
             Error (Error.Invalid_input { tool = tool.name; diagnostic })
         | Ok input ->
             Ok
-              (Call
+              (Immediate
                  {
                    tool = tool.name;
                    input;
                    output = tool.output;
+                   permissions = tool.permissions;
+                   run = tool.run;
+                 }))
+    | Some (Staged_tool tool) -> (
+        match Input.decode tool.input input with
+        | Error diagnostic ->
+            Error (Error.Invalid_input { tool = tool.name; diagnostic })
+        | Ok input ->
+            Ok
+              (Staged_call
+                 {
+                   tool = tool.name;
+                   witness = ref ();
+                   input;
+                   output = tool.output;
+                   preliminary_permissions = tool.preliminary_permissions;
+                   prepare = tool.prepare;
                    permissions = tool.permissions;
                    run = tool.run;
                  }))
@@ -124,12 +226,55 @@ module Call = struct
     | Error _ as error -> error
     | Ok () -> decode_present tools ~name ~input
 
-  let tool (Call t) = t.tool
-  let permissions (Call t) = t.permissions t.input
+  let tool = function Immediate t -> t.tool | Staged_call t -> t.tool
 
-  let run (Call t) ?(cancelled = not_cancelled) ?(emit = ignore_update) () =
-    let context = Context.make ~cancelled ~emit () in
-    map_output t.output (t.run context t.input)
+  let permissions = function
+    | Immediate t -> t.permissions t.input
+    | Staged_call t -> t.preliminary_permissions t.input
+
+  let execution = function
+    | Immediate t ->
+        Some
+          (Execution.make ~tool:t.tool ~input:t.input ~output:t.output
+             ~run:t.run)
+    | Staged_call _ -> None
+
+  let prepare call ?(cancelled = not_cancelled) ?(emit = ignore_update) () =
+    match call with
+    | Immediate _ -> None
+    | Staged_call t ->
+        let context = Context.make ~cancelled ~emit () in
+        let outcome =
+          match t.prepare context t.input with
+          | `Finished result -> Preparation.Finished (map_output t.output result)
+          | `Prepared prepared -> (
+              match t.permissions prepared with
+              | permissions ->
+                  let execution =
+                    Execution.make ~tool:t.tool ~input:prepared ~output:t.output
+                      ~run:t.run
+                  in
+                  Preparation.Prepared { permissions; execution }
+              | exception exn ->
+                  Preparation.Finished
+                    (Result.failed `Failed
+                       ("tool permission planner raised: "
+                      ^ Printexc.to_string exn)))
+        in
+        Some (Preparation.make ~witness:t.witness outcome)
+
+  let prepared_outcome call preparation =
+    match call with
+    | Immediate _ -> None
+    | Staged_call t ->
+        if t.witness == Preparation.witness preparation then
+          Some (Preparation.outcome preparation)
+        else None
+
+  let run call ?cancelled ?emit () =
+    match execution call with
+    | Some execution -> Execution.run execution ?cancelled ?emit ()
+    | None -> invalid "Call.run" "staged call must be prepared before execution"
 end
 
 module Catalog = struct

@@ -134,17 +134,12 @@ end
 (** {1:constructing Constructing requests} *)
 
 val make :
-  ?source:string -> ?display:string -> ?grantable:bool -> Item.t list -> t
-(** [make ?source ?display ?grantable items] is one atomic permission request
+  ?source:string -> ?display:string -> Item.t list -> t
+(** [make ?source ?display items] is one atomic permission request
     for [items].
 
     The item order is significant for policy diagnostics: when several accesses
     are denied, policy evaluation reports the first denied access in this order.
-
-    [grantable] (default [true]) controls whether a session-scope approval
-    persists the request's accesses as grants; [false] caps approval at a single
-    use, so a [Session] allow grants nothing and every later request reviews
-    afresh. See {!grantable}.
 
     [display] is trusted request-local text for the original decoded action. It
     has no policy meaning; render it as the primary action and use item accesses
@@ -156,17 +151,16 @@ val make :
 val of_accesses :
   ?source:string ->
   ?display:string ->
-  ?grantable:bool ->
   Access.t list ->
   t
-(** [of_accesses ?source ?display ?grantable accesses] is one atomic permission
+(** [of_accesses ?source ?display accesses] is one atomic permission
     request for [accesses].
 
     The access list order is significant for policy diagnostics: when several
     accesses are denied, policy evaluation reports the first denied access in
     this order.
 
-    [display] and [grantable] behave as in {!make}.
+    [display] behaves as in {!make}.
 
     Raises [Invalid_argument] if [accesses] is empty, or if [source] or
     [display] is empty when present. *)
@@ -182,14 +176,6 @@ val source : t -> string option
 val display : t -> string option
 (** [display r] is the original decoded action text, if supplied. It is display
     and audit metadata with no permission-matching meaning. *)
-
-val grantable : t -> bool
-(** [grantable r] is [false] when a session-scope approval of [r] must not
-    persist any grant — the approval authorizes a single use and every later
-    request is reviewed again — and [true] (the default) otherwise.
-
-    Unlike {!source}, this does affect resolution semantics: it gates whether
-    {!Policy.Review.grant} adds the reviewed accesses to the session grants. *)
 
 val accesses : t -> Access.t list
 (** [accesses r] is [r]'s non-empty original access list, in caller order. *)

@@ -39,7 +39,7 @@ val make : Spice_session.Permission.Requested.t -> t
     plainly and typed text denies with feedback. esc is {!Deny}. *)
 type outcome =
   | Stay  (** Redraw; the dialog is still open (cursor move, diff expand). *)
-  | Allow of Spice_permission.Policy.Review.scope
+  | Allow of Spice_session.Permission.Resolved.allowance
       (** Grant the request with this scope ([Once] or the exact-grant
           [Session]). *)
   | Always of { rules : Spice_permission.Policy.Rule.t list; scope : scope }

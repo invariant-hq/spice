@@ -295,6 +295,7 @@
   jsont
   spice_digest
   spice_mutation
+  spice_permission
   spice_sandbox
   spice_tools
   spice_path

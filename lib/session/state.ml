@@ -625,7 +625,7 @@ let apply_permission_resolved resolution t =
                { permission = id; call_id = Spice_llm.Tool.Call.id call })
         else
           match Permission.Resolved.decision resolution with
-          | Permission.Resolved.Deny result -> (
+          | Permission.Resolved.Denied result -> (
               if not (result_matches_call result call) then
                 permission_error
                   (Error.Permission.Result_mismatch
@@ -650,15 +650,14 @@ let apply_permission_resolved resolution t =
                             { record with resolved = Some resolution }
                             t.permissions;
                       })
-          | Permission.Resolved.Allow scope ->
-              (* Grants follow the allow scope directly: [Session] adds the
-                 request's asked accesses, [Once] leaves them untouched. Going
-                 through [Policy.Review.resolve] here would force a [Rejected]
-                 arm that an allow can never produce. *)
+          | Permission.Resolved.Allowed allowance ->
               let grants =
-                Policy.Review.grant
-                  (Permission.Requested.review record.request)
-                  scope t.grants
+                match allowance with
+                | Permission.Resolved.Once -> t.grants
+                | Permission.Resolved.Session ->
+                    Policy.Review.remember
+                      (Permission.Requested.review record.request)
+                      t.grants
               in
               Ok
                 {

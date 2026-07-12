@@ -190,7 +190,7 @@ type t
       model tool call;
     - at most one durable permission or tool-claim wait is unresolved;
     - permission answers reference pending requests and update grants through
-      {!Spice_permission.Policy.Review.answer}; denied permission answers answer
+      {!Permission.Resolved.answer}; denied permission answers answer
       the exact blocked model tool call;
     - tool claim ids are unique;
     - tool claims reference the active unfinished turn and a pending model tool

@@ -166,9 +166,9 @@ let of_session ?(timing = Timing.empty) session =
           Hashtbl.replace rejected (Tool.Result.call_id result) result
       | Event.Permission_resolved reply -> (
           match Permission.Resolved.decision reply with
-          | Permission.Resolved.Deny result ->
+          | Permission.Resolved.Denied result ->
               Hashtbl.replace rejected (Tool.Result.call_id result) result
-          | Permission.Resolved.Allow _ -> ())
+          | Permission.Resolved.Allowed _ -> ())
       | Event.Turn_started _ | Event.Message_appended _
       | Event.Response_appended _ | Event.Compaction_installed _
       | Event.Permission_requested _ | Event.Tool_claim_started _

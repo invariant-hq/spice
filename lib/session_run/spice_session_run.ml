@@ -139,10 +139,31 @@ module Config = struct
   let declarations t = t.declarations
 end
 
+module Preflight = struct
+  type t = {
+    turn : Turn.Id.t;
+    call : Llm.Tool.Call.t;
+    tool_call : Tool.Call.t;
+  }
+
+  let make ~turn ~call ~tool_call = { turn; call; tool_call }
+  let turn t = t.turn
+  let call t = t.call
+
+  let prepare ?cancelled t =
+    match Tool.Call.prepare t.tool_call ?cancelled () with
+    | Some preparation -> preparation
+    | None -> invalid_arg "tool preflight is not staged"
+
+  let outcome t preparation =
+    Tool.Call.prepared_outcome t.tool_call preparation
+end
+
 module Step = struct
   type next =
     | Request_model of Llm.Request.t
-    | Run_tool of { claim : Tool_claim.Started.t; call : Tool.Call.t }
+    | Prepare_tool of Preflight.t
+    | Run_tool of { claim : Tool_claim.Started.t; execution : Tool.Execution.t }
     | Waiting of Waiting.t
     | Finished of { turn : Turn.Id.t; outcome : Turn.Outcome.t }
 
@@ -150,7 +171,8 @@ module Step = struct
 
   let pp_next ppf = function
     | Request_model _ -> Format.pp_print_string ppf "request-model"
-    | Run_tool { claim; call = _ } ->
+    | Prepare_tool _ -> Format.pp_print_string ppf "prepare-tool"
+    | Run_tool { claim; execution = _ } ->
         Format.fprintf ppf "run-tool(%a)" Tool_claim.Started.pp claim
     | Waiting waiting -> Format.fprintf ppf "waiting %a" Waiting.pp waiting
     | Finished { turn; outcome } ->
@@ -319,8 +341,8 @@ let permission_already_allows state call request review =
   in
   let allows_reply resolved =
     match Permission.Resolved.decision resolved with
-    | Permission.Resolved.Allow _ -> true
-    | Permission.Resolved.Deny _ -> false
+    | Permission.Resolved.Allowed _ -> true
+    | Permission.Resolved.Denied _ -> false
   in
   List.exists
     (fun (requested, resolved) ->
@@ -382,7 +404,7 @@ let continue_tool_error call message =
        (Llm.Message.tool_result
           (Llm.Tool.Result.text ~error:true call message)))
 
-let review_tool_permissions config session turn_id call tool_call =
+let review_permissions config session turn_id call requests =
   let state = state session in
   let rec loop request_index = function
     | [] -> Ok `Allowed
@@ -400,40 +422,36 @@ let review_tool_permissions config session turn_id call tool_call =
               loop (request_index + 1) requests
             else Ok (`Review (request_index, review)))
   in
-  let* planning =
-    match Tool.Call.permissions tool_call with
-    | requests -> Ok (`Requests requests)
-    | exception exn ->
-        Ok
-          (`Decision
-            (continue_tool_error call
-               ("tool permission planner raised: " ^ Printexc.to_string exn)))
-  in
-  match planning with
-  | `Decision decision -> Ok (`Decision decision)
-  | `Requests requests -> (
-      let* decision = loop 0 requests in
-      match decision with
-      | `Allowed -> Ok `Allowed
-      | `Denied denials ->
-          let denial = fst denials in
-          Ok
-            (`Decision
-              (continue_tool_error call (config.Config.denial_message denial)))
-      | `Review (request_index, review) ->
-          Ok
-            (`Decision
-              (request_permission turn_id call request_index review)))
+  let* decision = loop 0 requests in
+  match decision with
+  | `Allowed -> Ok `Allowed
+  | `Denied denials ->
+      let denial = fst denials in
+      Ok
+        (`Decision
+          (continue_tool_error call (config.Config.denial_message denial)))
+  | `Review (request_index, review) ->
+      Ok
+        (`Decision (request_permission turn_id call request_index review))
 
-let run_tool_action turn_id call tool_call =
-  let execution =
+let review_tool_permissions config session turn_id call tool_call =
+  match Tool.Call.permissions tool_call with
+  | requests -> review_permissions config session turn_id call requests
+  | exception exn ->
+      Ok
+        (`Decision
+          (continue_tool_error call
+             ("tool permission planner raised: " ^ Printexc.to_string exn)))
+
+let run_tool_action turn_id call execution =
+  let claim =
     Tool_claim.Started.make
       ~id:(tool_claim_id turn_id call)
       ~turn:turn_id ~call
   in
   Boundary
-    ( [ Event.tool_claim_started execution ],
-      Step.Run_tool { claim = execution; call = tool_call } )
+    ( [ Event.tool_claim_started claim ],
+      Step.Run_tool { claim; execution } )
 
 let tool_action config session turn_id turn call =
   if not (is_declared (Turn.declarations turn) call) then
@@ -452,7 +470,15 @@ let tool_action config session turn_id turn call =
         in
         match permission with
         | `Decision decision -> Ok decision
-        | `Allowed -> Ok (run_tool_action turn_id call tool_call))
+        | `Allowed -> (
+            match Tool.Call.execution tool_call with
+            | Some execution -> Ok (run_tool_action turn_id call execution)
+            | None ->
+                Ok
+                  (Boundary
+                     ( [],
+                       Step.Prepare_tool
+                         (Preflight.make ~turn:turn_id ~call ~tool_call) ))))
 
 let plan config session =
   let* turn = active_turn session in
@@ -490,6 +516,53 @@ let normalize config session events =
   loop session [] events
 
 let resume config session = normalize config session []
+
+let apply_transition config session = function
+  | Continue event -> normalize config session [ event ]
+  | Boundary (events, next) -> Step.make ~session ~events ~next
+
+let finish_tool_preflight config preflight preparation session =
+  let* () = require_active_session session in
+  let* turn = active_turn session in
+  let pending =
+    State.transcript (state session)
+    |> Llm.Transcript.pending
+    |> List.exists (Llm.Tool.Call.equal (Preflight.call preflight))
+  in
+  if
+    (not (Turn.Id.equal (Turn.id turn) (Preflight.turn preflight)))
+    || not pending
+  then
+    Error
+      (Error.Tool_call_not_pending
+         {
+           call_id = Llm.Tool.Call.id (Preflight.call preflight);
+           name = Llm.Tool.Call.name (Preflight.call preflight);
+         })
+  else
+    match Preflight.outcome preflight preparation with
+    | None ->
+        invalid_arg
+          "Spice_session_run.finish_tool_preflight: preparation belongs to a \
+           different decoded call"
+    | Some (Tool.Preparation.Finished result) ->
+        normalize config session
+          [
+            Event.message_appended
+              (Llm.Message.tool_result
+                 (tool_result_from_output (Preflight.call preflight) result));
+          ]
+    | Some (Tool.Preparation.Prepared { permissions; execution }) ->
+        let* permission =
+          review_permissions config session (Preflight.turn preflight)
+            (Preflight.call preflight) permissions
+        in
+        (match permission with
+        | `Decision decision -> apply_transition config session decision
+        | `Allowed ->
+            run_tool_action (Preflight.turn preflight)
+              (Preflight.call preflight) execution
+            |> apply_transition config session)
 
 let start config ~id ~input ~model ?options ?mode ?origin ?max_steps session =
   let* () = require_active_session session in
@@ -537,7 +610,7 @@ let resolve_permission config ?(message = "Permission denied.") ?via id answer
      rather than be laundered into a reviewer allow. The JSON decoder rejects
      the same state. *)
   (match (via, answer) with
-  | Some `Unattended, Spice_permission.Policy.Review.Allow _ ->
+  | Some `Unattended, Permission.Resolved.Allow _ ->
       invalid_arg
         "Spice_session_run.resolve_permission: unattended provenance applies \
          only to denials"
@@ -547,13 +620,11 @@ let resolve_permission config ?(message = "Permission denied.") ?via id answer
   | Some requested ->
       let resolved =
         match answer with
-        | Spice_permission.Policy.Review.Allow
-            Spice_permission.Policy.Review.Once ->
+        | Permission.Resolved.Allow Permission.Resolved.Once ->
             Permission.Resolved.allow_once ~id
-        | Spice_permission.Policy.Review.Allow
-            Spice_permission.Policy.Review.Session ->
+        | Permission.Resolved.Allow Permission.Resolved.Session ->
             Permission.Resolved.allow_session ~id
-        | Spice_permission.Policy.Review.Deny ->
+        | Permission.Resolved.Deny ->
             let call = Permission.Requested.tool_call requested in
             Permission.Resolved.deny ~id ?via
               (tool_result_text ~error:true call message)

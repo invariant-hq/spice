@@ -79,9 +79,8 @@ let transcript messages =
 
 let extension_access name = Permission.Access.custom name
 
-let permission_request ?(id = "permission-1") ?(grantable = true) ~turn
-    ~tool_call access =
-  let request = Permission.Request.of_accesses ~grantable [ access ] in
+let permission_request ?(id = "permission-1") ~turn ~tool_call access =
+  let request = Permission.Request.of_accesses [ access ] in
   let ask =
     match
       Permission.Policy.Review.restore request
@@ -1202,23 +1201,24 @@ let permission_decision_eliminator () =
      Session.Permission.Resolved.decision
        (Session.Permission.Resolved.allow_once ~id)
    with
-  | Session.Permission.Resolved.Allow Permission.Policy.Review.Once -> ()
+  | Session.Permission.Resolved.Allowed Session.Permission.Resolved.Once -> ()
   | _ -> failf "allow_once decides to Allow Once");
   (match
      Session.Permission.Resolved.decision
        (Session.Permission.Resolved.allow_session ~id)
    with
-  | Session.Permission.Resolved.Allow Permission.Policy.Review.Session -> ()
+  | Session.Permission.Resolved.Allowed Session.Permission.Resolved.Session ->
+      ()
   | _ -> failf "allow_session decides to Allow Session");
   (match
      Session.Permission.Resolved.decision
        (Session.Permission.Resolved.deny ~id result)
    with
-  | Session.Permission.Resolved.Deny denied ->
+  | Session.Permission.Resolved.Denied denied ->
       equal string ~msg:"deny carries the answering result's call id"
         (Llm.Tool.Call.id call)
         (Llm.Tool.Result.call_id denied)
-  | Session.Permission.Resolved.Allow _ -> failf "deny decides to Deny");
+  | Session.Permission.Resolved.Allowed _ -> failf "deny decides to Denied");
   (* Provenance is orthogonal to the decision: allow answers are always by a
      reviewer; deny defaults to reviewer and records unattended when asked. *)
   let via_of r =
@@ -1267,32 +1267,6 @@ let allow_once_leaves_session_grants_untouched () =
           (fun (_, resolved) -> Option.is_some resolved)
           (State.permissions resolved)));
   is_true ~msg:"one-shot allow adds no session grant"
-    (not (Permission.Policy.Grants.allows (State.grants resolved) access))
-
-let allow_session_respects_non_grantable_requests () =
-  let turn = turn () in
-  let call = tool_call ~name:"tool_session" () in
-  let access = extension_access "tool.session" in
-  let request =
-    permission_request ~grantable:false ~turn:(Session.Turn.id turn)
-      ~tool_call:call access
-  in
-  let blocked =
-    state
-      [
-        Session.Event.turn_started turn;
-        Session.Event.response_appended (response (assistant_tool_call call));
-        Session.Event.permission_requested request;
-      ]
-  in
-  let resolved =
-    apply
-      (Session.Event.permission_resolved
-         (Session.Permission.Resolved.allow_session
-            ~id:(Session.Permission.Requested.id request)))
-      blocked
-  in
-  is_true ~msg:"allow-session adds no grant for a non-grantable request"
     (not (Permission.Policy.Grants.allows (State.grants resolved) access))
 
 let tool_claim_blocks_until_finished () =
@@ -1881,8 +1855,6 @@ let () =
       test "permission decision eliminator" permission_decision_eliminator;
       test "allow-once leaves session grants untouched"
         allow_once_leaves_session_grants_untouched;
-      test "allow-session respects non-grantable requests"
-        allow_session_respects_non_grantable_requests;
       test "tool claim blocks until finished" tool_claim_blocks_until_finished;
       test "raw tool result cannot bypass claim"
         raw_tool_result_cannot_bypass_claim;

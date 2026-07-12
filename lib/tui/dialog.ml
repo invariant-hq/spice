@@ -40,7 +40,7 @@ let borrowed t = Option.is_some t.feedback
 
 type resolution =
   | Reply of {
-      answer : Spice_permission.Policy.Review.answer;
+      answer : Spice_session.Permission.Resolved.answer;
       message : string option;
     }
   | Reply_always of {
@@ -74,9 +74,9 @@ let key ev t =
       | Permission_dialog.Stay -> (t, Stay)
       | Permission_dialog.Allow scope ->
           let echo =
-            match (scope : Spice_permission.Policy.Review.scope) with
-            | Spice_permission.Policy.Review.Once -> "allowed once"
-            | Spice_permission.Policy.Review.Session ->
+            match scope with
+            | Spice_session.Permission.Resolved.Once -> "allowed once"
+            | Spice_session.Permission.Resolved.Session ->
                 "allowed this session · " ^ Permission_dialog.scope_label d
           in
           ( t,
@@ -85,7 +85,7 @@ let key ev t =
                 resolution =
                   Reply
                     {
-                      answer = Spice_permission.Policy.Review.Allow scope;
+                      answer = Spice_session.Permission.Resolved.Allow scope;
                       message = None;
                     };
                 echo;
@@ -172,7 +172,8 @@ let resolve_borrow ~text t =
       let echo =
         match message with None -> "denied" | Some m -> "denied · " ^ quote m
       in
-      Ok (Reply { answer = Spice_permission.Policy.Review.Deny; message }, echo)
+      Ok
+        (Reply { answer = Spice_session.Permission.Resolved.Deny; message }, echo)
   | Some Adjust ->
       if String.length text = 0 then
         Ok

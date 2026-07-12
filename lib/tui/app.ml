@@ -409,7 +409,7 @@ type command =
      the attached session (doc/plans/tui-next-dialog-seam.md). *)
   | Reply_permission of {
       permission : Spice_session.Permission.Id.t;
-      answer : Spice_permission.Policy.Review.answer;
+      answer : Spice_session.Permission.Resolved.answer;
       message : string option;
     }
   | Always_allow of {

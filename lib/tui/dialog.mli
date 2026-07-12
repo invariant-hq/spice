@@ -41,7 +41,7 @@ val pending : t -> pending
     {!pending} for the turn, call, or permission id the command names. *)
 type resolution =
   | Reply of {
-      answer : Spice_permission.Policy.Review.answer;
+      answer : Spice_session.Permission.Resolved.answer;
       message : string option;
     }  (** A permission reply — {!Spice_protocol.Command.Reply}. *)
   | Reply_always of {

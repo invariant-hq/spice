@@ -1175,24 +1175,7 @@ module Review = struct
 
   let changes t = items t |> List.filter_map Request.Item.change
 
-  type scope = Once | Session
-  type answer = Allow of scope | Deny
-  type resolved = Proceed of Grants.t | Rejected
-
-  let grant review scope grants =
-    match scope with
-    | Once -> grants
-    | Session ->
-        (* A non-grantable request caps its approval at a single use: a
-           [Session] allow persists nothing, so every later request reviews
-           afresh rather than being auto-allowed by a broad grant. *)
-        if Request.grantable (request review) then
-          Grants.add_accesses (accesses review) grants
-        else grants
-
-  let resolve ~grants review = function
-    | Allow scope -> Proceed (grant review scope grants)
-    | Deny -> Rejected
+  let remember review grants = Grants.add_accesses (accesses review) grants
 end
 
 module Denial = struct

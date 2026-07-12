@@ -187,7 +187,7 @@ let permission_ids_include_request_position () =
   match
     Run.resolve_permission config
       (Session.Permission.Requested.id first)
-      (Permission.Policy.Review.Allow Permission.Policy.Review.Once)
+      (Session.Permission.Resolved.Allow Session.Permission.Resolved.Once)
       (Run.Step.session blocked)
   with
   | Error error -> failf "first allow failed: %a" Run.Error.pp error
@@ -221,7 +221,7 @@ let permission_ids_include_full_request () =
     match
       Run.resolve_permission config
         (Session.Permission.Requested.id first)
-        (Permission.Policy.Review.Allow Permission.Policy.Review.Once)
+        (Session.Permission.Resolved.Allow Session.Permission.Resolved.Once)
         (Run.Step.session blocked)
     with
     | Error error ->
@@ -252,9 +252,6 @@ let permission_ids_include_full_request () =
       ( "source",
         Permission.Request.of_accesses ~source:"first" [ access ],
         Permission.Request.of_accesses ~source:"changed" [ access ] );
-      ( "grantability",
-        Permission.Request.of_accesses [ access ],
-        Permission.Request.of_accesses ~grantable:false [ access ] );
       ("display", display "first", display "changed");
       ("change", change "+first", change "+changed");
     ]
@@ -288,9 +285,105 @@ let permission_planner_exceptions_become_tool_errors () =
            (Llm.Tool.Result.texts result))
   | _ -> failf "expected a durable tool error event"
 
+let preflight_from_step step =
+  match Run.Step.next step with
+  | Run.Step.Prepare_tool preflight -> preflight
+  | next -> failf "expected tool preflight, got %a" Run.Step.pp_next next
+
+let staged_preflight_waits_for_preliminary_permission () =
+  let prepared = ref 0 in
+  let preliminary = Permission.Access.custom "preflight.read" in
+  let tool =
+    Tool.make_staged ~name:"review_tool" ~description:"Staged test tool."
+      ~input:Tool.Input.empty ~output
+      ~preliminary_permissions:(fun () ->
+        [ Permission.Request.of_accesses [ preliminary ] ])
+      ~prepare:(fun _context () ->
+        incr prepared;
+        `Prepared ())
+      ~permissions:(fun () ->
+        [
+          Permission.Request.of_accesses
+            [ Permission.Access.custom "preflight.write" ];
+        ])
+      ~run:(fun _context () -> Tool.Result.completed ~output:() ())
+      ()
+  in
+  let step = run_response (config [ tool ]) (response (call ())) in
+  ignore (permission_from_step step : Session.Permission.Requested.t);
+  equal int ~msg:"preflight did not start before preliminary consent" 0
+    !prepared
+
+let staged_preflight_checks_final_facts_before_claiming () =
+  let prepared = ref 0 in
+  let ran = ref 0 in
+  let preliminary = Permission.Access.custom "preflight.read" in
+  let final = Permission.Access.custom "preflight.write" in
+  let tool =
+    Tool.make_staged ~name:"review_tool" ~description:"Staged test tool."
+      ~input:Tool.Input.empty ~output
+      ~preliminary_permissions:(fun () ->
+        [ Permission.Request.of_accesses [ preliminary ] ])
+      ~prepare:(fun _context () ->
+        incr prepared;
+        `Prepared ())
+      ~permissions:(fun () ->
+        [ Permission.Request.of_accesses [ final ] ])
+      ~run:(fun _context () ->
+        incr ran;
+        Tool.Result.completed ~output:() ())
+      ()
+  in
+  let policy =
+    Permission.Policy.make
+      [ Permission.Policy.Rule.allow (Permission.Policy.Match.exact preliminary) ]
+  in
+  let config = config ~policy [ tool ] in
+  let first = run_response config (response (call ())) in
+  let preflight = preflight_from_step first in
+  let preparation = Run.Preflight.prepare preflight in
+  equal int ~msg:"preflight ran once" 1 !prepared;
+  let blocked =
+    match
+      Run.finish_tool_preflight config preflight preparation
+        (Run.Step.session first)
+    with
+    | Ok step -> step
+    | Error error -> failf "preflight completion failed: %a" Run.Error.pp error
+  in
+  let requested = permission_from_step blocked in
+  equal int ~msg:"mutation did not run before final consent" 0 !ran;
+  let resumed =
+    match
+      Run.resolve_permission config
+        (Session.Permission.Requested.id requested)
+        (Session.Permission.Resolved.Allow Session.Permission.Resolved.Once)
+        (Run.Step.session blocked)
+    with
+    | Ok step -> step
+    | Error error -> failf "final permission allow failed: %a" Run.Error.pp error
+  in
+  let preflight = preflight_from_step resumed in
+  let preparation = Run.Preflight.prepare preflight in
+  let claimed =
+    match
+      Run.finish_tool_preflight config preflight preparation
+        (Run.Step.session resumed)
+    with
+    | Ok step -> step
+    | Error error -> failf "allowed preflight failed: %a" Run.Error.pp error
+  in
+  equal int ~msg:"repeatable preflight reran after consent" 2 !prepared;
+  equal int ~msg:"mutation still waits for the durable claim" 0 !ran;
+  match Run.Step.next claimed with
+  | Run.Step.Run_tool { execution; _ } ->
+      ignore (Tool.Execution.run execution () : Tool.Output.t Tool.Result.t);
+      equal int ~msg:"claimed prepared mutation ran once" 1 !ran
+  | next -> failf "expected prepared tool claim, got %a" Run.Step.pp_next next
+
 let tool_claim_from_step step =
   match Run.Step.next step with
-  | Run.Step.Run_tool { claim; call = _ } -> claim
+  | Run.Step.Run_tool { claim; execution = _ } -> claim
   | next -> failf "expected tool claim, got %a" Run.Step.pp_next next
 
 let deterministic_tool_claim_ids () =
@@ -891,7 +984,7 @@ let resolve_permission_deny_answers_blocked_call () =
   (match
      Run.resolve_permission config
        (Session.Permission.Requested.id request)
-       Permission.Policy.Review.Deny blocked_session
+       Session.Permission.Resolved.Deny blocked_session
    with
   | Error error -> failf "deny failed: %a" Run.Error.pp error
   | Ok step -> (
@@ -910,7 +1003,7 @@ let resolve_permission_deny_answers_blocked_call () =
   let unknown = Session.Permission.Id.of_string "perm:unknown" in
   match
     Run.resolve_permission config unknown
-      (Permission.Policy.Review.Allow Permission.Policy.Review.Once)
+      (Session.Permission.Resolved.Allow Session.Permission.Resolved.Once)
       (session ())
   with
   | Ok _ -> failf "resolving an unknown permission should fail"
@@ -1215,7 +1308,7 @@ let current_policy_is_checked_after_permission_allow () =
   match
     Run.resolve_permission deny_config
       (Session.Permission.Requested.id request)
-      (Permission.Policy.Review.Allow Permission.Policy.Review.Once)
+      (Session.Permission.Resolved.Allow Session.Permission.Resolved.Once)
       (Run.Step.session blocked)
   with
   | Error error ->
@@ -1267,7 +1360,7 @@ let permission_allow_requires_same_reviewed_accesses () =
   match
     Run.resolve_permission narrowed_config
       (Session.Permission.Requested.id first)
-      (Permission.Policy.Review.Allow Permission.Policy.Review.Once)
+      (Session.Permission.Resolved.Allow Session.Permission.Resolved.Once)
       (Run.Step.session blocked)
   with
   | Error error ->
@@ -1295,7 +1388,7 @@ let unattended_denials_record_provenance () =
      Run.resolve_permission config ~message:"Permission denied: unattended run."
        ~via:`Unattended
        (Session.Permission.Requested.id request)
-       Permission.Policy.Review.Deny (Run.Step.session blocked)
+       Session.Permission.Resolved.Deny (Run.Step.session blocked)
    with
   | Error error -> failf "unattended deny failed: %a" Run.Error.pp error
   | Ok step -> (
@@ -1315,7 +1408,7 @@ let unattended_denials_record_provenance () =
   match
     Run.resolve_permission config
       (Session.Permission.Requested.id reviewer_request)
-      Permission.Policy.Review.Deny
+      Session.Permission.Resolved.Deny
       (Run.Step.session reviewer_blocked)
   with
   | Error error -> failf "reviewer deny failed: %a" Run.Error.pp error
@@ -1369,7 +1462,7 @@ let recomputed_change_keeps_allowed_permissions_matching () =
   match
     Run.resolve_permission config
       (Session.Permission.Requested.id request)
-      (Permission.Policy.Review.Allow Permission.Policy.Review.Once)
+      (Session.Permission.Resolved.Allow Session.Permission.Resolved.Once)
       (Run.Step.session blocked)
   with
   | Error error -> failf "allow failed: %a" Run.Error.pp error
@@ -1391,6 +1484,10 @@ let () =
         permission_ids_include_full_request;
       test "permission planner exceptions become tool errors"
         permission_planner_exceptions_become_tool_errors;
+      test "staged preflight waits for preliminary permission"
+        staged_preflight_waits_for_preliminary_permission;
+      test "staged preflight checks final facts before claiming"
+        staged_preflight_checks_final_facts_before_claiming;
       test "deterministic tool claim ids" deterministic_tool_claim_ids;
       test "finish tool uses saved claim id" finish_tool_uses_saved_claim_id;
       test "accepted step limit cannot be widened"

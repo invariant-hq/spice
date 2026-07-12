@@ -137,6 +137,13 @@ module Resolved : sig
       denial recorded by an unattended host policy; it never applies to allow
       replies. Provenance is audit data and does not affect state replay. *)
 
+  type allowance = Once | Session
+  (** The lifetime of an allowed permission. [Once] authorizes only the blocked
+      operation. [Session] remembers its exact reviewed accesses. *)
+
+  type answer = Allow of allowance | Deny
+  (** A reviewer answer before denial feedback is attached. *)
+
   val allow_once : id:Id.t -> t
   (** [allow_once ~id] is a durable one-shot allow answer to permission prompt
       [id]. *)
@@ -161,15 +168,16 @@ module Resolved : sig
   (** The type for a resolved permission's outcome. Only denials carry a result,
       so the legal answer/result pairings hold by construction. *)
   type decision =
-    | Allow of Spice_permission.Policy.Review.scope
+    | Allowed of allowance
         (** The blocked call is granted with this scope. *)
-    | Deny of Spice_llm.Tool.Result.t
+    | Denied of Spice_llm.Tool.Result.t
         (** The model-visible tool result that consumes the blocked call during
             replay. *)
 
   val decision : t -> decision
-  (** [decision r] is [Allow scope] if [r] permits the blocked call with [scope]
-      and [Deny result] if it refuses the call and answers it with [result]. *)
+  (** [decision r] is [Allowed scope] if [r] permits the blocked call with
+      [scope] and [Denied result] if it refuses the call and answers it with
+      [result]. *)
 
   val via : t -> via
   (** [via r] is [r]'s resolution provenance. Allow answers are always

@@ -187,7 +187,7 @@ type command =
           ({!Spice_host.Live.set_runner}). *)
   | Reply_permission of {
       permission : Spice_session.Permission.Id.t;
-      answer : Spice_permission.Policy.Review.answer;
+      answer : Spice_session.Permission.Resolved.answer;
       message : string option;
     }
       (** Resolve a blocked permission dialog: the runtime submits

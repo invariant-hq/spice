@@ -61,7 +61,7 @@ type t =
   | Resume  (** Advance the active turn from its saved boundary. *)
   | Reply of {
       permission : Spice_session.Permission.Id.t;
-      answer : Spice_permission.Policy.Review.answer;
+      answer : Spice_session.Permission.Resolved.answer;
       via : Spice_session.Permission.Resolved.via option;
       message : string option;
     }

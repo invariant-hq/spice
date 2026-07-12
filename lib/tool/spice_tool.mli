@@ -15,13 +15,18 @@
     - an {!Input.t} that decodes provider JSON to a typed handler input;
     - an {!Output.type-encoder} that erases typed handler output to
       model-projectable {!Output.t};
-    - optional permission planning computed from the decoded input;
-    - a handler returning one terminal {!Result.t}.
+    - permission planning computed from the value consumed at each effectful
+      stage;
+    - either one ordinary handler or a preparation followed by a handler;
+    - one terminal {!Result.t}.
 
     Dispatch is a two-step workflow. First, {!Call.decode} selects a named tool
     and decodes its input. Then callers may inspect {!Call.permissions} before
-    executing the same decoded call with {!Call.run}. This guarantees that
-    permission planning and execution see the exact same typed input.
+    executing the same decoded call with {!Call.run}. Staged tools insert a
+    permission-checked preparation between decoding and execution; see
+    {!make_staged}. The decoded input and every prepared value remain hidden,
+    so permission planning and the operation it guards consume the exact same
+    typed value.
 
     {[
     let tool =
@@ -142,6 +147,43 @@ val make :
 
     Raises [Invalid_argument] if [name] or [description] is empty. *)
 
+val make_staged :
+  name:string ->
+  description:string ->
+  input:'input Input.t ->
+  output:'output Output.encoder ->
+  ?preliminary_permissions:('input -> Spice_permission.Request.t list) ->
+  prepare:(
+    Context.t ->
+    'input ->
+    [ `Prepared of 'prepared | `Finished of 'output Result.t ]) ->
+  permissions:('prepared -> Spice_permission.Request.t list) ->
+  run:(Context.t -> 'prepared -> 'output Result.t) ->
+  unit ->
+  t
+(** [make_staged ~name ~description ~input ~output ~prepare ~permissions ~run
+    ()] is a tool whose safe execution requires an effectful preparation step.
+
+    [preliminary_permissions] declares the accesses needed by [prepare] from the
+    decoded input. It defaults to no requests. The host must allow these
+    requests before calling {!Call.prepare}.
+
+    [prepare] receives the same decoded input used for preliminary permission
+    planning. [`Finished result] ends the invocation without a second policy
+    decision. [`Prepared value] binds an opaque prepared value to the decoded
+    call. [permissions value] then declares the final requests needed by [run],
+    and [run] consumes that exact prepared value after the host allows them.
+
+    This split supports tools whose final write or command facts can only be
+    known after permission-checked observation. The prepared value is never
+    exposed to callers and cannot be combined with another decoded call.
+
+    Exceptions raised by [preliminary_permissions], [prepare], or [run]
+    propagate to the caller. An exception from final [permissions] becomes a
+    failed preparation result, so no prepared execution can escape without a
+    valid request list. Raises [Invalid_argument] if [name] or [description] is
+    empty. *)
+
 val name : t -> string
 (** [name t] is [t]'s stable external name. *)
 
@@ -155,6 +197,46 @@ val input_schema : t -> Jsont.json
 
 (** {1:calls Decoded calls} *)
 
+module Execution : sig
+  type t
+  (** The type for one runnable tool execution.
+
+      An execution closes over either an ordinary decoded input or a staged
+      value produced for one decoded call. Its typed value and output encoder
+      are hidden. *)
+
+  val tool : t -> string
+  (** [tool t] is the invoked tool name. *)
+
+  val run :
+    t ->
+    ?cancelled:(unit -> bool) ->
+    ?emit:(Update.t -> unit) ->
+    unit ->
+    Output.t Result.t
+  (** [run t ()] runs [t] and erases its typed terminal output.
+
+      [cancelled] and [emit] have the same semantics as {!Call.run}. Handler and
+      output-encoder exceptions propagate to the caller. *)
+end
+
+module Preparation : sig
+  type t
+  (** The type for the opaque result of preparing one decoded staged call.
+
+      A preparation carries a private identity for its originating call. Its
+      outcome can be inspected only through {!Call.prepared_outcome}. *)
+
+  type outcome =
+    | Finished of Output.t Result.t
+        (** The staged tool completed during preparation. *)
+    | Prepared of {
+        permissions : Spice_permission.Request.t list;
+        execution : Execution.t;
+      }
+        (** The final permission requests and the execution they guard. *)
+end
+
 module Call : sig
   type tool := t
 
@@ -162,9 +244,9 @@ module Call : sig
   (** The type for a decoded tool call bound to one hidden input.
 
       A call is the execution funnel for tools: lookup, input decoding,
-      permission planning, and execution all use the same decoded input. This
-      guarantees permissions are planned from the exact value the handler
-      receives.
+      permission planning, preparation, and execution all use the same decoded
+      input. This guarantees permission facts are derived from the exact value
+      consumed at the next stage.
 
       The decoded input and selected tool implementation are intentionally
       hidden. Hosts can inspect the tool name, permission requests, and terminal
@@ -189,11 +271,38 @@ module Call : sig
   (** [tool t] is the invoked tool name. *)
 
   val permissions : t -> Spice_permission.Request.t list
-  (** [permissions t] is the permission request list for [t].
+  (** [permissions t] is the first permission request list for [t].
 
-      Requests are computed from the decoded input stored in [t]. The value is
-      not cached; each call invokes the tool permission function. Exceptions
+      For an ordinary tool these requests guard its execution. For a staged
+      tool they are the preliminary requests guarding {!prepare}. Requests are
+      computed from the decoded input stored in [t]. The value is not cached;
+      each call invokes the corresponding permission function. Exceptions
       raised by that function propagate to the caller. *)
+
+  val execution : t -> Execution.t option
+  (** [execution t] is the immediately runnable execution of ordinary call [t],
+      or [None] when [t] is staged and must first pass {!prepare}. *)
+
+  val prepare :
+    t ->
+    ?cancelled:(unit -> bool) ->
+    ?emit:(Update.t -> unit) ->
+    unit ->
+    Preparation.t option
+  (** [prepare t ()] prepares staged call [t] after its preliminary requests
+      have been allowed. It is [None] for an ordinary call.
+
+      [cancelled] and [emit] form the context passed to the preparation
+      function and have the same defaults as {!run}. Preparation and output
+      encoder exceptions propagate to the caller. *)
+
+  val prepared_outcome : t -> Preparation.t -> Preparation.outcome option
+  (** [prepared_outcome call preparation] is [Some outcome] when [preparation]
+      originated from [call], and [None] for an ordinary call or a preparation
+      produced by another decoded call.
+
+      Hosts must use this checked eliminator before inspecting final permission
+      requests or accepting the runnable execution. *)
 
   val run :
     t ->
@@ -205,7 +314,9 @@ module Call : sig
 
       [cancelled] defaults to a function returning [false]. [emit] defaults to a
       function that ignores updates. The handler receives the decoded input
-      stored in [t].
+      stored in [t]. [run] is retained as the simple ordinary-tool path; it
+      raises [Invalid_argument] for a staged call, which must use {!prepare},
+      {!prepared_outcome}, and {!Execution.run}.
 
       Typed output carried by the handler's result is erased with the tool's
       {!Output.type-encoder}. If the encoder raises, the exception propagates to

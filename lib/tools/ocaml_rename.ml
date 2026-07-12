@@ -683,6 +683,13 @@ let apply_replacements contents new_name replacements =
 (* A validated per-file rewrite. *)
 type file_plan = { target : Target.t; edit : Edit.t }
 
+type prepared = {
+  input : Input.t;
+  old_name : string;
+  new_name : string;
+  file_plans : file_plan list;
+}
+
 let plan_file ~fs ~workspace ~old_name ~new_name (path, ranges) =
   let display = Workspace.Path.display path in
   match Fs.load_regular ~fs ~workspace path with
@@ -809,22 +816,7 @@ let find_input input =
     ~column:(Input.column input) ()
 
 let permissions ~workspace input =
-  match Find.permissions ~workspace (find_input input) with
-  | [] -> []
-  | base when Input.dry_run input -> base
-  | base ->
-      let root = Workspace.root_path workspace in
-      (* The real fix is per-file discovery: request [Modify] on the occurrence
-         files the rename resolves to (v2), the way every other mutating tool
-         does. Until then this coarse workspace-root placeholder is capped at
-         once-only ([~grantable:false]): a session-scope allow must not persist a
-         [Modify root] grant that would then auto-allow every future rename
-         anywhere in the tree without a fresh review. *)
-      base
-      @ [
-          Permission.Request.of_accesses ~source:name ~grantable:false
-            [ Permission.Access.path ~op:`Modify root ];
-        ]
+  Find.permissions ~workspace (find_input input)
 
 (* ------------------------------------------------------------------ *)
 (* Run                                                                *)
@@ -905,63 +897,74 @@ let commit ~fs ~workspace ~input ~old_name ~new_name ~file_plans =
             finish_output ~input ~old_name ~new_name ~file_plans ~applied:true
               ~receipt:(Receipt.make result))
 
-let run_resolved ~sandbox ~program ~fs ~workspace ctx input old_name =
+let prepare_resolved ~sandbox ~program ~fs ~workspace ctx input old_name =
+  let finished result = `Finished result in
   let new_name = Input.new_name input in
   let sub = Find.run ~sandbox ~program ~fs ~workspace ctx (find_input input) in
   match Tool.Result.status sub with
   | Tool.Result.Interrupted { reason; cancelled } ->
-      Tool.Result.interrupted ~reason ~cancelled ()
-  | Tool.Result.Failed { kind; message; _ } -> Tool.Result.failed kind message
+      finished (Tool.Result.interrupted ~reason ~cancelled ())
+  | Tool.Result.Failed { kind; message; _ } ->
+      finished (Tool.Result.failed kind message)
   | Tool.Result.Completed -> (
       match Tool.Result.output sub with
       | None ->
-          Tool.Result.failed `Failed "find_references completed without output"
+          finished
+            (Tool.Result.failed `Failed
+               "find_references completed without output")
       | Some fout -> (
           if Find.Output.stale_skipped fout > 0 then
-            Tool.Result.failed `Stale
-              (Printf.sprintf
-                 "index appears stale: %d occurrence(s) skipped; rebuild with \
-                  dune build @ocaml-index and retry"
-                 (Find.Output.stale_skipped fout))
+            finished
+              (Tool.Result.failed `Stale
+                 (Printf.sprintf
+                    "index appears stale: %d occurrence(s) skipped; rebuild \
+                     with dune build @ocaml-index and retry"
+                    (Find.Output.stale_skipped fout)))
           else if Find.Output.has_more fout then
-            Tool.Result.failed `Failed
-              (Printf.sprintf
-                 "%d occurrences exceed the rename cap %d; the rename is too \
-                  large to apply safely as one edit"
-                 (Find.Output.total_count fout)
-                 (Input.max_occurrences input))
+            finished
+              (Tool.Result.failed `Failed
+                 (Printf.sprintf
+                    "%d occurrences exceed the rename cap %d; the rename is \
+                     too large to apply safely as one edit"
+                    (Find.Output.total_count fout)
+                    (Input.max_occurrences input)))
           else
             match Find.Output.references fout with
             | [] ->
-                Tool.Result.failed `Invalid_input
-                  (Printf.sprintf
-                     "no renameable binding at %s:%d:%d; the cursor may not be \
-                      on an identifier, or the project index is missing (dune \
-                      build @ocaml-index)"
-                     (Input.path input) (Input.line input) (Input.column input))
+                finished
+                  (Tool.Result.failed `Invalid_input
+                     (Printf.sprintf
+                        "no renameable binding at %s:%d:%d; the cursor may not \
+                         be on an identifier, or the project index is missing \
+                         (dune build @ocaml-index)"
+                        (Input.path input) (Input.line input)
+                        (Input.column input)))
             | references -> (
                 let grouped = group_by_path references in
                 match plan_all ~fs ~workspace ~old_name ~new_name grouped with
-                | Error refusal -> refusal_result refusal
+                | Error refusal -> finished (refusal_result refusal)
                 | Ok file_plans ->
-                    if Tool.Context.cancelled ctx then interrupted ()
+                    if Tool.Context.cancelled ctx then finished (interrupted ())
                     else if Input.dry_run input then
-                      finish_output ~input ~old_name ~new_name ~file_plans
-                        ~applied:false ~receipt:Receipt.empty
+                      finished
+                        (finish_output ~input ~old_name ~new_name ~file_plans
+                           ~applied:false ~receipt:Receipt.empty)
                     else
-                      commit ~fs ~workspace ~input ~old_name ~new_name
-                        ~file_plans)))
+                      `Prepared { input; old_name; new_name; file_plans })))
 
-let run ~sandbox ?(program = default_program) ~fs ~workspace ctx input =
-  if Tool.Context.cancelled ctx then interrupted ()
+let prepare ~sandbox ?(program = default_program) ~fs ~workspace ctx input =
+  let finished result = `Finished result in
+  if Tool.Context.cancelled ctx then finished (interrupted ())
   else
     match Workspace.resolve_string workspace (Input.path input) with
     | Error error ->
-        Tool.Result.failed `Invalid_input
-          (Workspace.Resolve_error.message error)
+        finished
+          (Tool.Result.failed `Invalid_input
+             (Workspace.Resolve_error.message error))
     | Ok query_path -> (
         match Fs.load_regular ~fs ~workspace query_path with
-        | Error error -> Fs_error.failed ~message:(Fs.Error.message error) error
+        | Error error ->
+            finished (Fs_error.failed ~message:(Fs.Error.message error) error)
         | Ok contents -> (
             let starts = line_starts contents in
             match
@@ -969,22 +972,50 @@ let run ~sandbox ?(program = default_program) ~fs ~workspace ctx input =
                 ~column:(Input.column input)
             with
             | None ->
-                Tool.Result.failed `Invalid_input
-                  (Printf.sprintf
-                     "no identifier at %s:%d:%d; place the cursor on the \
-                      binding to rename"
-                     (Workspace.Path.display query_path)
-                     (Input.line input) (Input.column input))
+                finished
+                  (Tool.Result.failed `Invalid_input
+                     (Printf.sprintf
+                        "no identifier at %s:%d:%d; place the cursor on the \
+                         binding to rename"
+                        (Workspace.Path.display query_path)
+                        (Input.line input) (Input.column input)))
             | Some old_name -> (
                 match
                   validate_new_name ~old_name ~new_name:(Input.new_name input)
                 with
-                | Error refusal -> refusal_result refusal
+                | Error refusal -> finished (refusal_result refusal)
                 | Ok () ->
-                    run_resolved ~sandbox ~program ~fs ~workspace ctx input old_name)))
+                    prepare_resolved ~sandbox ~program ~fs ~workspace ctx input
+                      old_name)))
+
+let prepared_permissions prepared =
+  let accesses =
+    List.map
+      (fun file_plan ->
+        Permission.Access.path ~op:`Modify file_plan.target.Target.path)
+      prepared.file_plans
+  in
+  let display =
+    Printf.sprintf "%s:%d:%d -> %s" (Input.path prepared.input)
+      (Input.line prepared.input) (Input.column prepared.input)
+      prepared.new_name
+  in
+  [ Permission.Request.of_accesses ~source:name ~display accesses ]
+
+let run_prepared ~fs ~workspace ctx prepared =
+  if Tool.Context.cancelled ctx then interrupted ()
+  else
+    commit ~fs ~workspace ~input:prepared.input ~old_name:prepared.old_name
+      ~new_name:prepared.new_name ~file_plans:prepared.file_plans
+
+let run ~sandbox ?(program = default_program) ~fs ~workspace ctx input =
+  match prepare ~sandbox ~program ~fs ~workspace ctx input with
+  | `Finished result -> result
+  | `Prepared prepared -> run_prepared ~fs ~workspace ctx prepared
 
 let tool ~sandbox ?program ~fs ~workspace () =
-  Tool.make ~name ~description ~input:Input.contract ~output:Output.encode
-    ~permissions:(permissions ~workspace)
-    ~run:(run ~sandbox ?program ~fs ~workspace)
+  Tool.make_staged ~name ~description ~input:Input.contract ~output:Output.encode
+    ~preliminary_permissions:(permissions ~workspace)
+    ~prepare:(prepare ~sandbox ?program ~fs ~workspace)
+    ~permissions:prepared_permissions ~run:(run_prepared ~fs ~workspace)
     ()

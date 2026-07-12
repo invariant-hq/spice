@@ -384,8 +384,8 @@ end
 module Contract_tests = struct
   open Test_support
   module Contract = Spice_protocol.Contract
-  module Tool = Spice_tool
   module Permission = Spice_permission
+  module Tool = Spice_tool
   module Json = Jsont.Json
 
   let schema =
@@ -1089,7 +1089,6 @@ module Boundary_tests = struct
   module Session = Spice_session
   module Llm = Spice_llm
   module Tool = Spice_tool
-  module Permission = Spice_permission
 
   let turn_id = Session.Turn.Id.of_string "turn-1"
 
@@ -1158,14 +1157,16 @@ module Boundary_tests = struct
         Command.Reply
           {
             permission = permission_id;
-            answer = Permission.Policy.Review.(Allow Once);
+            answer =
+              Session.Permission.Resolved.Allow
+                Session.Permission.Resolved.Once;
             via = Some `Reviewer;
             message = Some "denied";
           };
         Command.Reply
           {
             permission = permission_id;
-            answer = Permission.Policy.Review.Deny;
+            answer = Session.Permission.Resolved.Deny;
             via = None;
             message = None;
           };

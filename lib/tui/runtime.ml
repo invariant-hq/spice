@@ -2141,8 +2141,8 @@ let run_loaded ~stdenv ~(startup : App.startup) ?clock ?matrix ?probe host =
                            {
                              permission;
                              answer =
-                               Spice_permission.Policy.Review.Allow
-                                 Spice_permission.Policy.Review.Session;
+                               Spice_session.Permission.Resolved.Allow
+                                 Spice_session.Permission.Resolved.Session;
                              via = None;
                              message = None;
                            })

@@ -369,23 +369,10 @@ module Review : sig
   (** [changes review] is the planned-change metadata attached to {!items},
       omitting items without change metadata. *)
 
-  type scope = Once | Session  (** The scope of a reviewer approval. *)
-  type answer = Allow of scope | Deny  (** Reviewer answer to a review. *)
-
-  type resolved =
-    | Proceed of Grants.t
-    | Rejected  (** The result of applying a reviewer answer. *)
-
-  val resolve : grants:Grants.t -> t -> answer -> resolved
-  (** [resolve ~grants review answer] applies [answer] to [review]. *)
-
-  val grant : t -> scope -> Grants.t -> Grants.t
-  (** [grant review scope grants] extends [grants] with [review]'s accesses for
-      an allow answer of [scope]: [Session] adds them and [Once] leaves [grants]
-      unchanged. A [Session] allow of a non-{!Request.grantable} request also
-      leaves [grants] unchanged, capping that approval at a single use. It is
-      the allow half of {!resolve}, total by construction, for callers that
-      already know the answer is an allow. *)
+  val remember : t -> Grants.t -> Grants.t
+  (** [remember review grants] adds every exact reviewed access to [grants].
+      Approval lifetimes and denial are session concerns; this pure operation
+      only records the authority selected by a durable conversation answer. *)
 end
 
 (** {1:decisions Decisions} *)

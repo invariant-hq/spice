@@ -169,13 +169,9 @@ val permissions :
   Spice_permission.Request.t list
 (** [permissions ~workspace input] are the permissions required to run [input].
 
-    Both modes require workspace-root and source-file reads. A write
-    ([dry_run] false) additionally
-    requires [Modify] scoped to the workspace root, because a rename's file set
-    is discovered from Merlin rather than declared in the input and
-    [permissions] cannot see it. Returns [[]] if [input]'s path cannot be
-    resolved. See family rule B in the design note: the root-scoped [Modify] is
-    the v1 shape; per-file [Modify] via a discovery pass is deferred. *)
+    The preliminary plan requires workspace-root and source-file reads. Exact
+    per-file modify facts are derived from the prepared plan before mutation.
+    Returns [[]] if [input]'s source path cannot be resolved. *)
 
 val run :
   sandbox:Spice_sandbox.t ->

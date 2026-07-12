@@ -117,6 +117,19 @@ let decode_call tool input =
   | Ok call -> call
   | Error error -> failf "decode failed: %a" Tool.Error.pp error
 
+let prepare_call call =
+  match Tool.Call.prepare call () with
+  | None -> failf "rename call was not staged"
+  | Some preparation -> (
+      match Tool.Call.prepared_outcome call preparation with
+      | None -> failf "rename preparation did not belong to its call"
+      | Some outcome -> outcome)
+
+let run_call call =
+  match prepare_call call with
+  | Tool.Preparation.Finished result -> result
+  | Tool.Preparation.Prepared { execution; _ } -> Tool.Execution.run execution ()
+
 let print_status result =
   match Tool.Result.status result with
   | Tool.Result.Completed -> print_endline "status: completed"
@@ -243,9 +256,8 @@ let%expect_test "multi-file rename dry run then apply" =
   in
   print_endline "== dry run ==";
   let dry =
-    Tool.Call.run
+    run_call
       (decode_call tool (json_obj (base @ [ ("dry_run", Json.bool true) ])))
-      ()
   in
   print_status dry;
   print_output dry;
@@ -254,7 +266,7 @@ let%expect_test "multi-file rename dry run then apply" =
        (read_disk (path root "lib/a.ml"))
        "let target = 1\nlet use = target + 1\n");
   print_endline "== apply ==";
-  let applied = Tool.Call.run (decode_call tool (json_obj base)) () in
+  let applied = run_call (decode_call tool (json_obj base)) in
   print_status applied;
   print_output applied;
   Printf.printf "a.ml=%S\n" (read_disk (path root "lib/a.ml"));
@@ -299,7 +311,7 @@ let%expect_test "ml and mli pair" =
         ("new_name", Json.string "g");
       ]
   in
-  let result = Tool.Call.run (decode_call tool input) () in
+  let result = run_call (decode_call tool input) in
   print_status result;
   print_output result;
   Printf.printf "a.ml=%S\n" (read_disk (path root "lib/a.ml"));
@@ -335,7 +347,7 @@ let%expect_test "record-field pun is refused" =
         ("new_name", Json.string "y");
       ]
   in
-  let result = Tool.Call.run (decode_call tool input) () in
+  let result = run_call (decode_call tool input) in
   print_status result;
   Printf.printf "p.ml unchanged=%b\n"
     (String.equal
@@ -367,7 +379,7 @@ let%expect_test "labelled argument is refused" =
         ("new_name", Json.string "y");
       ]
   in
-  let result = Tool.Call.run (decode_call tool input) () in
+  let result = run_call (decode_call tool input) in
   print_status result;
   Printf.printf "l.ml unchanged=%b\n"
     (String.equal
@@ -396,7 +408,7 @@ let%expect_test "stale occurrence is refused" =
         ("new_name", Json.string "goal");
       ]
   in
-  let result = Tool.Call.run (decode_call tool input) () in
+  let result = run_call (decode_call tool input) in
   print_status result;
   Printf.printf "a.ml unchanged=%b\n"
     (String.equal
@@ -428,7 +440,7 @@ let%expect_test "range text mismatch is refused as stale" =
         ("new_name", Json.string "goal");
       ]
   in
-  let result = Tool.Call.run (decode_call tool input) () in
+  let result = run_call (decode_call tool input) in
   print_status result;
   Printf.printf "a.ml unchanged=%b\n"
     (String.equal
@@ -455,7 +467,7 @@ let%expect_test "invalid new name" =
         ]
     in
     Printf.printf "new_name=%s -> " new_name;
-    print_status (Tool.Call.run (decode_call tool input) ())
+    print_status (run_call (decode_call tool input))
   in
   call "match";
   call "Target";
@@ -488,7 +500,7 @@ let%expect_test "occurrence count over cap is failed" =
         ("max_occurrences", Json.int 1);
       ]
   in
-  let result = Tool.Call.run (decode_call tool input) () in
+  let result = run_call (decode_call tool input) in
   print_status result;
   Printf.printf "a.ml unchanged=%b\n"
     (String.equal
@@ -513,7 +525,7 @@ let%expect_test "zero occurrences is invalid_input" =
         ("new_name", Json.string "goal");
       ]
   in
-  let result = Tool.Call.run (decode_call tool input) () in
+  let result = run_call (decode_call tool input) in
   print_status result;
   [%expect
     {|
@@ -541,7 +553,7 @@ let%expect_test "not a standalone identifier is refused" =
         ("new_name", Json.string "goal");
       ]
   in
-  let result = Tool.Call.run (decode_call tool input) () in
+  let result = run_call (decode_call tool input) in
   print_status result;
   Printf.printf "a.ml unchanged=%b\n"
     (String.equal
@@ -555,7 +567,17 @@ let%expect_test "not a standalone identifier is refused" =
 let%expect_test "permissions dry versus apply" =
   with_workspace @@ fun ~root ~fs ~workspace ->
   write_disk (path root "lib/a.ml") "let target = 1\n";
-  let merlin = write_fake_merlin root ~value:(occ_array []) in
+  write_disk (path root "lib/b.ml") "let use = A.target\n";
+  let value =
+    occ_array
+      [
+        occ ~file:(path root "lib/a.ml") ~sl:1 ~sc:4 ~el:1 ~ec:10
+          ~stale:false;
+        occ ~file:(path root "lib/b.ml") ~sl:1 ~sc:12 ~el:1 ~ec:18
+          ~stale:false;
+      ]
+  in
+  let merlin = write_fake_merlin root ~value in
   let tool = Rename.tool ~sandbox ~program:[ merlin ] ~fs ~workspace () in
   let base =
     [
@@ -570,10 +592,36 @@ let%expect_test "permissions dry versus apply" =
   in
   let apply = decode_call tool (json_obj base) in
   Printf.printf "dry: %d requests\n" (List.length (Tool.Call.permissions dry));
-  Printf.printf "apply: %d requests\n"
+  Printf.printf "apply preliminary: %d requests\n"
     (List.length (Tool.Call.permissions apply));
+  (match prepare_call dry with
+  | Tool.Preparation.Finished _ -> print_endline "dry final: none"
+  | Tool.Preparation.Prepared _ -> failf "dry run unexpectedly prepared a write");
+  (match prepare_call apply with
+  | Tool.Preparation.Finished result ->
+      print_status result;
+      failf "apply preparation unexpectedly finished"
+  | Tool.Preparation.Prepared { permissions; _ } ->
+      Printf.printf "apply final: %d request\n" (List.length permissions);
+      List.concat_map Spice_permission.Request.accesses permissions
+      |> List.iter (fun access ->
+          match access with
+          | Spice_permission.Access.Path
+              {
+                op = `Modify;
+                scope =
+                  Spice_permission.Access.Path_scope.Workspace { relative; _ };
+              } ->
+              Printf.printf "  modify %s\n" (Spice_path.Rel.to_string relative)
+          | _ ->
+              failf "unexpected final rename access: %a"
+                Spice_permission.Access.pp access));
   [%expect {|
     dry: 2 requests
-    apply: 3 requests |}]
+    apply preliminary: 2 requests
+    dry final: none
+    apply final: 1 request
+      modify lib/a.ml
+      modify lib/b.ml |}]
 
 [%%run_tests "spice.tools.ocaml_rename.expect"]

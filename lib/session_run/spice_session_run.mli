@@ -130,6 +130,16 @@ module Config : sig
       in declaration order. Active turns use their own durable snapshot. *)
 end
 
+module Preflight : sig
+  (** A decoded staged tool call whose preliminary permissions are satisfied. *)
+
+  type t
+
+  val prepare : ?cancelled:(unit -> bool) -> t -> Spice_tool.Preparation.t
+  (** [prepare t] runs the repeatable read-only preparation for [t]. It performs
+      no mutation. The resulting value is accepted only by the same [t]. *)
+end
+
 module Step : sig
   (** Planned session transition plus the next external boundary. *)
 
@@ -151,12 +161,19 @@ module Step : sig
 
             The host persists the checked transition, calls the model with the
             request, then continues with {!accept_response}. *)
-    | Run_tool of { claim : Tool_claim.Started.t; call : Spice_tool.Call.t }
+    | Prepare_tool of Preflight.t
+        (** A staged tool's preliminary permissions are satisfied. The host
+            runs {!Preflight.prepare} without persisting a mutation claim, then
+            continues with {!finish_tool_preflight}. *)
+    | Run_tool of {
+        claim : Tool_claim.Started.t;
+        execution : Spice_tool.Execution.t;
+      }
         (** An executable tool call is decoded, permitted, and claimed.
 
             [claim] has a deterministic id derived from the active turn and
             model tool-call id. The host persists the checked transition, runs
-            [call] at most once, then continues with {!finish_tool}. *)
+            [execution] at most once, then continues with {!finish_tool}. *)
     | Waiting of Waiting.t
         (** The active turn is waiting for host or user input. Planning has
             not performed the waiting effect. *)
@@ -226,6 +243,19 @@ val resume : Config.t -> session -> (Step.t, Error.t) result
     through the ordinary tool-dispatch error path.
 
     Returns {!Error.No_active_turn} if [session] has no active turn. *)
+
+val finish_tool_preflight :
+  Config.t ->
+  Preflight.t ->
+  Spice_tool.Preparation.t ->
+  session ->
+  (Step.t, Error.t) result
+(** [finish_tool_preflight config preflight preparation session] checks the
+    exact permissions derived by [preparation]. A finished read-only preflight
+    records its result directly; a prepared mutation either blocks, is denied,
+    or receives a durable tool claim over the exact prepared execution.
+
+    Raises [Invalid_argument] if [preparation] belongs to another preflight. *)
 
 val interrupt : ?reason:string -> session -> (Step.t, Error.t) result
 (** [interrupt ?reason session] finishes [session]'s active turn as
@@ -299,7 +329,7 @@ val resolve_permission :
   ?message:string ->
   ?via:Permission.Resolved.via ->
   Permission.Id.t ->
-  Spice_permission.Policy.Review.answer ->
+  Spice_session.Permission.Resolved.answer ->
   session ->
   (Step.t, Error.t) result
 (** [resolve_permission config ?message ?via id answer session] records

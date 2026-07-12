@@ -347,6 +347,55 @@ let call_run_rejects_empty_projected_output () =
   expect_invalid_arg "projected output must have text" (fun () ->
       Tool.Call.run call ())
 
+let staged_calls_bind_preparation_to_execution () =
+  let prepared = ref [] in
+  let ran = ref [] in
+  let staged =
+    Tool.make_staged ~name:"staged" ~description:"Staged echo."
+      ~input:string_input ~output
+      ~preliminary_permissions:(fun input ->
+        if String.equal input "allow" then [ request ] else [])
+      ~prepare:(fun _context input ->
+        prepared := input :: !prepared;
+        `Prepared ("prepared:" ^ input))
+      ~permissions:(fun input -> [ shell_request input ])
+      ~run:(fun _context input ->
+        ran := input :: !ran;
+        Tool.Result.completed ~output:input ())
+      ()
+  in
+  let first =
+    decode_call [ staged ] ~name:"staged" ~input:(input_json "allow")
+  in
+  let second =
+    decode_call [ staged ] ~name:"staged" ~input:(input_json "other")
+  in
+  equal int ~msg:"preliminary permission uses decoded input" 1
+    (List.length (Tool.Call.permissions first));
+  is_true ~msg:"staged call has no immediate execution"
+    (Option.is_none (Tool.Call.execution first));
+  let preparation =
+    match Tool.Call.prepare first () with
+    | Some preparation -> preparation
+    | None -> failf "staged call did not prepare"
+  in
+  is_true ~msg:"foreign call cannot inspect preparation"
+    (Option.is_none (Tool.Call.prepared_outcome second preparation));
+  (match Tool.Call.prepared_outcome first preparation with
+  | Some (Tool.Preparation.Prepared { permissions; execution }) ->
+      equal int ~msg:"prepared permission is available" 1
+        (List.length permissions);
+      let result = Tool.Execution.run execution () in
+      equal (option string) ~msg:"execution uses prepared value"
+        (Some "prepared:allow")
+        (Option.map Tool.Output.text (Tool.Result.output result))
+  | Some (Tool.Preparation.Finished _) ->
+      failf "staged preparation unexpectedly finished"
+  | None -> failf "originating call rejected its preparation");
+  equal (list string) ~msg:"prepare ran once" [ "allow" ] !prepared;
+  equal (list string) ~msg:"prepared execution ran once" [ "prepared:allow" ]
+    !ran
+
 let error_diagnostics () =
   let cases =
     [
@@ -383,5 +432,7 @@ let () =
         call_run_preserves_non_completed_status;
       test "call run rejects empty projected output"
         call_run_rejects_empty_projected_output;
+      test "staged calls bind preparation to execution"
+        staged_calls_bind_preparation_to_execution;
       test "error diagnostics" error_diagnostics;
     ]
