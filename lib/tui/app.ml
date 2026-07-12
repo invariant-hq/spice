@@ -1487,11 +1487,11 @@ let list_key key t =
       | `Down -> walk Composer.History_next
       | `Tab -> (t, []))
 
-(* ↵ while a list is open activates the selection and never sends the draft
+(* ↵ while a list is open first tries to activate its selection
    (03-ia-screens-overlays.md §Completions): a no-argument command runs, an
    arg-taking one seeds the draft with [/command ] and closes; a mention
-   inserts and closes. [None] means no palette row matched — the caller
-   swallows the submit, keeping the list up. *)
+   inserts and closes. [None] means no palette row matched — the caller closes
+   the palette and submits the text through the ordinary composer path. *)
 let activate_completion t =
   match t.completion with
   | No_completion -> None
@@ -1780,6 +1780,32 @@ let interpret_auth_event panel event t =
   | Auth_panel.Begin_logout { provider } ->
       begin_flow (fun request -> Auth_logout { request; provider })
 
+(* Apply a composer message through the ordinary draft/event path. Completion
+   activation normally intercepts Enter before this seam; a no-match slash
+   palette deliberately rejoins here after closing, so slash-prefixed prose has
+   exactly the same submission and prompt-history semantics as plain prose. *)
+let fold_composer m t =
+  (* Composer activity disarms any pending two-stage notice; the first
+     keystroke freezes the lockup for the rest of the process (12-home.md
+     §Liveness) — the latch never re-arms. *)
+  let composer, events = Composer.update m t.composer in
+  let motion =
+    if String.equal (Composer.draft_text composer) "" then t.motion
+    else Home.Motion.freeze t.motion
+  in
+  (* Composer activity (typing, paste) returns focus from the threads strip to
+     the composer with the keystroke applied (doc/plans/tui-next-threads.md
+     §2.2); arrow walking of the strip is a separate [List_key] path. *)
+  let t, sync_commands =
+    sync_completion
+      { t with composer; motion; armed = None; strip_focus = None }
+  in
+  List.fold_left
+    (fun (t, commands) event ->
+      let t, more = composer_event event t in
+      (t, commands @ more))
+    (t, sync_commands) events
+
 let update msg t =
   match msg with
   | Composer_msg (Composer.List_key key) -> list_key key t
@@ -1790,37 +1816,16 @@ let update msg t =
          printable releases it), so no prompt is lost
          (doc/plans/tui-next-threads.md §2.3). *)
       drill_selected t
-  | Composer_msg (Composer.Submit _) when completion_open t -> (
+  | Composer_msg ((Composer.Submit _) as m) when completion_open t -> (
       match activate_completion t with
       | Some result -> result
       | None ->
           (* The only [None] is a slash palette with no match ([Mention] and
-             [History_search] always activate): [↵] never sends the draft while a
-             list is up (03-ia-screens-overlays.md §Completions), so it is
-             swallowed — the palette stays and a mistyped [/…] never reaches the
-             model as a prompt. *)
-          (t, []))
-  | Composer_msg m ->
-      (* Composer activity disarms any pending two-stage notice; the first
-         keystroke freezes the lockup for the rest of the process (12-home.md
-         §Liveness) — the latch never re-arms. *)
-      let composer, events = Composer.update m t.composer in
-      let motion =
-        if String.equal (Composer.draft_text composer) "" then t.motion
-        else Home.Motion.freeze t.motion
-      in
-      (* Composer activity (typing, paste) returns focus from the threads strip to
-         the composer with the keystroke applied (doc/plans/tui-next-threads.md
-         §2.2); arrow walking of the strip is a separate [List_key] path. *)
-      let t, sync_commands =
-        sync_completion
-          { t with composer; motion; armed = None; strip_focus = None }
-      in
-      List.fold_left
-        (fun (t, commands) event ->
-          let t, more = composer_event event t in
-          (t, commands @ more))
-        (t, sync_commands) events
+             [History_search] always activate): close only the palette, then
+             submit through the ordinary composer path. Unknown slash-prefixed
+             text is prose, not an invalid command. *)
+          fold_composer m { t with completion = No_completion })
+  | Composer_msg m -> fold_composer m t
   | Live_event { event; now } -> (
       match t.phase with
       | Chat chat ->
@@ -2066,15 +2071,15 @@ let update msg t =
       ({ t with strip_focus = None }, [])
   | Escape -> (
       (* The esc ladder (03-composer.md §Keybindings), one rung per press:
-         close the open completion (the palette clears its slash input); close
+         close the open completion while preserving the draft; close
          the help sheet; exit shell mode; clear a non-empty draft (two-stage,
          saved to history); interrupt the in-flight turn (two-stage). *)
       match t.completion with
-      (* Rung 1: the palette closes and clears its slash input; the mention
-         list closes and leaves the literal @-token in the draft
+      (* Rung 1: command and mention lists close and leave their literal token
+         in the draft
          (03-composer.md §File completion); ctrl+r closes and restores the
          draft it displaced (05-overlays-pickers.md §Prompt-history search). *)
-      | Commands _ -> (set_draft "" { t with completion = No_completion }, [])
+      | Commands _ -> ({ t with completion = No_completion }, [])
       | Mention _ -> ({ t with completion = No_completion }, [])
       | History_search { saved; _ } ->
           let composer, _ =

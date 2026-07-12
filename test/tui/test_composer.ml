@@ -26,6 +26,68 @@ let reach_transcript t =
   Tui.release t "composer";
   Tui.settle t
 
+let unknown_slash_draft = "/tmp/build.log has the error, can you look"
+
+(* A slash-prefixed line that matches no command is still an ordinary prompt.
+   Enter closes the empty palette and submits through the same turn path as any
+   other prompt; the provider expectation pins the exact text that crosses the
+   boundary. *)
+let%expect_test "enter submits a slash draft when no command matches" =
+  let script =
+    script
+    @ [
+        Provider_script.message ~expect:[ unknown_slash_draft ] ~id:"resp-2"
+          "I can inspect that build log.";
+      ]
+  in
+  Tui.run ~name:"composer-unknown-slash-submit" ~provider:script @@ fun t ->
+  reach_transcript t;
+  Tui.keys t unknown_slash_draft;
+  Tui.enter t;
+  Tui.settle t;
+  Printf.printf "submitted: %b\n"
+    (Screen.has "I can inspect that build log." (Tui.screen t));
+  [%expect {|submitted: true|}]
+
+(* Escape owns only the open palette: it must leave the no-match text in the
+   composer. A later Escape then enters the ordinary guarded clear rung, whose
+   second press saves the draft to history before clearing it; Up recovers the
+   exact slash-prefixed prompt. *)
+let%expect_test
+    "escape preserves an unknown slash draft for guarded discard and recall" =
+  Tui.run ~name:"composer-unknown-slash-escape" ~provider:script @@ fun t ->
+  reach_transcript t;
+  Tui.keys t unknown_slash_draft;
+  Tui.settle t;
+  Printf.printf "palette open: %b\n"
+    (Screen.has "no matching commands" (Tui.screen t));
+  Tui.keys t Key.escape;
+  Tui.settle t;
+  let after_palette_escape = Tui.screen t in
+  Printf.printf "palette closed: %b\ndraft preserved: %b\n"
+    (Screen.lacks "no matching commands" after_palette_escape)
+    (Screen.has unknown_slash_draft after_palette_escape);
+  Tui.keys t Key.escape;
+  Tui.settle t;
+  Printf.printf "clear guarded: %b\n"
+    (Screen.has "Esc again to clear" (Tui.screen t));
+  Tui.keys t Key.escape;
+  Tui.settle t;
+  Printf.printf "discarded: %b\n"
+    (Screen.lacks unknown_slash_draft (Tui.screen t));
+  Tui.keys t Key.up;
+  Tui.settle t;
+  Printf.printf "recalled: %b\n"
+    (Screen.has unknown_slash_draft (Tui.screen t));
+  [%expect
+    {|
+    palette open: true
+    palette closed: true
+    draft preserved: true
+    clear guarded: true
+    discarded: true
+    recalled: true|}]
+
 (* A hard newline (the linefeed the composer binds to Newline) grows the frame
    in place below the transcript; the "❯ " marker sits on the first visual row
    only. The two-stage esc ladder then arms a footer notice and, on the second

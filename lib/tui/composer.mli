@@ -156,10 +156,10 @@ val render :
     controlled textarea that grows 1–6 rows then scrolls internally. Callbacks
     wrap composer {!type-msg}s with [on_msg].
 
-    - [submit_enabled] gates Enter at the widget (defaults to [true]). The
-      completions law is enforced one level up: the shell intercepts the
-      [Submit] message while a list is open, so ↵ activates the list and never
-      sends the draft.
+    - [submit_enabled] gates Enter at the widget (defaults to [true]). The shell
+      intercepts [Submit] while a list is open so ↵ activates a selection.
+      A command palette with no matching row closes and rejoins the ordinary
+      submission path with the unchanged draft.
     - [list_open] widens the pre-default key interception (defaults to [false]):
       while [true], ↑/↓ (and ctrl+p/n) and tab are swallowed and surface as
       {!List_key} for the shell to route. ↑/↓ also surface on a single-line

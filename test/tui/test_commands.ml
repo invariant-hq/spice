@@ -115,9 +115,9 @@ let%expect_test "an unmatched filter shows the note row" =
 23 |
 24 |   ! not logged in · /login · $PROJECT · gpt-5.5 medium · dune: ✗|}]
 
-(* Esc is the ladder's first rung while the list is open: it closes the palette
-   and clears the slash input, restoring the idle placeholder. *)
-let%expect_test "esc closes the palette and clears the input" =
+(* Esc is the ladder's first rung while the list is open: it closes only the
+   palette and preserves the slash input for editing or a later guarded clear. *)
+let%expect_test "esc closes the palette and preserves the input" =
   Tui.run ~name:"cmd-palette-esc" @@ fun t ->
   Tui.settle t;
   Tui.keys t "/q";
@@ -138,7 +138,7 @@ let%expect_test "esc closes the palette and clears the input" =
 10 |      ▎ it's experimental: sessions and config may change without migration.
 11 |
 12 |           ────────────────────────────────────────────────────────────
-13 |           ❯ message spice
+13 |           ❯ /q
 14 |           ────────────────────────────────────────────────────────────
 15 |
 16 |                      dune       ✗ · diagnostics unavailable

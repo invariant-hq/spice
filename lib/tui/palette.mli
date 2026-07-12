@@ -18,7 +18,8 @@
     on a submit-eligible draft opens; backspacing past ['/'] or [esc] closes) —
     this module never decides visibility. While it is open the shell routes
     [↑]/[↓]/[ctrl+p]/[ctrl+n] to {!move}, [tab] to {!complete}, and [↵] to
-    {!activate}, and — per the completion law — never lets [↵] submit the draft.
+    {!activate}. When no row matches, the shell closes the palette and submits
+    the unchanged draft as an ordinary prompt.
 *)
 
 (** {1:types Types} *)
@@ -65,8 +66,8 @@ val move : [ `Up | `Down ] -> t -> t
 
 val activate : t -> activation option
 (** [activate t] is what [↵] does for the current selection, or [None] when
-    nothing matches (the shell then swallows the key — [↵] never submits the
-    draft while the palette is up). *)
+    nothing matches. The shell interprets [None] by closing the palette and
+    submitting the unchanged draft through the ordinary composer path. *)
 
 val complete : t -> string option
 (** [complete t] is the [tab] completion: the longest common slash prefix of the
