@@ -149,6 +149,7 @@ Spice uses Dune package management — you need a recent Dune (3.22+), and
 git clone https://github.com/invariant-hq/spice.git
 cd spice
 dune pkg lock
+dune show depext # to show needed system dependencies, which you must install using your system's package manager
 dune build
 ```
 
