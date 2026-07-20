@@ -45,9 +45,6 @@ let llm_error ?(phase = Llm.Error.Startup) ?status ?request_id ?redacted_body
   Llm.Error.make ~kind ~phase ~provider ?status ?request_id ?redacted_body
     message
 
-let invalid_request message =
-  Error (llm_error Llm.Error.Invalid_request message)
-
 let unsupported message = Error (llm_error Llm.Error.Unsupported message)
 
 let decode_error message =
@@ -315,8 +312,7 @@ let encode_reasoning_effort = function
   | Llm.Request.Options.Reasoning_effort.Medium -> Ok "medium"
   | Llm.Request.Options.Reasoning_effort.High -> Ok "high"
   | Llm.Request.Options.Reasoning_effort.Extra_high -> Ok "xhigh"
-  | Llm.Request.Options.Reasoning_effort.Max ->
-      invalid_request "OpenAI Responses does not support reasoning effort max"
+  | Llm.Request.Options.Reasoning_effort.Max -> Ok "max"
 
 let encode_response_format = function
   | Llm.Request.Options.Text -> None

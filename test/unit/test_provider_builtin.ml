@@ -90,10 +90,58 @@ let openai_contracts () =
   | None ->
       failf "expected OpenAI ChatGPT device-code login"
   end;
-  equal int ~msg:"OpenAI catalog is curated" 10
+  equal int ~msg:"OpenAI catalog is curated" 14
     (Builtin.openai |> Provider.models |> List.length);
   equal (option string) ~msg:"OpenAI default model" (Some "gpt-5.5")
     (Builtin.openai |> Provider.default_model |> Option.map model_id);
+  let gpt_56_alias =
+    lookup Builtin.openai (Spice_llm_openai.model "gpt-5.6")
+  in
+  equal (option string) ~msg:"GPT-5.6 alias family" (Some "gpt-sol")
+    (Model.family gpt_56_alias);
+  let gpt_56_sol =
+    lookup Builtin.openai (Spice_llm_openai.model "gpt-5.6-sol")
+  in
+  let gpt_56_terra =
+    lookup Builtin.openai (Spice_llm_openai.model "gpt-5.6-terra")
+  in
+  let gpt_56_luna =
+    lookup Builtin.openai (Spice_llm_openai.model "gpt-5.6-luna")
+  in
+  equal (option int) ~msg:"GPT-5.6 Sol context window" (Some 1_050_000)
+    (Model.context_window gpt_56_sol);
+  equal (option int) ~msg:"GPT-5.6 Terra context window" (Some 1_050_000)
+    (Model.context_window gpt_56_terra);
+  equal (option int) ~msg:"GPT-5.6 Luna context window" (Some 1_050_000)
+    (Model.context_window gpt_56_luna);
+  equal (option int) ~msg:"GPT-5.6 Luna output limit" (Some 128_000)
+    (Model.max_output_tokens gpt_56_luna);
+  equal (list string) ~msg:"GPT-5.6 input modalities" [ "image"; "text" ]
+    (input_modality_strings gpt_56_sol);
+  equal (list string) ~msg:"GPT-5.6 capabilities"
+    [ "apply-patch"; "json_schema"; "reasoning"; "tools" ]
+    (capability_strings gpt_56_sol);
+  equal (list string) ~msg:"GPT-5.6 reasoning efforts"
+    [ "none"; "low"; "medium"; "high"; "xhigh"; "max" ]
+    (Model.supported_reasoning gpt_56_sol
+    |> List.map Options.Reasoning_effort.to_string);
+  begin match Model.pricing gpt_56_terra with
+  | None -> failf "expected gpt-5.6-terra pricing metadata"
+  | Some pricing ->
+      equal (option float_value) ~msg:"Terra input cost" (Some 2.5)
+        pricing.Model.default.Model.input_per_million;
+      equal (option float_value) ~msg:"Terra cached input cost" (Some 0.25)
+        pricing.Model.default.Model.cached_input_per_million;
+      equal (option float_value) ~msg:"Terra output cost" (Some 15.)
+        pricing.Model.default.Model.output_per_million;
+      let tiered = Model.price_for ~context_tokens:300_000 pricing in
+      equal (option float_value) ~msg:"Terra long-context input cost" (Some 5.)
+        tiered.Model.input_per_million;
+      equal (option float_value) ~msg:"Terra long-context cached input cost"
+        (Some 0.5) tiered.Model.cached_input_per_million;
+      equal (option float_value) ~msg:"Terra long-context output cost"
+        (Some 22.5) tiered.Model.output_per_million
+  end;
   let gpt_55 = lookup Builtin.openai (Spice_llm_openai.model "gpt-5.5") in
   equal (option string) ~msg:"display name" (Some "GPT-5.5")
     (Model.display_name gpt_55);

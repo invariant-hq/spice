@@ -6,6 +6,12 @@ The model catalog is available without provider network calls.
   $ spice models --json | grep -o '"selector":"openai/gpt-5.5"' | head -n 1
   "selector":"openai/gpt-5.5"
 
+  $ spice models --json | grep -o '"selector":"openai/gpt-5.6[^"/]*"'
+  "selector":"openai/gpt-5.6"
+  "selector":"openai/gpt-5.6-sol"
+  "selector":"openai/gpt-5.6-terra"
+  "selector":"openai/gpt-5.6-luna"
+
   $ spice models --json | grep -o '"selector":"anthropic/claude-sonnet-4-6"' | head -n 1
   "selector":"anthropic/claude-sonnet-4-6"
 
@@ -43,6 +49,11 @@ Model details expose catalog metadata for a selector.
 
   $ spice models show openai/gpt-5.5 --json | grep -o '"input_per_million":5'
   "input_per_million":5
+
+GPT-5.6 exposes the family capabilities and the new maximum reasoning effort.
+
+  $ spice models show openai/gpt-5.6-sol --json | grep -o '"supported_reasoning":\[[^]]*\]'
+  "supported_reasoning":["none","low","medium","high","xhigh","max"]
 
 The current command resolves the configured main and small models.
 

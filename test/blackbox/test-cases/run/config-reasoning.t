@@ -38,6 +38,22 @@ The per-run flag shadows configured reasoning.
   spice: session saved; resume with: spice resume 'flag-reasoning'
   $ wait_fake_server
 
+GPT-5.6 accepts the maximum reasoning effort and sends its native model id.
+
+  $ cat > max-reasoning.jsonl <<'JSONL'
+  > {"expect":{"body_contains":["max prompt","\"model\":\"gpt-5.6-sol\"","\"reasoning\":{\"effort\":\"max\"","\"summary\":\"auto\""]},"response":{"id":"resp-max-reasoning","status":"completed","model":"gpt-5.6-sol","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"max reasoning final"}]}]}}
+  > JSONL
+  $ start_fake_openai max-reasoning.jsonl max-reasoning-capture max-reasoning-port
+
+  $ OPENAI_API_KEY=test-key SPICE_MODEL=openai/gpt-5.6-sol spice run --cwd "$PWD" --reasoning max --id max-reasoning "max prompt" >/dev/null
+  permission review: default
+  sandbox: danger-full-access (config)
+  backend: none not_requested
+  network: enabled
+  warning: command sandbox disabled by explicit user choice
+  spice: session saved; resume with: spice resume 'max-reasoning'
+  $ wait_fake_server
+
 Unsupported configured reasoning is host state, so it fails as a runtime error
 and names the config repair command.
 
