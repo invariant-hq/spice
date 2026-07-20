@@ -546,42 +546,20 @@ let hunks ?(context = 3) ?max_edit_distance ~before ~after () =
              })
            (hunks_of_ops ~context ops))
 
-let starts_with_at text ~prefix ~at =
-  let len = String.length text in
-  let prefix_len = String.length prefix in
-  at + prefix_len <= len
-  &&
-  let rec loop i =
-    i = prefix_len || (Char.equal text.[at + i] prefix.[i] && loop (i + 1))
-  in
-  loop 0
-
-let bidi_escapes =
-  [|
-    ("\216\156", "\\u{061c}");
-    ("\226\128\142", "\\u{200e}");
-    ("\226\128\143", "\\u{200f}");
-    ("\226\128\170", "\\u{202a}");
-    ("\226\128\171", "\\u{202b}");
-    ("\226\128\172", "\\u{202c}");
-    ("\226\128\173", "\\u{202d}");
-    ("\226\128\174", "\\u{202e}");
-    ("\226\129\166", "\\u{2066}");
-    ("\226\129\167", "\\u{2067}");
-    ("\226\129\168", "\\u{2068}");
-    ("\226\129\169", "\\u{2069}");
-  |]
-
-let bidi_escape text i =
-  let rec loop j =
-    if j = Array.length bidi_escapes then None
-    else
-      let prefix, escape = bidi_escapes.(j) in
-      if starts_with_at text ~prefix ~at:i then
-        Some (escape, String.length prefix)
-      else loop (j + 1)
-  in
-  loop 0
+let bidi_escape = function
+  | 0x061C -> Some "\\u{061c}"
+  | 0x200E -> Some "\\u{200e}"
+  | 0x200F -> Some "\\u{200f}"
+  | 0x202A -> Some "\\u{202a}"
+  | 0x202B -> Some "\\u{202b}"
+  | 0x202C -> Some "\\u{202c}"
+  | 0x202D -> Some "\\u{202d}"
+  | 0x202E -> Some "\\u{202e}"
+  | 0x2066 -> Some "\\u{2066}"
+  | 0x2067 -> Some "\\u{2067}"
+  | 0x2068 -> Some "\\u{2068}"
+  | 0x2069 -> Some "\\u{2069}"
+  | _ -> None
 
 let add_escaped_byte buffer byte =
   Buffer.add_string buffer "\\x";
@@ -593,20 +571,25 @@ let add_display_string buffer text =
   let len = String.length text in
   let rec loop i =
     if i < len then
-      match bidi_escape text i with
-      | Some (escape, width) ->
-          Buffer.add_string buffer escape;
-          loop (i + width)
-      | None ->
-          let char = text.[i] in
-          let code = Char.code char in
-          if
-            (code < 0x20 && not (Char.equal char '\t'))
-            || code = 0x7F
-            || (code >= 0x80 && code <= 0x9F)
-          then add_escaped_byte buffer code
-          else Buffer.add_char buffer char;
-          loop (i + 1)
+      let decoded = String.get_utf_8_uchar text i in
+      if not (Uchar.utf_decode_is_valid decoded) then (
+        add_escaped_byte buffer (Char.code text.[i]);
+        loop (i + 1))
+      else
+        let width = Uchar.utf_decode_length decoded in
+        let code = Uchar.utf_decode_uchar decoded |> Uchar.to_int in
+        match bidi_escape code with
+        | Some escape ->
+            Buffer.add_string buffer escape;
+            loop (i + width)
+        | None ->
+            if
+              (code < 0x20 && code <> Char.code '\t')
+              || code = 0x7F
+              || (code >= 0x80 && code <= 0x9F)
+            then add_escaped_byte buffer code
+            else Buffer.add_substring buffer text i width;
+            loop (i + width)
   in
   loop 0
 
