@@ -47,6 +47,9 @@ let gpt_coding_capabilities =
 let gpt5_efforts =
   Options.Reasoning_effort.[ Disabled; Low; Medium; High; Extra_high ]
 
+let gpt56_efforts =
+  Options.Reasoning_effort.[ Disabled; Low; Medium; High; Extra_high; Max ]
+
 let opus_47_efforts =
   Options.Reasoning_effort.[ Low; Medium; High; Extra_high; Max ]
 
@@ -78,6 +81,22 @@ let pricing ?(tiers = []) ?cache_read ?cache_write ~input ~output () =
 let gpt_5_chat_unavailable =
   Model.Unavailable "OpenAI Responses does not support this chat alias"
 
+let gpt_56_model llm ~id ~display_name ~family ~input ~output ~cache_read =
+  Model.make (llm id) ~display_name ~family ~released_on:(date "2026-07-09")
+    ~context_window:1_050_000 ~max_output_tokens:128_000
+    ~input_modalities:text_image ~capabilities:gpt_coding_capabilities
+    ~default_reasoning:Options.Reasoning_effort.Medium
+    ~supported_reasoning:gpt56_efforts
+    ~pricing:
+      (pricing ~input ~output ~cache_read
+         ~tiers:
+           [
+             tier ~context_over:272_000 ~input:(input *. 2.)
+               ~output:(output *. 1.5) ~cache_read:(cache_read *. 2.) ();
+           ]
+         ())
+    ()
+
 (* The built-in catalog is a curated, current-generation coding set, not a
    historical archive. Image models stay declared so capability gates can
    name a real model; chat aliases stay declared so their unavailability
@@ -86,6 +105,14 @@ let gpt_5_chat_unavailable =
 let openai_models =
   let llm = Spice_llm_openai.model in
   [
+    gpt_56_model llm ~id:"gpt-5.6" ~display_name:"GPT-5.6"
+      ~family:"gpt-sol" ~input:5. ~output:30. ~cache_read:0.5;
+    gpt_56_model llm ~id:"gpt-5.6-sol" ~display_name:"GPT-5.6 Sol"
+      ~family:"gpt-sol" ~input:5. ~output:30. ~cache_read:0.5;
+    gpt_56_model llm ~id:"gpt-5.6-terra" ~display_name:"GPT-5.6 Terra"
+      ~family:"gpt-terra" ~input:2.5 ~output:15. ~cache_read:0.25;
+    gpt_56_model llm ~id:"gpt-5.6-luna" ~display_name:"GPT-5.6 Luna"
+      ~family:"gpt-luna" ~input:1. ~output:6. ~cache_read:0.1;
     Model.make (llm "gpt-5.5") ~display_name:"GPT-5.5" ~family:"gpt"
       ~released_on:(date "2026-04-23") ~context_window:1_050_000
       ~max_output_tokens:128_000 ~input_modalities:text_image_pdf
