@@ -299,15 +299,30 @@ let%expect_test "display mode escapes unsafe text" =
     +safe\x1B\u{061c}\u{200e}\u{200f}\u{202e} |}]
 
 let%expect_test "display mode escapes C1 controls" =
-  let unsafe_label = Diff.Label.of_string "bad\128\155\159.txt" in
-  let unsafe_text = "safe\128\155\159\n" in
+  let unsafe_label =
+    Diff.Label.of_string "bad\128\155\159-\194\128\194\155\194\159.txt"
+  in
+  let unsafe_text = "safe\128\155\159-\194\128\194\155\194\159\n" in
   print_diff
     [ Diff.File_change.create ~label:unsafe_label ~contents:unsafe_text ];
   [%expect
     {|
     --- /dev/null
-    +++ bad\x80\x9B\x9F.txt
+    +++ bad\x80\x9B\x9F-\x80\x9B\x9F.txt
     @@ -0,0 +1,1 @@
-    +safe\x80\x9B\x9F |}]
+    +safe\x80\x9B\x9F-\x80\x9B\x9F |}]
+
+let%expect_test "display mode preserves printable UTF-8 and escapes malformed bytes"
+    =
+  let unsafe_label = Diff.Label.of_string "résumé─\255.txt" in
+  let unsafe_text = "23 | ─── 😀 \255\n" in
+  print_diff
+    [ Diff.File_change.create ~label:unsafe_label ~contents:unsafe_text ];
+  [%expect
+    {|
+    --- /dev/null
+    +++ résumé─\xFF.txt
+    @@ -0,0 +1,1 @@
+    +23 | ─── 😀 \xFF |}]
 
 [%%run_tests "spice.diff.expect"]

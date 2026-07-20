@@ -268,10 +268,12 @@ end
 type render_mode = [ `Display | `Raw ]
 (** The type for rendered text policy.
 
-    [`Display] escapes control and bidirectional-formatting bytes in labels and
-    content for prompts, logs, and terminals. [`Raw] writes label and content
-    bytes without display escaping; the renderer still inserts diff syntax, line
-    prefixes, and missing-newline markers. Neither mode turns the output into an
+    [`Display] preserves printable UTF-8, escapes control and
+    bidirectional-formatting characters, and hexadecimal-escapes malformed
+    UTF-8 bytes in labels and content for prompts, logs, and terminals. Its
+    output is valid UTF-8. [`Raw] writes label and content bytes without display
+    escaping; the renderer still inserts diff syntax, line prefixes, and
+    missing-newline markers. Neither mode turns the output into an
     authority-bearing patch format. *)
 
 type t
